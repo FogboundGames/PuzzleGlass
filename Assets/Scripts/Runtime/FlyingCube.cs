@@ -9,13 +9,35 @@ namespace PuzzleGlass
     {
         public PuzzleColor colorType;
         public MonsterCharacter targetMonster;
-        public float flyDuration = 0.22f;
+
+        // Sand grain mesh variations for organic texture diversity
+        private static Mesh _grainSmallMesh;
+        private static Mesh _grainMedMesh;
+        private static Mesh _grainLargeMesh;
+
+        private static void EnsureGrainMeshes()
+        {
+            if (_grainSmallMesh == null)
+            {
+                _grainSmallMesh = ProceduralMeshUtils.CreateRoundedCube(0.034f, 0.008f, 1);
+                _grainSmallMesh.name = "SandGrain_Small";
+            }
+            if (_grainMedMesh == null)
+            {
+                _grainMedMesh = ProceduralMeshUtils.CreateRoundedCube(0.046f, 0.012f, 2);
+                _grainMedMesh.name = "SandGrain_Medium";
+            }
+            if (_grainLargeMesh == null)
+            {
+                _grainLargeMesh = ProceduralMeshUtils.CreateRoundedCube(0.058f, 0.014f, 2);
+                _grainLargeMesh.name = "SandGrain_Large";
+            }
+        }
 
         /// <summary>
-        /// Physically realistic two-phase cube dispatch:
-        /// Phase 1: Glides inside the glass channel along the spline path down to the spout exit opening.
-        /// Phase 2: Emerges from the spout nozzle into open air and follows a natural gravity arc into the monster's mouth.
-        /// Scale remains 100% full original size (no shrinking).
+        /// Realistic Granular Sand Flow Transfer:
+        /// The cube funnels into the bottle nozzle, disintegrates into a cascading stream
+        /// of 32 fluid candy sand particles pouring directly into the monster's open mouth!
         /// </summary>
         public void LaunchThroughGlassTrack(
             Vector3[] trackWaypoints,
@@ -25,87 +47,102 @@ namespace PuzzleGlass
             Material cubeMat,
             Mesh cubeMesh)
         {
+            LaunchAsSandFlow(spoutExitPos, target, color, cubeMat);
+        }
+
+        public void LaunchAsSandFlow(
+            Vector3 spoutExitPos,
+            MonsterCharacter target,
+            PuzzleColor color,
+            Material cubeMat)
+        {
             targetMonster = target;
             colorType = color;
-
-            // Retain full 100% original scale (do not shrink down)
-            if (transform.localScale == Vector3.zero || transform.localScale.x < 0.01f)
-            {
-                transform.localScale = Vector3.one;
-            }
-
-            MeshFilter mf = GetComponent<MeshFilter>();
-            if (mf == null) mf = gameObject.AddComponent<MeshFilter>();
-            if (mf.sharedMesh == null) mf.sharedMesh = cubeMesh;
-
-            MeshRenderer mr = GetComponent<MeshRenderer>();
-            if (mr == null) mr = gameObject.AddComponent<MeshRenderer>();
-            if (mr.sharedMaterial == null) mr.sharedMaterial = cubeMat;
+            EnsureGrainMeshes();
 
             Vector3 targetMouth = (targetMonster != null && targetMonster.mouthTargetPoint != null)
                 ? targetMonster.mouthTargetPoint.position
                 : (targetMonster != null ? targetMonster.transform.position + new Vector3(0, 0.25f, -0.1f) : spoutExitPos + Vector3.down);
 
-            Sequence transferSeq = DOTween.Sequence();
+            // Phase 1: Front cube swiftly slides into the nozzle and dissolves into sand
+            transform.DOMove(spoutExitPos, 0.04f).SetEase(Ease.InQuad);
+            transform.DOScale(Vector3.zero, 0.04f).SetEase(Ease.InQuad);
 
-            // PHASE 1: Move inside the glass track channel down towards the spout exit
-            float slideDuration = 0f;
-            if (trackWaypoints != null && trackWaypoints.Length > 1)
+            // Phase 2: Flowing Sand Stream (32 cascading granular sand particles)
+            int particleCount = 32;
+            GameObject streamRoot = new GameObject($"SandStream_{color}");
+            streamRoot.transform.position = spoutExitPos;
+
+            float streamDuration = 0.28f;
+            float totalDelaySpread = 0.14f;
+
+            for (int i = 0; i < particleCount; i++)
             {
-                transform.position = trackWaypoints[0];
+                float delay = (float)i / particleCount * totalDelaySpread;
 
-                float pathDist = 0f;
-                for (int i = 1; i < trackWaypoints.Length; i++)
-                {
-                    pathDist += Vector3.Distance(trackWaypoints[i], trackWaypoints[i - 1]);
-                }
-                slideDuration = Mathf.Clamp(pathDist * 0.08f, 0.04f, 0.16f);
+                // Stream dispersion: tight at nozzle, organic fluid width mid-air, funnels into mouth
+                float jitterX = UnityEngine.Random.Range(-0.035f, 0.035f);
+                float jitterZ = UnityEngine.Random.Range(-0.025f, 0.025f);
 
-                // Slide along the channel accelerating down the chute
-                transferSeq.Append(transform.DOPath(trackWaypoints, slideDuration, PathType.Linear).SetEase(Ease.InQuad));
+                Vector3 p0 = spoutExitPos + new Vector3(jitterX * 0.25f, 0f, jitterZ * 0.25f);
+                Vector3 p1 = Vector3.Lerp(spoutExitPos, targetMouth, 0.32f) + new Vector3(jitterX, -0.06f, jitterZ + 0.03f);
+                Vector3 p2 = Vector3.Lerp(spoutExitPos, targetMouth, 0.70f) + new Vector3(jitterX * 0.45f, -0.03f, jitterZ * 0.45f);
+                Vector3 p3 = targetMouth;
+                Vector3[] pourPath = new Vector3[] { p0, p1, p2, p3 };
+
+                GameObject grain = new GameObject($"Grain_{i}");
+                grain.transform.SetParent(streamRoot.transform, false);
+                grain.transform.position = p0;
+                grain.transform.localScale = Vector3.zero;
+
+                // Select randomized grain size for organic granular sand look
+                int sizeType = i % 3;
+                Mesh grainMesh = (sizeType == 0) ? _grainSmallMesh : (sizeType == 1 ? _grainMedMesh : _grainLargeMesh);
+
+                MeshFilter mf = grain.AddComponent<MeshFilter>();
+                mf.sharedMesh = grainMesh;
+
+                MeshRenderer mr = grain.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = cubeMat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+
+                float grainFlyTime = 0.17f + UnityEngine.Random.Range(-0.02f, 0.02f);
+                Sequence grainSeq = DOTween.Sequence();
+                grainSeq.SetDelay(delay);
+
+                // Emerge from nozzle
+                grainSeq.Append(grain.transform.DOScale(Vector3.one, 0.025f).SetEase(Ease.OutBack));
+
+                // Flow along fluid parabolic stream with gravitational acceleration
+                grainSeq.Join(grain.transform.DOPath(pourPath, grainFlyTime, PathType.CatmullRom).SetEase(Ease.InQuad));
+
+                // Organic tumbling spin in flight
+                Vector3 spin = new Vector3(
+                    UnityEngine.Random.Range(200f, 400f),
+                    UnityEngine.Random.Range(-220f, 220f),
+                    UnityEngine.Random.Range(-120f, 120f)
+                );
+                grainSeq.Join(grain.transform.DORotate(spin, grainFlyTime, RotateMode.WorldAxisAdd).SetEase(Ease.Linear));
+
+                // Funnel and swallow into mouth at the end
+                grainSeq.Insert(delay + grainFlyTime - 0.035f, grain.transform.DOScale(Vector3.zero, 0.035f).SetEase(Ease.InQuad));
             }
-            else
-            {
-                transform.position = spoutExitPos;
-            }
 
-            // PHASE 2: Pouring & cascading out of the spout nozzle into the monster's mouth
-            // Creates a fluid, natural waterfall/spill of cubes with gravity acceleration and lively tumbling
-            float jitterX = UnityEngine.Random.Range(-0.045f, 0.045f);
-            float jitterZ = UnityEngine.Random.Range(-0.035f, 0.035f);
-
-            Vector3 p0 = spoutExitPos;
-            // Immediate downward-sagging exit velocity from chute
-            Vector3 p1 = Vector3.Lerp(spoutExitPos, targetMouth, 0.30f) + new Vector3(jitterX, -0.09f, jitterZ + 0.04f);
-            // Gravity acceleration towards mouth
-            Vector3 p2 = Vector3.Lerp(spoutExitPos, targetMouth, 0.72f) + new Vector3(jitterX * 0.4f, -0.05f, jitterZ * 0.4f);
-            Vector3 p3 = targetMouth;
-
-            Vector3[] pourPath = new Vector3[] { p0, p1, p2, p3 };
-            float pourDuration = 0.20f;
-
-            // Cascading fall curve accelerating downward
-            transferSeq.Append(transform.DOPath(pourPath, pourDuration, PathType.CatmullRom).SetEase(Ease.InQuad));
-
-            // Organic tumbling spin as it pours through the air
-            Vector3 tumbleRotation = new Vector3(
-                UnityEngine.Random.Range(220f, 380f),
-                UnityEngine.Random.Range(-180f, 180f),
-                UnityEngine.Random.Range(-90f, 90f)
-            );
-            transferSeq.Join(transform.DORotate(tumbleRotation, pourDuration, RotateMode.WorldAxisAdd).SetEase(Ease.Linear));
-
-            // Quick swallow into mouth at the very end
-            float totalDuration = slideDuration + pourDuration;
-            transferSeq.Insert(totalDuration - 0.04f, transform.DOScale(Vector3.one * 0.65f, 0.04f).SetEase(Ease.InQuad));
-
-            transferSeq.OnComplete(() =>
+            // Phase 3: Monster swallows and reacts as the stream flows in
+            DOVirtual.DelayedCall(0.18f, () =>
             {
                 if (targetMonster != null)
                 {
                     targetMonster.FeedCube();
                 }
-                Destroy(gameObject);
+            });
+
+            // Cleanup stream root and main object when pouring finishes
+            DOVirtual.DelayedCall(streamDuration + 0.10f, () =>
+            {
+                if (streamRoot != null) Destroy(streamRoot);
+                if (gameObject != null) Destroy(gameObject);
             });
         }
 

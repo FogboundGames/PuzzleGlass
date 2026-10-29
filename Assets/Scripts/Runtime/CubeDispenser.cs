@@ -115,30 +115,49 @@ namespace PuzzleGlass
 
         public bool FeedNextCube()
         {
-            // Collect all active orders for monsters currently placed in a slot
-            List<AssignedCubeOrder> eligibleOrders = new List<AssignedCubeOrder>();
+            if (glassContainer == null)
+            {
+                glassContainer = FindFirstObjectByType<ShapedGlassContainer>();
+                if (glassContainer == null) return false;
+            }
+
+            // 1. Inspect the frontmost cube currently at the mouth of the bottle
+            var frontCube = glassContainer.GetFrontCube();
+            if (frontCube == null)
+            {
+                return false;
+            }
+
+            PuzzleColor frontColor = frontCube.color;
+
+            // 2. Find eligible active slotted monsters needing this front cube's color
+            List<AssignedCubeOrder> matchingOrders = new List<AssignedCubeOrder>();
             for (int i = 0; i < _orders.Count; i++)
             {
                 var o = _orders[i];
                 if (!o.IsFinished && o.targetMonster != null && o.targetMonster.assignedSlot != null && o.targetMonster.remainingCount > 0)
                 {
-                    eligibleOrders.Add(o);
+                    if (o.color == frontColor)
+                    {
+                        matchingOrders.Add(o);
+                    }
                 }
             }
 
-            if (eligibleOrders.Count == 0)
+            if (matchingOrders.Count == 0)
             {
-                // No active slotted monster orders pending
+                // The frontmost cube cannot be consumed yet because no active slotted monster needs its color.
+                // It must wait at the mouth until a matching monster is slotted!
                 return false;
             }
 
-            // Round-robin selection among active slotted monsters
-            _lastServedIndex = (_lastServedIndex + 1) % eligibleOrders.Count;
-            AssignedCubeOrder nextOrder = eligibleOrders[_lastServedIndex];
+            // 3. Round-robin among slotted monsters that share this front color
+            _lastServedIndex = (_lastServedIndex + 1) % matchingOrders.Count;
+            AssignedCubeOrder targetOrder = matchingOrders[_lastServedIndex];
 
-            // Dispatch one cube matching this monster's exact color
-            DispatchCube(nextOrder.targetMonster, nextOrder.color);
-            nextOrder.dispatchedCount++;
+            // 4. Dispatch the frontmost cube to the matching monster
+            DispatchCube(targetOrder.targetMonster, frontColor);
+            targetOrder.dispatchedCount++;
 
             return true;
         }
@@ -147,10 +166,11 @@ namespace PuzzleGlass
         {
             EnsureResources();
 
-            // 1. Take and launch the ACTUAL cube directly from the glass track conveyor!
+            // 1. Strictly take and launch the frontmost cube from the glass bottle mouth!
             if (glassContainer != null)
             {
-                bool launchedFromTrack = glassContainer.ConsumeAndLaunchCube(targetMonster, color, _cubeMaterials[color], _cubeMesh);
+                Material mat = _cubeMaterials.ContainsKey(color) ? _cubeMaterials[color] : null;
+                bool launchedFromTrack = glassContainer.ConsumeAndLaunchCube(targetMonster, color, mat, _cubeMesh);
                 if (launchedFromTrack)
                 {
                     glassContainer.PulseSpout();
@@ -158,7 +178,7 @@ namespace PuzzleGlass
                 }
             }
 
-            // 2. Fallback if no matching cube was found in track: launch from spout opening
+            // 2. Fallback only if bottle is completely empty: launch from spout opening
             Vector3 startPos = glassContainer != null
                 ? glassContainer.GetSpoutExitWorldPosition()
                 : transform.position + new Vector3(0, -0.90f, 0);

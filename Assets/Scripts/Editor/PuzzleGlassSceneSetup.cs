@@ -145,25 +145,25 @@ namespace PuzzleGlass.Editor
             dispenser.ClearOrders();
 
             // 8. Place Monsters directly in the Scene (visible in Edit Mode and Play Mode!)
-            // Blue Monster (10) on Left under Slots 1 & 2
-            GameObject blueObj = new GameObject("Monster_Blue_10");
-            Undo.RegisterCreatedObjectUndo(blueObj, "Create Monster Blue");
-            blueObj.transform.position = new Vector3(-0.72f, -1.95f, 0f);
-            blueObj.transform.localScale = Vector3.one * 0.70f;
-            MonsterCharacter blueMonster = blueObj.AddComponent<MonsterCharacter>();
-            blueMonster.Initialize(PuzzleColor.Blue, 10, "Blue_10");
-            manager.activeMonsters.Add(blueMonster);
-            dispenser.RegisterMonsterOrder(blueMonster);
+            // Purple Monster (10) on Left under Slots 1 & 2
+            GameObject purpleObj = new GameObject("Monster_Purple_10");
+            Undo.RegisterCreatedObjectUndo(purpleObj, "Create Monster Purple");
+            purpleObj.transform.position = new Vector3(-0.72f, -1.95f, 0f);
+            purpleObj.transform.localScale = Vector3.one * 0.70f;
+            MonsterCharacter purpleMonster = purpleObj.AddComponent<MonsterCharacter>();
+            purpleMonster.Initialize(PuzzleColor.Purple, 10, "Purple_10");
+            manager.activeMonsters.Add(purpleMonster);
+            dispenser.RegisterMonsterOrder(purpleMonster);
 
-            // Yellow Monster (20) on Right under Slots 3 & 4
-            GameObject yellowObj = new GameObject("Monster_Yellow_20");
-            Undo.RegisterCreatedObjectUndo(yellowObj, "Create Monster Yellow");
-            yellowObj.transform.position = new Vector3(0.72f, -1.95f, 0f);
-            yellowObj.transform.localScale = Vector3.one * 0.70f;
-            MonsterCharacter yellowMonster = yellowObj.AddComponent<MonsterCharacter>();
-            yellowMonster.Initialize(PuzzleColor.Yellow, 20, "Yellow_20");
-            manager.activeMonsters.Add(yellowMonster);
-            dispenser.RegisterMonsterOrder(yellowMonster);
+            // Pink Monster (20) on Right under Slots 3 & 4
+            GameObject pinkObj = new GameObject("Monster_Pink_20");
+            Undo.RegisterCreatedObjectUndo(pinkObj, "Create Monster Pink");
+            pinkObj.transform.position = new Vector3(0.72f, -1.95f, 0f);
+            pinkObj.transform.localScale = Vector3.one * 0.70f;
+            MonsterCharacter pinkMonster = pinkObj.AddComponent<MonsterCharacter>();
+            pinkMonster.Initialize(PuzzleColor.Pink, 20, "Pink_20");
+            manager.activeMonsters.Add(pinkMonster);
+            dispenser.RegisterMonsterOrder(pinkMonster);
 
             Undo.CollapseUndoOperations(undoGroup);
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());

@@ -6,13 +6,17 @@ using DG.Tweening;
 
 namespace PuzzleGlass
 {
-    public class TrackRow
+    [System.Serializable]
+    public class BottleCube
     {
-        public int rowIndex;
-        public float currentDistance;
-        public float targetDistance;
+        public GameObject gameObject;
         public PuzzleColor color;
-        public List<GameObject> cubes = new List<GameObject>();
+        public float x;
+        public float y;
+        public float angle;
+        public float vx;
+        public float vy;
+        public float vAng;
     }
 
     [ExecuteAlways]
@@ -25,13 +29,16 @@ namespace PuzzleGlass
         public Material trackFloorMaterial;
         public Material hopperMaterial;
 
-        [Header("Track Dimensions (Reference Image Birebir)")]
-        public float ringCenterX = 0f;
-        public float ringCenterY = 0.35f;
-        public float radiusX = 1.55f;
-        public float radiusY = 0.90f;
-        public float trackWidth = 0.68f;
-        public float glassWallHeight = 0.26f;
+        [Header("Bottle Dimensions (Reference Photo Style)")]
+        public float neckWidth = 0.52f;
+        public float neckBottomY = -1.45f;
+        public float neckTopY = -0.55f;
+        public float shoulderTopY = 0.35f;
+        public float bodyWidth = 1.65f;
+        public float bodyTopY = 2.05f;
+        public float baseTopY = 2.35f;
+        public float baseCornerRadius = 0.20f;
+        public float glassWallHeight = 0.28f;
         public float rimRadius = 0.024f;
 
         [Header("Spout Exit Point")]
@@ -43,24 +50,20 @@ namespace PuzzleGlass
         private Dictionary<PuzzleColor, Material> _cubeMaterials = new Dictionary<PuzzleColor, Material>();
         private Mesh _roundedCubeMesh;
 
-        // Dynamic Conveyor Queue
-        private List<TrackRow> _trackRows = new List<TrackRow>();
+        // Physical Pile of Cubes inside the Bottle
+        private List<BottleCube> _bottleCubes = new List<BottleCube>();
         private List<Vector3> _splineWaypoints = new List<Vector3>();
         private List<float> _cumulativeLengths = new List<float>();
         private float _totalSplineLength = 0f;
-        private Coroutine _advanceRoutine;
-        private float _rowSpacing = 0.20f;
-        private float _colOffset = 0.21f;
 
         private void Awake()
         {
-            // Always rebuild on Awake so all runtime references, spline points, and rows are fresh in Play mode
             RebuildContainer();
         }
 
         private void OnEnable()
         {
-            if (_trackRows == null || _trackRows.Count == 0 || _cubesContainer == null || _splineWaypoints == null || _splineWaypoints.Count == 0)
+            if (_bottleCubes == null || _bottleCubes.Count == 0 || _cubesContainer == null || _splineWaypoints == null || _splineWaypoints.Count == 0)
             {
                 RebuildContainer();
             }
@@ -69,10 +72,20 @@ namespace PuzzleGlass
         [ContextMenu("Rebuild Container")]
         public void RebuildContainer()
         {
-            if (_advanceRoutine != null)
+            if (_bottleCubes != null)
             {
-                StopCoroutine(_advanceRoutine);
-                _advanceRoutine = null;
+                for (int i = 0; i < _bottleCubes.Count; i++)
+                {
+                    if (_bottleCubes[i]?.gameObject != null)
+                    {
+                        _bottleCubes[i].gameObject.transform.DOKill();
+                    }
+                }
+                _bottleCubes.Clear();
+            }
+            else
+            {
+                _bottleCubes = new List<BottleCube>();
             }
 
             for (int i = transform.childCount - 1; i >= 0; i--)
@@ -82,11 +95,9 @@ namespace PuzzleGlass
                 else
                     DestroyImmediate(transform.GetChild(i).gameObject);
             }
-            if (_trackRows == null) _trackRows = new List<TrackRow>();
-            _trackRows.Clear();
 
             EnsureMaterials();
-            BuildFullTrackCircuit();
+            BuildBottleContainer();
         }
 
         private void EnsureMaterials()
@@ -106,18 +117,18 @@ namespace PuzzleGlass
             {
                 glassMaterial = new Material(litShader);
                 glassMaterial.name = "Mat_GlassPane";
-                Color glassColor = new Color(0.75f, 0.90f, 1.0f, 0.14f); // Crystal clear light cyan
+                Color glassColor = new Color(0.75f, 0.90f, 1.0f, 0.14f);
                 glassMaterial.color = glassColor;
                 if (glassMaterial.HasProperty("_BaseColor")) glassMaterial.SetColor("_BaseColor", glassColor);
                 if (glassMaterial.HasProperty("_Smoothness")) glassMaterial.SetFloat("_Smoothness", 0.96f);
-                if (glassMaterial.HasProperty("_Cull")) glassMaterial.SetFloat("_Cull", 0f); // Double-sided
+                if (glassMaterial.HasProperty("_Cull")) glassMaterial.SetFloat("_Cull", 0f);
             }
 
             if (glassRimMaterial == null)
             {
                 glassRimMaterial = new Material(litShader);
                 glassRimMaterial.name = "Mat_GlassRim";
-                Color rimColor = new Color(0.70f, 0.88f, 1.0f, 0.95f); // Glowing sky-blue rim highlight
+                Color rimColor = new Color(0.70f, 0.88f, 1.0f, 0.95f);
                 glassRimMaterial.color = rimColor;
                 if (glassRimMaterial.HasProperty("_BaseColor")) glassRimMaterial.SetColor("_BaseColor", rimColor);
                 if (glassRimMaterial.HasProperty("_Smoothness")) glassRimMaterial.SetFloat("_Smoothness", 0.96f);
@@ -127,7 +138,7 @@ namespace PuzzleGlass
             {
                 trackFloorMaterial = new Material(litShader);
                 trackFloorMaterial.name = "Mat_TrackFloor";
-                Color floorColor = new Color(0.84f, 0.89f, 0.96f, 1f); // Smooth light periwinkle track surface
+                Color floorColor = new Color(0.84f, 0.89f, 0.96f, 1f);
                 trackFloorMaterial.color = floorColor;
                 if (trackFloorMaterial.HasProperty("_BaseColor")) trackFloorMaterial.SetColor("_BaseColor", floorColor);
                 if (trackFloorMaterial.HasProperty("_Smoothness")) trackFloorMaterial.SetFloat("_Smoothness", 0.50f);
@@ -137,13 +148,13 @@ namespace PuzzleGlass
             {
                 hopperMaterial = new Material(litShader);
                 hopperMaterial.name = "Mat_Hopper";
-                Color hopperColor = new Color(1.0f, 0.48f, 0.10f, 1f); // Warm tangerine hopper
+                Color hopperColor = new Color(1.0f, 0.48f, 0.10f, 1f);
                 hopperMaterial.color = hopperColor;
                 if (hopperMaterial.HasProperty("_BaseColor")) hopperMaterial.SetColor("_BaseColor", hopperColor);
                 if (hopperMaterial.HasProperty("_Smoothness")) hopperMaterial.SetFloat("_Smoothness", 0.88f);
             }
 
-            // Cube materials: Solid, matte/satin toy/candy blocks (no glassy sheen)
+            // Solid candy toy blocks
             foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
             {
                 if (!_cubeMaterials.ContainsKey(col))
@@ -174,7 +185,7 @@ namespace PuzzleGlass
             }
         }
 
-        private void BuildFullTrackCircuit()
+        private void BuildBottleContainer()
         {
             // 1. Root container tilted in 3D for authentic isometric 2.5D perspective
             _trackRootObj = new GameObject("GlassTrackRoot");
@@ -185,61 +196,209 @@ namespace PuzzleGlass
             _glassWallsObj = new GameObject("GlassWalls");
             _glassWallsObj.transform.SetParent(_trackRootObj.transform, false);
 
-            _cubesContainer = new GameObject("CubesOnTrack");
+            _cubesContainer = new GameObject("CubesInBottle");
             _cubesContainer.transform.SetParent(_trackRootObj.transform, false);
 
-            // 2. Build Spout Exit Point at the physical mouth of the glass chute
+            // 2. Build Spout Exit Point at the physical mouth opening of the bottle
             GameObject spoutObj = new GameObject("SpoutExitPoint");
             spoutObj.transform.SetParent(_trackRootObj.transform, false);
-            spoutObj.transform.localPosition = new Vector3(0f, -1.18f, -0.06f);
+            spoutObj.transform.localPosition = new Vector3(0f, neckBottomY - 0.10f, -0.06f);
             spoutExitPoint = spoutObj.transform;
 
-            // 3. Generate Track Spline & Glass Boundaries
+            // 3. Build Spline through the center of the bottle down to the mouth
             BuildSpline();
 
-            // Inner Island Ring
-            Vector3[] innerPath = GenerateInnerIslandPath(36);
-            BuildGlassBarrier(innerPath, true, "InnerIslandWall");
+            // 4. Generate Bottle Geometry (Walls, Rim, Floor, Collar, Specular Highlights)
+            BuildBottleGeometry();
 
-            // Outer Perimeter Paths
-            GenerateOuterPaths(out Vector3[] outerLeftPath, out Vector3[] outerRightPath,
-                               out Vector3[] exitLeftPath, out Vector3[] exitRightPath,
-                               out Vector3[] chuteLeftPath, out Vector3[] chuteRightPath);
+            // 5. Populate Bottle with Physics-Settled Candy Cubes
+            PopulateBottlePhysics();
+        }
 
-            BuildGlassBarrier(outerLeftPath, false, "OuterWall_Left");
-            BuildGlassBarrier(outerRightPath, false, "OuterWall_Right");
-            BuildGlassBarrier(exitLeftPath, false, "ExitWall_Left");
-            BuildGlassBarrier(exitRightPath, false, "ExitWall_Right");
-            BuildGlassBarrier(chuteLeftPath, false, "EntranceChute_Left");
-            BuildGlassBarrier(chuteRightPath, false, "EntranceChute_Right");
+        /// <summary>
+        /// Exact mathematical silhouette of the reference bottle:
+        /// Slender cylindrical neck -> Smooth convex shoulder curve -> Tall cylindrical body -> Flat base with rounded corners.
+        /// </summary>
+        public float GetHalfWidthAtY(float y)
+        {
+            float neckHalfW = neckWidth * 0.5f;   // 0.26f
+            float bodyHalfW = bodyWidth * 0.5f;   // 0.825f
 
-            // 4. Track Floor
-            BuildTrackFloor();
+            if (y <= neckTopY)
+            {
+                // Slender neck
+                return neckHalfW;
+            }
+            else if (y <= shoulderTopY)
+            {
+                // Smooth convex shoulder curve using C2-continuous SmootherStep
+                float t = Mathf.Clamp01((y - neckTopY) / (shoulderTopY - neckTopY));
+                float s = t * t * t * (t * (t * 6f - 15f) + 10f); // SmootherStep
+                return Mathf.Lerp(neckHalfW, bodyHalfW, s);
+            }
+            else if (y <= bodyTopY)
+            {
+                // Straight cylindrical body
+                return bodyHalfW;
+            }
+            else
+            {
+                // Flat base with rounded corners
+                float t = Mathf.Clamp01((y - bodyTopY) / Mathf.Max(0.01f, baseTopY - bodyTopY));
+                float arch = Mathf.Sqrt(Mathf.Max(0f, 1f - t * t));
+                return Mathf.Lerp(bodyHalfW - baseCornerRadius, bodyHalfW, arch);
+            }
+        }
 
-            // 5. Orange Dispenser Hopper at top right
-            BuildOrangeHopper();
+        private void BuildBottleGeometry()
+        {
+            GenerateBottlePaths(out Vector3[] leftPath, out Vector3[] rightPath, out Vector3[] perimeterPath);
 
-            // 6. Spawn the Dynamic Conveyor Cube Train
-            PopulateConveyorTrain();
+            // 1. Crystal Glass Ribbon Wall along the entire bottle outline
+            Vector3 wallNormal = new Vector3(0f, 0f, -1f);
+            GameObject wallObj = new GameObject("BottleGlassWall");
+            wallObj.transform.SetParent(_glassWallsObj.transform, false);
+
+            Mesh paneMesh = ProceduralMeshUtils.CreateGlassRibbonWall(perimeterPath, glassWallHeight, wallNormal, false);
+            wallObj.AddComponent<MeshFilter>().sharedMesh = paneMesh;
+            wallObj.AddComponent<MeshRenderer>().sharedMaterial = glassMaterial;
+
+            // 2. Glowing Glass Rim Pipe along the top edge of the walls
+            Vector3[] topPath = new Vector3[perimeterPath.Length];
+            for (int i = 0; i < perimeterPath.Length; i++)
+            {
+                topPath[i] = perimeterPath[i] + wallNormal * glassWallHeight;
+            }
+
+            GameObject rimObj = new GameObject("BottleGlassRim");
+            rimObj.transform.SetParent(wallObj.transform, false);
+            rimObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(topPath, rimRadius, 12, false);
+            rimObj.AddComponent<MeshRenderer>().sharedMaterial = glassRimMaterial;
+
+            // 3. Mouth Lip Rim across the open mouth nozzle
+            Vector3[] mouthLip = new Vector3[] {
+                leftPath[0] + wallNormal * glassWallHeight,
+                rightPath[0] + wallNormal * glassWallHeight
+            };
+            GameObject lipObj = new GameObject("BottleMouthLip");
+            lipObj.transform.SetParent(wallObj.transform, false);
+            lipObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(mouthLip, rimRadius, 12, false);
+            lipObj.AddComponent<MeshRenderer>().sharedMaterial = glassRimMaterial;
+
+            // 4. Bottle Back / Floor Pane
+            GameObject floorObj = new GameObject("BottleFloorMesh");
+            floorObj.transform.SetParent(_trackRootObj.transform, false);
+            floorObj.transform.localPosition = new Vector3(0f, 0f, 0.005f);
+
+            Mesh floorMesh = ProceduralMeshUtils.CreateTrackFloorRibbon(leftPath, rightPath);
+            floorObj.AddComponent<MeshFilter>().sharedMesh = floorMesh;
+            floorObj.AddComponent<MeshRenderer>().sharedMaterial = trackFloorMaterial;
+
+            // 5. Signature Raised Collar Ring around the neck (exact matching reference photo!)
+            float collarHW = neckWidth * 0.5f + 0.022f;
+            float collarY = neckBottomY + 0.18f;
+            Vector3[] collarPath = new Vector3[] {
+                new Vector3(-collarHW, collarY, 0f),
+                new Vector3(-collarHW, collarY, -glassWallHeight),
+                new Vector3(collarHW, collarY, -glassWallHeight),
+                new Vector3(collarHW, collarY, 0f)
+            };
+            GameObject collarObj = new GameObject("BottleNeckCollar");
+            collarObj.transform.SetParent(wallObj.transform, false);
+            collarObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(collarPath, rimRadius * 0.95f, 10, false);
+            collarObj.AddComponent<MeshRenderer>().sharedMaterial = glassRimMaterial;
+
+            // 6. Long Specular Reflection Highlight Arc along left shoulder and body
+            List<Vector3> highlightPts = new List<Vector3>();
+            for (float hy = -0.30f; hy <= 1.95f; hy += 0.10f)
+            {
+                float hw = GetHalfWidthAtY(hy);
+                highlightPts.Add(new Vector3(-hw + 0.08f, hy, -glassWallHeight * 0.70f));
+            }
+            if (highlightPts.Count >= 2)
+            {
+                GameObject highlightObj = new GameObject("BottleGlassHighlight");
+                highlightObj.transform.SetParent(wallObj.transform, false);
+                highlightObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreateTaperedPipeMesh(highlightPts.ToArray(), 0.026f, 8);
+                highlightObj.AddComponent<MeshRenderer>().sharedMaterial = glassHighlightMaterial;
+            }
+        }
+
+        private void GenerateBottlePaths(out Vector3[] leftPath, out Vector3[] rightPath, out Vector3[] perimeterPath)
+        {
+            List<float> yList = new List<float>();
+
+            // Mouth opening
+            yList.Add(neckBottomY);
+
+            // Neck (slender cylinder)
+            int neckSteps = 6;
+            for (int i = 1; i <= neckSteps; i++)
+            {
+                float t = (float)i / neckSteps;
+                yList.Add(Mathf.Lerp(neckBottomY, neckTopY, t));
+            }
+
+            // Shoulder (smooth convex bell curve)
+            int shoulderSteps = 16;
+            for (int i = 1; i <= shoulderSteps; i++)
+            {
+                float t = (float)i / shoulderSteps;
+                yList.Add(Mathf.Lerp(neckTopY, shoulderTopY, t));
+            }
+
+            // Body (tall straight cylinder)
+            int bodySteps = 14;
+            for (int i = 1; i <= bodySteps; i++)
+            {
+                float t = (float)i / bodySteps;
+                yList.Add(Mathf.Lerp(shoulderTopY, bodyTopY, t));
+            }
+
+            // Base (rounded corners and flat bottom)
+            int baseSteps = 8;
+            for (int i = 1; i <= baseSteps; i++)
+            {
+                float t = (float)i / baseSteps;
+                yList.Add(Mathf.Lerp(bodyTopY, baseTopY, t));
+            }
+
+            int n = yList.Count;
+            leftPath = new Vector3[n];
+            rightPath = new Vector3[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                float y = yList[i];
+                float hw = GetHalfWidthAtY(y);
+                leftPath[i] = new Vector3(-hw, y, 0f);
+                rightPath[i] = new Vector3(hw, y, 0f);
+            }
+
+            List<Vector3> perim = new List<Vector3>();
+            for (int i = 0; i < n; i++)
+            {
+                perim.Add(rightPath[i]);
+            }
+            for (int i = n - 2; i >= 0; i--)
+            {
+                perim.Add(leftPath[i]);
+            }
+            perimeterPath = perim.ToArray();
         }
 
         private void BuildSpline()
         {
             List<Vector3> keyPoints = new List<Vector3>
             {
-                new Vector3(2.05f, 1.70f, 0f),   // 0: Inside Orange Hopper
-                new Vector3(1.75f, 1.35f, 0f),   // 1: Hopper mouth
-                new Vector3(1.42f, 1.05f, 0f),   // 2: Feeder chute mid
-                new Vector3(1.08f, 0.72f, 0f),   // 3: Chute meets ring
-                new Vector3(0.70f, 0.95f, 0f),   // 4: Upper ring
-                new Vector3(0.00f, 1.10f, 0f),   // 5: Top center of ring
-                new Vector3(-0.75f, 0.95f, 0f),  // 6: Upper-left ring
-                new Vector3(-1.22f, 0.40f, 0f),  // 7: Left apex of ring
-                new Vector3(-1.12f, -0.15f, 0f), // 8: Lower-left ring
-                new Vector3(-0.65f, -0.55f, 0f), // 9: Approaching bottom exit
-                new Vector3(0.00f, -0.65f, 0f),  // 10: Exit chute entry
-                new Vector3(0.00f, -0.90f, 0f),  // 11: Exit chute mid
-                new Vector3(0.00f, -1.18f, 0f)   // 12: Exit chute opening (spout)
+                new Vector3(0f, baseTopY - 0.15f, 0f),
+                new Vector3(0f, 1.55f, 0f),
+                new Vector3(0f, 0.85f, 0f),
+                new Vector3(0f, 0.15f, 0f),
+                new Vector3(0f, -0.45f, 0f),
+                new Vector3(0f, -0.95f, 0f),
+                new Vector3(0f, neckBottomY, 0f),
+                new Vector3(0f, neckBottomY - 0.25f, 0f)
             };
 
             if (_splineWaypoints == null) _splineWaypoints = new List<Vector3>();
@@ -322,179 +481,16 @@ namespace PuzzleGlass
             return pos;
         }
 
-        private Vector3[] GenerateInnerIslandPath(int segments)
-        {
-            float innerRx = radiusX - trackWidth;
-            float innerRy = radiusY - trackWidth * 0.75f;
-
-            List<Vector3> pts = new List<Vector3>();
-            for (int i = 0; i < segments; i++)
-            {
-                float angle = (float)i / segments * Mathf.PI * 2f;
-                float x = ringCenterX + Mathf.Cos(angle) * innerRx;
-                float y = ringCenterY + Mathf.Sin(angle) * innerRy;
-                pts.Add(new Vector3(x, y, 0f));
-            }
-            return pts.ToArray();
-        }
-
-        private void GenerateOuterPaths(
-            out Vector3[] outerLeft, out Vector3[] outerRight,
-            out Vector3[] exitLeft, out Vector3[] exitRight,
-            out Vector3[] chuteLeft, out Vector3[] chuteRight)
-        {
-            float halfW = trackWidth * 0.5f;
-
-            float exitTopY = ringCenterY - radiusY;
-            float exitBottomY = -1.15f;
-            exitLeft = new Vector3[] {
-                new Vector3(-halfW, exitTopY, 0f),
-                new Vector3(-halfW, exitBottomY, 0f)
-            };
-            exitRight = new Vector3[] {
-                new Vector3(halfW, exitTopY, 0f),
-                new Vector3(halfW, exitBottomY, 0f)
-            };
-
-            chuteLeft = new Vector3[] {
-                new Vector3(radiusX * 0.65f, ringCenterY + radiusY * 0.85f, 0f),
-                new Vector3(radiusX * 0.90f, ringCenterY + radiusY * 1.35f, 0f),
-                new Vector3(radiusX * 1.25f, ringCenterY + radiusY * 1.75f, 0f)
-            };
-            chuteRight = new Vector3[] {
-                new Vector3(radiusX * 0.95f, ringCenterY + radiusY * 0.55f, 0f),
-                new Vector3(radiusX * 1.20f, ringCenterY + radiusY * 1.05f, 0f),
-                new Vector3(radiusX * 1.55f, ringCenterY + radiusY * 1.45f, 0f)
-            };
-
-            List<Vector3> leftWall = new List<Vector3>();
-            leftWall.Add(exitLeft[0]);
-
-            int stepsLeft = 24;
-            for (int i = 1; i <= stepsLeft; i++)
-            {
-                float t = (float)i / stepsLeft;
-                float angle = Mathf.Lerp(-Mathf.PI * 0.5f, Mathf.PI * 0.55f, t);
-                float x = ringCenterX + Mathf.Cos(angle) * radiusX;
-                float y = ringCenterY + Mathf.Sin(angle) * radiusY;
-                leftWall.Add(new Vector3(x, y, 0f));
-            }
-            leftWall.Add(chuteLeft[0]);
-            outerLeft = leftWall.ToArray();
-
-            List<Vector3> rightWall = new List<Vector3>();
-            rightWall.Add(exitRight[0]);
-
-            int stepsRight = 16;
-            for (int i = 1; i <= stepsRight; i++)
-            {
-                float t = (float)i / stepsRight;
-                float angle = Mathf.Lerp(-Mathf.PI * 0.5f, Mathf.PI * 0.18f, t);
-                float x = ringCenterX + Mathf.Cos(angle) * radiusX;
-                float y = ringCenterY + Mathf.Sin(angle) * radiusY;
-                rightWall.Add(new Vector3(x, y, 0f));
-            }
-            rightWall.Add(chuteRight[0]);
-            outerRight = rightWall.ToArray();
-        }
-
-        private void BuildGlassBarrier(Vector3[] path, bool isClosed, string name)
-        {
-            if (path == null || path.Length < 2) return;
-
-            GameObject barrierObj = new GameObject(name);
-            barrierObj.transform.SetParent(_glassWallsObj.transform, false);
-
-            Vector3 wallNormal = new Vector3(0f, 0f, -1f);
-
-            Mesh paneMesh = ProceduralMeshUtils.CreateGlassRibbonWall(path, glassWallHeight, wallNormal, isClosed);
-            MeshFilter mfPane = barrierObj.AddComponent<MeshFilter>();
-            MeshRenderer mrPane = barrierObj.AddComponent<MeshRenderer>();
-            mfPane.sharedMesh = paneMesh;
-            mrPane.sharedMaterial = glassMaterial;
-
-            Vector3[] topPath = new Vector3[path.Length];
-            for (int i = 0; i < path.Length; i++)
-            {
-                topPath[i] = path[i] + wallNormal * glassWallHeight;
-            }
-
-            GameObject rimObj = new GameObject($"{name}_Rim");
-            rimObj.transform.SetParent(barrierObj.transform, false);
-            MeshFilter mfRim = rimObj.AddComponent<MeshFilter>();
-            MeshRenderer mrRim = rimObj.AddComponent<MeshRenderer>();
-            mfRim.sharedMesh = ProceduralMeshUtils.CreatePipeMesh(topPath, rimRadius, 12, isClosed);
-            mrRim.sharedMaterial = glassRimMaterial;
-        }
-
-        private void BuildTrackFloor()
-        {
-            GameObject floorObj = new GameObject("TrackFloorMesh");
-            floorObj.transform.SetParent(_trackRootObj.transform, false);
-            floorObj.transform.localPosition = new Vector3(0f, 0f, 0.005f);
-
-            int segments = 40;
-            Vector3[] innerLoop = new Vector3[segments + 1];
-            Vector3[] outerLoop = new Vector3[segments + 1];
-
-            float innerRx = radiusX - trackWidth;
-            float innerRy = radiusY - trackWidth * 0.75f;
-
-            for (int i = 0; i <= segments; i++)
-            {
-                float angle = (float)i / segments * Mathf.PI * 2f;
-                innerLoop[i] = new Vector3(ringCenterX + Mathf.Cos(angle) * innerRx, ringCenterY + Mathf.Sin(angle) * innerRy, 0f);
-                outerLoop[i] = new Vector3(ringCenterX + Mathf.Cos(angle) * radiusX, ringCenterY + Mathf.Sin(angle) * radiusY, 0f);
-            }
-
-            Mesh floorMesh = ProceduralMeshUtils.CreateTrackFloorRibbon(innerLoop, outerLoop);
-            floorObj.AddComponent<MeshFilter>().sharedMesh = floorMesh;
-            floorObj.AddComponent<MeshRenderer>().sharedMaterial = trackFloorMaterial;
-
-            GameObject exitFloorObj = new GameObject("ExitChuteFloor");
-            exitFloorObj.transform.SetParent(floorObj.transform, false);
-            float halfW = trackWidth * 0.5f;
-            float exitTopY = ringCenterY - radiusY;
-            float exitBottomY = -1.15f;
-            Vector3[] leftExit = new Vector3[] { new Vector3(-halfW, exitTopY, 0f), new Vector3(-halfW, exitBottomY, 0f) };
-            Vector3[] rightExit = new Vector3[] { new Vector3(halfW, exitTopY, 0f), new Vector3(halfW, exitBottomY, 0f) };
-            exitFloorObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreateTrackFloorRibbon(leftExit, rightExit);
-            exitFloorObj.AddComponent<MeshRenderer>().sharedMaterial = trackFloorMaterial;
-        }
-
-        private void BuildOrangeHopper()
-        {
-            GameObject hopper = new GameObject("OrangeHopper");
-            hopper.transform.SetParent(_trackRootObj.transform, false);
-            hopper.transform.localPosition = new Vector3(radiusX * 1.45f, ringCenterY + radiusY * 1.68f, -glassWallHeight * 0.5f);
-            hopper.transform.localRotation = Quaternion.Euler(0f, 0f, 40f);
-            hopper.transform.localScale = new Vector3(trackWidth * 1.25f, 0.45f, glassWallHeight * 1.4f);
-
-            GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            box.name = "HopperBody";
-            box.transform.SetParent(hopper.transform, false);
-            box.GetComponent<MeshRenderer>().sharedMaterial = hopperMaterial;
-            DestroyCollider(box);
-        }
-
         /// <summary>
-        /// Populates the continuous dynamic conveyor train with exact color blocks matching the reference image:
-        /// 1. Exit chute: Purple (front rows)
-        /// 2. Left side: Pink (middle rows)
-        /// 3. Upper left/top: Orange
-        /// 4. Feeder chute: Green (top-right emerging from hopper)
+        /// Populates the sleek bottle with candy cubes that physically tumble and settle under gravity,
+        /// filling the slender neck, resting along the elegant shoulders, and forming an organic pile with natural rotations!
         /// </summary>
-        /// <summary>
-        /// Populates the continuous dynamic conveyor train with colors matching the active monsters and reference image.
-        /// </summary>
-        private void PopulateConveyorTrain()
+        private void PopulateBottlePhysics()
         {
-            _trackRows.Clear();
+            if (_bottleCubes == null) _bottleCubes = new List<BottleCube>();
+            _bottleCubes.Clear();
 
-            int totalRows = 28;
-            float frontDistance = _totalSplineLength - 0.05f;
-
-            // Check active monster colors to ensure matching cubes are present in the track
+            // Check active monster colors to guarantee all needed cubes exist in the bottle
             List<PuzzleColor> activeMonsterColors = new List<PuzzleColor>();
             PuzzleGlassGameManager gm = FindFirstObjectByType<PuzzleGlassGameManager>();
             if (gm != null && gm.activeMonsters != null)
@@ -509,83 +505,269 @@ namespace PuzzleGlass
                 }
             }
 
-            for (int r = 0; r < totalRows; r++)
+            // Determine color order: Layer 0 (bottom mouth) to Layer 3 (top)
+            PuzzleColor c0, c1, c2, c3;
+            if (activeMonsterColors.Count >= 2)
             {
-                PuzzleColor rowColor;
-                if (activeMonsterColors.Count >= 2)
-                {
-                    if (r < 6) rowColor = activeMonsterColors[0];
-                    else if (r < 15) rowColor = activeMonsterColors[1];
-                    else if (r < 21) rowColor = (activeMonsterColors.Count >= 3) ? activeMonsterColors[2] : PuzzleColor.Orange;
-                    else rowColor = (activeMonsterColors.Count >= 4) ? activeMonsterColors[3] : PuzzleColor.Green;
-                }
-                else if (activeMonsterColors.Count == 1)
-                {
-                    if (r < 12) rowColor = activeMonsterColors[0];
-                    else if (r < 18) rowColor = PuzzleColor.Orange;
-                    else rowColor = PuzzleColor.Green;
-                }
-                else
-                {
-                    // Default Reference layout: Purple at chute, Pink on left curve, Orange on top, Green from hopper
-                    if (r < 5) rowColor = PuzzleColor.Purple;
-                    else if (r < 14) rowColor = PuzzleColor.Pink;
-                    else if (r < 20) rowColor = PuzzleColor.Orange;
-                    else rowColor = PuzzleColor.Green;
-                }
-
-                float dist = frontDistance - r * _rowSpacing;
-
-                TrackRow row = new TrackRow
-                {
-                    rowIndex = r,
-                    currentDistance = dist,
-                    targetDistance = dist,
-                    color = rowColor
-                };
-
-                int cubeCount = (r == 0) ? 2 : 3;
-                int[] cols = (cubeCount == 2) ? new int[] { -1, 1 } : new int[] { -1, 0, 1 };
-
-                Vector3 centerPt = EvaluateSpline(dist, out Vector3 tangent, out Vector3 normal);
-                float angleZ = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg;
-
-                foreach (int col in cols)
-                {
-                    Vector3 localPos = centerPt + normal * (col * _colOffset) + new Vector3(0, 0, -0.10f);
-                    GameObject cube = SpawnConveyorCube(localPos, rowColor, angleZ);
-                    row.cubes.Add(cube);
-                }
-
-                _trackRows.Add(row);
+                c0 = activeMonsterColors[0];
+                c1 = activeMonsterColors[1];
+                c2 = (activeMonsterColors.Count >= 3) ? activeMonsterColors[2] : PuzzleColor.Orange;
+                c3 = (activeMonsterColors.Count >= 4) ? activeMonsterColors[3] : PuzzleColor.Green;
+            }
+            else if (activeMonsterColors.Count == 1)
+            {
+                c0 = activeMonsterColors[0];
+                c1 = PuzzleColor.Pink;
+                c2 = PuzzleColor.Orange;
+                c3 = PuzzleColor.Green;
+            }
+            else
+            {
+                // Default Reference Colors: Purple at mouth, Pink in body, Orange & Green at top
+                c0 = PuzzleColor.Purple;
+                c1 = PuzzleColor.Pink;
+                c2 = PuzzleColor.Orange;
+                c3 = PuzzleColor.Green;
             }
 
-            SpawnLowerRightBranch();
+            // Layer definitions: Color, Count, Initial Y Range
+            var layers = new List<(PuzzleColor col, int count, float yMin, float yMax)>
+            {
+                (c0, 12, -1.25f, -0.40f), // Bottom: fills slender neck & mouth (Purple)
+                (c1, 24, -0.35f,  0.95f), // Middle: fills shoulder & body (Pink)
+                (c2, 12,  1.00f,  1.60f), // Upper body: Orange
+                (c3, 10,  1.65f,  2.05f)  // Top layer: Green
+            };
+
+            UnityEngine.Random.InitState(42);
+
+            foreach (var layer in layers)
+            {
+                for (int i = 0; i < layer.count; i++)
+                {
+                    float t = (layer.count > 1) ? (float)i / (layer.count - 1) : 0.5f;
+                    float initY = Mathf.Lerp(layer.yMin, layer.yMax, t) + UnityEngine.Random.Range(-0.03f, 0.03f);
+
+                    float availHW = GetHalfWidthAtY(initY) - 0.12f;
+                    float initX = UnityEngine.Random.Range(-availHW * 0.90f, availHW * 0.90f);
+
+                    BottleCube bc = new BottleCube
+                    {
+                        color = layer.col,
+                        x = initX,
+                        y = initY,
+                        angle = UnityEngine.Random.Range(-15f, 15f),
+                        vx = 0f,
+                        vy = 0f,
+                        vAng = 0f
+                    };
+                    _bottleCubes.Add(bc);
+                }
+            }
+
+            // Run 240 physics simulation steps: cubes drop, tumble against shoulders and each other, and settle stably!
+            SimulatePhysicsSettling(240);
+
+            // Instantiate GameObjects at their settled resting positions
+            for (int i = 0; i < _bottleCubes.Count; i++)
+            {
+                var bc = _bottleCubes[i];
+                Vector3 localPos = new Vector3(bc.x, bc.y, -0.10f);
+                bc.gameObject = SpawnConveyorCube(localPos, bc.color, bc.angle);
+            }
         }
 
-        private void SpawnLowerRightBranch()
+        /// <summary>
+        /// Position-Based Physics Simulation:
+        /// Settles the candy cubes naturally inside the sleek bottle using gravity, boundary constraints,
+        /// and collision relaxation with realistic angular tilting and shoulder slope alignment.
+        /// Zero cube overlap guaranteed by strict collision clearance and post-processing resolver passes!
+        /// </summary>
+        private void SimulatePhysicsSettling(int steps)
         {
-            float midRx = radiusX - trackWidth * 0.5f;
-            float midRy = radiusY - trackWidth * 0.38f;
+            if (_bottleCubes == null || _bottleCubes.Count == 0) return;
 
-            for (int r = 0; r < 4; r++)
+            float dt = 0.016f;
+            float gravity = 24.0f;
+            // Cube size is 0.20f. Diagonal is 0.283f. With rounded corners (r=0.045f), max radius to corner is 0.1228f.
+            // Minimum center distance to guarantee zero intersection under ANY 2D rotation is 2 * 0.1228f = 0.2456f.
+            float minDist = 0.245f;
+            float minDistSqr = minDist * minDist;
+            float halfCube = 0.104f;
+
+            // Reset velocities at start of settling pass
+            for (int i = 0; i < _bottleCubes.Count; i++)
             {
-                float t = (float)r / 3;
-                float angle = Mathf.Lerp(1.58f * Mathf.PI, 1.88f * Mathf.PI, t);
+                _bottleCubes[i].vx = 0f;
+                _bottleCubes[i].vy = 0f;
+                _bottleCubes[i].vAng = 0f;
+            }
 
-                float cx = ringCenterX + Mathf.Cos(angle) * midRx;
-                float cy = ringCenterY + Mathf.Sin(angle) * midRy;
-                Vector3 centerPos = new Vector3(cx, cy, 0f);
-
-                Vector3 tangent = new Vector3(-Mathf.Sin(angle) * midRx, Mathf.Cos(angle) * midRy, 0f).normalized;
-                Vector3 radial = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f).normalized;
-                float angleZ = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg;
-
-                for (int col = -1; col <= 1; col++)
+            for (int step = 0; step < steps; step++)
+            {
+                // 1. Gravity and velocity integration
+                for (int i = 0; i < _bottleCubes.Count; i++)
                 {
-                    Vector3 pos = centerPos + radial * (col * _colOffset) + new Vector3(0, 0, -0.10f);
-                    SpawnConveyorCube(pos, PuzzleColor.Purple, angleZ);
+                    var c = _bottleCubes[i];
+                    c.vy -= gravity * dt;
+
+                    // Funnel gently towards center in the neck
+                    if (c.y < shoulderTopY)
+                    {
+                        float funnel = Mathf.Lerp(5.0f, 0f, Mathf.Clamp01((c.y - neckBottomY) / (shoulderTopY - neckBottomY)));
+                        c.vx -= c.x * funnel * dt;
+                    }
+
+                    // Air drag / damping
+                    c.vx *= 0.82f;
+                    c.vy *= 0.82f;
+                    c.vAng *= 0.78f;
+
+                    c.x += c.vx * dt;
+                    c.y += c.vy * dt;
+                    c.angle += c.vAng * dt;
+
+                    c.angle = Mathf.Clamp(c.angle, -22f, 22f);
                 }
+
+                // 2. Collision relaxation (5 passes per step for firm resting stability)
+                for (int iter = 0; iter < 5; iter++)
+                {
+                    // A. Inter-cube collisions
+                    for (int i = 0; i < _bottleCubes.Count; i++)
+                    {
+                        for (int j = i + 1; j < _bottleCubes.Count; j++)
+                        {
+                            float dx = _bottleCubes[j].x - _bottleCubes[i].x;
+                            float dy = _bottleCubes[j].y - _bottleCubes[i].y;
+                            float d2 = dx * dx + dy * dy;
+
+                            if (d2 < minDistSqr && d2 > 0.000001f)
+                            {
+                                float d = Mathf.Sqrt(d2);
+                                float overlap = minDist - d;
+                                float nx = dx / d;
+                                float ny = dy / d;
+
+                                _bottleCubes[i].x -= nx * overlap * 0.5f;
+                                _bottleCubes[i].y -= ny * overlap * 0.5f;
+                                _bottleCubes[j].x += nx * overlap * 0.5f;
+                                _bottleCubes[j].y += ny * overlap * 0.5f;
+
+                                // Friction and torque exchange
+                                float relVx = _bottleCubes[j].vx - _bottleCubes[i].vx;
+                                float relVy = _bottleCubes[j].vy - _bottleCubes[i].vy;
+                                float tangent = -ny * relVx + nx * relVy;
+                                _bottleCubes[i].vAng += tangent * 0.8f;
+                                _bottleCubes[j].vAng -= tangent * 0.8f;
+
+                                // Organic tilt when supported on another cube
+                                if (Mathf.Abs(ny) > 0.5f)
+                                {
+                                    float tiltOffset = (dx / minDist) * 12f;
+                                    _bottleCubes[j].angle = Mathf.Lerp(_bottleCubes[j].angle, tiltOffset, 0.05f);
+                                }
+                            }
+                        }
+                    }
+
+                    // B. Bottle boundary constraints
+                    for (int i = 0; i < _bottleCubes.Count; i++)
+                    {
+                        var c = _bottleCubes[i];
+
+                        // Mouth stopper at the bottom
+                        float floorY = neckBottomY + halfCube + 0.02f;
+                        if (c.y < floorY)
+                        {
+                            c.y = floorY;
+                            c.vy = Mathf.Max(0f, c.vy * -0.05f);
+                            c.vAng *= 0.7f;
+                        }
+
+                        // Top base ceiling
+                        float ceilY = baseTopY - halfCube - 0.05f;
+                        if (c.y > ceilY)
+                        {
+                            c.y = ceilY;
+                            c.vy = Mathf.Min(0f, c.vy);
+                        }
+
+                        // Side walls from bottle outline
+                        float availHW = GetHalfWidthAtY(c.y) - halfCube - 0.012f;
+
+                        // Left wall
+                        if (c.x < -availHW)
+                        {
+                            c.x = -availHW;
+                            c.vx = Mathf.Max(0f, -c.vx * 0.1f);
+
+                            // Left shoulder slope tilts the cube clockwise to rest against the glass
+                            if (c.y > neckTopY && c.y < shoulderTopY)
+                            {
+                                c.angle = Mathf.Lerp(c.angle, 14f, 0.12f);
+                            }
+                        }
+                        // Right wall
+                        else if (c.x > availHW)
+                        {
+                            c.x = availHW;
+                            c.vx = Mathf.Min(0f, -c.vx * 0.1f);
+
+                            // Right shoulder slope tilts the cube counter-clockwise
+                            if (c.y > neckTopY && c.y < shoulderTopY)
+                            {
+                                c.angle = Mathf.Lerp(c.angle, -14f, 0.12f);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Final strict non-penetration solver pass: eliminates any residual overlap
+            for (int pass = 0; pass < 10; pass++)
+            {
+                bool anyOverlap = false;
+                for (int i = 0; i < _bottleCubes.Count; i++)
+                {
+                    for (int j = i + 1; j < _bottleCubes.Count; j++)
+                    {
+                        float dx = _bottleCubes[j].x - _bottleCubes[i].x;
+                        float dy = _bottleCubes[j].y - _bottleCubes[i].y;
+                        float d2 = dx * dx + dy * dy;
+
+                        if (d2 < minDistSqr && d2 > 0.0000001f)
+                        {
+                            anyOverlap = true;
+                            float d = Mathf.Sqrt(d2);
+                            float overlap = minDist - d;
+                            float nx = dx / d;
+                            float ny = dy / d;
+
+                            _bottleCubes[i].x -= nx * overlap * 0.5f;
+                            _bottleCubes[i].y -= ny * overlap * 0.5f;
+                            _bottleCubes[j].x += nx * overlap * 0.5f;
+                            _bottleCubes[j].y += ny * overlap * 0.5f;
+                        }
+                    }
+                }
+
+                // Keep strictly within bottle boundaries
+                for (int i = 0; i < _bottleCubes.Count; i++)
+                {
+                    var c = _bottleCubes[i];
+                    float floorY = neckBottomY + halfCube + 0.02f;
+                    if (c.y < floorY) c.y = floorY;
+
+                    float ceilY = baseTopY - halfCube - 0.05f;
+                    if (c.y > ceilY) c.y = ceilY;
+
+                    float availHW = GetHalfWidthAtY(c.y) - halfCube - 0.012f;
+                    if (c.x < -availHW) c.x = -availHW;
+                    else if (c.x > availHW) c.x = availHW;
+                }
+
+                if (!anyOverlap) break;
             }
         }
 
@@ -593,7 +775,7 @@ namespace PuzzleGlass
         {
             EnsureMaterials();
 
-            GameObject cube = new GameObject($"TrackCube_{col}");
+            GameObject cube = new GameObject($"BottleCube_{col}");
             if (_cubesContainer != null)
             {
                 cube.transform.SetParent(_cubesContainer.transform, false);
@@ -623,124 +805,123 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Consumes the front cube from the exit chute, launches it as a FULL-SIZE (0.28f) chunky flying candy cube,
-        /// and smoothly advances all remaining cubes along the track!
+        /// Returns the frontmost (lowest Y) cube currently at the mouth of the bottle.
+        /// </summary>
+        public BottleCube GetFrontCube()
+        {
+            if (_bottleCubes == null || _bottleCubes.Count == 0) return null;
+
+            BottleCube lowest = null;
+            float lowestY = float.MaxValue;
+            for (int i = 0; i < _bottleCubes.Count; i++)
+            {
+                var bc = _bottleCubes[i];
+                if (bc != null && bc.gameObject != null)
+                {
+                    if (bc.y < lowestY)
+                    {
+                        lowestY = bc.y;
+                        lowest = bc;
+                    }
+                }
+            }
+            return lowest;
+        }
+
+        public PuzzleColor? GetFrontCubeColor()
+        {
+            var front = GetFrontCube();
+            return front?.color;
+        }
+
+        /// <summary>
+        /// Strictly consumes the frontmost (lowest Y) cube from the mouth of the bottle.
+        /// Guaranteed: No cube above ever passes through cubes in front of it!
         /// </summary>
         public bool ConsumeAndLaunchCube(MonsterCharacter targetMonster, PuzzleColor color, Material cubeMat, Mesh cubeMesh)
         {
-            // Safety check: ensure runtime track queue is initialized
-            if (_trackRows == null || _trackRows.Count == 0 || _cubesContainer == null || _splineWaypoints == null || _splineWaypoints.Count == 0)
+            if (_bottleCubes == null || _bottleCubes.Count == 0 || _cubesContainer == null)
             {
                 RebuildContainer();
             }
 
-            GameObject targetCube = null;
-            float startDist = -1f;
-
-            // 1. Search in active track rows starting from the frontmost row at the exit
-            for (int i = 0; i < _trackRows.Count; i++)
+            // Remove any destroyed references
+            for (int i = _bottleCubes.Count - 1; i >= 0; i--)
             {
-                var row = _trackRows[i];
-                if (row == null) continue;
-
-                // Remove any destroyed references
-                for (int c = row.cubes.Count - 1; c >= 0; c--)
+                if (_bottleCubes[i].gameObject == null)
                 {
-                    if (row.cubes[c] == null) row.cubes.RemoveAt(c);
-                }
-
-                if (row.color == color && row.cubes.Count > 0)
-                {
-                    targetCube = row.cubes[row.cubes.Count - 1];
-                    row.cubes.RemoveAt(row.cubes.Count - 1);
-                    startDist = row.currentDistance;
-                    break;
+                    _bottleCubes.RemoveAt(i);
                 }
             }
 
-            // 2. Fallback search inside container children if row had no match
-            if (targetCube == null && _cubesContainer != null)
-            {
-                string match = $"TrackCube_{color}";
-                for (int i = 0; i < _cubesContainer.transform.childCount; i++)
-                {
-                    Transform t = _cubesContainer.transform.GetChild(i);
-                    if (t != null && t.gameObject != null && t.name.Contains(match))
-                    {
-                        targetCube = t.gameObject;
-                        startDist = _totalSplineLength * 0.5f;
-                        break;
-                    }
-                }
-            }
+            if (_bottleCubes.Count == 0) return false;
 
+            // Strict rule: ALWAYS take the frontmost (lowest Y) cube in the bottle!
+            BottleCube targetCube = GetFrontCube();
+            if (targetCube == null || targetCube.gameObject == null) return false;
+
+            int targetIdx = _bottleCubes.IndexOf(targetCube);
+            _bottleCubes.RemoveAt(targetIdx);
+
+            GameObject cubeObj = targetCube.gameObject;
+            Vector3 startWorldPos = cubeObj.transform.position;
             Vector3 spoutWorldPos = GetSpoutExitWorldPosition();
 
-            if (targetCube != null)
+            // Direct trajectory from mouth nozzle to spout and monster (never passes through other cubes!)
+            List<Vector3> waypoints = new List<Vector3>
             {
-                Vector3 cubeWorldPos = targetCube.transform.position;
+                startWorldPos,
+                spoutWorldPos
+            };
 
-                // Build physics-compliant path strictly INSIDE the glass track leading to the spout exit
-                float endDist = _totalSplineLength;
-                if (startDist < 0f) startDist = _totalSplineLength - 0.20f;
+            // Detach from bottle hierarchy
+            cubeObj.transform.SetParent(null, true);
+            string monsterId = (targetMonster != null) ? targetMonster.monsterId : "Unknown";
+            cubeObj.name = $"FlyingCube_{targetCube.color}_To_{monsterId}";
 
-                int numSamples = Mathf.Clamp(Mathf.RoundToInt((endDist - startDist) / 0.14f), 2, 14);
-                List<Vector3> waypoints = new List<Vector3>(numSamples + 2);
-                waypoints.Add(cubeWorldPos);
+            Material mat = _cubeMaterials.ContainsKey(targetCube.color) ? _cubeMaterials[targetCube.color] : cubeMat;
 
-                for (int s = 1; s <= numSamples; s++)
-                {
-                    float t = (float)s / (numSamples + 1);
-                    float d = Mathf.Lerp(startDist, endDist, t);
-                    Vector3 splinePt = EvaluateSpline(d, out Vector3 tangent, out Vector3 normal);
-                    Vector3 localTrackPt = splinePt + new Vector3(0f, 0f, -0.06f);
-                    waypoints.Add(_trackRootObj.transform.TransformPoint(localTrackPt));
-                }
-                waypoints.Add(spoutWorldPos);
+            FlyingCube flying = cubeObj.GetComponent<FlyingCube>();
+            if (flying == null) flying = cubeObj.AddComponent<FlyingCube>();
+            flying.LaunchThroughGlassTrack(waypoints.ToArray(), spoutWorldPos, targetMonster, targetCube.color, mat, cubeMesh);
 
-                // Detach from track hierarchy so conveyor animation won't interfere
-                targetCube.transform.SetParent(null, true);
-                targetCube.name = $"FlyingCube_{color}_To_{targetMonster.monsterId}";
+            PulseSpout();
 
-                FlyingCube flying = targetCube.GetComponent<FlyingCube>();
-                if (flying == null) flying = targetCube.AddComponent<FlyingCube>();
-                flying.LaunchThroughGlassTrack(waypoints.ToArray(), spoutWorldPos, targetMonster, color, cubeMat, cubeMesh);
+            // Physically settle all remaining cubes in the bottle downwards!
+            SettleRemainingCubesAnimated();
 
-                PulseSpout();
+            return true;
+        }
 
-                // Advance remaining conveyor train forward towards the exit chute!
-                AdvanceTrackTrain();
+        /// <summary>
+        /// Animates the remaining cubes in the bottle dropping and tumbling down under gravity
+        /// to fill the void created by the consumed cube.
+        /// </summary>
+        public void SettleRemainingCubesAnimated()
+        {
+            if (!gameObject.activeInHierarchy || _bottleCubes == null || _bottleCubes.Count == 0) return;
 
-                return true;
-            }
-            else
+            // Run 80 physics relaxation steps to calculate the new stable resting positions
+            SimulatePhysicsSettling(80);
+
+            // Smoothly animate each cube to its new position and angle with natural settling ease
+            for (int i = 0; i < _bottleCubes.Count; i++)
             {
-                // Fallback: spawn cube at top-right hopper entrance inside the glass track
-                float sDist = 0f;
-                float eDist = _totalSplineLength;
-                int numSamples = 14;
-                List<Vector3> waypoints = new List<Vector3>(numSamples + 1);
+                var bc = _bottleCubes[i];
+                if (bc.gameObject == null) continue;
 
-                for (int s = 0; s <= numSamples; s++)
-                {
-                    float t = (float)s / numSamples;
-                    float d = Mathf.Lerp(sDist, eDist, t);
-                    Vector3 splinePt = EvaluateSpline(d, out Vector3 tangent, out Vector3 normal);
-                    Vector3 localTrackPt = splinePt + new Vector3(0f, 0f, -0.06f);
-                    waypoints.Add(_trackRootObj.transform.TransformPoint(localTrackPt));
-                }
+                Vector3 targetPos = new Vector3(bc.x, bc.y, -0.10f);
+                Quaternion targetRot = Quaternion.Euler(0f, 0f, bc.angle);
 
-                GameObject cubeObj = new GameObject($"DispensedCube_{color}_To_{targetMonster.monsterId}");
-                cubeObj.transform.position = waypoints[0];
-                cubeObj.transform.localScale = Vector3.one;
-
-                FlyingCube flying = cubeObj.AddComponent<FlyingCube>();
-                flying.LaunchThroughGlassTrack(waypoints.ToArray(), spoutWorldPos, targetMonster, color, cubeMat, cubeMesh);
-
-                PulseSpout();
-                AdvanceTrackTrain();
-                return true;
+                bc.gameObject.transform.DOKill();
+                bc.gameObject.transform.DOLocalMove(targetPos, 0.14f).SetEase(Ease.OutQuad);
+                bc.gameObject.transform.DOLocalRotateQuaternion(targetRot, 0.14f).SetEase(Ease.OutQuad);
             }
+        }
+
+        public void AdvanceTrackTrain()
+        {
+            SettleRemainingCubesAnimated();
         }
 
         public Vector3 GetSpoutExitWorldPosition()
@@ -751,67 +932,14 @@ namespace PuzzleGlass
             }
             if (_trackRootObj != null)
             {
-                return _trackRootObj.transform.TransformPoint(new Vector3(0f, -1.18f, -0.06f));
+                return _trackRootObj.transform.TransformPoint(new Vector3(0f, neckBottomY - 0.10f, -0.06f));
             }
             return transform.position + new Vector3(0f, -0.85f, -0.70f);
         }
 
-        public void AdvanceTrackTrain()
-        {
-            if (!gameObject.activeInHierarchy || _trackRows == null || _trackRows.Count == 0) return;
-
-            // Remove any completely empty rows
-            for (int i = _trackRows.Count - 1; i >= 0; i--)
-            {
-                var row = _trackRows[i];
-                if (row == null || row.cubes == null || row.cubes.Count == 0)
-                {
-                    _trackRows.RemoveAt(i);
-                }
-            }
-
-            float advanceStep = _rowSpacing * 0.45f;
-
-            for (int i = 0; i < _trackRows.Count; i++)
-            {
-                var row = _trackRows[i];
-                if (row == null) continue;
-
-                float startDist = row.currentDistance;
-                float maxDist = _totalSplineLength - 0.05f - (i * _rowSpacing);
-                float endDist = Mathf.Min(startDist + advanceStep, maxDist);
-
-                DOTween.To(() => row.currentDistance, x =>
-                {
-                    row.currentDistance = x;
-                    UpdateRowCubesPosition(row);
-                }, endDist, 0.10f).SetEase(Ease.OutQuad);
-            }
-        }
-
-        private void UpdateRowCubesPosition(TrackRow row)
-        {
-            if (row == null || row.cubes == null) return;
-            Vector3 centerPt = EvaluateSpline(row.currentDistance, out Vector3 tangent, out Vector3 normal);
-            float angleZ = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg;
-
-            int count = row.cubes.Count;
-            for (int c = 0; c < count; c++)
-            {
-                GameObject cube = row.cubes[c];
-                if (cube != null)
-                {
-                    float col = (count == 2) ? (c == 0 ? -1f : 1f) : (c - 1f);
-                    Vector3 pos = centerPt + normal * (col * _colOffset) + new Vector3(0, 0, -0.10f);
-                    cube.transform.localPosition = pos;
-                    cube.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
-                }
-            }
-        }
-
         public void ConsumeCube(PuzzleColor color)
         {
-            AdvanceTrackTrain();
+            SettleRemainingCubesAnimated();
         }
 
         public void PulseSpout()
@@ -821,18 +949,18 @@ namespace PuzzleGlass
             if (spoutExitPoint != null)
             {
                 spoutExitPoint.DOKill(true);
-                spoutExitPoint.DOPunchScale(new Vector3(0.04f, -0.06f, 0.04f), 0.08f, 5, 0.5f);
+                spoutExitPoint.DOPunchScale(new Vector3(0.06f, 0.08f, 0.06f), 0.08f, 5, 0.5f);
             }
 
             if (_glassWallsObj != null)
             {
                 _glassWallsObj.transform.DOKill(true);
-                _glassWallsObj.transform.DOPunchScale(new Vector3(0.012f, 0.012f, 0.012f), 0.08f, 4, 0.5f);
+                _glassWallsObj.transform.DOPunchScale(new Vector3(0.015f, 0.015f, 0.015f), 0.08f, 4, 0.5f);
             }
             else if (_trackRootObj != null)
             {
                 _trackRootObj.transform.DOKill(true);
-                _trackRootObj.transform.DOPunchScale(new Vector3(0.012f, 0.012f, 0.012f), 0.08f, 4, 0.5f);
+                _trackRootObj.transform.DOPunchScale(new Vector3(0.015f, 0.015f, 0.015f), 0.08f, 4, 0.5f);
             }
         }
 

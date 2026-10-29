@@ -113,4 +113,29 @@ namespace PuzzleGlass.Editor
             }
         }
     }
+
+    [CustomEditor(typeof(ShapedGlassContainer))]
+    public class ShapedGlassContainerEditor : UnityEditor.Editor
+    {
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            ShapedGlassContainer container = (ShapedGlassContainer)target;
+
+            EditorGUILayout.Space(12);
+            EditorGUILayout.LabelField("Cam Şişe & Küp Kontrolleri", EditorStyles.boldLabel);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            GUI.backgroundColor = new Color(0.25f, 0.75f, 1.0f);
+            if (GUILayout.Button("🍾 Cam Şişeyi Yeniden İnşa Et", GUILayout.Height(36)))
+            {
+                container.RebuildContainer();
+                EditorUtility.SetDirty(container);
+            }
+
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndVertical();
+        }
+    }
 }
