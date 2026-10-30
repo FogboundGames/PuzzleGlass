@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 85a325236feaeb241833408923acac61, type: 3}
+  m_Name: Level_01
+  m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
+  levelNumber: 1
+  levelName: "G\xF6k Mavisi Flask (Referans)"
+  difficulty: 0
+  slotCount: 4
+  slotSpacing: 0.84
+  glassPreset: 0
+  colorTheme: 0
+  layerPattern: 0
+  symmetricMode: 1
+  curveSubdivisions: 12
+  widthScale: 1
+  heightScale: 1
+  glassBodyColor: {r: 0.35, g: 0.7, b: 0.98, a: 0.76}
+  glassCenterGlowColor: {r: 0.58, g: 0.84, b: 1, a: 0.42}
+  glassOuterRimColor: {r: 0.36, g: 0.69, b: 0.97, a: 1}
+  glassInnerRimColor: {r: 0.74, g: 0.91, b: 1, a: 0.88}
+  glassFrontLensColor: {r: 0.85, g: 0.96, b: 1, a: 0.12}
+  earHandleColor: {r: 0.92, g: 0.96, b: 1, a: 1}
+  glassRimRadius: 0.042
+  innerRimInset: 0.064
+  glassShellDepth: 0.08
+  showShoulderHandles: 1
+  showSpecularReflections: 1
+  particleSize: 0.155
+  particlesPerMonsterCount: 1
+  contourPoints: []
+  monsters:
+  - color: 0
+    count: 10
+  - color: 1
+    count: 20

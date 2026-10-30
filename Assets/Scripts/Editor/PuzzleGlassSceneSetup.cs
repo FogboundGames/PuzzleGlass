@@ -24,14 +24,88 @@ namespace PuzzleGlass.Editor
                 PuzzleGlassPrefabGenerator.GenerateAllAssets();
             }
 
-            // If monsters or manager are missing or using old giant scale, build the reference scene
-            var existingMonster = Object.FindFirstObjectByType<MonsterCharacter>();
-            if (Object.FindFirstObjectByType<PuzzleGlassGameManager>() == null ||
-                existingMonster == null ||
-                existingMonster.transform.localScale.x > 0.85f)
+            // Ensure scene matches the 1-to-1 Reference Design (Blue 10 + Yellow 20 + Wide Bulbous Sky-Blue Flask)
+            var manager = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
+            bool needsRebuild = manager == null ||
+                                manager.activeMonsters == null ||
+                                manager.activeMonsters.Count != 2 ||
+                                manager.activeMonsters[0] == null ||
+                                manager.activeMonsters[0].colorType != PuzzleColor.Blue ||
+                                manager.activeMonsters[1] == null ||
+                                manager.activeMonsters[1].colorType != PuzzleColor.Yellow;
+
+            if (needsRebuild)
             {
-                Debug.Log("<color=#2E9AF7><b>[PuzzleGlass]</b></color> Configuring reference scene with 3D open-mouth monsters & balanced proportions...");
+                Debug.Log("<color=#2E9AF7><b>[PuzzleGlass]</b></color> Building 1-to-1 Reference Flask & Monster Scene...");
                 BuildCompleteScene();
+            }
+            else
+            {
+                var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
+                var dispenser = Object.FindFirstObjectByType<CubeDispenser>();
+                bool dirty = false;
+
+                if (glass != null)
+                {
+                    glass.transform.localPosition = new Vector3(0f, 1.65f, 0f);
+                    glass.particlesPerMonsterCount = 1;
+                    if (glass.particleSize < 0.145f)
+                    {
+                        glass.particleSize = 0.155f;
+                    }
+                    glass.curveSubdivisions = 14;
+                    glass.ApplyShapePreset(GlassShapePreset.DiamondCarafe, false);
+                    glass.ApplyColorTheme(GlassColorTheme.SkyBlueGlossy, true);
+                    EditorUtility.SetDirty(glass);
+                    dirty = true;
+                }
+
+                if (dispenser != null && manager != null && manager.activeMonsters != null)
+                {
+                    dispenser.feedInterval = 0.11f;
+                    dispenser.ClearOrders();
+                    for (int i = 0; i < manager.activeMonsters.Count; i++)
+                    {
+                        if (manager.activeMonsters[i] != null)
+                            dispenser.RegisterMonsterOrder(manager.activeMonsters[i]);
+                    }
+                    EditorUtility.SetDirty(dispenser);
+                    dirty = true;
+                }
+
+                var slots = Object.FindFirstObjectByType<SlotSystem>();
+                if (slots != null)
+                {
+                    slots.RebuildSlots();
+                    EditorUtility.SetDirty(slots);
+                    dirty = true;
+                }
+
+                var dirLight = Object.FindFirstObjectByType<Light>();
+                if (dirLight != null && dirLight.shadows != LightShadows.None)
+                {
+                    dirLight.shadows = LightShadows.None;
+                    EditorUtility.SetDirty(dirLight);
+                    dirty = true;
+                }
+
+                if (manager != null && manager.activeMonsters != null)
+                {
+                    for (int i = 0; i < manager.activeMonsters.Count; i++)
+                    {
+                        if (manager.activeMonsters[i] != null)
+                        {
+                            manager.activeMonsters[i].RebuildMonsterVisuals();
+                            EditorUtility.SetDirty(manager.activeMonsters[i]);
+                        }
+                    }
+                }
+
+                if (dirty)
+                {
+                    EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+                    EditorSceneManager.SaveOpenScenes();
+                }
             }
         }
 
@@ -76,7 +150,7 @@ namespace PuzzleGlass.Editor
 
             dirLight.color = new Color(1.0f, 0.98f, 0.95f, 1f);
             dirLight.intensity = 1.35f;
-            dirLight.shadows = LightShadows.Soft;
+            dirLight.shadows = LightShadows.None;
             dirLight.transform.rotation = Quaternion.Euler(45f, -25f, 0);
 
             // Subtle ambient light
@@ -144,26 +218,35 @@ namespace PuzzleGlass.Editor
             manager.activeMonsters.Clear();
             dispenser.ClearOrders();
 
-            // 8. Place Monsters directly in the Scene (visible in Edit Mode and Play Mode!)
-            // Purple Monster (10) on Left under Slots 1 & 2
-            GameObject purpleObj = new GameObject("Monster_Purple_10");
-            Undo.RegisterCreatedObjectUndo(purpleObj, "Create Monster Purple");
-            purpleObj.transform.position = new Vector3(-0.72f, -1.95f, 0f);
-            purpleObj.transform.localScale = Vector3.one * 0.70f;
-            MonsterCharacter purpleMonster = purpleObj.AddComponent<MonsterCharacter>();
-            purpleMonster.Initialize(PuzzleColor.Purple, 10, "Purple_10");
-            manager.activeMonsters.Add(purpleMonster);
-            dispenser.RegisterMonsterOrder(purpleMonster);
+            // 8. Place the 2 Reference Monsters at the bottom (Blue 10 on Left, Yellow 20 on Right)
+            // matching the user's reference image 1-to-1!
+            float[] xPositions = new float[] { -0.75f, 0.75f };
+            PuzzleColor[] colors = new PuzzleColor[]
+            {
+                PuzzleColor.Blue,
+                PuzzleColor.Yellow
+            };
+            int[] counts = new int[] { 10, 20 };
 
-            // Pink Monster (20) on Right under Slots 3 & 4
-            GameObject pinkObj = new GameObject("Monster_Pink_20");
-            Undo.RegisterCreatedObjectUndo(pinkObj, "Create Monster Pink");
-            pinkObj.transform.position = new Vector3(0.72f, -1.95f, 0f);
-            pinkObj.transform.localScale = Vector3.one * 0.70f;
-            MonsterCharacter pinkMonster = pinkObj.AddComponent<MonsterCharacter>();
-            pinkMonster.Initialize(PuzzleColor.Pink, 20, "Pink_20");
-            manager.activeMonsters.Add(pinkMonster);
-            dispenser.RegisterMonsterOrder(pinkMonster);
+            for (int i = 0; i < 2; i++)
+            {
+                GameObject monObj = new GameObject($"Monster_{colors[i]}_{counts[i]}");
+                monObj.transform.SetParent(root.transform, false);
+                Undo.RegisterCreatedObjectUndo(monObj, $"Create Monster {colors[i]}");
+                monObj.transform.position = new Vector3(xPositions[i], -1.98f, 0f);
+                monObj.transform.localScale = Vector3.one * 0.72f;
+
+                MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
+                mon.Initialize(colors[i], counts[i], $"{colors[i]}_{counts[i]}");
+                manager.activeMonsters.Add(mon);
+                dispenser.RegisterMonsterOrder(mon);
+            }
+
+            // Rebuild flask AFTER monsters are registered
+            glass.transform.localPosition = new Vector3(0f, 1.65f, 0f);
+            glass.curveSubdivisions = 14;
+            glass.ApplyShapePreset(GlassShapePreset.DiamondCarafe, false);
+            glass.ApplyColorTheme(GlassColorTheme.SkyBlueGlossy, true);
 
             Undo.CollapseUndoOperations(undoGroup);
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());

@@ -7,23 +7,41 @@ namespace PuzzleGlass
     public static class ProceduralMeshUtils
     {
         /// <summary>
-        /// Generates a rounded cube mesh with smoothed bevels for hypercasual candy-cube aesthetics.
+        /// Generates a plump, tactile 3D rounded-bevel cube mesh (Image 2 Reference Candy/Resin Cube)
+        /// with outward-facing normals and guaranteed front-face clockwise triangle winding.
         /// </summary>
         public static Mesh CreateRoundedCube(float size, float cornerRadius, int segments)
         {
             Mesh mesh = new Mesh();
-            mesh.name = "RoundedCube";
+            mesh.name = "RoundedCandyCube";
 
             float half = size * 0.5f;
-            float inner = Mathf.Max(0.001f, half - cornerRadius);
+            float clampedRadius = Mathf.Clamp(cornerRadius, size * 0.12f, size * 0.42f);
+            float inner = Mathf.Max(0.001f, half - clampedRadius);
 
-            int cornerRes = Mathf.Max(2, segments);
+            int cornerRes = Mathf.Max(3, segments);
+            int grid = cornerRes * 2 + 2;
+
+            // Precompute non-uniform 1D coordinates along [-half, +half] that concentrate vertices smoothly on the bevel arcs
+            float[] axisCoords = new float[grid + 1];
+            for (int i = 0; i <= cornerRes; i++)
+            {
+                float t = (float)i / cornerRes;
+                float angle = t * (Mathf.PI * 0.5f);
+                axisCoords[i] = -inner - Mathf.Cos(angle) * clampedRadius;
+                axisCoords[grid - i] = inner + Mathf.Cos(angle) * clampedRadius;
+            }
+            for (int i = cornerRes + 1; i < grid - cornerRes; i++)
+            {
+                float t = (float)(i - cornerRes) / (grid - 2 * cornerRes);
+                axisCoords[i] = Mathf.Lerp(-inner, inner, t);
+            }
+
             List<Vector3> vertices = new List<Vector3>();
             List<Vector3> normals = new List<Vector3>();
+            List<Vector2> uvs = new List<Vector2>();
             List<int> triangles = new List<int>();
 
-            // Generate a subdivided normalized cube mapped to rounded corners
-            int grid = cornerRes * 2;
             for (int face = 0; face < 6; face++)
             {
                 int startIndex = vertices.Count;
@@ -31,25 +49,45 @@ namespace PuzzleGlass
                 for (int y = 0; y <= grid; y++)
                 {
                     float v = (float)y / grid;
-                    float py = Mathf.Lerp(-half, half, v);
+                    float py = axisCoords[y];
 
                     for (int x = 0; x <= grid; x++)
                     {
                         float u = (float)x / grid;
-                        float px = Mathf.Lerp(-half, half, u);
+                        float px = axisCoords[x];
 
+                        // Right-handed face parameterization so (i0 -> i1 -> i2) is strictly outward-clockwise in Unity:
                         Vector3 pointOnCube;
+                        Vector3 faceNormal;
                         switch (face)
                         {
-                            case 0: pointOnCube = new Vector3(px, py, half); break;  // Front
-                            case 1: pointOnCube = new Vector3(half, py, -px); break; // Right
-                            case 2: pointOnCube = new Vector3(-px, py, -half); break;// Back
-                            case 3: pointOnCube = new Vector3(-half, py, px); break; // Left
-                            case 4: pointOnCube = new Vector3(px, half, -py); break; // Top
-                            default: pointOnCube = new Vector3(px, -half, py); break;// Bottom
+                            case 0: // Front face (-Z, facing camera at Z = -10)
+                                pointOnCube = new Vector3(px, py, -half);
+                                faceNormal = Vector3.back;
+                                break;
+                            case 1: // Back face (+Z, away from camera)
+                                pointOnCube = new Vector3(-px, py, half);
+                                faceNormal = Vector3.forward;
+                                break;
+                            case 2: // Right face (+X)
+                                pointOnCube = new Vector3(half, py, px);
+                                faceNormal = Vector3.right;
+                                break;
+                            case 3: // Left face (-X)
+                                pointOnCube = new Vector3(-half, py, -px);
+                                faceNormal = Vector3.left;
+                                break;
+                            case 4: // Top face (+Y)
+                                pointOnCube = new Vector3(px, half, py);
+                                faceNormal = Vector3.up;
+                                break;
+                            default: // Bottom face (-Y)
+                                pointOnCube = new Vector3(px, -half, -py);
+                                faceNormal = Vector3.down;
+                                break;
                         }
 
-                        // Round off points outside the inner box
+                        // Project point outside the inner core box onto a smooth rounded bevel sphere/cylinder
                         Vector3 clamped = new Vector3(
                             Mathf.Clamp(pointOnCube.x, -inner, inner),
                             Mathf.Clamp(pointOnCube.y, -inner, inner),
@@ -57,11 +95,19 @@ namespace PuzzleGlass
                         );
 
                         Vector3 diff = pointOnCube - clamped;
-                        Vector3 normal = diff.sqrMagnitude > 0.0001f ? diff.normalized : (pointOnCube - Vector3.zero).normalized;
-                        Vector3 vertex = clamped + normal * cornerRadius;
+                        Vector3 normal = diff.sqrMagnitude > 0.000001f ? diff.normalized : faceNormal;
+                        Vector3 vertex = clamped + normal * clampedRadius;
+
+                        // Slight pillowy convexity on the flat face center so light rolls smoothly across the face like Image 2
+                        float centerU = 1f - Mathf.Clamp01(Mathf.Abs(px) / Mathf.Max(0.001f, inner));
+                        float centerV = 1f - Mathf.Clamp01(Mathf.Abs(py) / Mathf.Max(0.001f, inner));
+                        float pillowBulge = centerU * centerV * (size * 0.025f);
+                        vertex += faceNormal * pillowBulge;
+                        normal = (normal + faceNormal * 0.18f).normalized;
 
                         vertices.Add(vertex);
                         normals.Add(normal);
+                        uvs.Add(new Vector2(u, v));
                     }
                 }
 
@@ -75,19 +121,35 @@ namespace PuzzleGlass
                         int i2 = startIndex + (y + 1) * stride + (x + 1);
                         int i3 = startIndex + y * stride + (x + 1);
 
-                        triangles.Add(i0);
-                        triangles.Add(i1);
-                        triangles.Add(i2);
+                        // Verify outward winding using the vertex normal
+                        Vector3 triCross = Vector3.Cross(vertices[i1] - vertices[i0], vertices[i2] - vertices[i0]);
+                        if (Vector3.Dot(triCross, normals[i0]) >= 0f)
+                        {
+                            triangles.Add(i0);
+                            triangles.Add(i1);
+                            triangles.Add(i2);
 
-                        triangles.Add(i0);
-                        triangles.Add(i2);
-                        triangles.Add(i3);
+                            triangles.Add(i0);
+                            triangles.Add(i2);
+                            triangles.Add(i3);
+                        }
+                        else
+                        {
+                            triangles.Add(i0);
+                            triangles.Add(i2);
+                            triangles.Add(i1);
+
+                            triangles.Add(i0);
+                            triangles.Add(i3);
+                            triangles.Add(i2);
+                        }
                     }
                 }
             }
 
             mesh.SetVertices(vertices);
             mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
             mesh.SetTriangles(triangles, 0);
             mesh.RecalculateBounds();
             return mesh;
@@ -691,7 +753,8 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Generates a planar floor ribbon mesh connecting left and right path boundaries.
+        /// Generates a high-density, distortion-free planar glass ribbon mesh connecting left and right path boundaries,
+        /// embedding exact perpendicular wall-distance scale factors in UV2 (TEXCOORD1) for analytic blown-glass refraction!
         /// </summary>
         public static Mesh CreateTrackFloorRibbon(Vector3[] leftPath, Vector3[] rightPath)
         {
@@ -700,27 +763,220 @@ namespace PuzzleGlass
 
             if (leftPath == null || rightPath == null || leftPath.Length < 2 || rightPath.Length < 2) return mesh;
 
-            int count = Mathf.Min(leftPath.Length, rightPath.Length);
+            int rows = Mathf.Min(leftPath.Length, rightPath.Length);
+            const int cols = 24;
+
+            // Precompute raw perpendicular scale factors at each row
+            float[] rawScaleL = new float[rows];
+            float[] rawScaleR = new float[rows];
+            for (int i = 0; i < rows; i++)
+            {
+                int iPrev = Mathf.Max(0, i - 2);
+                int iNext = Mathf.Min(rows - 1, i + 2);
+                float halfSpan = Mathf.Max(0.05f, (rightPath[i].x - leftPath[i].x) * 0.5f);
+
+                float dyL = Mathf.Max(0.005f, leftPath[iNext].y - leftPath[iPrev].y);
+                float dxL = leftPath[iNext].x - leftPath[iPrev].x;
+                float invHypL = 1.0f / Mathf.Sqrt(1.0f + (dxL / dyL) * (dxL / dyL));
+
+                float dyR = Mathf.Max(0.005f, rightPath[iNext].y - rightPath[iPrev].y);
+                float dxR = rightPath[iNext].x - rightPath[iPrev].x;
+                float invHypR = 1.0f / Mathf.Sqrt(1.0f + (dxR / dyR) * (dxR / dyR));
+
+                rawScaleL[i] = halfSpan * invHypL;
+                rawScaleR[i] = halfSpan * invHypR;
+            }
+
+            // Smooth perpendicular scale factors along Y so wall thickness is 100% silky-smooth across curves
+            float[] smoothScaleL = new float[rows];
+            float[] smoothScaleR = new float[rows];
+            for (int i = 0; i < rows; i++)
+            {
+                float sumL = 0f, sumR = 0f, wSum = 0f;
+                for (int k = -3; k <= 3; k++)
+                {
+                    int idx = Mathf.Clamp(i + k, 0, rows - 1);
+                    float w = 4f - Mathf.Abs(k);
+                    sumL += rawScaleL[idx] * w;
+                    sumR += rawScaleR[idx] * w;
+                    wSum += w;
+                }
+                smoothScaleL[i] = sumL / wSum;
+                smoothScaleR[i] = sumR / wSum;
+            }
+
+            int vertCap = rows * (cols + 1);
+            List<Vector3> verts = new List<Vector3>(vertCap);
+            List<Vector3> norms = new List<Vector3>(vertCap);
+            List<Vector2> uvs = new List<Vector2>(vertCap);
+            List<Vector2> uv2s = new List<Vector2>(vertCap);
+            List<int> tris = new List<int>((rows - 1) * cols * 6);
+
+            Vector3 upNormal = Vector3.forward;
+
+            for (int r = 0; r < rows; r++)
+            {
+                float v = (float)r / (rows - 1);
+                Vector3 lPt = leftPath[r];
+                Vector3 rPt = rightPath[r];
+                Vector2 perpFactors = new Vector2(smoothScaleL[r], smoothScaleR[r]);
+
+                for (int c = 0; c <= cols; c++)
+                {
+                    float u = (float)c / cols;
+                    verts.Add(Vector3.Lerp(lPt, rPt, u));
+                    norms.Add(upNormal);
+                    uvs.Add(new Vector2(u, v));
+                    uv2s.Add(perpFactors);
+                }
+            }
+
+            int stride = cols + 1;
+            for (int r = 0; r < rows - 1; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    int i0 = r * stride + c;
+                    int i1 = r * stride + (c + 1);
+                    int i2 = (r + 1) * stride + (c + 1);
+                    int i3 = (r + 1) * stride + c;
+
+                    tris.Add(i0); tris.Add(i1); tris.Add(i2);
+                    tris.Add(i0); tris.Add(i2); tris.Add(i3);
+                }
+            }
+
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetUVs(0, uvs);
+            mesh.SetUVs(1, uv2s);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
+        /// Generates a 3D curved half-cylindrical glass bottle shell with smooth normals
+        /// for authentic 3D specular reflections and glass refraction vibe.
+        /// </summary>
+        public static Mesh CreateGlassBottleHalfShell(Vector3[] leftPath, Vector3[] rightPath, float depthZ, bool isFrontShell, int arcSegments = 16)
+        {
+            Mesh mesh = new Mesh();
+            mesh.name = isFrontShell ? "GlassBottleFrontShell" : "GlassBottleBackShell";
+
+            if (leftPath == null || rightPath == null || leftPath.Length < 2) return mesh;
+
+            int rows = Mathf.Min(leftPath.Length, rightPath.Length);
+            int cols = Mathf.Max(4, arcSegments);
 
             List<Vector3> verts = new List<Vector3>();
             List<Vector3> norms = new List<Vector3>();
             List<Vector2> uvs = new List<Vector2>();
             List<int> tris = new List<int>();
 
-            Vector3 upNormal = Vector3.forward;
-
-            for (int i = 0; i < count; i++)
+            for (int r = 0; r < rows; r++)
             {
-                verts.Add(leftPath[i]);
-                norms.Add(upNormal);
-                uvs.Add(new Vector2(0f, (float)i / (count - 1)));
+                float y = leftPath[r].y;
+                float hw = (rightPath[r].x - leftPath[r].x) * 0.5f;
+                float centerX = (rightPath[r].x + leftPath[r].x) * 0.5f;
+                float v = (float)r / (rows - 1);
 
-                verts.Add(rightPath[i]);
-                norms.Add(upNormal);
-                uvs.Add(new Vector2(1f, (float)i / (count - 1)));
+                // Estimate vertical slope for accurate 3D normal
+                float dy = 1f;
+                float dhw = 0f;
+                if (r < rows - 1)
+                {
+                    dy = Mathf.Max(0.001f, leftPath[r + 1].y - y);
+                    dhw = ((rightPath[r + 1].x - leftPath[r + 1].x) * 0.5f) - hw;
+                }
+                else if (r > 0)
+                {
+                    dy = Mathf.Max(0.001f, y - leftPath[r - 1].y);
+                    dhw = hw - ((rightPath[r - 1].x - leftPath[r - 1].x) * 0.5f);
+                }
+                float nySlope = -dhw / dy * 0.35f;
+
+                for (int c = 0; c <= cols; c++)
+                {
+                    float u = (float)c / cols;
+                    float theta = u * Mathf.PI; // 0 (left) to PI (right)
+
+                    float cosT = -Mathf.Cos(theta); // -1 at left, +1 at right
+                    float sinT = Mathf.Sin(theta);  // 0 at edges, +1 at center
+
+                    float x = centerX + cosT * hw;
+                    float z = isFrontShell ? (-sinT * depthZ) : (sinT * depthZ * 0.65f);
+
+                    Vector3 normal = new Vector3(
+                        cosT * 0.85f,
+                        nySlope,
+                        isFrontShell ? -Mathf.Max(0.25f, sinT) : -Mathf.Max(0.25f, sinT)
+                    ).normalized;
+
+                    verts.Add(new Vector3(x, y, z));
+                    norms.Add(normal);
+                    uvs.Add(new Vector2(u, v));
+                }
             }
 
-            for (int i = 0; i < count - 1; i++)
+            int stride = cols + 1;
+            for (int r = 0; r < rows - 1; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    int i0 = r * stride + c;
+                    int i1 = r * stride + (c + 1);
+                    int i2 = (r + 1) * stride + (c + 1);
+                    int i3 = (r + 1) * stride + c;
+
+                    tris.Add(i0); tris.Add(i2); tris.Add(i1);
+                    tris.Add(i0); tris.Add(i3); tris.Add(i2);
+
+                    tris.Add(i0); tris.Add(i1); tris.Add(i2);
+                    tris.Add(i0); tris.Add(i2); tris.Add(i3);
+                }
+            }
+
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
+        /// Generates a flat refractive glass wall-thickness strip between an outer contour and an inner contour.
+        /// Gives the glass bottle unmistakable thick blown-glass edges!
+        /// </summary>
+        public static Mesh CreateGlassThicknessBand(Vector3[] outerPath, Vector3[] innerPath, float zOffset)
+        {
+            Mesh mesh = new Mesh();
+            mesh.name = "GlassThicknessBand";
+
+            if (outerPath == null || innerPath == null || outerPath.Length < 2) return mesh;
+            int n = Mathf.Min(outerPath.Length, innerPath.Length);
+
+            List<Vector3> verts = new List<Vector3>();
+            List<Vector3> norms = new List<Vector3>();
+            List<Vector2> uvs = new List<Vector2>();
+            List<int> tris = new List<int>();
+
+            Vector3 nrm = new Vector3(0f, 0f, -1f);
+
+            for (int i = 0; i < n; i++)
+            {
+                float v = (float)i / (n - 1);
+                verts.Add(new Vector3(outerPath[i].x, outerPath[i].y, zOffset));
+                norms.Add(nrm);
+                uvs.Add(new Vector2(0f, v));
+
+                verts.Add(new Vector3(innerPath[i].x, innerPath[i].y, zOffset));
+                norms.Add(nrm);
+                uvs.Add(new Vector2(1f, v));
+            }
+
+            for (int i = 0; i < n - 1; i++)
             {
                 int i0 = i * 2;
                 int i1 = i * 2 + 1;
@@ -730,7 +986,6 @@ namespace PuzzleGlass
                 tris.Add(i0); tris.Add(i1); tris.Add(i2);
                 tris.Add(i0); tris.Add(i2); tris.Add(i3);
 
-                // Double sided
                 tris.Add(i0); tris.Add(i2); tris.Add(i1);
                 tris.Add(i0); tris.Add(i3); tris.Add(i2);
             }

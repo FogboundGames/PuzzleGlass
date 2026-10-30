@@ -39,6 +39,8 @@ namespace PuzzleGlass
         private Sequence _blinkSeq;
         private bool _isCompleted = false;
         private bool _isMovingToSlot = false;
+        private int _subParticleCounter = 0;
+        private float _lastGulpTime = -10f;
 
         public event Action<MonsterCharacter> OnEatenCube;
         public event Action<MonsterCharacter> OnTargetReached;
@@ -115,6 +117,8 @@ namespace PuzzleGlass
             colorType = color;
             initialCount = count;
             remainingCount = count;
+            _subParticleCounter = 0;
+            _isCompleted = false;
             monsterId = string.IsNullOrEmpty(id) ? $"Monster_{color}_{Guid.NewGuid().ToString().Substring(0, 4)}" : id;
             RebuildMonsterVisuals();
             UpdateBadgeText();
@@ -265,8 +269,42 @@ namespace PuzzleGlass
             // 10. White Belly Pill Badge with Bold Number
             BuildBadge(bodyPivot);
 
+            // 11. Soft Warm Fake Contact Drop Shadow underneath the monster
+            BuildFakeDropShadow();
+
+            // Disable 3D polygon shadow casting on all parts so only soft studio Fake Shadows are used
+            foreach (var r in GetComponentsInChildren<MeshRenderer>(true))
+            {
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+            }
+
             _originalBodyScale = bodyPivot.localScale;
             if (badgeTransform != null) _originalBadgeScale = badgeTransform.localScale;
+        }
+
+        private void BuildFakeDropShadow()
+        {
+            Shader shadowShader = Shader.Find("PuzzleGlass/FakeDropShadow");
+            if (shadowShader == null) return;
+
+            GameObject shadowQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            shadowQuad.name = "MonsterFakeDropShadow";
+            shadowQuad.transform.SetParent(transform, false);
+            shadowQuad.transform.localPosition = new Vector3(-0.04f, -0.52f, 0.25f);
+            shadowQuad.transform.localScale = new Vector3(1.22f, 0.34f, 1.0f);
+            DestroyCollider(shadowQuad);
+
+            Material shadowMat = new Material(shadowShader);
+            shadowMat.name = "Mat_MonsterFakeShadow";
+            shadowMat.SetColor("_ShadowColor", new Color(0.75f, 0.59f, 0.44f, 0.40f));
+            shadowMat.SetFloat("_FeatherWidth", 0.50f);
+            shadowMat.SetFloat("_IsRadial", 1.0f);
+
+            var mr = shadowQuad.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = shadowMat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
         }
 
         private void BuildTeeth(Transform parent)
@@ -472,33 +510,60 @@ namespace PuzzleGlass
             if (eyeRight != null) eyeRight.localScale = Vector3.one;
         }
 
-        public void FeedCube()
+        public void FeedParticle(int particlesPerCount)
         {
             if (_isCompleted) return;
 
-            remainingCount = Mathf.Max(0, remainingCount - 1);
-            UpdateBadgeText();
+            int ratio = Mathf.Max(1, particlesPerCount);
+            _subParticleCounter++;
 
-            // 1. Juicy Chomp bite body punch
+            // Play a gentle, rhythmic gulp wave at most every 0.14s so fast streams look buttery-smooth
+            if (Time.time - _lastGulpTime >= 0.14f)
+            {
+                _lastGulpTime = Time.time;
+                PlaySmoothGulpWave();
+            }
+
+            if (_subParticleCounter >= ratio)
+            {
+                _subParticleCounter = 0;
+                DecrementCounterAndCheckComplete();
+            }
+        }
+
+        public void FeedCube()
+        {
+            if (_isCompleted) return;
+            _subParticleCounter = 0;
+            PlaySmoothGulpWave();
+            DecrementCounterAndCheckComplete();
+        }
+
+        private void PlaySmoothGulpWave()
+        {
             if (bodyPivot != null)
             {
-                bodyPivot.DOKill(true);
-                bodyPivot.DOPunchScale(new Vector3(0.14f, -0.20f, 0.14f), 0.10f, 4, 0.55f);
+                bodyPivot.DOKill(false);
+                Sequence gulpSeq = DOTween.Sequence();
+                gulpSeq.Append(bodyPivot.DOScale(
+                    new Vector3(_originalBodyScale.x * 1.045f, _originalBodyScale.y * 0.955f, _originalBodyScale.z * 1.045f),
+                    0.065f).SetEase(Ease.OutSine));
+                gulpSeq.Append(bodyPivot.DOScale(_originalBodyScale, 0.12f).SetEase(Ease.InOutSine));
             }
 
-            // 2. Belly Badge Punch
             if (badgeTransform != null)
             {
-                badgeTransform.DOKill(true);
-                badgeTransform.DOPunchScale(Vector3.one * 0.25f, 0.10f, 4, 0.5f);
+                badgeTransform.DOKill(false);
+                Sequence badgeSeq = DOTween.Sequence();
+                badgeSeq.Append(badgeTransform.DOScale(_originalBadgeScale * 1.07f, 0.06f).SetEase(Ease.OutSine));
+                badgeSeq.Append(badgeTransform.DOScale(_originalBadgeScale, 0.11f).SetEase(Ease.InOutSine));
             }
+        }
 
-            // 3. Counter Text Punch
-            if (counterText != null)
-            {
-                counterText.transform.DOKill(true);
-                counterText.transform.DOPunchScale(Vector3.one * 0.20f, 0.09f, 4, 0.5f);
-            }
+        private void DecrementCounterAndCheckComplete()
+        {
+            remainingCount = Mathf.Max(0, remainingCount - 1);
+            UpdateBadgeText();
 
             OnEatenCube?.Invoke(this);
 
@@ -582,24 +647,22 @@ namespace PuzzleGlass
             Vector3 startScale = transform.localScale;
             Vector3 targetPos = slot.GetPlacementPosition();
 
-            // 1. Anticipation squash
-            yield return transform.DOScale(new Vector3(startScale.x * 1.18f, startScale.y * 0.78f, startScale.z * 1.15f), 0.09f)
-                .SetEase(Ease.OutQuad).WaitForCompletion();
+            // 1. Smooth, quick anticipation cushion
+            yield return transform.DOScale(new Vector3(startScale.x * 1.08f, startScale.y * 0.90f, startScale.z * 1.08f), 0.06f)
+                .SetEase(Ease.OutSine).WaitForCompletion();
 
-            // 2. High parabolic leap arc to slot with stretch along jump
+            // 2. Silky parabolic arc into the slot
             Sequence leapSeq = DOTween.Sequence();
-            leapSeq.Join(transform.DOJump(targetPos, jumpPower: 0.62f, numJumps: 1, duration: 0.36f).SetEase(Ease.OutQuad));
-            // Airborne stretch then relax before impact
-            leapSeq.Join(transform.DOScale(new Vector3(startScale.x * 0.88f, startScale.y * 1.22f, startScale.z * 0.88f), 0.18f).SetEase(Ease.OutQuad));
-            leapSeq.Insert(0.18f, transform.DOScale(startScale, 0.18f).SetEase(Ease.InQuad));
+            leapSeq.Join(transform.DOJump(targetPos, jumpPower: 0.48f, numJumps: 1, duration: 0.28f).SetEase(Ease.OutCubic));
+            leapSeq.Join(transform.DOScale(new Vector3(startScale.x * 0.94f, startScale.y * 1.08f, startScale.z * 0.94f), 0.14f).SetEase(Ease.OutSine));
+            leapSeq.Insert(0.14f, transform.DOScale(startScale, 0.14f).SetEase(Ease.InOutSine));
             yield return leapSeq.WaitForCompletion();
 
             transform.position = targetPos;
 
-            // 3. Attach to slot & play slot punch
+            // 3. Attach to slot & immediately start smooth feeding!
             slot.AttachMonster(this);
 
-            // Register order with dispenser and trigger auto-feeding
             CubeDispenser dispenser = FindFirstObjectByType<CubeDispenser>();
             if (dispenser != null)
             {
@@ -607,8 +670,11 @@ namespace PuzzleGlass
                 dispenser.StartFeedingSlottedMonsters();
             }
 
-            // 4. Juicy landing squash bounce
-            yield return transform.DOPunchScale(new Vector3(0.20f, -0.22f, 0.20f), 0.22f, 7, 0.6f).WaitForCompletion();
+            // 4. Gentle, smooth landing settle (no multi-vibrato jitter)
+            Sequence settleSeq = DOTween.Sequence();
+            settleSeq.Append(transform.DOScale(new Vector3(startScale.x * 1.06f, startScale.y * 0.94f, startScale.z * 1.06f), 0.07f).SetEase(Ease.OutSine));
+            settleSeq.Append(transform.DOScale(startScale, 0.12f).SetEase(Ease.OutCubic));
+            yield return settleSeq.WaitForCompletion();
 
             transform.localScale = startScale;
             _isMovingToSlot = false;

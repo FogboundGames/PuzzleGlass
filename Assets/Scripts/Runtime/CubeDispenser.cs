@@ -19,17 +19,20 @@ namespace PuzzleGlass
     public class CubeDispenser : MonoBehaviour
     {
         public ShapedGlassContainer glassContainer;
-        public float feedInterval = 0.085f; // Fast, continuous pouring stream
+        public float feedInterval = 0.11f;
         public bool isAutoFeeding = false;
 
+        [SerializeField]
         private List<AssignedCubeOrder> _orders = new List<AssignedCubeOrder>();
         private Dictionary<PuzzleColor, Material> _cubeMaterials = new Dictionary<PuzzleColor, Material>();
         private Mesh _cubeMesh;
         private Coroutine _autoFeedRoutine;
         private int _lastServedIndex = -1;
+        private float _continuousFeedTimer = 0f;
 
         private void Awake()
         {
+            feedInterval = 0.11f;
             EnsureResources();
             if (glassContainer == null)
             {
@@ -37,35 +40,77 @@ namespace PuzzleGlass
             }
         }
 
+        private void Start()
+        {
+            ClearOrders();
+            SyncAllSceneMonsters();
+        }
+
+        private void Update()
+        {
+            if (!Application.isPlaying) return;
+
+            // Single deterministic feed loop: whenever the cube closest to the tip of the bottle
+            // matches a slotted monster's color, that monster collects it 1-by-1!
+            _continuousFeedTimer += Time.deltaTime;
+            if (_continuousFeedTimer >= feedInterval)
+            {
+                if (HasAnySlottedMonsterWaiting())
+                {
+                    bool fed = FeedNextCube();
+                    isAutoFeeding = fed;
+                    // If the next matching cube is currently sliding down into the spout, re-check in 0.025s
+                    _continuousFeedTimer = fed ? 0f : (feedInterval - 0.025f);
+                }
+                else
+                {
+                    isAutoFeeding = false;
+                }
+            }
+        }
+
+        private bool HasAnySlottedMonsterWaiting()
+        {
+            SyncAllSceneMonsters();
+            for (int i = 0; i < _orders.Count; i++)
+            {
+                var o = _orders[i];
+                if (!o.IsFinished && o.targetMonster != null && o.targetMonster.assignedSlot != null && o.targetMonster.remainingCount > 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void SyncAllSceneMonsters()
+        {
+            if (SlotSystem.Instance != null && SlotSystem.Instance.slots != null)
+            {
+                for (int i = 0; i < SlotSystem.Instance.slots.Count; i++)
+                {
+                    var slot = SlotSystem.Instance.slots[i];
+                    if (slot != null && slot.currentMonster != null)
+                    {
+                        RegisterMonsterOrder(slot.currentMonster);
+                    }
+                }
+            }
+        }
+
         private void EnsureResources()
         {
             if (_cubeMesh == null)
             {
-                _cubeMesh = ProceduralMeshUtils.CreateRoundedCube(0.24f, 0.06f, 3);
+                float pSize = (glassContainer != null) ? Mathf.Clamp(glassContainer.particleSize, 0.08f, 0.22f) : 0.16f;
+                _cubeMesh = ProceduralMeshUtils.CreateRoundedCube(pSize, pSize * 0.28f, 4);
             }
 
-            Shader litShader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
             {
-                if (!_cubeMaterials.ContainsKey(col))
+                if (!_cubeMaterials.ContainsKey(col) || _cubeMaterials[col] == null)
                 {
-                    Material m = new Material(litShader);
-                    m.name = $"Mat_FlyingCube_{col}";
-                    Color c = PuzzleColorPalette.GetCubeColor(col);
-                    m.color = c;
-                    if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
-                    if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.18f);
-                    if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.18f);
-                    if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
-                    m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-                    _cubeMaterials[col] = m;
-                }
-                else
-                {
-                    Material m = _cubeMaterials[col];
-                    if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.18f);
-                    if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.18f);
-                    if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+                    _cubeMaterials[col] = PuzzleColorPalette.CreateCandyCubeMaterial(col, $"Mat_FlyingCube_{col}");
                 }
             }
         }
@@ -74,25 +119,24 @@ namespace PuzzleGlass
         {
             if (monster == null) return;
 
-            // Avoid duplicate orders for the same monster
+            // Exact 1-to-1 count: if the monster says 10, it collects literally 10 cubes!
+            int exactCubeQuota = (monster.initialCount > 0) ? monster.initialCount : monster.remainingCount;
+
             for (int i = 0; i < _orders.Count; i++)
             {
                 if (_orders[i].targetMonster == monster)
                 {
-                    if (_orders[i].assignedTotal == 0)
-                    {
-                        _orders[i].assignedTotal = monster.remainingCount;
-                    }
+                    _orders[i].assignedTotal = exactCubeQuota;
+                    _orders[i].color = monster.colorType;
                     return;
                 }
             }
 
-            // Strict assignment: this order is unique to this specific monster instance!
             AssignedCubeOrder order = new AssignedCubeOrder
             {
                 targetMonster = monster,
                 color = monster.colorType,
-                assignedTotal = monster.remainingCount,
+                assignedTotal = exactCubeQuota,
                 dispatchedCount = 0
             };
 
@@ -107,10 +151,8 @@ namespace PuzzleGlass
 
         public void StartFeedingSlottedMonsters()
         {
-            if (_autoFeedRoutine == null)
-            {
-                _autoFeedRoutine = StartCoroutine(AutoFeedRoutine());
-            }
+            SyncAllSceneMonsters();
+            _continuousFeedTimer = feedInterval;
         }
 
         public bool FeedNextCube()
@@ -121,7 +163,9 @@ namespace PuzzleGlass
                 if (glassContainer == null) return false;
             }
 
-            // 1. Inspect the frontmost cube currently at the mouth of the bottle
+            SyncAllSceneMonsters();
+
+            // 1. Inspect the single cube closest to the tip/mouth of the bottle!
             var frontCube = glassContainer.GetFrontCube();
             if (frontCube == null)
             {
@@ -130,7 +174,7 @@ namespace PuzzleGlass
 
             PuzzleColor frontColor = frontCube.color;
 
-            // 2. Find eligible active slotted monsters needing this front cube's color
+            // 2. ONLY a slotted monster whose color matches the cube closest to the tip can collect it!
             List<AssignedCubeOrder> matchingOrders = new List<AssignedCubeOrder>();
             for (int i = 0; i < _orders.Count; i++)
             {
@@ -146,8 +190,8 @@ namespace PuzzleGlass
 
             if (matchingOrders.Count == 0)
             {
-                // The frontmost cube cannot be consumed yet because no active slotted monster needs its color.
-                // It must wait at the mouth until a matching monster is slotted!
+                // No slotted monster matches the color currently at the tip of the bottle.
+                // The cubes remain in the bottle until a matching monster is placed into a slot!
                 return false;
             }
 
@@ -155,18 +199,20 @@ namespace PuzzleGlass
             _lastServedIndex = (_lastServedIndex + 1) % matchingOrders.Count;
             AssignedCubeOrder targetOrder = matchingOrders[_lastServedIndex];
 
-            // 4. Dispatch the frontmost cube to the matching monster
-            DispatchCube(targetOrder.targetMonster, frontColor);
-            targetOrder.dispatchedCount++;
+            // 4. Consume the single frontmost cube from the bottle tip and drop it into the monster's mouth!
+            if (DispatchCube(targetOrder.targetMonster, frontColor))
+            {
+                targetOrder.dispatchedCount++;
+                return true;
+            }
 
-            return true;
+            return false;
         }
 
-        private void DispatchCube(MonsterCharacter targetMonster, PuzzleColor color)
+        private bool DispatchCube(MonsterCharacter targetMonster, PuzzleColor color)
         {
             EnsureResources();
 
-            // 1. Strictly take and launch the frontmost cube from the glass bottle mouth!
             if (glassContainer != null)
             {
                 Material mat = _cubeMaterials.ContainsKey(color) ? _cubeMaterials[color] : null;
@@ -174,26 +220,11 @@ namespace PuzzleGlass
                 if (launchedFromTrack)
                 {
                     glassContainer.PulseSpout();
-                    return;
+                    return true;
                 }
             }
 
-            // 2. Fallback only if bottle is completely empty: launch from spout opening
-            Vector3 startPos = glassContainer != null
-                ? glassContainer.GetSpoutExitWorldPosition()
-                : transform.position + new Vector3(0, -0.90f, 0);
-
-            GameObject cubeObj = new GameObject($"Cube_{color}_To_{targetMonster.monsterId}");
-            cubeObj.transform.position = startPos;
-            cubeObj.transform.localScale = Vector3.one;
-
-            FlyingCube flying = cubeObj.AddComponent<FlyingCube>();
-            flying.LaunchThroughGlassTrack(new Vector3[] { startPos }, startPos, targetMonster, color, _cubeMaterials[color], _cubeMesh);
-
-            if (glassContainer != null)
-            {
-                glassContainer.PulseSpout();
-            }
+            return false;
         }
 
         public void SetAutoFeed(bool enable)
@@ -217,16 +248,13 @@ namespace PuzzleGlass
         private IEnumerator AutoFeedRoutine()
         {
             isAutoFeeding = true;
-
-            // Brief anticipation pause (0.10s) before dispensing first cube
-            yield return new WaitForSeconds(0.10f);
+            yield return new WaitForSeconds(0.04f);
 
             while (isAutoFeeding)
             {
                 bool fed = FeedNextCube();
                 if (!fed)
                 {
-                    // No more pending cubes for any currently slotted monster
                     isAutoFeeding = false;
                     _autoFeedRoutine = null;
                     yield break;

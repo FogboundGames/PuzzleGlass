@@ -92,6 +92,23 @@ namespace PuzzleGlass.Editor
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", mouthCol);
                     if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.50f);
                 });
+
+                Shader candyShader = Shader.Find("PuzzleGlass/CandyCubeLit") ?? litShader;
+                SaveOrUpdateMaterial($"Assets/Materials/Mat_Cube_{col}.mat", candyShader, mat =>
+                {
+                    mat.shader = candyShader;
+                    Color baseCol = PuzzleColorPalette.GetCubeColor(col);
+                    Color shadowCol = PuzzleColorPalette.GetCubeShadowColor(col);
+                    Color highCol = PuzzleColorPalette.GetCubeHighlightColor(col);
+                    mat.color = baseCol;
+                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", baseCol);
+                    if (mat.HasProperty("_Color")) mat.SetColor("_Color", baseCol);
+                    if (mat.HasProperty("_ShadowColor")) mat.SetColor("_ShadowColor", shadowCol);
+                    if (mat.HasProperty("_HighlightColor")) mat.SetColor("_HighlightColor", highCol);
+                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.74f);
+                    if (mat.HasProperty("_BevelHighlight")) mat.SetFloat("_BevelHighlight", 0.56f);
+                    if (mat.HasProperty("_RimSeparation")) mat.SetFloat("_RimSeparation", 0.38f);
+                });
             }
         }
 
