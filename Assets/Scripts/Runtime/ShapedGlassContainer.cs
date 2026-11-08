@@ -17,7 +17,12 @@ namespace PuzzleGlass
         DoubleBulb = 6,
         WavyAmphora = 7,
         SCurveFunnel = 8,
-        CustomFreeform = 9
+        CustomFreeform = 9,
+        SquareFlask = 10,        // Hunili Kare Cam Şişe
+        RectangleFlask = 11,     // Hunili Dikey Dikdörtgen Cam Şişe
+        WideRectangleFlask = 12, // Hunili Yatay Dikdörtgen Cam Şişe
+        SquareBox = 13,          // Düz Tabanlı Tam Kare Cam Kutu
+        RectangleBox = 14        // Düz Tabanlı Tam Dikdörtgen Cam Kutu
     }
 
     public enum GlassColorTheme
@@ -120,6 +125,18 @@ namespace PuzzleGlass
         [Range(1, 8)]
         public int particlesPerMonsterCount = 1;
 
+        [Header("Pixel Art Visual System (Image 2)")]
+        public ParticleArrangementMode particleMode = ParticleArrangementMode.PixelArtVisual;
+        public PixelArtPreset pixelArtPreset = PixelArtPreset.Frog;
+        public bool freezePatternInPlace = true;
+        [Range(0.10f, 0.30f)]
+        public float gridCellSpacing = 0.165f;
+        public float patternVerticalOffset = 0.0f;
+        public bool fillEmptyWithColor = false;
+        public PuzzleColor emptyCellColor = PuzzleColor.Blue;
+        public bool allowCollectAnyColorFromPattern = true;
+        public PixelArtPattern customPattern;
+
         [Header("Legacy / Reference Dimensions")]
         public float spoutBottomY = -1.20f;
         public float spoutTopY = -0.52f;
@@ -187,7 +204,9 @@ namespace PuzzleGlass
         {
             particlesPerMonsterCount = 1;
             if (particleSize < 0.145f) particleSize = 0.155f;
+            patternVerticalOffset = 0f;
             EnsureContourInitialized();
+            CleanOrphanedChildren();
             RebuildContainer();
         }
 
@@ -195,12 +214,48 @@ namespace PuzzleGlass
         {
             particlesPerMonsterCount = 1;
             if (particleSize < 0.145f) particleSize = 0.155f;
+            patternVerticalOffset = 0f;
             EnsureContourInitialized();
-            if (_bottleCubes == null || _bottleCubes.Count == 0 || _cubesContainer == null)
+            CleanOrphanedChildren();
+            RebuildContainer();
+        }
+
+        public void CleanOrphanedChildren()
+        {
+            Transform existing = transform.Find("CubesInBottle");
+            if (existing != null)
             {
-                RebuildContainer();
+                for (int i = existing.childCount - 1; i >= 0; i--)
+                {
+                    var child = existing.GetChild(i).gameObject;
+                    if (Application.isPlaying) Destroy(child);
+                    else DestroyImmediate(child);
+                }
+            }
+
+            if (_bottleCubes != null)
+            {
+                _bottleCubes.Clear();
             }
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (particleSize < 0.12f) particleSize = 0.155f;
+            patternVerticalOffset = 0f;
+            EnsureContourInitialized();
+
+            UnityEditor.EditorApplication.delayCall += () =>
+            {
+                if (this != null && gameObject != null)
+                {
+                    CleanOrphanedChildren();
+                    RebuildContainer();
+                }
+            };
+        }
+#endif
 
         private void Update()
         {
@@ -412,6 +467,127 @@ namespace PuzzleGlass
                     contourPoints.Add(new GlassContourPoint( 1.12f, 0.360f,  0.05f, 0.0f));
                     contourPoints.Add(new GlassContourPoint( 2.60f, 0.300f,  0.00f, 0.4f));
                     break;
+
+                case GlassShapePreset.SquareFlask:
+                    // Hunili Kare Cam Şişe (Kare gövde, alt huni ve üst boğaz - Piksel Sanatı için ideal)
+                    symmetricMode = true;
+                    showShoulderHandles = false;
+                    contourPoints.Add(new GlassContourPoint(-1.20f, 0.180f, 0f, 0.40f));
+                    contourPoints.Add(new GlassContourPoint(-0.76f, 0.180f, 0f, 0.20f));
+                    contourPoints.Add(new GlassContourPoint(-0.56f, 0.260f, 0f, 0.10f));
+                    contourPoints.Add(new GlassContourPoint(-0.46f, 1.150f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint(-0.42f, 1.150f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.70f, 1.150f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.75f, 1.150f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint( 1.88f, 0.300f, 0f, 0.15f));
+                    contourPoints.Add(new GlassContourPoint( 2.65f, 0.300f, 0f, 0.40f));
+                    break;
+
+                case GlassShapePreset.RectangleFlask:
+                    // Hunili Dikey Dikdörtgen Cam Şişe
+                    symmetricMode = true;
+                    showShoulderHandles = false;
+                    contourPoints.Add(new GlassContourPoint(-1.20f, 0.180f, 0f, 0.40f));
+                    contourPoints.Add(new GlassContourPoint(-0.76f, 0.180f, 0f, 0.20f));
+                    contourPoints.Add(new GlassContourPoint(-0.56f, 0.240f, 0f, 0.10f));
+                    contourPoints.Add(new GlassContourPoint(-0.46f, 0.820f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint(-0.42f, 0.820f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.90f, 0.820f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.95f, 0.820f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint( 2.08f, 0.280f, 0f, 0.15f));
+                    contourPoints.Add(new GlassContourPoint( 2.65f, 0.280f, 0f, 0.40f));
+                    break;
+
+                case GlassShapePreset.WideRectangleFlask:
+                    // Hunili Geniş Yatay Dikdörtgen Cam Şişe
+                    symmetricMode = true;
+                    showShoulderHandles = false;
+                    contourPoints.Add(new GlassContourPoint(-1.20f, 0.180f, 0f, 0.40f));
+                    contourPoints.Add(new GlassContourPoint(-0.76f, 0.180f, 0f, 0.20f));
+                    contourPoints.Add(new GlassContourPoint(-0.56f, 0.280f, 0f, 0.10f));
+                    contourPoints.Add(new GlassContourPoint(-0.46f, 1.500f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint(-0.42f, 1.500f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.30f, 1.500f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.35f, 1.500f, 0f, 0.90f));
+                    contourPoints.Add(new GlassContourPoint( 1.50f, 0.320f, 0f, 0.15f));
+                    contourPoints.Add(new GlassContourPoint( 2.65f, 0.320f, 0f, 0.40f));
+                    break;
+
+                case GlassShapePreset.SquareBox:
+                    // Düz Tabanlı Tam Kare Cam Kutu (Boğazsız ve Hunisiz vitrin kutusu)
+                    symmetricMode = true;
+                    showShoulderHandles = false;
+                    contourPoints.Add(new GlassContourPoint(-0.75f, 1.100f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint(-0.70f, 1.100f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.35f, 1.100f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.40f, 1.100f, 0f, 1.00f));
+                    break;
+
+                case GlassShapePreset.RectangleBox:
+                    // Düz Tabanlı Tam Dikdörtgen Cam Kutu
+                    symmetricMode = true;
+                    showShoulderHandles = false;
+                    contourPoints.Add(new GlassContourPoint(-0.85f, 0.850f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint(-0.80f, 0.850f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.60f, 0.850f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 1.65f, 0.850f, 0f, 1.00f));
+                    break;
+            }
+
+            SyncBoundsFromContour();
+            if (rebuildImmediate)
+            {
+                RebuildContainer();
+            }
+        }
+
+        /// <summary>
+        /// Parametrik olarak istenilen genişlik, yükseklik ve köşe yuvarlamasında Kare veya Dikdörtgen cam oluşturur.
+        /// </summary>
+        public void ConfigureRectangularContainer(
+            float width = 2.2f,
+            float height = 2.1f,
+            float cornerRadius = 0.90f,
+            bool hasSpout = true,
+            bool hasNeck = true,
+            bool rebuildImmediate = true)
+        {
+            if (contourPoints == null) contourPoints = new List<GlassContourPoint>();
+            contourPoints.Clear();
+            symmetricMode = true;
+            showShoulderHandles = false;
+            shapePreset = GlassShapePreset.CustomFreeform;
+
+            float hw = Mathf.Max(0.40f, width * 0.5f);
+            float bottomY = -0.45f;
+            float topY = bottomY + Mathf.Max(0.6f, height);
+            float tension = Mathf.Clamp01(cornerRadius);
+
+            if (hasSpout)
+            {
+                contourPoints.Add(new GlassContourPoint(-1.20f, 0.180f, 0f, 0.40f));
+                contourPoints.Add(new GlassContourPoint(-0.76f, 0.180f, 0f, 0.20f));
+                contourPoints.Add(new GlassContourPoint(-0.56f, 0.260f, 0f, 0.10f));
+                contourPoints.Add(new GlassContourPoint(bottomY - 0.04f, hw, 0f, tension));
+                contourPoints.Add(new GlassContourPoint(bottomY, hw, 0f, 1.0f));
+            }
+            else
+            {
+                contourPoints.Add(new GlassContourPoint(bottomY - 0.05f, hw, 0f, 1.0f));
+                contourPoints.Add(new GlassContourPoint(bottomY, hw, 0f, 1.0f));
+            }
+
+            if (hasNeck)
+            {
+                contourPoints.Add(new GlassContourPoint(topY, hw, 0f, 1.0f));
+                contourPoints.Add(new GlassContourPoint(topY + 0.05f, hw, 0f, tension));
+                contourPoints.Add(new GlassContourPoint(topY + 0.18f, 0.30f, 0f, 0.15f));
+                contourPoints.Add(new GlassContourPoint(2.65f, 0.30f, 0f, 0.40f));
+            }
+            else
+            {
+                contourPoints.Add(new GlassContourPoint(topY, hw, 0f, 1.0f));
+                contourPoints.Add(new GlassContourPoint(topY + 0.05f, hw, 0f, 1.0f));
             }
 
             SyncBoundsFromContour();
@@ -1348,7 +1524,7 @@ namespace PuzzleGlass
 
         /// <summary>
         /// Populates any custom or preset glass shape with clean, cohesive, non-mixed color bands (Reference Video style)
-        /// matching the active monsters in the scene!
+        /// matching the active monsters in the scene, or with stunning Pixel Art (Image 2)!
         /// </summary>
         public void PopulateBottlePhysics()
         {
@@ -1362,6 +1538,13 @@ namespace PuzzleGlass
                 }
             }
             _bottleCubes.Clear();
+
+            // Image 2 Pixel Art Visual Arrangement Mode
+            if (particleMode == ParticleArrangementMode.PixelArtVisual)
+            {
+                PopulatePixelArtVisual();
+                return;
+            }
 
             int ratio = Mathf.Max(1, particlesPerMonsterCount);
             List<(PuzzleColor color, int count)> colorBands = new List<(PuzzleColor, int)>();
@@ -1500,6 +1683,122 @@ namespace PuzzleGlass
             }
         }
 
+        public float GetChamberFloorY()
+        {
+            if (shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox)
+            {
+                if (contourPoints != null && contourPoints.Count > 0)
+                {
+                    return contourPoints[0].y * heightScale;
+                }
+                return -0.75f * heightScale;
+            }
+
+            if (contourPoints != null && contourPoints.Count >= 4)
+            {
+                for (int i = 0; i < contourPoints.Count; i++)
+                {
+                    if (contourPoints[i].y >= -0.60f && contourPoints[i].halfWidth >= 0.38f)
+                    {
+                        return contourPoints[i].y * heightScale;
+                    }
+                }
+            }
+
+            return -0.46f * heightScale;
+        }
+
+        public float CalculateChamberCenterY()
+        {
+            if (contourPoints != null && contourPoints.Count >= 4)
+            {
+                float maxHw = 0f;
+                for (int i = 0; i < contourPoints.Count; i++)
+                {
+                    if (contourPoints[i].halfWidth > maxHw) maxHw = contourPoints[i].halfWidth;
+                }
+
+                float chamberHwThreshold = Mathf.Max(0.40f, maxHw * 0.45f);
+                float chamberYMin = float.MaxValue;
+                float chamberYMax = float.MinValue;
+
+                for (int i = 0; i < contourPoints.Count; i++)
+                {
+                    var pt = contourPoints[i];
+                    if (pt.halfWidth >= chamberHwThreshold)
+                    {
+                        if (pt.y < chamberYMin) chamberYMin = pt.y;
+                        if (pt.y > chamberYMax) chamberYMax = pt.y;
+                    }
+                }
+
+                if (chamberYMin < float.MaxValue && chamberYMax > float.MinValue)
+                {
+                    float mid = (chamberYMin + chamberYMax) * 0.5f;
+                    return mid * heightScale + patternVerticalOffset;
+                }
+            }
+
+            return 0.30f * heightScale + patternVerticalOffset;
+        }
+
+        /// <summary>
+        /// Populates the container with a stunning, crisp Pixel Art formation using real 3D physical balls!
+        /// Spawns real 3D BallPhysicsControllers resting directly on the floor of the glass chamber,
+        /// builds airtight container colliders, and synchronizes matching cute monsters at the bottom.
+        /// </summary>
+        public void PopulatePixelArtVisual()
+        {
+            CleanOrphanedChildren();
+
+            PixelArtPattern pattern = (pixelArtPreset == PixelArtPreset.Custom && customPattern != null)
+                ? customPattern
+                : PixelArtLibrary.GetPreset(pixelArtPreset);
+
+            if (pattern == null) pattern = PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
+
+            // 1. Rebuild Airtight Physics Colliders for this exact shape
+            var bcm = GetComponent<BallContainerManager>() ?? gameObject.AddComponent<BallContainerManager>();
+            bcm.glassContainer = this;
+            bcm.RebuildColliders();
+
+            // 2. Spawn real 3D physical balls via BallPatternGenerator
+            var gen = BallPatternGenerator.Instance ?? FindFirstObjectByType<BallPatternGenerator>();
+            if (gen == null)
+            {
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gen = gm.GetComponent<BallPatternGenerator>() ?? gm.gameObject.AddComponent<BallPatternGenerator>();
+                else gen = gameObject.AddComponent<BallPatternGenerator>();
+            }
+
+            float spacing = (gridCellSpacing > 0.08f) ? gridCellSpacing : particleSize * 1.06f;
+            if (gen != null)
+            {
+                gen.glassContainer = this;
+                gen.ballDiameter = particleSize > 0.05f ? particleSize : 0.165f;
+                gen.patternVerticalOffset = patternVerticalOffset;
+                gen.GenerateFromCustomPattern(pattern, spacing);
+            }
+
+            // 3. Synchronize cute monsters at the bottom staging tray to match pattern!
+            var gameMgr = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+            if (gameMgr != null)
+            {
+                gameMgr.SynchronizeMonstersForPattern(pattern);
+            }
+        }
+
+        public void ApplyPixelArtPreset(PixelArtPreset preset, bool rebuildImmediate = true)
+        {
+            particleMode = ParticleArrangementMode.PixelArtVisual;
+            pixelArtPreset = preset;
+            freezePatternInPlace = false;
+            if (rebuildImmediate)
+            {
+                RebuildContainer();
+            }
+        }
+
         private float EvaluateLayerSortScore(Vector2 p)
         {
             // Keep spout particles at the very bottom first
@@ -1548,6 +1847,18 @@ namespace PuzzleGlass
             if (_bottleCubes == null || _bottleCubes.Count == 0) return false;
 
             int count = _bottleCubes.Count;
+
+            // In Pixel Art mode with freezePatternInPlace, check if there are any unfrozen cubes (e.g. live dropping)
+            if (particleMode == ParticleArrangementMode.PixelArtVisual && freezePatternInPlace)
+            {
+                bool anyUnfrozen = false;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!_bottleCubes[i].isFrozen) { anyUnfrozen = true; break; }
+                }
+                if (!anyUnfrozen) return false;
+            }
+
             float beadRadius = particleSize * 0.50f;
             float minDist = particleSize * 1.055f;
             float minDistSq = minDist * minDist;
@@ -1589,6 +1900,15 @@ namespace PuzzleGlass
                 for (int i = 0; i < count; i++)
                 {
                     var c = _bottleCubes[i];
+                    if (c.isFrozen)
+                    {
+                        c.vx = 0f;
+                        c.vy = 0f;
+                        c.x = c.targetX;
+                        c.y = c.targetY;
+                        continue;
+                    }
+
                     c.targetX = c.x; // Store pre-substep X
                     c.targetY = c.y; // Store pre-substep Y
 
@@ -1670,6 +1990,7 @@ namespace PuzzleGlass
                     for (int i = 0; i < count; i++)
                     {
                         var c = _bottleCubes[i];
+                        if (c.isFrozen) continue;
                         ProjectOntoSlopedGlassWalls(ref c.x, ref c.y, spoutFloorY);
                     }
 
@@ -1679,6 +2000,8 @@ namespace PuzzleGlass
                         for (int j = 0; j < i; j++)
                         {
                             var cj = _bottleCubes[j];
+                            if (ci.isFrozen && cj.isFrozen) continue;
+
                             float dy = ci.y - cj.y;
                             if (dy >= minDist || dy <= -minDist) continue;
 
@@ -1708,11 +2031,14 @@ namespace PuzzleGlass
                                 ny *= invLen;
 
                                 // Upper cube rolls up and around the lower cube's shoulder with low friction
-                                ci.x += nx * overlap * 0.92f;
-                                ci.y += ny * overlap * 0.96f;
+                                if (!ci.isFrozen)
+                                {
+                                    ci.x += nx * overlap * 0.92f;
+                                    ci.y += ny * overlap * 0.96f;
+                                }
 
                                 // Subtle lateral packing response on lower cube if within the same chamber band
-                                if (cj.y > spoutTopChannelY && cj.layerOrder == ci.layerOrder)
+                                if (!cj.isFrozen && cj.y > spoutTopChannelY && cj.layerOrder == ci.layerOrder)
                                 {
                                     cj.x -= nx * overlap * 0.12f;
                                     ClampToInnerGlassWalls(ref cj.x, ref cj.y, beadRadius, spoutFloorY);
@@ -1720,11 +2046,14 @@ namespace PuzzleGlass
                             }
                         }
 
-                        if (activeBandInChamber && ci.layerOrder > minLayerOrder && ci.y < throatGateY)
+                        if (!ci.isFrozen && activeBandInChamber && ci.layerOrder > minLayerOrder && ci.y < throatGateY)
                         {
                             ci.y = throatGateY;
                         }
-                        ProjectOntoSlopedGlassWalls(ref ci.x, ref ci.y, spoutFloorY);
+                        if (!ci.isFrozen)
+                        {
+                            ProjectOntoSlopedGlassWalls(ref ci.x, ref ci.y, spoutFloorY);
+                        }
                     }
                 }
 
@@ -1732,6 +2061,15 @@ namespace PuzzleGlass
                 for (int i = 0; i < count; i++)
                 {
                     var c = _bottleCubes[i];
+                    if (c.isFrozen)
+                    {
+                        c.vx = 0f;
+                        c.vy = 0f;
+                        c.x = c.targetX;
+                        c.y = c.targetY;
+                        continue;
+                    }
+
                     float moveX = c.x - c.targetX;
                     float moveY = c.y - c.targetY;
 
@@ -1853,6 +2191,12 @@ namespace PuzzleGlass
         public void RecomputeLaminarTargets(bool instantSnap)
         {
             if (_bottleCubes == null || _bottleCubes.Count == 0) return;
+
+            // In Pixel Art mode with freezePatternInPlace, do not disturb the exact pixel art grid formation!
+            if (particleMode == ParticleArrangementMode.PixelArtVisual && freezePatternInPlace)
+            {
+                return;
+            }
 
             if (!instantSnap)
             {
@@ -2099,6 +2443,45 @@ namespace PuzzleGlass
         {
             if (_bottleCubes == null || _bottleCubes.Count == 0) return null;
 
+            // In Pixel Art mode with allowCollectAnyColorFromPattern:
+            // If any monsters are currently in active slots waiting for cubes, pick the lowest cube matching one of them!
+            if (particleMode == ParticleArrangementMode.PixelArtVisual && allowCollectAnyColorFromPattern)
+            {
+                var mgr = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance : FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (mgr != null && mgr.slotSystem != null && mgr.slotSystem.slots != null)
+                {
+                    List<PuzzleColor> slottedColors = new List<PuzzleColor>();
+                    for (int s = 0; s < mgr.slotSystem.slots.Count; s++)
+                    {
+                        var slot = mgr.slotSystem.slots[s];
+                        if (slot != null && slot.currentMonster != null && slot.currentMonster.remainingCount > 0)
+                        {
+                            slottedColors.Add(slot.currentMonster.colorType);
+                        }
+                    }
+
+                    if (slottedColors.Count > 0)
+                    {
+                        BottleCube bestMatch = null;
+                        float bestScore = float.MaxValue;
+                        for (int i = 0; i < _bottleCubes.Count; i++)
+                        {
+                            var bc = _bottleCubes[i];
+                            if (bc != null && bc.gameObject != null && slottedColors.Contains(bc.color))
+                            {
+                                float score = bc.y + Mathf.Abs(bc.x) * 0.12f;
+                                if (score < bestScore)
+                                {
+                                    bestScore = score;
+                                    bestMatch = bc;
+                                }
+                            }
+                        }
+                        if (bestMatch != null) return bestMatch;
+                    }
+                }
+            }
+
             BottleCube lowest = null;
             float lowestScore = float.MaxValue;
             for (int i = 0; i < _bottleCubes.Count; i++)
@@ -2148,13 +2531,14 @@ namespace PuzzleGlass
                 return false;
             }
 
-            // Ensure the cube has rolled into the spout/throat region before launching it
-            if (Application.isPlaying && targetCube.y > spoutBottomY + 0.78f)
+            // Ensure the cube has rolled into the spout/throat region before launching it (only in physics mode)
+            if (particleMode != ParticleArrangementMode.PixelArtVisual && Application.isPlaying && targetCube.y > spoutBottomY + 0.78f)
             {
                 _activeSettleTimer = 1.25f;
                 return false;
             }
 
+            targetCube.isFrozen = false;
             float inheritedVy = Mathf.Min(-2.6f, targetCube.vy);
             _bottleCubes.Remove(targetCube);
 

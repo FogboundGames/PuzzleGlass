@@ -18,6 +18,7 @@ namespace PuzzleGlass
 
         [Header("Visual Parts")]
         public Transform bodyPivot;
+        public Transform mouthTransform;
         public Transform mouthTargetPoint;
         public Transform badgeTransform;
         public TextMeshPro counterText;
@@ -237,6 +238,7 @@ namespace PuzzleGlass
             mouth.transform.SetParent(bodyPivot, false);
             mouth.transform.localPosition = new Vector3(0, 0.03f, -0.22f);
             mouth.transform.localScale = Vector3.one;
+            mouthTransform = mouth.transform;
             MeshFilter mfMouth = mouth.AddComponent<MeshFilter>();
             mfMouth.sharedMesh = ProceduralMeshUtils.CreateMouthCavity(0.72f, 0.50f, 0.42f, 16);
             MeshRenderer mrMouth = mouth.AddComponent<MeshRenderer>();
@@ -535,6 +537,47 @@ namespace PuzzleGlass
         {
             if (_isCompleted) return;
             _subParticleCounter = 0;
+            PlaySmoothGulpWave();
+            DecrementCounterAndCheckComplete();
+        }
+
+        public void OnBallIncoming(BallPhysicsController ball)
+        {
+            if (_isCompleted) return;
+
+            // Mouth stretches open in excited anticipation!
+            if (mouthTransform != null)
+            {
+                mouthTransform.DOKill(false);
+                mouthTransform.DOScale(new Vector3(1.15f, 1.30f, 1.15f), 0.12f).SetEase(Ease.OutBack);
+            }
+
+            // Eyes open wide excitedly
+            if (eyeLeft != null && eyeRight != null)
+            {
+                eyeLeft.DOScaleY(1.18f, 0.10f).SetEase(Ease.OutQuad);
+                eyeRight.DOScaleY(1.18f, 0.10f).SetEase(Ease.OutQuad);
+            }
+        }
+
+        public void FeedBall(BallPhysicsController ball)
+        {
+            if (_isCompleted) return;
+
+            // Close mouth back to normal
+            if (mouthTransform != null)
+            {
+                mouthTransform.DOKill(false);
+                mouthTransform.DOScale(Vector3.one, 0.08f).SetEase(Ease.InSine);
+            }
+
+            // Eyes return to normal
+            if (eyeLeft != null && eyeRight != null)
+            {
+                eyeLeft.DOScaleY(1.0f, 0.08f);
+                eyeRight.DOScaleY(1.0f, 0.08f);
+            }
+
             PlaySmoothGulpWave();
             DecrementCounterAndCheckComplete();
         }

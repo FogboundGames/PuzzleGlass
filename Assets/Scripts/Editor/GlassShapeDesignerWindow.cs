@@ -44,9 +44,15 @@ namespace PuzzleGlass.Editor
         private bool _draggingRightSide = true;
         private bool _autoRebuildParticlesOnRelease = false;
 
+        private float _boxWidth = 2.2f;
+        private float _boxHeight = 2.1f;
+        private float _boxCornerRadius = 0.90f;
+        private bool _boxHasSpout = true;
+        private bool _boxHasNeck = true;
+
         private static readonly string[] PresetLabels = new string[]
         {
-            "🔵 Geniş Bombeli Flask (Referans)",
+            "🔵 Geniş Bombeli Flask",
             "🧪 Klasik İksir Şişesi",
             "⏳ Kum Saati Cam",
             "💙 Kalp Cam Şişe",
@@ -54,7 +60,13 @@ namespace PuzzleGlass.Editor
             "📐 Konik Laboratuvar Şişesi",
             "⛄ Çift Boğumlu Şişe",
             "🏺 Dalgalı Amfora Vazo",
-            "🐍 S-Kıvrımlı Kaydırak Tüp"
+            "🐍 S-Kıvrımlı Kaydırak Tüp",
+            "🔲 Serbest Özel Şekil",
+            "⬛ Hunili Kare Şişe",
+            "📱 Hunili Dikey Dikdörtgen",
+            "🖥️ Hunili Geniş Dikdörtgen",
+            "📦 Düz Tabanlı Kare Kutu",
+            "🏷️ Düz Tabanlı Dikdörtgen Kutu"
         };
 
         private static readonly string[] ThemeLabels = new string[]
@@ -133,6 +145,16 @@ namespace PuzzleGlass.Editor
 
             // 2. Ready-to-Use Glass Shape Presets
             DrawPresetsSection();
+
+            EditorGUILayout.Space(8);
+
+            // 2.5 Kare & Dikdörtgen Cam Oluşturucu
+            DrawSquareRectangleSection();
+
+            EditorGUILayout.Space(8);
+
+            // 2.8 2. Görseldeki Piksel Sanatı Görselleri (Pixel Art Presets)
+            DrawPixelArtSection();
 
             EditorGUILayout.Space(8);
 
@@ -559,6 +581,126 @@ namespace PuzzleGlass.Editor
             }
 
             GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSquareRectangleSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("📐 Kare & Dikdörtgen Cam Oluşturucu", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Camı kare veya dikdörtgen yapmak için aşağıdaki ayarları kullanabilir veya hızlı şablonlara tıklayabilirsiniz.", MessageType.Info);
+
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.25f, 0.85f, 0.55f);
+            if (GUILayout.Button("⬛ Hunili Kare", GUILayout.Height(30)))
+            {
+                Undo.RecordObject(_targetContainer, "Apply Square Flask");
+                _targetContainer.ApplyShapePreset(GlassShapePreset.SquareFlask, true);
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("📱 Hunili Dikdörtgen", GUILayout.Height(30)))
+            {
+                Undo.RecordObject(_targetContainer, "Apply Rectangle Flask");
+                _targetContainer.ApplyShapePreset(GlassShapePreset.RectangleFlask, true);
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("🖥️ Geniş Dikdörtgen", GUILayout.Height(30)))
+            {
+                Undo.RecordObject(_targetContainer, "Apply Wide Rectangle Flask");
+                _targetContainer.ApplyShapePreset(GlassShapePreset.WideRectangleFlask, true);
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("📦 Düz Tabanlı Kutu", GUILayout.Height(30)))
+            {
+                Undo.RecordObject(_targetContainer, "Apply Square Box");
+                _targetContainer.ApplyShapePreset(GlassShapePreset.SquareBox, true);
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+            _boxWidth = EditorGUILayout.Slider("Kutu Genişliği (Width)", _boxWidth, 0.8f, 3.2f);
+            _boxHeight = EditorGUILayout.Slider("Kutu Yüksekliği (Height)", _boxHeight, 0.8f, 3.2f);
+            _boxCornerRadius = EditorGUILayout.Slider("Köşe Düzlüğü (Corner Tension)", _boxCornerRadius, 0.0f, 1.0f);
+            EditorGUILayout.BeginHorizontal();
+            _boxHasSpout = EditorGUILayout.Toggle("Alt Çıkış Hunisi (Spout)", _boxHasSpout);
+            _boxHasNeck = EditorGUILayout.Toggle("Üst Boğaz (Neck)", _boxHasNeck);
+            EditorGUILayout.EndHorizontal();
+
+            GUI.backgroundColor = new Color(0.20f, 0.70f, 1.0f);
+            if (GUILayout.Button("✨ Özel Kare / Dikdörtgen Camı Oluştur", GUILayout.Height(32)))
+            {
+                Undo.RecordObject(_targetContainer, "Configure Rectangular Container");
+                _targetContainer.ConfigureRectangularContainer(_boxWidth, _boxHeight, _boxCornerRadius, _boxHasSpout, _boxHasNeck, true);
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawPixelArtSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🎨 2. Görseldeki Piksel Sanatı Görselleri (Pixel Art Presets)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Topların cam içinde 2. görseldeki gibi sabit durarak görsel oluşturmasını sağlar.", MessageType.Info);
+
+            string[] pixelNames = PixelArtLibrary.PresetDisplayNames;
+            int pCols = 2;
+            for (int i = 0; i < pixelNames.Length; i += pCols)
+            {
+                EditorGUILayout.BeginHorizontal();
+                for (int j = 0; j < pCols && (i + j) < pixelNames.Length; j++)
+                {
+                    int pIdx = i + j;
+                    PixelArtPreset pPreset = (PixelArtPreset)pIdx;
+                    bool isSelected = _targetContainer.particleMode == ParticleArrangementMode.PixelArtVisual && _targetContainer.pixelArtPreset == pPreset;
+                    GUI.backgroundColor = isSelected ? new Color(0.28f, 0.90f, 0.55f) : new Color(0.95f, 0.85f, 0.45f);
+                    if (GUILayout.Button(pixelNames[pIdx], GUILayout.Height(28)))
+                    {
+                        Undo.RecordObject(_targetContainer, "Apply Pixel Art Preset");
+                        _targetContainer.ApplyPixelArtPreset(pPreset, true);
+                        EditorUtility.SetDirty(_targetContainer);
+                        SceneView.RepaintAll();
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.Space(4);
+            EditorGUI.BeginChangeCheck();
+            var newMode = (ParticleArrangementMode)EditorGUILayout.EnumPopup("Partikül Dizilim Modu:", _targetContainer.particleMode);
+            bool newFreeze = EditorGUILayout.Toggle("Görseli Sabit Tut (Freeze Pattern):", _targetContainer.freezePatternInPlace);
+            float newSpacing = EditorGUILayout.Slider("Piksel Izgara Aralığı (Spacing):", _targetContainer.gridCellSpacing, 0.10f, 0.30f);
+            float newVOff = EditorGUILayout.Slider("Dikey Konum Ofseti:", _targetContainer.patternVerticalOffset, -0.8f, 0.8f);
+            bool newFillEmpty = EditorGUILayout.Toggle("Boşlukları Doldur (Fill Background):", _targetContainer.fillEmptyWithColor);
+            PuzzleColor newEmptyCol = _targetContainer.emptyCellColor;
+            if (newFillEmpty)
+            {
+                newEmptyCol = (PuzzleColor)EditorGUILayout.EnumPopup("Arka Plan Rengi:", _targetContainer.emptyCellColor);
+            }
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(_targetContainer, "Change Pixel Art Settings");
+                _targetContainer.particleMode = newMode;
+                _targetContainer.freezePatternInPlace = newFreeze;
+                _targetContainer.gridCellSpacing = newSpacing;
+                _targetContainer.patternVerticalOffset = newVOff;
+                _targetContainer.fillEmptyWithColor = newFillEmpty;
+                _targetContainer.emptyCellColor = newEmptyCol;
+                _targetContainer.RebuildContainer();
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+
             EditorGUILayout.EndVertical();
         }
 

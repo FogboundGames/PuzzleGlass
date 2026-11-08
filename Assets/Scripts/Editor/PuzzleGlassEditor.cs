@@ -88,6 +88,13 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(8);
+            GUI.backgroundColor = new Color(0.2f, 0.9f, 0.45f);
+            if (GUILayout.Button("🧹 Sahneyi Temizle ve Canavarları Yenile (Clean & Sync)", GUILayout.Height(34)))
+            {
+                PuzzleGlassSceneSetup.CleanAndSyncActiveScene();
+            }
+            GUI.backgroundColor = Color.white;
+
             if (GUILayout.Button("Sahneyi Sıfırla / Yeniden İnşa Et", GUILayout.Height(26)))
             {
                 PuzzleGlassSceneSetup.BuildCompleteScene();
@@ -142,7 +149,13 @@ namespace PuzzleGlass.Editor
             "📐 Konik Şişe",
             "⛄ Çift Boğum",
             "🏺 Amfora Vazo",
-            "🐍 S-Kıvrım Tüp"
+            "🐍 S-Kıvrım Tüp",
+            "🔲 Serbest Özel",
+            "⬛ Hunili Kare",
+            "📱 Dikey Dikdörtgen",
+            "🖥️ Geniş Dikdörtgen",
+            "📦 Düz Kare Kutu",
+            "🏷️ Düz Dikdörtgen"
         };
 
         public override void OnInspectorGUI()
@@ -203,6 +216,114 @@ namespace PuzzleGlass.Editor
                 EditorGUILayout.EndHorizontal();
             }
             GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndVertical();
+
+            // 2. Görseldeki Piksel Sanatı Görselleri (Image 2 Pixel Art)
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("🎨 2. Görseldeki Piksel Sanatı Görselleri", EditorStyles.boldLabel);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.HelpBox("Topların cam içinde 2. görseldeki gibi sabit durarak görsel oluşturmasını sağlar.", MessageType.Info);
+
+            GUI.backgroundColor = new Color(0.2f, 0.88f, 0.45f);
+            if (GUILayout.Button("🎨 Resim Yükle & Piksel Sanatı Yap (Pixel Art Image Studio)", GUILayout.Height(36)))
+            {
+                PixelArtImageStudioWindow.OpenWindow();
+            }
+            GUI.backgroundColor = Color.white;
+
+            string[] pixelNames = PixelArtLibrary.PresetDisplayNames;
+            int pCols = 2;
+            for (int i = 0; i < pixelNames.Length; i += pCols)
+            {
+                EditorGUILayout.BeginHorizontal();
+                for (int j = 0; j < pCols && (i + j) < pixelNames.Length; j++)
+                {
+                    int pIdx = i + j;
+                    PixelArtPreset pPreset = (PixelArtPreset)pIdx;
+                    bool isSelected = container.particleMode == ParticleArrangementMode.PixelArtVisual && container.pixelArtPreset == pPreset;
+                    GUI.backgroundColor = isSelected ? new Color(0.28f, 0.90f, 0.55f) : new Color(0.95f, 0.85f, 0.45f);
+                    if (GUILayout.Button(pixelNames[pIdx], GUILayout.Height(28)))
+                    {
+                        Undo.RecordObject(container, "Apply Pixel Art Preset");
+                        container.ApplyPixelArtPreset(pPreset, true);
+                        var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                        if (gm != null) gm.SetupPixelArtPatternScenario(pPreset);
+                        EditorUtility.SetDirty(container);
+                        SceneView.RepaintAll();
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("⚡ Hızlı Kurulum Kombinasyonları:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("🐸 Kare + Kurbağa", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Frog");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Frog, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Frog);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("❤️ Kare + Kalp", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Heart");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Heart, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Heart);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("🍄 Kare + Mantar", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Mushroom");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Mushroom, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("🐝 Kare + Arı", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Bee");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Bee, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Bee);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("🐧 Kare + Penguen", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Penguin");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Penguin, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Penguin);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            if (GUILayout.Button("🦋 Kare + Kelebek", GUILayout.Height(26)))
+            {
+                Undo.RecordObject(container, "Setup Square + Butterfly");
+                container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
+                container.ApplyPixelArtPreset(PixelArtPreset.Butterfly, true);
+                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Butterfly);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndHorizontal();
+
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(6);

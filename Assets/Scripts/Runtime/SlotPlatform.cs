@@ -12,6 +12,7 @@ namespace PuzzleGlass
     {
         public int slotIndex;
         public bool isOccupied;
+        public bool isHighlighted;
         public MonsterCharacter currentMonster;
 
         [Header("Materials")]
@@ -22,6 +23,8 @@ namespace PuzzleGlass
 
         private GameObject _uiCanvasObj;
         private RawImage _slotRawImage;
+        private Tweener _highlightScaleTween;
+        private Tweener _highlightColorTween;
 
         private void OnEnable()
         {
@@ -134,6 +137,26 @@ namespace PuzzleGlass
         {
             isOccupied = false;
             currentMonster = null;
+        }
+
+        public void SetHighlight(bool highlight)
+        {
+            if (isHighlighted == highlight) return;
+            isHighlighted = highlight;
+
+            if (!gameObject.activeInHierarchy) return;
+
+            if (_highlightScaleTween != null && _highlightScaleTween.IsActive()) _highlightScaleTween.Kill();
+            if (_highlightColorTween != null && _highlightColorTween.IsActive()) _highlightColorTween.Kill();
+
+            Vector3 targetScale = highlight ? Vector3.one * 1.12f : Vector3.one;
+            _highlightScaleTween = transform.DOScale(targetScale, 0.15f).SetEase(highlight ? Ease.OutBack : Ease.OutQuad);
+
+            if (_slotRawImage != null)
+            {
+                Color targetCol = highlight ? new Color(1.15f, 1.15f, 1.25f, 1f) : Color.white;
+                _highlightColorTween = _slotRawImage.DOColor(targetCol, 0.15f);
+            }
         }
 
         public void PlayImpactPunch()

@@ -84,6 +84,17 @@ namespace PuzzleGlass
         [Range(1, 8)]
         public int particlesPerMonsterCount = 1;
 
+        [Header("Pixel Art Visual & Dynamic Patterns")]
+        public ParticleArrangementMode particleMode = ParticleArrangementMode.OrganicPhysicsLayers;
+        public ShapePatternType patternShape = ShapePatternType.Frog;
+        public PixelArtPreset pixelArtPreset = PixelArtPreset.Frog;
+        public bool freezePatternInPlace = false;
+        [Range(0.10f, 0.30f)]
+        public float gridCellSpacing = 0.165f;
+        public float patternVerticalOffset = 0.45f;
+        public bool fillEmptyWithColor = false;
+        public PuzzleColor emptyCellColor = PuzzleColor.Blue;
+
         [Header("Custom Glass Contour Points")]
         public List<GlassContourPoint> contourPoints = new List<GlassContourPoint>();
 

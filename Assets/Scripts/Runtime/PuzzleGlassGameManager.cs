@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using DG.Tweening;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
 
 namespace PuzzleGlass
 {
+    [ExecuteAlways]
     public class PuzzleGlassGameManager : MonoBehaviour
     {
         public static PuzzleGlassGameManager Instance { get; private set; }
@@ -17,37 +19,148 @@ namespace PuzzleGlass
         public CubeDispenser cubeDispenser;
         public Camera mainCamera;
 
+        [Header("Physics & Gameplay Controllers")]
+        public MonsterDragController dragController;
+        public BallCollectionController collectionController;
+        public BallPatternGenerator patternGenerator;
+        public BallContainerManager containerPhysics;
+
         [Header("Level System")]
         public List<PuzzleGlassLevelData> levels = new List<PuzzleGlassLevelData>();
         public int currentLevelIndex = 0;
         public PuzzleGlassLevelData currentLevel;
 
-        [Header("Active Monsters")]
+        [Header("Active Monsters & Gameplay State")]
         public List<MonsterCharacter> activeMonsters = new List<MonsterCharacter>();
+        public bool isLevelCompleted = false;
+        public ShapePatternType activePatternType = ShapePatternType.Frog;
 
         [Header("Testing & Debug GUI")]
         public bool showDebugGui = true;
+        private bool _showPatternSelector = false;
 
         private void Awake()
         {
             Instance = this;
             SetupCamera();
+            EnsureGameplayControllers();
+        }
 
-            if (activeMonsters.Count > 0 && cubeDispenser != null)
-            {
-                cubeDispenser.ClearOrders();
-                foreach (var m in activeMonsters)
-                {
-                    if (m != null) cubeDispenser.RegisterMonsterOrder(m);
-                }
-            }
+        private void OnEnable()
+        {
+            Instance = this;
+            EnsureGameplayControllers();
+            SyncCurrentMonstersWithPattern();
         }
 
         private void Start()
         {
-            if (activeMonsters.Count == 0)
+            EnsureGameplayControllers();
+            SyncCurrentMonstersWithPattern();
+        }
+
+        public void SyncCurrentMonstersWithPattern()
+        {
+            if (glassContainer == null)
             {
-                SetupReferenceScenario();
+                glassContainer = FindFirstObjectByType<ShapedGlassContainer>();
+            }
+
+            if (glassContainer != null)
+            {
+                PixelArtPattern pat = (glassContainer.pixelArtPreset == PixelArtPreset.Custom && glassContainer.customPattern != null)
+                    ? glassContainer.customPattern
+                    : PixelArtLibrary.GetPreset(glassContainer.pixelArtPreset);
+
+                if (pat == null) pat = PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
+                SynchronizeMonstersForPattern(pat);
+            }
+            else
+            {
+                SynchronizeMonstersForPattern(PixelArtLibrary.GetPreset(PixelArtPreset.Frog));
+            }
+        }
+
+        public void SynchronizeMonstersForPattern(PixelArtPattern pattern)
+        {
+            if (pattern == null) return;
+            ClearMonsters();
+
+            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
+            var grid = pattern.GetColorGrid();
+            for (int y = 0; y < pattern.height; y++)
+            {
+                for (int x = 0; x < pattern.width; x++)
+                {
+                    var col = grid[x, y];
+                    if (col.HasValue)
+                    {
+                        if (!colorCounts.ContainsKey(col.Value)) colorCounts[col.Value] = 0;
+                        colorCounts[col.Value]++;
+                    }
+                }
+            }
+
+            List<LevelMonsterEntry> entries = new List<LevelMonsterEntry>();
+            foreach (var kvp in colorCounts)
+            {
+                if (kvp.Value > 0)
+                {
+                    entries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
+                }
+            }
+
+            if (entries.Count == 0)
+            {
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Pink, 8));
+            }
+
+            SpawnMonsterStagingArea(entries);
+        }
+
+        public void EnsureGameplayControllers()
+        {
+            if (glassContainer == null)
+            {
+                glassContainer = FindFirstObjectByType<ShapedGlassContainer>();
+            }
+
+            if (slotSystem == null)
+            {
+                slotSystem = FindFirstObjectByType<SlotSystem>();
+            }
+
+            if (cubeDispenser == null)
+            {
+                cubeDispenser = GetComponent<CubeDispenser>();
+            }
+
+            if (dragController == null)
+            {
+                dragController = GetComponent<MonsterDragController>() ?? gameObject.AddComponent<MonsterDragController>();
+            }
+
+            if (collectionController == null)
+            {
+                collectionController = GetComponent<BallCollectionController>() ?? gameObject.AddComponent<BallCollectionController>();
+            }
+
+            if (patternGenerator == null)
+            {
+                patternGenerator = GetComponent<BallPatternGenerator>() ?? gameObject.AddComponent<BallPatternGenerator>();
+            }
+
+            if (BallObjectPool.Instance == null && FindFirstObjectByType<BallObjectPool>() == null)
+            {
+                GameObject poolObj = new GameObject("BallObjectPool");
+                poolObj.AddComponent<BallObjectPool>();
+            }
+
+            if (glassContainer != null)
+            {
+                containerPhysics = glassContainer.GetComponent<BallContainerManager>() ?? glassContainer.gameObject.AddComponent<BallContainerManager>();
+                containerPhysics.glassContainer = glassContainer;
             }
         }
 
@@ -74,7 +187,6 @@ namespace PuzzleGlass
         private void Update()
         {
             HandleKeyboardInput();
-            HandlePointerInput();
         }
 
         private void HandleKeyboardInput()
@@ -83,89 +195,23 @@ namespace PuzzleGlass
             var kb = Keyboard.current;
             if (kb != null)
             {
-                if (kb.spaceKey.wasPressedThisFrame) FeedOneCube();
-                if (kb.aKey.wasPressedThisFrame) ToggleAutoFeed();
-                if (kb.digit1Key.wasPressedThisFrame) SetupReferenceScenario();
-                if (kb.digit2Key.wasPressedThisFrame) SetupSameColorScenario();
-                if (kb.digit3Key.wasPressedThisFrame) SetupFourColorsScenario();
+                if (kb.digit1Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Frog);
+                if (kb.digit2Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Heart);
+                if (kb.digit3Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
+                if (kb.digit4Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
+                if (kb.digit5Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
+                if (kb.rKey.wasPressedThisFrame) RestartCurrentPattern();
+                if (kb.nKey.wasPressedThisFrame) LoadNextLevel();
             }
 #elif ENABLE_LEGACY_INPUT_MANAGER
-            if (Input.GetKeyDown(KeyCode.Space)) FeedOneCube();
-            if (Input.GetKeyDown(KeyCode.A)) ToggleAutoFeed();
-            if (Input.GetKeyDown(KeyCode.Alpha1)) SetupReferenceScenario();
-            if (Input.GetKeyDown(KeyCode.Alpha2)) SetupSameColorScenario();
-            if (Input.GetKeyDown(KeyCode.Alpha3)) SetupFourColorsScenario();
+            if (Input.GetKeyDown(KeyCode.Alpha1)) SetupPixelArtPatternScenario(PixelArtPreset.Frog);
+            if (Input.GetKeyDown(KeyCode.Alpha2)) SetupPixelArtPatternScenario(PixelArtPreset.Heart);
+            if (Input.GetKeyDown(KeyCode.Alpha3)) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
+            if (Input.GetKeyDown(KeyCode.Alpha4)) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
+            if (Input.GetKeyDown(KeyCode.Alpha5)) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
+            if (Input.GetKeyDown(KeyCode.R)) RestartCurrentPattern();
+            if (Input.GetKeyDown(KeyCode.N)) LoadNextLevel();
 #endif
-        }
-
-        private void HandlePointerInput()
-        {
-            bool pointerDown = false;
-            Vector2 screenPos = Vector2.zero;
-
-#if ENABLE_INPUT_SYSTEM
-            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                pointerDown = true;
-                screenPos = Mouse.current.position.ReadValue();
-            }
-            else if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
-            {
-                pointerDown = true;
-                screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
-            }
-            else if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame)
-            {
-                pointerDown = true;
-                screenPos = Pointer.current.position.ReadValue();
-            }
-#elif ENABLE_LEGACY_INPUT_MANAGER
-            if (Input.GetMouseButtonDown(0))
-            {
-                pointerDown = true;
-                screenPos = Input.mousePosition;
-            }
-#endif
-
-            if (pointerDown)
-            {
-                Camera cam = mainCamera != null ? mainCamera : Camera.main;
-                if (cam != null)
-                {
-                    MonsterCharacter clickedMonster = null;
-
-                    // 1. Raycast to 3D BoxCollider
-                    Ray ray = cam.ScreenPointToRay(screenPos);
-                    if (Physics.Raycast(ray, out RaycastHit hit, 100f))
-                    {
-                        clickedMonster = hit.collider.GetComponentInParent<MonsterCharacter>();
-                    }
-
-                    // 2. Proximity fallback: check screen distance to monster centers (ensures flawless click on mobile or editor)
-                    if (clickedMonster == null)
-                    {
-                        float closestDist = float.MaxValue;
-                        float maxPixelRadius = 140f;
-
-                        foreach (var m in activeMonsters)
-                        {
-                            if (m == null || m.assignedSlot != null) continue;
-                            Vector3 screenP = cam.WorldToScreenPoint(m.transform.position);
-                            float d = Vector2.Distance(screenPos, new Vector2(screenP.x, screenP.y));
-                            if (d < maxPixelRadius && d < closestDist)
-                            {
-                                closestDist = d;
-                                clickedMonster = m;
-                            }
-                        }
-                    }
-
-                    if (clickedMonster != null)
-                    {
-                        clickedMonster.TryHopToNextAvailableSlot();
-                    }
-                }
-            }
         }
 
         public void ClearMonsters()
@@ -182,7 +228,6 @@ namespace PuzzleGlass
             }
             activeMonsters.Clear();
 
-            // Also clean up any orphaned MonsterCharacter children
             var strayMonsters = FindObjectsByType<MonsterCharacter>(FindObjectsSortMode.None);
             for (int i = 0; i < strayMonsters.Length; i++)
             {
@@ -199,6 +244,10 @@ namespace PuzzleGlass
             {
                 slotSystem.ClearAllOccupied();
             }
+            if (collectionController != null)
+            {
+                collectionController.ClearAll();
+            }
             if (cubeDispenser != null)
             {
                 cubeDispenser.ClearOrders();
@@ -206,20 +255,18 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Loads any PuzzleGlassLevelData asset into the scene (works in both Edit Mode and Play Mode!).
+        /// Loads any PuzzleGlassLevelData asset into the scene.
         /// </summary>
         public void LoadLevel(PuzzleGlassLevelData levelData)
         {
             if (levelData == null) return;
             currentLevel = levelData;
+            isLevelCompleted = false;
 
             int foundIdx = levels != null ? levels.IndexOf(levelData) : -1;
             if (foundIdx >= 0) currentLevelIndex = foundIdx;
 
-            if (glassContainer == null) glassContainer = FindFirstObjectByType<ShapedGlassContainer>();
-            if (slotSystem == null) slotSystem = FindFirstObjectByType<SlotSystem>();
-            if (cubeDispenser == null) cubeDispenser = GetComponent<CubeDispenser>();
-
+            EnsureGameplayControllers();
             ClearMonsters();
 
             // 1. Configure Slot System
@@ -230,35 +277,8 @@ namespace PuzzleGlass
                 slotSystem.RebuildSlots();
             }
 
-            // 2. Spawn Monsters arranged neatly in 1 or 2 rows below the slots
-            if (levelData.monsters != null && levelData.monsters.Count > 0)
-            {
-                int totalM = levelData.monsters.Count;
-                int maxPerRow = 4;
-
-                for (int i = 0; i < totalM; i++)
-                {
-                    var entry = levelData.monsters[i];
-                    int row = i / maxPerRow;
-                    int indexInRow = i % maxPerRow;
-                    int countInThisRow = Mathf.Min(maxPerRow, totalM - row * maxPerRow);
-
-                    float spacingX = countInThisRow <= 2 ? 1.50f : (countInThisRow == 3 ? 1.05f : 0.84f);
-                    float startX = -(countInThisRow - 1) * spacingX * 0.5f;
-                    float x = startX + indexInRow * spacingX;
-                    float y = -1.98f - row * 0.92f;
-                    float scale = countInThisRow <= 2 ? 0.72f : (countInThisRow == 3 ? 0.64f : 0.58f);
-
-                    GameObject monObj = new GameObject($"Monster_{entry.color}_{entry.count}_{i + 1}");
-                    monObj.transform.SetParent(transform, false);
-                    monObj.transform.position = new Vector3(x, y, 0f);
-                    monObj.transform.localScale = Vector3.one * scale;
-
-                    MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
-                    mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}");
-                    activeMonsters.Add(mon);
-                }
-            }
+            // 2. Spawn Monsters arranged neatly in staging area below slots
+            SpawnMonsterStagingArea(levelData.monsters);
 
             // 3. Configure & Rebuild ShapedGlassContainer
             if (glassContainer != null)
@@ -286,6 +306,11 @@ namespace PuzzleGlass
 
                 glassContainer.particleSize = levelData.particleSize;
                 glassContainer.particlesPerMonsterCount = Mathf.Max(1, levelData.particlesPerMonsterCount);
+                glassContainer.particleMode = levelData.particleMode;
+                glassContainer.pixelArtPreset = levelData.pixelArtPreset;
+                glassContainer.freezePatternInPlace = false; // Allow balls to tumble naturally
+                glassContainer.gridCellSpacing = levelData.gridCellSpacing;
+                glassContainer.patternVerticalOffset = levelData.patternVerticalOffset;
 
                 if (levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
                 {
@@ -297,16 +322,50 @@ namespace PuzzleGlass
                 }
 
                 glassContainer.RebuildContainer();
+
+                // 4. Rebuild Airtight Physics Colliders around container
+                if (containerPhysics != null)
+                {
+                    containerPhysics.RebuildColliders();
+                }
             }
 
-            // 4. Register all monster orders with CubeDispenser
-            if (cubeDispenser != null)
+            // 5. Spawn Real 3D Physical Balls Formation
+            if (patternGenerator != null)
             {
-                cubeDispenser.ClearOrders();
-                for (int i = 0; i < activeMonsters.Count; i++)
-                {
-                    cubeDispenser.RegisterMonsterOrder(activeMonsters[i]);
-                }
+                activePatternType = levelData.patternShape;
+                patternGenerator.GeneratePattern(levelData.patternShape, levelData.monsters, levelData.gridCellSpacing);
+            }
+        }
+
+        private void SpawnMonsterStagingArea(List<LevelMonsterEntry> monsterEntries)
+        {
+            if (monsterEntries == null || monsterEntries.Count == 0) return;
+
+            int totalM = monsterEntries.Count;
+            int maxPerRow = 4;
+
+            for (int i = 0; i < totalM; i++)
+            {
+                var entry = monsterEntries[i];
+                int row = i / maxPerRow;
+                int indexInRow = i % maxPerRow;
+                int countInThisRow = Mathf.Min(maxPerRow, totalM - row * maxPerRow);
+
+                float spacingX = countInThisRow <= 2 ? 1.50f : (countInThisRow == 3 ? 1.05f : 0.84f);
+                float startX = -(countInThisRow - 1) * spacingX * 0.5f;
+                float x = startX + indexInRow * spacingX;
+                float y = -1.98f - row * 0.92f;
+                float scale = countInThisRow <= 2 ? 0.72f : (countInThisRow == 3 ? 0.64f : 0.58f);
+
+                GameObject monObj = new GameObject($"Monster_{entry.color}_{entry.count}_{i + 1}");
+                monObj.transform.SetParent(transform, false);
+                monObj.transform.position = new Vector3(x, y, 0f);
+                monObj.transform.localScale = Vector3.one * scale;
+
+                MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
+                mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}");
+                activeMonsters.Add(mon);
             }
         }
 
@@ -329,133 +388,6 @@ namespace PuzzleGlass
             LoadLevelByIndex(currentLevelIndex - 1);
         }
 
-        /// <summary>
-        /// Scenario 1: Exact 1-to-1 Reference Design (Blue 10 on Left + Yellow 20 on Right
-        /// underneath the 4 baby-blue slots and wide bulbous sky-blue glass flask).
-        /// </summary>
-        [ContextMenu("Setup Reference Scenario")]
-        public void SetupReferenceScenario()
-        {
-            ClearMonsters();
-
-            MonsterCharacter blueMonster = SpawnMonster(PuzzleColor.Blue, 10, new Vector3(-0.75f, -1.98f, 0f), "Blue_10");
-            MonsterCharacter yellowMonster = SpawnMonster(PuzzleColor.Yellow, 20, new Vector3(0.75f, -1.98f, 0f), "Yellow_20");
-            blueMonster.transform.localScale = Vector3.one * 0.72f;
-            yellowMonster.transform.localScale = Vector3.one * 0.72f;
-
-            activeMonsters.Add(blueMonster);
-            activeMonsters.Add(yellowMonster);
-
-            if (cubeDispenser != null)
-            {
-                cubeDispenser.RegisterMonsterOrder(blueMonster);
-                cubeDispenser.RegisterMonsterOrder(yellowMonster);
-            }
-
-            if (glassContainer != null)
-            {
-                glassContainer.ValidateBottleDimensions();
-                glassContainer.RebuildContainer();
-            }
-        }
-
-        /// <summary>
-        /// Blue & Yellow scenario (Legacy pairing).
-        /// </summary>
-        [ContextMenu("Setup Blue-Yellow Scenario")]
-        public void SetupBlueYellowScenario()
-        {
-            ClearMonsters();
-
-            MonsterCharacter blueMonster = SpawnMonster(PuzzleColor.Blue, 10, new Vector3(-0.72f, -1.95f, 0f), "Blue_10");
-            MonsterCharacter yellowMonster = SpawnMonster(PuzzleColor.Yellow, 20, new Vector3(0.72f, -1.95f, 0f), "Yellow_20");
-
-            activeMonsters.Add(blueMonster);
-            activeMonsters.Add(yellowMonster);
-
-            if (cubeDispenser != null)
-            {
-                cubeDispenser.RegisterMonsterOrder(blueMonster);
-                cubeDispenser.RegisterMonsterOrder(yellowMonster);
-            }
-
-            if (glassContainer != null)
-            {
-                glassContainer.RebuildContainer();
-            }
-        }
-
-        /// <summary>
-        /// Scenario 2: Two monsters of the SAME color to verify isolated queue management.
-        /// </summary>
-        [ContextMenu("Setup Same Color Scenario")]
-        public void SetupSameColorScenario()
-        {
-            ClearMonsters();
-
-            MonsterCharacter blue1 = SpawnMonster(PuzzleColor.Blue, 5, new Vector3(-0.72f, -1.95f, 0f), "Blue_Monster_A");
-            MonsterCharacter blue2 = SpawnMonster(PuzzleColor.Blue, 8, new Vector3(0.72f, -1.95f, 0f), "Blue_Monster_B");
-
-            activeMonsters.Add(blue1);
-            activeMonsters.Add(blue2);
-
-            if (cubeDispenser != null)
-            {
-                cubeDispenser.RegisterMonsterOrder(blue1);
-                cubeDispenser.RegisterMonsterOrder(blue2);
-            }
-
-            if (glassContainer != null)
-            {
-                glassContainer.RebuildContainer();
-            }
-        }
-
-        /// <summary>
-        /// Scenario 3: 4 monsters of all distinct colors placed under the 4 slots.
-        /// </summary>
-        [ContextMenu("Setup Four Colors Scenario")]
-        public void SetupFourColorsScenario()
-        {
-            ClearMonsters();
-
-            float[] xPositions = new float[] { -1.08f, -0.36f, 0.36f, 1.08f };
-            PuzzleColor[] colors = new PuzzleColor[] { PuzzleColor.Blue, PuzzleColor.Yellow, PuzzleColor.Red, PuzzleColor.Green };
-            int[] counts = new int[] { 8, 12, 10, 6 };
-
-            for (int i = 0; i < 4; i++)
-            {
-                GameObject obj = new GameObject($"Monster_{colors[i]}_{counts[i]}");
-                obj.transform.position = new Vector3(xPositions[i], -1.95f, 0f);
-                obj.transform.localScale = Vector3.one * 0.58f; // Compact to fit 4 across
-
-                MonsterCharacter monster = obj.AddComponent<MonsterCharacter>();
-                monster.Initialize(colors[i], counts[i], $"{colors[i]}_{counts[i]}");
-
-                activeMonsters.Add(monster);
-                if (cubeDispenser != null)
-                {
-                    cubeDispenser.RegisterMonsterOrder(monster);
-                }
-            }
-
-            if (glassContainer != null)
-            {
-                glassContainer.RebuildContainer();
-            }
-        }
-
-        private MonsterCharacter SpawnMonster(PuzzleColor color, int count, Vector3 position, string id)
-        {
-            GameObject obj = new GameObject($"Monster_{id}");
-            obj.transform.position = position;
-            obj.transform.localScale = Vector3.one * 0.70f;
-
-            MonsterCharacter monster = obj.AddComponent<MonsterCharacter>();
-            monster.Initialize(color, count, id);
-            return monster;
-        }
-
         public void FeedOneCube()
         {
             if (cubeDispenser != null)
@@ -472,7 +404,212 @@ namespace PuzzleGlass
             }
         }
 
-        // ==================== ON-SCREEN TESTING GUI ====================
+        public void RestartCurrentPattern()
+        {
+            if (currentLevel != null)
+            {
+                LoadLevel(currentLevel);
+            }
+            else
+            {
+                SetupShapePatternScenario(activePatternType);
+            }
+        }
+
+        // ==================== SCENARIO SETUPS ====================
+
+        /// <summary>
+        /// Spawns a Pixel Art notebook silhouette (Frog, Heart, Mushroom, Bee, Octopus, Saturn, Penguin, Butterfly, Tulip)
+        /// with real physical 3D balls and matching cute monsters at the bottom staging tray!
+        /// </summary>
+        [ContextMenu("Setup Pixel Art Pattern Scenario")]
+        public void SetupPixelArtPatternScenario(PixelArtPreset preset)
+        {
+            if (glassContainer != null)
+            {
+                glassContainer.pixelArtPreset = preset;
+                glassContainer.particleMode = ParticleArrangementMode.PixelArtVisual;
+                glassContainer.freezePatternInPlace = false;
+            }
+
+            ShapePatternType shapeType = ShapePatternType.Frog;
+            switch (preset)
+            {
+                case PixelArtPreset.Frog: shapeType = ShapePatternType.Frog; break;
+                case PixelArtPreset.Heart: shapeType = ShapePatternType.Heart; break;
+                case PixelArtPreset.Mushroom: shapeType = ShapePatternType.Mushroom; break;
+                case PixelArtPreset.Bee: shapeType = ShapePatternType.Bee; break;
+                case PixelArtPreset.OctopusSkull: shapeType = ShapePatternType.Octopus; break;
+                case PixelArtPreset.Penguin: shapeType = ShapePatternType.Penguin; break;
+                case PixelArtPreset.Butterfly: shapeType = ShapePatternType.Butterfly; break;
+                case PixelArtPreset.Tulip: shapeType = ShapePatternType.Tulip; break;
+                case PixelArtPreset.Saturn: shapeType = ShapePatternType.Saturn; break;
+            }
+            SetupShapePatternScenario(shapeType);
+        }
+
+        public void SetupCustomPatternScenario(PixelArtPattern pattern)
+        {
+            if (pattern == null) return;
+            EnsureGameplayControllers();
+            ClearMonsters();
+            isLevelCompleted = false;
+
+            if (glassContainer != null)
+            {
+                glassContainer.customPattern = pattern;
+                glassContainer.pixelArtPreset = PixelArtPreset.Custom;
+                glassContainer.particleMode = ParticleArrangementMode.PixelArtVisual;
+                glassContainer.freezePatternInPlace = false;
+                glassContainer.CleanOrphanedChildren();
+                glassContainer.RebuildContainer();
+
+                if (containerPhysics != null)
+                {
+                    containerPhysics.RebuildColliders();
+                }
+            }
+
+            List<BallPhysicsController> spawnedBalls = null;
+            if (patternGenerator != null)
+            {
+                spawnedBalls = patternGenerator.GenerateFromCustomPattern(pattern);
+            }
+
+            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
+            if (spawnedBalls != null)
+            {
+                for (int i = 0; i < spawnedBalls.Count; i++)
+                {
+                    var c = spawnedBalls[i].colorType;
+                    if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
+                    colorCounts[c]++;
+                }
+            }
+
+            List<LevelMonsterEntry> monsterEntries = new List<LevelMonsterEntry>();
+            foreach (var kvp in colorCounts)
+            {
+                if (kvp.Value > 0)
+                {
+                    monsterEntries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
+                }
+            }
+
+            if (monsterEntries.Count == 0)
+            {
+                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 10));
+            }
+
+            SpawnMonsterStagingArea(monsterEntries);
+        }
+
+        /// <summary>
+        /// Spawns any dynamic pattern (silhouettes, fruits, geometric shapes, bands, mosaic)
+        /// using real 3D physical balls and generates matching monster goals automatically!
+        /// </summary>
+        public void SetupShapePatternScenario(ShapePatternType patternType)
+        {
+            EnsureGameplayControllers();
+            ClearMonsters();
+            isLevelCompleted = false;
+            activePatternType = patternType;
+
+            // Rebuild container respecting current shape (Square, Rectangle, Bulbous, etc.)
+            if (glassContainer != null)
+            {
+                glassContainer.freezePatternInPlace = false;
+                glassContainer.CleanOrphanedChildren();
+                glassContainer.RebuildContainer();
+
+                if (containerPhysics != null)
+                {
+                    containerPhysics.RebuildColliders();
+                }
+            }
+
+            // Generate physical balls
+            List<BallPhysicsController> spawnedBalls = null;
+            if (patternGenerator != null)
+            {
+                spawnedBalls = patternGenerator.GeneratePattern(patternType);
+            }
+
+            // Analyze spawned ball colors to configure monster quotas
+            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
+            if (spawnedBalls != null)
+            {
+                for (int i = 0; i < spawnedBalls.Count; i++)
+                {
+                    var c = spawnedBalls[i].colorType;
+                    if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
+                    colorCounts[c]++;
+                }
+            }
+
+            // Create monster goals for the top colors
+            List<LevelMonsterEntry> monsterEntries = new List<LevelMonsterEntry>();
+            foreach (var kvp in colorCounts)
+            {
+                monsterEntries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
+            }
+
+            // Ensure at least 2 monsters if pattern has fewer colors
+            if (monsterEntries.Count == 0)
+            {
+                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
+                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Pink, 8));
+            }
+
+            SpawnMonsterStagingArea(monsterEntries);
+        }
+
+        [ContextMenu("Setup Reference Scenario")]
+        public void SetupReferenceScenario()
+        {
+            SetupPixelArtPatternScenario(PixelArtPreset.Frog);
+        }
+
+        [ContextMenu("Setup Same Color Scenario")]
+        public void SetupSameColorScenario()
+        {
+            SetupShapePatternScenario(ShapePatternType.Heart);
+        }
+
+        [ContextMenu("Setup Four Colors Scenario")]
+        public void SetupFourColorsScenario()
+        {
+            SetupShapePatternScenario(ShapePatternType.Diamond);
+        }
+
+        public void CheckLevelCompletionState()
+        {
+            if (activeMonsters == null || activeMonsters.Count == 0) return;
+
+            bool allFinished = true;
+            for (int i = 0; i < activeMonsters.Count; i++)
+            {
+                var m = activeMonsters[i];
+                if (m != null && m.remainingCount > 0)
+                {
+                    allFinished = false;
+                    break;
+                }
+            }
+
+            if (allFinished && !isLevelCompleted)
+            {
+                isLevelCompleted = true;
+                OnLevelCleared();
+            }
+        }
+
+        private void OnLevelCleared()
+        {
+            Debug.Log("<color=#00FF88>★ LEVEL CLEARED! ALL MONSTER ORDERS FULFILLED! ★</color>");
+        }
+
+        // ==================== ON-SCREEN TESTING HUD ====================
         private void OnGUI()
         {
             if (!showDebugGui) return;
@@ -481,59 +618,104 @@ namespace PuzzleGlass
             panelStyle.normal.background = Texture2D.whiteTexture;
 
             Color oldBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.12f, 0.16f, 0.24f, 0.85f);
+            GUI.backgroundColor = new Color(0.10f, 0.14f, 0.22f, 0.90f);
 
-            GUILayout.BeginArea(new Rect(16, 16, 260, 290), panelStyle);
-            GUILayout.Space(8);
+            int panelW = 270;
+            int panelH = _showPatternSelector ? 430 : 250;
+            GUILayout.BeginArea(new Rect(14, 14, panelW, panelH), panelStyle);
+            GUILayout.Space(6);
 
-            GUIStyle titleStyle = new GUIStyle(GUI.skin.label);
-            titleStyle.fontStyle = FontStyle.Bold;
-            titleStyle.alignment = TextAnchor.MiddleCenter;
-            titleStyle.fontSize = 14;
+            GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 13
+            };
             titleStyle.normal.textColor = Color.white;
-            GUILayout.Label("PuzzleGlass Interactive Test", titleStyle);
+            GUILayout.Label("PuzzleGlass 3D Physics Puzzle", titleStyle);
 
-            GUILayout.Space(6);
-
-            GUIStyle btnStyle = new GUIStyle(GUI.skin.button);
-            btnStyle.fontSize = 12;
-            btnStyle.fontStyle = FontStyle.Bold;
-
-            if (GUILayout.Button("Feed 1 Cube (Space)", btnStyle, GUILayout.Height(32)))
+            GUIStyle subStyle = new GUIStyle(GUI.skin.label)
             {
-                FeedOneCube();
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 10
+            };
+            subStyle.normal.textColor = new Color(0.7f, 0.85f, 1f, 1f);
+            GUILayout.Label($"Active Pattern: {activePatternType}", subStyle);
+
+            int ballCount = BallObjectPool.Instance != null ? BallObjectPool.Instance.ActiveBalls.Count : 0;
+            GUILayout.Label($"Balls in Jar: {ballCount} | Drag to Slots!", subStyle);
+
+            if (isLevelCompleted)
+            {
+                GUIStyle winStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 13
+                };
+                winStyle.normal.textColor = new Color(0.2f, 1f, 0.4f, 1f);
+                GUILayout.Label("★ LEVEL CLEARED! ★", winStyle);
             }
 
-            string autoText = cubeDispenser != null && cubeDispenser.isAutoFeeding ? "Auto Feeding: ON" : "Auto Feed: OFF";
-            GUI.backgroundColor = (cubeDispenser != null && cubeDispenser.isAutoFeeding) ? new Color(0.2f, 0.8f, 0.4f, 1f) : new Color(0.8f, 0.3f, 0.3f, 1f);
-            if (GUILayout.Button(autoText, btnStyle, GUILayout.Height(32)))
+            GUILayout.Space(4);
+            GUIStyle btnStyle = new GUIStyle(GUI.skin.button)
             {
-                ToggleAutoFeed();
+                fontSize = 11,
+                fontStyle = FontStyle.Bold
+            };
+
+            GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f, 1f);
+            if (GUILayout.Button(_showPatternSelector ? "▲ Hide Patterns" : "▼ Choose Pattern (" + activePatternType + ")", btnStyle, GUILayout.Height(26)))
+            {
+                _showPatternSelector = !_showPatternSelector;
             }
 
-            GUI.backgroundColor = new Color(0.25f, 0.5f, 0.9f, 1f);
-            GUILayout.Space(6);
-            GUILayout.Label("Scenarios:", GUI.skin.label);
-
-            if (GUILayout.Button("1. Reference (Blue 10 + Yellow 20)", btnStyle, GUILayout.Height(28)))
+            if (_showPatternSelector)
             {
-                SetupReferenceScenario();
+                GUILayout.Space(3);
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Frog", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Frog);
+                if (GUILayout.Button("Heart", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Heart);
+                if (GUILayout.Button("Shroom", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Mushroom);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Bee", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Bee);
+                if (GUILayout.Button("Octopus", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Octopus);
+                if (GUILayout.Button("Saturn", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Saturn);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Penguin", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Penguin);
+                if (GUILayout.Button("Butterfly", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Butterfly);
+                if (GUILayout.Button("Tulip", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Tulip);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Berry", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Strawberry);
+                if (GUILayout.Button("Cherry", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Cherry);
+                if (GUILayout.Button("Orange", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.OrangeFruit);
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Diamond", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Diamond);
+                if (GUILayout.Button("Pyramid", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Pyramid);
+                if (GUILayout.Button("Mosaic", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.RandomMosaic);
+                GUILayout.EndHorizontal();
             }
 
-            if (GUILayout.Button("2. Same Color (2x Blue Monsters)", btnStyle, GUILayout.Height(28)))
+            GUILayout.Space(4);
+            GUI.backgroundColor = new Color(0.3f, 0.7f, 0.4f, 1f);
+            if (GUILayout.Button("Restart Pattern (R)", btnStyle, GUILayout.Height(26)))
             {
-                SetupSameColorScenario();
+                RestartCurrentPattern();
             }
 
-            if (GUILayout.Button("3. 4 Colors (Blue, Ylw, Red, Grn)", btnStyle, GUILayout.Height(28)))
-            {
-                SetupFourColorsScenario();
-            }
-
-            if (GUILayout.Button("Reset Scene", btnStyle, GUILayout.Height(24)))
-            {
-                SetupReferenceScenario();
-            }
+            GUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.5f, 0.5f, 0.6f, 1f);
+            if (GUILayout.Button("◄ Prev", btnStyle, GUILayout.Height(24))) LoadPreviousLevel();
+            if (GUILayout.Button("Next (N) ►", btnStyle, GUILayout.Height(24))) LoadNextLevel();
+            GUILayout.EndHorizontal();
 
             GUILayout.EndArea();
             GUI.backgroundColor = oldBg;

@@ -24,20 +24,24 @@ namespace PuzzleGlass.Editor
                 PuzzleGlassPrefabGenerator.GenerateAllAssets();
             }
 
-            // Ensure scene matches the 1-to-1 Reference Design (Blue 10 + Yellow 20 + Wide Bulbous Sky-Blue Flask)
+            // Ensure scene has the core managers
             var manager = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
-            bool needsRebuild = manager == null ||
-                                manager.activeMonsters == null ||
-                                manager.activeMonsters.Count != 2 ||
-                                manager.activeMonsters[0] == null ||
-                                manager.activeMonsters[0].colorType != PuzzleColor.Blue ||
-                                manager.activeMonsters[1] == null ||
-                                manager.activeMonsters[1].colorType != PuzzleColor.Yellow;
-
-            if (needsRebuild)
+            if (manager == null)
             {
-                Debug.Log("<color=#2E9AF7><b>[PuzzleGlass]</b></color> Building 1-to-1 Reference Flask & Monster Scene...");
+                Debug.Log("<color=#2E9AF7><b>[PuzzleGlass]</b></color> Building Initial PuzzleGlass Scene...");
                 BuildCompleteScene();
+                return;
+            }
+
+            // Check if there are legacy FlaskBead or obsolete monsters
+            var strayFlaskBeads = GameObject.Find("CubesInBottle");
+            bool hasLegacyBeads = strayFlaskBeads != null && strayFlaskBeads.transform.childCount > 0;
+            var blueStray = GameObject.Find("Monster_Blue_10");
+            var yellowStray = GameObject.Find("Monster_Yellow_20");
+
+            if (hasLegacyBeads || blueStray != null || yellowStray != null)
+            {
+                CleanAndSyncActiveScene();
             }
             else
             {
@@ -54,8 +58,7 @@ namespace PuzzleGlass.Editor
                         glass.particleSize = 0.155f;
                     }
                     glass.curveSubdivisions = 14;
-                    glass.ApplyShapePreset(GlassShapePreset.DiamondCarafe, false);
-                    glass.ApplyColorTheme(GlassColorTheme.SkyBlueGlossy, true);
+                    // Do NOT force shape preset or theme override! Respect user's selected shape.
                     EditorUtility.SetDirty(glass);
                     dirty = true;
                 }
@@ -107,6 +110,45 @@ namespace PuzzleGlass.Editor
                     EditorSceneManager.SaveOpenScenes();
                 }
             }
+        }
+
+        [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Canavarları Senkronize Et", false, 1)]
+        public static void CleanAndSyncActiveScene()
+        {
+            var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
+            var gm = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
+
+            if (glass != null)
+            {
+                glass.CleanOrphanedChildren();
+                glass.freezePatternInPlace = false;
+                glass.RebuildContainer();
+
+                var bcm = glass.GetComponent<BallContainerManager>() ?? glass.gameObject.AddComponent<BallContainerManager>();
+                bcm.glassContainer = glass;
+                bcm.RebuildColliders();
+            }
+
+            if (gm != null)
+            {
+                gm.ClearMonsters();
+                if (glass != null)
+                {
+                    PixelArtPattern pat = (glass.pixelArtPreset == PixelArtPreset.Custom && glass.customPattern != null)
+                        ? glass.customPattern
+                        : PixelArtLibrary.GetPreset(glass.pixelArtPreset);
+                    if (pat == null) pat = PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
+                    gm.SynchronizeMonstersForPattern(pat);
+                }
+                EditorUtility.SetDirty(gm);
+            }
+
+            if (glass != null) EditorUtility.SetDirty(glass);
+
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            EditorSceneManager.SaveOpenScenes();
+            SceneView.RepaintAll();
+            Debug.Log("<color=#00FF88><b>[PuzzleGlass]</b></color> Sahne başarıyla temizlendi ve desenle senkronize edildi!");
         }
 
         [MenuItem("Tools/PuzzleGlass/Build Reference Scene", false, 10)]

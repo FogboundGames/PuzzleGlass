@@ -11,7 +11,11 @@ namespace PuzzleGlass
         Green,
         Purple,
         Orange,
-        Pink
+        Pink,
+        Black,
+        White,
+        Cyan,
+        Brown
     }
 
     public static class PuzzleColorPalette
@@ -27,6 +31,10 @@ namespace PuzzleGlass
                 case PuzzleColor.Purple: return new Color(0.60f, 0.38f, 0.96f, 1f); // Soft violet-lavender (Image 2)
                 case PuzzleColor.Orange: return new Color(1.00f, 0.58f, 0.16f, 1f); // Rich tangerine-peach (Image 2)
                 case PuzzleColor.Pink:   return new Color(1.00f, 0.32f, 0.66f, 1f); // Candy bubblegum pink (Image 2)
+                case PuzzleColor.Black:  return new Color(0.12f, 0.12f, 0.15f, 1f); // Glossy ink black (Image 2 outlines)
+                case PuzzleColor.White:  return new Color(0.96f, 0.97f, 1.00f, 1f); // Pearl white (Image 2 highlights/belly)
+                case PuzzleColor.Cyan:   return new Color(0.18f, 0.88f, 0.84f, 1f); // Bright turquoise cyan (Image 2 butterfly/leaves)
+                case PuzzleColor.Brown:  return new Color(0.85f, 0.64f, 0.46f, 1f); // Warm peach-beige tan (Image 2 mushroom stem)
                 default: return Color.white;
             }
         }
@@ -34,6 +42,11 @@ namespace PuzzleGlass
         public static Color GetCubeColor(PuzzleColor color)
         {
             return GetBodyColor(color);
+        }
+
+        public static Color GetColor(PuzzleColor color)
+        {
+            return GetCubeColor(color);
         }
 
         /// <summary>
@@ -50,6 +63,10 @@ namespace PuzzleGlass
                 case PuzzleColor.Purple: return new Color(0.34f, 0.16f, 0.70f, 1f); // Deep indigo-grape shadow
                 case PuzzleColor.Orange: return new Color(0.80f, 0.32f, 0.04f, 1f); // Warm burnt-tangerine shadow
                 case PuzzleColor.Pink:   return new Color(0.72f, 0.12f, 0.42f, 1f); // Deep raspberry shadow
+                case PuzzleColor.Black:  return new Color(0.03f, 0.03f, 0.05f, 1f); // Midnight charcoal shadow
+                case PuzzleColor.White:  return new Color(0.70f, 0.74f, 0.82f, 1f); // Soft iridescent ice-blue shadow
+                case PuzzleColor.Cyan:   return new Color(0.06f, 0.54f, 0.56f, 1f); // Deep turquoise shadow
+                case PuzzleColor.Brown:  return new Color(0.55f, 0.36f, 0.22f, 1f); // Warm cinnamon shadow
                 default: return new Color(0.65f, 0.65f, 0.70f, 1f);
             }
         }
@@ -68,6 +85,10 @@ namespace PuzzleGlass
                 case PuzzleColor.Purple: return new Color(0.85f, 0.72f, 1.00f, 1f);
                 case PuzzleColor.Orange: return new Color(1.00f, 0.84f, 0.52f, 1f);
                 case PuzzleColor.Pink:   return new Color(1.00f, 0.74f, 0.90f, 1f);
+                case PuzzleColor.Black:  return new Color(0.45f, 0.46f, 0.52f, 1f); // Crisp bevel catchlight on black
+                case PuzzleColor.White:  return new Color(1.00f, 1.00f, 1.00f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.72f, 0.98f, 0.98f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.96f, 0.82f, 0.70f, 1f);
                 default: return Color.white;
             }
         }
@@ -113,6 +134,10 @@ namespace PuzzleGlass
                 case PuzzleColor.Purple: return new Color(0.35f, 0.18f, 0.58f, 1f);
                 case PuzzleColor.Orange: return new Color(0.65f, 0.32f, 0.04f, 1f);
                 case PuzzleColor.Pink:   return new Color(0.65f, 0.14f, 0.38f, 1f);
+                case PuzzleColor.Black:  return new Color(0.04f, 0.04f, 0.06f, 1f);
+                case PuzzleColor.White:  return new Color(0.60f, 0.64f, 0.72f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.06f, 0.45f, 0.48f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.48f, 0.28f, 0.16f, 1f);
                 default: return Color.black;
             }
         }
@@ -128,6 +153,10 @@ namespace PuzzleGlass
                 case PuzzleColor.Purple: return new Color(0.42f, 0.22f, 0.68f, 1f);
                 case PuzzleColor.Orange: return new Color(0.80f, 0.40f, 0.05f, 1f);
                 case PuzzleColor.Pink:   return new Color(0.80f, 0.18f, 0.48f, 1f);
+                case PuzzleColor.Black:  return new Color(0.15f, 0.15f, 0.18f, 1f);
+                case PuzzleColor.White:  return new Color(0.85f, 0.88f, 0.95f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.10f, 0.62f, 0.65f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.65f, 0.42f, 0.22f, 1f);
                 default: return Color.black;
             }
         }

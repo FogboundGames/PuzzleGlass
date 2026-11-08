@@ -27,7 +27,13 @@ namespace PuzzleGlass.Editor
             "📐 Konik Şişe",
             "⛄ Çift Boğum",
             "🏺 Amfora Vazo",
-            "🐍 S-Kıvrım Tüp"
+            "🐍 S-Kıvrım Tüp",
+            "🔲 Serbest Özel",
+            "⬛ Hunili Kare",
+            "📱 Dikey Dikdörtgen",
+            "🖥️ Geniş Dikdörtgen",
+            "📦 Düz Kare Kutu",
+            "🏷️ Düz Dikdörtgen"
         };
 
         private static readonly string[] ThemeNames = new string[]
@@ -300,11 +306,34 @@ namespace PuzzleGlass.Editor
             Rect previewRect = GUILayoutUtility.GetRect(480f, 118f, GUILayout.ExpandWidth(true));
             EditorGUI.DrawRect(previewRect, new Color(0.12f, 0.15f, 0.22f, 1f));
 
-            // Left side of preview card: Bottle Color Bands from top to bottom
+            // Left side of preview card: Bottle Color Bands or Pixel Art Mini-Grid
             Rect bottleRect = new Rect(previewRect.x + 14f, previewRect.y + 10f, 150f, previewRect.height - 20f);
             EditorGUI.DrawRect(bottleRect, new Color(0.08f, 0.10f, 0.15f, 1f));
 
-            if (lvl.monsters != null && lvl.monsters.Count > 0 && totalMonsterCounts > 0)
+            if (lvl.particleMode == ParticleArrangementMode.PixelArtVisual)
+            {
+                var pat = PixelArtLibrary.GetPreset(lvl.pixelArtPreset);
+                var grid = pat.GetColorGrid();
+                float cellW = (bottleRect.width - 16f) / pat.width;
+                float cellH = (bottleRect.height - 16f) / pat.height;
+                float cellSize = Mathf.Min(cellW, cellH);
+                float offX = bottleRect.x + (bottleRect.width - pat.width * cellSize) * 0.5f;
+                float offY = bottleRect.y + (bottleRect.height - pat.height * cellSize) * 0.5f;
+
+                for (int py = 0; py < pat.height; py++)
+                {
+                    for (int px = 0; px < pat.width; px++)
+                    {
+                        var col = grid[px, py];
+                        if (col.HasValue)
+                        {
+                            Rect cRect = new Rect(offX + px * cellSize, offY + (pat.height - 1 - py) * cellSize, cellSize - 0.5f, cellSize - 0.5f);
+                            EditorGUI.DrawRect(cRect, PuzzleColorPalette.GetCubeColor(col.Value));
+                        }
+                    }
+                }
+            }
+            else if (lvl.monsters != null && lvl.monsters.Count > 0 && totalMonsterCounts > 0)
             {
                 float curY = bottleRect.yMax - 4f;
                 float availH = bottleRect.height - 8f;
@@ -487,6 +516,35 @@ namespace PuzzleGlass.Editor
                 }
             }
             EditorGUILayout.EndHorizontal();
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.Space(6);
+            EditorGUILayout.LabelField("🎨 2. Görseldeki Piksel Sanatı Görselleri (Image 2 Presets):", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox("Camın içinde 2. görseldeki gibi sabit durarak piksel sanatı görseli oluşturan toplar.", MessageType.None);
+
+            string[] pixelLabels = PixelArtLibrary.PresetDisplayNames;
+            int pCols = 3;
+            for (int i = 0; i < pixelLabels.Length; i += pCols)
+            {
+                EditorGUILayout.BeginHorizontal();
+                for (int j = 0; j < pCols && (i + j) < pixelLabels.Length; j++)
+                {
+                    int pIdx = i + j;
+                    PixelArtPreset pPreset = (PixelArtPreset)pIdx;
+                    bool isSelected = lvl.particleMode == ParticleArrangementMode.PixelArtVisual && lvl.pixelArtPreset == pPreset;
+                    GUI.backgroundColor = isSelected ? new Color(0.28f, 0.90f, 0.55f) : new Color(0.95f, 0.85f, 0.45f);
+                    if (GUILayout.Button(pixelLabels[pIdx], GUILayout.Height(25)))
+                    {
+                        Undo.RecordObject(lvl, "Set Pixel Art Preset");
+                        lvl.particleMode = ParticleArrangementMode.PixelArtVisual;
+                        lvl.pixelArtPreset = pPreset;
+                        lvl.freezePatternInPlace = true;
+                        EditorUtility.SetDirty(lvl);
+                        if (_liveSyncToScene) ApplyLevelToScene(lvl);
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
             GUI.backgroundColor = Color.white;
 
             EditorGUILayout.EndVertical();
