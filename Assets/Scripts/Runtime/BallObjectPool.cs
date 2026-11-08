@@ -6,6 +6,8 @@ namespace PuzzleGlass
     [ExecuteAlways]
     public class BallObjectPool : MonoBehaviour
     {
+        private const string PoolRootName = "BallObjectPool_Root";
+
         private static BallObjectPool _instance;
         public static BallObjectPool Instance
         {
@@ -18,7 +20,7 @@ namespace PuzzleGlass
                     {
                         var poolObj = GameObject.Find("BallObjectPool");
                         if (poolObj == null) poolObj = new GameObject("BallObjectPool");
-                        _instance = poolObj.GetComponent<BallObjectPool>() ?? poolObj.AddComponent<BallObjectPool>();
+                        _instance = poolObj.GetComponent<BallObjectPool>().OrNull() ?? poolObj.AddComponent<BallObjectPool>();
                     }
                 }
                 return _instance;
@@ -47,22 +49,82 @@ namespace PuzzleGlass
 
         private void Awake()
         {
-            if (Instance == null) Instance = this;
-            InitializePool();
+            if (ClaimSingleton()) InitializePool();
         }
 
         private void OnEnable()
         {
-            if (Instance == null) Instance = this;
+            // Domain reload calls OnEnable without Awake and clears the non-serialized pool state
+            if (ClaimSingleton()) InitializePool();
+        }
+
+        private bool ClaimSingleton()
+        {
+            if (_instance == null) _instance = this;
+            if (_instance == this) return true;
+
+            DestroyDeferred(gameObject);
+            return false;
+        }
+
+        // Immediate destruction is unsafe while the hierarchy is still being activated
+        private static void DestroyDeferred(GameObject target)
+        {
+            if (Application.isPlaying)
+            {
+                Destroy(target);
+                return;
+            }
+
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.delayCall += () =>
+            {
+                if (target == null) return;
+
+                if (Application.isPlaying)
+                {
+                    Destroy(target);
+                    return;
+                }
+
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(target.scene);
+                DestroyImmediate(target);
+            };
+#endif
+        }
+
+        private void AdoptOrCreatePoolRoot()
+        {
+            _availableBalls.Clear();
+            _activeBalls.Clear();
+
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = transform.GetChild(i).gameObject;
+                if (child.name != PoolRootName) continue;
+
+                if (_poolContainer == null) _poolContainer = child;
+                else DestroyDeferred(child);
+            }
+
+            if (_poolContainer == null)
+            {
+                _poolContainer = new GameObject(PoolRootName);
+                _poolContainer.transform.SetParent(transform, false);
+                return;
+            }
+
+            foreach (var ball in _poolContainer.GetComponentsInChildren<BallPhysicsController>(true))
+            {
+                if (ball.gameObject.activeSelf) _activeBalls.Add(ball);
+                else if (_availableBalls.Count < initialPoolSize) _availableBalls.Enqueue(ball);
+                else DestroyDeferred(ball.gameObject);
+            }
         }
 
         public void InitializePool()
         {
-            if (_poolContainer == null)
-            {
-                _poolContainer = new GameObject("BallObjectPool_Root");
-                _poolContainer.transform.SetParent(transform, false);
-            }
+            if (_poolContainer == null) AdoptOrCreatePoolRoot();
 
             EnsureSharedResources();
 
@@ -149,6 +211,7 @@ namespace PuzzleGlass
 
         public BallPhysicsController SpawnBall(PuzzleColor color, Vector3 position, float radius = -1f)
         {
+            if (_poolContainer == null) InitializePool();
             EnsureSharedResources();
 
             float r = (radius > 0.02f) ? radius : defaultBallRadius;
@@ -178,6 +241,7 @@ namespace PuzzleGlass
         public void ReturnBall(BallPhysicsController ball)
         {
             if (ball == null) return;
+            if (_poolContainer == null) InitializePool();
 
             _activeBalls.Remove(ball);
             if (!_availableBalls.Contains(ball))
@@ -189,13 +253,12 @@ namespace PuzzleGlass
 
         public void ClearAllActiveBalls()
         {
-            for (int i = _activeBalls.Count - 1; i >= 0; i--)
+            if (_poolContainer == null) InitializePool();
+
+            // Scene-wide search so balls saved under old pools or lost after a reload are cleared too
+            foreach (var ball in FindObjectsByType<BallPhysicsController>(FindObjectsSortMode.None))
             {
-                var ball = _activeBalls[i];
-                if (ball != null)
-                {
-                    ball.RecycleSelf();
-                }
+                ball.RecycleSelf();
             }
             _activeBalls.Clear();
         }

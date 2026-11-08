@@ -212,7 +212,7 @@ namespace PuzzleGlass
 
         private SlotPlatform FindClosestAvailableSlot(Vector3 monsterPos)
         {
-            SlotSystem slotSys = SlotSystem.Instance ?? FindFirstObjectByType<SlotSystem>();
+            SlotSystem slotSys = SlotSystem.Instance.OrNull() ?? FindFirstObjectByType<SlotSystem>();
             if (slotSys == null || slotSys.slots == null) return null;
 
             SlotPlatform closest = null;

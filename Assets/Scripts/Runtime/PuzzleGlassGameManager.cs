@@ -30,6 +30,10 @@ namespace PuzzleGlass
         [Header("Level System")]
         public List<PuzzleGlassLevelData> levels = new List<PuzzleGlassLevelData>();
         public int currentLevelIndex = 0;
+        [Tooltip("Cam şekli bu kadar levelde bir değişir; her grubun şeklini ilk level belirler. 1 = her level kendi şekli.")]
+        [Min(1)]
+        public int levelsPerGlassShape = 10;
+        public float nextLevelDelay = 1.2f;
         public PuzzleGlassLevelData currentLevel;
 
         [Header("Active Monsters & Gameplay State")]
@@ -58,7 +62,41 @@ namespace PuzzleGlass
         private void Start()
         {
             EnsureGameplayControllers();
+
+            if (Application.isPlaying)
+            {
+                RebuildSandVisual();
+                return;
+            }
+
             SyncCurrentMonstersWithPattern();
+        }
+
+        // Kum Play başında yeniden kurulur; akış ızgarası sahneyle birlikte kaydedilmez
+        private void RebuildSandVisual()
+        {
+            if (glassContainer == null) return;
+
+            glassContainer.CleanOrphanedChildren();
+            glassContainer.RebuildContainer();
+            PlaySandFillIfPlaying();
+        }
+
+        private void PlaySandFillIfPlaying()
+        {
+            if (Application.isPlaying && sandEngine != null)
+            {
+                sandEngine.PlayFillAnimation();
+            }
+        }
+
+        private PuzzleGlassLevelData GetGlassShapeSource(PuzzleGlassLevelData levelData)
+        {
+            int index = levels != null ? levels.IndexOf(levelData) : -1;
+            if (index < 0 || levelsPerGlassShape <= 1) return levelData;
+
+            var source = levels[index / levelsPerGlassShape * levelsPerGlassShape];
+            return source != null ? source : levelData;
         }
 
         public void SyncCurrentMonstersWithPattern()
@@ -140,39 +178,33 @@ namespace PuzzleGlass
 
             if (dragController == null)
             {
-                dragController = GetComponent<MonsterDragController>() ?? gameObject.AddComponent<MonsterDragController>();
+                dragController = GetComponent<MonsterDragController>().OrNull() ?? gameObject.AddComponent<MonsterDragController>();
             }
 
             if (collectionController == null)
             {
-                collectionController = GetComponent<BallCollectionController>() ?? gameObject.AddComponent<BallCollectionController>();
+                collectionController = GetComponent<BallCollectionController>().OrNull() ?? gameObject.AddComponent<BallCollectionController>();
             }
 
             if (patternGenerator == null)
             {
-                patternGenerator = GetComponent<BallPatternGenerator>() ?? gameObject.AddComponent<BallPatternGenerator>();
-            }
-
-            if (BallObjectPool.Instance == null && FindFirstObjectByType<BallObjectPool>() == null)
-            {
-                GameObject poolObj = new GameObject("BallObjectPool");
-                poolObj.AddComponent<BallObjectPool>();
+                patternGenerator = GetComponent<BallPatternGenerator>().OrNull() ?? gameObject.AddComponent<BallPatternGenerator>();
             }
 
             if (glassContainer != null)
             {
-                containerPhysics = glassContainer.GetComponent<BallContainerManager>() ?? glassContainer.gameObject.AddComponent<BallContainerManager>();
+                containerPhysics = glassContainer.GetComponent<BallContainerManager>().OrNull() ?? glassContainer.gameObject.AddComponent<BallContainerManager>();
                 containerPhysics.glassContainer = glassContainer;
 
                 if (sandEngine == null)
                 {
-                    sandEngine = glassContainer.GetComponent<SandSimulationEngine>() ?? glassContainer.gameObject.AddComponent<SandSimulationEngine>();
+                    sandEngine = glassContainer.GetComponent<SandSimulationEngine>().OrNull() ?? glassContainer.gameObject.AddComponent<SandSimulationEngine>();
                     sandEngine.glassContainer = glassContainer;
                 }
 
                 if (flowBridge == null)
                 {
-                    flowBridge = glassContainer.GetComponent<SandMonsterFlowBridge>() ?? glassContainer.gameObject.AddComponent<SandMonsterFlowBridge>();
+                    flowBridge = glassContainer.GetComponent<SandMonsterFlowBridge>().OrNull() ?? glassContainer.gameObject.AddComponent<SandMonsterFlowBridge>();
                     flowBridge.sandEngine = sandEngine;
                     flowBridge.glassContainer = glassContainer;
                 }
@@ -298,13 +330,15 @@ namespace PuzzleGlass
             // 3. Configure & Rebuild ShapedGlassContainer
             if (glassContainer != null)
             {
-                glassContainer.shapePreset = levelData.glassPreset;
+                PuzzleGlassLevelData shapeSource = GetGlassShapeSource(levelData);
+
+                glassContainer.shapePreset = shapeSource.glassPreset;
                 glassContainer.colorTheme = levelData.colorTheme;
                 glassContainer.layerPattern = levelData.layerPattern;
-                glassContainer.symmetricMode = levelData.symmetricMode;
-                glassContainer.curveSubdivisions = levelData.curveSubdivisions;
-                glassContainer.widthScale = levelData.widthScale;
-                glassContainer.heightScale = levelData.heightScale;
+                glassContainer.symmetricMode = shapeSource.symmetricMode;
+                glassContainer.curveSubdivisions = shapeSource.curveSubdivisions;
+                glassContainer.widthScale = shapeSource.widthScale;
+                glassContainer.heightScale = shapeSource.heightScale;
 
                 glassContainer.glassBodyColor = levelData.glassBodyColor;
                 glassContainer.glassCenterGlowColor = levelData.glassCenterGlowColor;
@@ -323,17 +357,19 @@ namespace PuzzleGlass
                 glassContainer.particlesPerMonsterCount = Mathf.Max(1, levelData.particlesPerMonsterCount);
                 glassContainer.particleMode = levelData.particleMode;
                 glassContainer.pixelArtPreset = levelData.pixelArtPreset;
+                glassContainer.customPattern = levelData.customPattern;
                 glassContainer.freezePatternInPlace = false; // Allow balls to tumble naturally
                 glassContainer.gridCellSpacing = levelData.gridCellSpacing;
-                glassContainer.patternVerticalOffset = levelData.patternVerticalOffset;
+                glassContainer.patternVerticalOffset = 0f; // Kum görseli hazne ortasına hizalanır
+                if (sandEngine != null) sandEngine.lockedSectionRatio = levelData.lockedSectionRatio;
 
-                if (levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
+                if (shapeSource.contourPoints != null && shapeSource.contourPoints.Count >= 3)
                 {
-                    glassContainer.contourPoints = new List<GlassContourPoint>(levelData.contourPoints);
+                    glassContainer.contourPoints = new List<GlassContourPoint>(shapeSource.contourPoints);
                 }
                 else
                 {
-                    glassContainer.ApplyShapePreset(levelData.glassPreset, false);
+                    glassContainer.ApplyShapePreset(shapeSource.glassPreset, false);
                 }
 
                 glassContainer.RebuildContainer();
@@ -345,12 +381,9 @@ namespace PuzzleGlass
                 }
             }
 
-            // 5. Spawn Real 3D Physical Balls Formation
-            if (patternGenerator != null)
-            {
-                activePatternType = levelData.patternShape;
-                patternGenerator.GeneratePattern(levelData.patternShape, levelData.monsters, levelData.gridCellSpacing);
-            }
+            // 5. Yeni görsel üst açıklıktan dökülerek oluşur
+            activePatternType = levelData.patternShape;
+            PlaySandFillIfPlaying();
         }
 
         private void SpawnMonsterStagingArea(List<LevelMonsterEntry> monsterEntries)
@@ -460,14 +493,17 @@ namespace PuzzleGlass
                 case PixelArtPreset.Tulip: shapeType = ShapePatternType.Tulip; break;
                 case PixelArtPreset.Saturn: shapeType = ShapePatternType.Saturn; break;
             }
-            SetupShapePatternScenario(shapeType);
+
+            EnsureGameplayControllers();
+            isLevelCompleted = false;
+            activePatternType = shapeType;
+            RebuildSandVisual();
         }
 
         public void SetupCustomPatternScenario(PixelArtPattern pattern)
         {
             if (pattern == null) return;
             EnsureGameplayControllers();
-            ClearMonsters();
             isLevelCompleted = false;
 
             if (glassContainer != null)
@@ -476,134 +512,20 @@ namespace PuzzleGlass
                 glassContainer.pixelArtPreset = PixelArtPreset.Custom;
                 glassContainer.particleMode = ParticleArrangementMode.PixelArtVisual;
                 glassContainer.freezePatternInPlace = false;
-                glassContainer.CleanOrphanedChildren();
-                glassContainer.RebuildContainer();
-
-                if (containerPhysics != null)
-                {
-                    containerPhysics.RebuildColliders();
-                }
+                RebuildSandVisual();
             }
-
-            List<BallPhysicsController> spawnedBalls = null;
-            if (patternGenerator != null)
-            {
-                spawnedBalls = patternGenerator.GenerateFromCustomPattern(pattern);
-            }
-
-            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
-            if (spawnedBalls != null)
-            {
-                for (int i = 0; i < spawnedBalls.Count; i++)
-                {
-                    var c = spawnedBalls[i].colorType;
-                    if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
-                    colorCounts[c]++;
-                }
-            }
-
-            List<LevelMonsterEntry> monsterEntries = new List<LevelMonsterEntry>();
-            foreach (var kvp in colorCounts)
-            {
-                if (kvp.Value > 0)
-                {
-                    monsterEntries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
-                }
-            }
-
-            if (monsterEntries.Count == 0)
-            {
-                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 10));
-            }
-
-            SpawnMonsterStagingArea(monsterEntries);
         }
 
         /// <summary>
-        /// Spawns any dynamic pattern (silhouettes, fruits, geometric shapes, bands, mosaic)
-        /// using real 3D physical balls and generates matching monster goals automatically!
+        /// Shows any shape pattern (silhouettes, fruits, geometric shapes, bands, mosaic) as sand.
         /// </summary>
         public void SetupShapePatternScenario(ShapePatternType patternType)
         {
             EnsureGameplayControllers();
-            ClearMonsters();
-            isLevelCompleted = false;
+            if (patternGenerator == null) return;
+
             activePatternType = patternType;
-
-            // Rebuild container respecting current shape (Square, Rectangle, Bulbous, etc.)
-            if (glassContainer != null)
-            {
-                glassContainer.freezePatternInPlace = false;
-                glassContainer.CleanOrphanedChildren();
-                glassContainer.RebuildContainer();
-
-                if (containerPhysics != null)
-                {
-                    containerPhysics.RebuildColliders();
-                }
-            }
-
-            // Generate physical balls
-            List<BallPhysicsController> spawnedBalls = null;
-            if (patternGenerator != null)
-            {
-                spawnedBalls = patternGenerator.GeneratePattern(patternType);
-            }
-
-            // Phase 2 Sand Simulation Engine Initialization
-            if (sandEngine != null)
-            {
-                PixelArtPreset preset = PixelArtPreset.Frog;
-                switch (patternType)
-                {
-                    case ShapePatternType.Rainbow: preset = PixelArtPreset.Rainbow; break;
-                    case ShapePatternType.Cat: preset = PixelArtPreset.Cat; break;
-                    case ShapePatternType.Star: preset = PixelArtPreset.Star; break;
-                    case ShapePatternType.Frog: preset = PixelArtPreset.Frog; break;
-                    case ShapePatternType.Heart: preset = PixelArtPreset.Heart; break;
-                    case ShapePatternType.Mushroom: preset = PixelArtPreset.Mushroom; break;
-                    case ShapePatternType.Bee: preset = PixelArtPreset.Bee; break;
-                    case ShapePatternType.Octopus: preset = PixelArtPreset.OctopusSkull; break;
-                    case ShapePatternType.Penguin: preset = PixelArtPreset.Penguin; break;
-                    case ShapePatternType.Butterfly: preset = PixelArtPreset.Butterfly; break;
-                    case ShapePatternType.Tulip: preset = PixelArtPreset.Tulip; break;
-                    case ShapePatternType.Saturn: preset = PixelArtPreset.Saturn; break;
-                }
-                var pat = PixelArtLibrary.GetPreset(preset);
-                if (pat != null)
-                {
-                    sandEngine.InitializeFromPattern(pat);
-                    sandEngine.SetSimulationMode(SandSimulationMode.StaticImage);
-                }
-            }
-
-            // Analyze spawned ball colors to configure monster quotas
-            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
-            if (spawnedBalls != null)
-            {
-                for (int i = 0; i < spawnedBalls.Count; i++)
-                {
-                    var c = spawnedBalls[i].colorType;
-                    if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
-                    colorCounts[c]++;
-                }
-            }
-
-            // Create monster goals for the top colors
-            List<LevelMonsterEntry> monsterEntries = new List<LevelMonsterEntry>();
-            foreach (var kvp in colorCounts)
-            {
-                monsterEntries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
-            }
-
-            // Ensure at least 2 monsters if pattern has fewer colors
-            if (monsterEntries.Count == 0)
-            {
-                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
-                monsterEntries.Add(new LevelMonsterEntry(PuzzleColor.Pink, 8));
-            }
-
-            SpawnMonsterStagingArea(monsterEntries);
+            SetupCustomPatternScenario(patternGenerator.BuildSandPattern(patternType));
         }
 
         [ContextMenu("Setup Reference Scenario")]
@@ -649,6 +571,11 @@ namespace PuzzleGlass
         private void OnLevelCleared()
         {
             Debug.Log("<color=#00FF88>★ LEVEL CLEARED! ALL MONSTER ORDERS FULFILLED! ★</color>");
+
+            if (Application.isPlaying)
+            {
+                Invoke(nameof(LoadNextLevel), nextLevelDelay);
+            }
         }
 
         // ==================== ON-SCREEN TESTING HUD ====================
@@ -684,8 +611,8 @@ namespace PuzzleGlass
             subStyle.normal.textColor = new Color(0.7f, 0.85f, 1f, 1f);
             GUILayout.Label($"Active Pattern: {activePatternType}", subStyle);
 
-            int ballCount = BallObjectPool.Instance != null ? BallObjectPool.Instance.ActiveBalls.Count : 0;
-            GUILayout.Label($"Balls in Jar: {ballCount} | Drag to Slots!", subStyle);
+            int grainCount = sandEngine != null ? sandEngine.sandAmount : 0;
+            GUILayout.Label($"Sand in Jar: {grainCount} | Drag to Slots!", subStyle);
 
             if (isLevelCompleted)
             {

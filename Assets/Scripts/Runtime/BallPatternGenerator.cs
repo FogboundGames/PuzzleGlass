@@ -68,7 +68,7 @@ namespace PuzzleGlass
             Instance = this;
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
             }
         }
 
@@ -77,27 +77,16 @@ namespace PuzzleGlass
             Instance = this;
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
             }
         }
 
         /// <summary>
-        /// Generates and spawns a dynamic level pattern using real, individual 3D physics balls!
+        /// Builds any shape pattern as a pixel grid for the sand visual.
         /// </summary>
-        public List<BallPhysicsController> GeneratePattern(
-            ShapePatternType patternType,
-            List<LevelMonsterEntry> monsterGoals = null,
-            float customSpacing = -1f)
+        public PixelArtPattern BuildSandPattern(ShapePatternType patternType, List<LevelMonsterEntry> monsterGoals = null)
         {
-            var pool = BallObjectPool.Instance;
-            if (pool != null)
-            {
-                pool.ClearAllActiveBalls();
-            }
-
-            float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.05f;
-            float ballRadius = ballDiameter * 0.5f;
-
+            float spacing = ballDiameter * 1.05f;
             List<(Vector2 pos, PuzzleColor col)> ballSpawns = new List<(Vector2, PuzzleColor)>();
 
             switch (patternType)
@@ -171,100 +160,33 @@ namespace PuzzleGlass
                     break;
             }
 
-            // Spawn real 3D physical balls from the object pool
-            List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
-            if (pool != null)
+            if (ballSpawns.Count == 0)
             {
-                for (int i = 0; i < ballSpawns.Count; i++)
-                {
-                    var entry = ballSpawns[i];
-                    Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
-                    var ball = pool.SpawnBall(entry.col, worldPos, ballRadius);
-                    if (ball != null && ball.rb != null)
-                    {
-                        ball.rb.isKinematic = !Application.isPlaying;
-                        ball.rb.useGravity = Application.isPlaying;
-                    }
-                    spawnedBalls.Add(ball);
-                }
+                return PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
             }
 
-            // In Play Mode, release to PhysX physics simulation!
-            if (Application.isPlaying)
+            // Snap the generated layout onto a pixel grid
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            for (int i = 0; i < ballSpawns.Count; i++)
             {
-                StartCoroutine(ReleaseBallsToPhysicsRoutine(spawnedBalls));
+                minX = Mathf.Min(minX, ballSpawns[i].pos.x);
+                minY = Mathf.Min(minY, ballSpawns[i].pos.y);
+                maxX = Mathf.Max(maxX, ballSpawns[i].pos.x);
+                maxY = Mathf.Max(maxY, ballSpawns[i].pos.y);
             }
 
-            return spawnedBalls;
-        }
+            int cols = Mathf.RoundToInt((maxX - minX) / spacing) + 1;
+            int rows = Mathf.RoundToInt((maxY - minY) / spacing) + 1;
+            PuzzleColor?[,] grid = new PuzzleColor?[cols, rows];
 
-        public List<BallPhysicsController> GenerateFromCustomPattern(PixelArtPattern pattern, float customSpacing = -1f)
-        {
-            if (pattern == null) return new List<BallPhysicsController>();
-
-            var pool = BallObjectPool.Instance;
-            if (pool != null)
+            for (int i = 0; i < ballSpawns.Count; i++)
             {
-                pool.ClearAllActiveBalls();
+                int x = Mathf.RoundToInt((ballSpawns[i].pos.x - minX) / spacing);
+                int y = Mathf.RoundToInt((ballSpawns[i].pos.y - minY) / spacing);
+                grid[x, y] = ballSpawns[i].col;
             }
 
-            float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.05f;
-            float ballRadius = ballDiameter * 0.5f;
-
-            List<(Vector2 pos, PuzzleColor col)> ballSpawns = new List<(Vector2, PuzzleColor)>();
-            GenerateFromAscii(pattern, spacing, ballSpawns);
-
-            List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
-            if (pool != null)
-            {
-                for (int i = 0; i < ballSpawns.Count; i++)
-                {
-                    var entry = ballSpawns[i];
-                    Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
-                    var ball = pool.SpawnBall(entry.col, worldPos, ballRadius);
-                    if (ball != null && ball.rb != null)
-                    {
-                        ball.rb.isKinematic = !Application.isPlaying;
-                        ball.rb.useGravity = Application.isPlaying;
-                    }
-                    spawnedBalls.Add(ball);
-                }
-            }
-
-            if (Application.isPlaying)
-            {
-                StartCoroutine(ReleaseBallsToPhysicsRoutine(spawnedBalls));
-            }
-
-            return spawnedBalls;
-        }
-
-        private IEnumerator ReleaseBallsToPhysicsRoutine(List<BallPhysicsController> balls)
-        {
-            // Initial high drag holds the clean formation in place
-            for (int i = 0; i < balls.Count; i++)
-            {
-                if (balls[i]?.rb != null)
-                {
-                    balls[i].rb.linearDamping = 3.5f;
-                    balls[i].rb.angularDamping = 2.0f;
-                }
-            }
-
-            yield return new WaitForSeconds(initialShapeHoldTime);
-
-            // Natural gravity release: balls tumble, roll, and settle into a realistic organic pile!
-            for (int i = 0; i < balls.Count; i++)
-            {
-                if (balls[i]?.rb != null && balls[i].state == BallState.InContainer)
-                {
-                    balls[i].rb.isKinematic = false;
-                    balls[i].rb.useGravity = true;
-                    balls[i].rb.linearDamping = balls[i].defaultDrag;
-                    balls[i].rb.angularDamping = balls[i].defaultAngularDrag;
-                    balls[i].rb.WakeUp();
-                }
-            }
+            return PixelArtPattern.FromColorGrid(patternType.ToString(), grid);
         }
 
         private void GenerateFromAscii(PixelArtPattern pattern, float spacing, List<(Vector2, PuzzleColor)> list)

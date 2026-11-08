@@ -23,93 +23,6 @@ namespace PuzzleGlass.Editor
             {
                 PuzzleGlassPrefabGenerator.GenerateAllAssets();
             }
-
-            // Ensure scene has the core managers
-            var manager = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
-            if (manager == null)
-            {
-                Debug.Log("<color=#2E9AF7><b>[PuzzleGlass]</b></color> Building Initial PuzzleGlass Scene...");
-                BuildCompleteScene();
-                return;
-            }
-
-            // Check if there are legacy FlaskBead or obsolete monsters
-            var strayFlaskBeads = GameObject.Find("CubesInBottle");
-            bool hasLegacyBeads = strayFlaskBeads != null && strayFlaskBeads.transform.childCount > 0;
-            var blueStray = GameObject.Find("Monster_Blue_10");
-            var yellowStray = GameObject.Find("Monster_Yellow_20");
-
-            if (hasLegacyBeads || blueStray != null || yellowStray != null)
-            {
-                CleanAndSyncActiveScene();
-            }
-            else
-            {
-                var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
-                var dispenser = Object.FindFirstObjectByType<CubeDispenser>();
-                bool dirty = false;
-
-                if (glass != null)
-                {
-                    glass.transform.localPosition = new Vector3(0f, 1.65f, 0f);
-                    glass.particlesPerMonsterCount = 1;
-                    if (glass.particleSize < 0.145f)
-                    {
-                        glass.particleSize = 0.155f;
-                    }
-                    glass.curveSubdivisions = 14;
-                    // Do NOT force shape preset or theme override! Respect user's selected shape.
-                    EditorUtility.SetDirty(glass);
-                    dirty = true;
-                }
-
-                if (dispenser != null && manager != null && manager.activeMonsters != null)
-                {
-                    dispenser.feedInterval = 0.11f;
-                    dispenser.ClearOrders();
-                    for (int i = 0; i < manager.activeMonsters.Count; i++)
-                    {
-                        if (manager.activeMonsters[i] != null)
-                            dispenser.RegisterMonsterOrder(manager.activeMonsters[i]);
-                    }
-                    EditorUtility.SetDirty(dispenser);
-                    dirty = true;
-                }
-
-                var slots = Object.FindFirstObjectByType<SlotSystem>();
-                if (slots != null)
-                {
-                    slots.RebuildSlots();
-                    EditorUtility.SetDirty(slots);
-                    dirty = true;
-                }
-
-                var dirLight = Object.FindFirstObjectByType<Light>();
-                if (dirLight != null && dirLight.shadows != LightShadows.None)
-                {
-                    dirLight.shadows = LightShadows.None;
-                    EditorUtility.SetDirty(dirLight);
-                    dirty = true;
-                }
-
-                if (manager != null && manager.activeMonsters != null)
-                {
-                    for (int i = 0; i < manager.activeMonsters.Count; i++)
-                    {
-                        if (manager.activeMonsters[i] != null)
-                        {
-                            manager.activeMonsters[i].RebuildMonsterVisuals();
-                            EditorUtility.SetDirty(manager.activeMonsters[i]);
-                        }
-                    }
-                }
-
-                if (dirty)
-                {
-                    EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-                    EditorSceneManager.SaveOpenScenes();
-                }
-            }
         }
 
         [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Canavarları Senkronize Et", false, 1)]
@@ -124,7 +37,7 @@ namespace PuzzleGlass.Editor
                 glass.freezePatternInPlace = false;
                 glass.RebuildContainer();
 
-                var bcm = glass.GetComponent<BallContainerManager>() ?? glass.gameObject.AddComponent<BallContainerManager>();
+                var bcm = glass.GetComponent<BallContainerManager>().OrNull() ?? glass.gameObject.AddComponent<BallContainerManager>();
                 bcm.glassContainer = glass;
                 bcm.RebuildColliders();
             }

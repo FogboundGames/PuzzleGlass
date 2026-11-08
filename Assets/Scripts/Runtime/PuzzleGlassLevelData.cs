@@ -96,6 +96,9 @@ namespace PuzzleGlass
         public float patternVerticalOffset = 0.45f;
         public bool fillEmptyWithColor = false;
         public PuzzleColor emptyCellColor = PuzzleColor.Blue;
+        [Tooltip("Görselin canavarlar alttaki kumu yiyene kadar kilitli kalan üst oranı (0 = kilit yok)")]
+        [Range(0f, 0.6f)]
+        public float lockedSectionRatio = 0.3f;
 
         [Header("Custom Glass Contour Points")]
         public List<GlassContourPoint> contourPoints = new List<GlassContourPoint>();

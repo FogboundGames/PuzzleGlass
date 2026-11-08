@@ -11,8 +11,10 @@ namespace PuzzleGlass.Editor
     /// PNG/JPG görsellerini cam hazne içerisindeki fiziksel ve renkli kum parçacıklarına dönüştürür.
     /// Renk indirgeme, palet yönetimi, çözünürlük ayarı, cam hazneye otomatik sığdırma ve seviye kaydetme sunar.
     /// </summary>
-    public class SandImageGeneratorWindow : EditorWindow
+    public class SandImageGeneratorWindow : EditorWindow, ISerializationCallbackReceiver
     {
+        private static readonly PuzzleColor[] AllColors = (PuzzleColor[])Enum.GetValues(typeof(PuzzleColor));
+
         [MenuItem("Tools/PuzzleGlass/🎨 Sand Image Generator (Görseli Kuma Dönüştürme)", false, 0)]
         [MenuItem("Window/PuzzleGlass/🎨 Sand Image Generator", false, 0)]
         public static void OpenWindow()
@@ -51,15 +53,34 @@ namespace PuzzleGlass.Editor
 
         // Dönüştürülmüş Piksel Matrisi [x, y]
         private PuzzleColor?[,] _convertedGrid;
+        [SerializeField] private PixelArtPattern _gridSnapshot; // Çok boyutlu dizi serialize edilemediği için
         private Dictionary<PuzzleColor, int> _colorCounts = new Dictionary<PuzzleColor, int>();
         private Vector2 _scrollPos;
-        private string _levelSaveName = "Level_CustomImage";
+        [SerializeField] private string _levelSaveName = "Level_CustomImage";
 
         private void OnEnable()
         {
             if (_convertedGrid == null)
             {
                 LoadPreset(PixelArtPreset.Rainbow);
+                return;
+            }
+
+            _gridWidth = _convertedGrid.GetLength(0);
+            _gridHeight = _convertedGrid.GetLength(1);
+            UpdateColorCounts();
+        }
+
+        public void OnBeforeSerialize()
+        {
+            _gridSnapshot = _convertedGrid != null ? PixelArtPattern.FromColorGrid("GridSnapshot", _convertedGrid) : null;
+        }
+
+        public void OnAfterDeserialize()
+        {
+            if (_gridSnapshot != null && _gridSnapshot.HasData)
+            {
+                _convertedGrid = _gridSnapshot.GetColorGrid();
             }
         }
 
@@ -173,7 +194,10 @@ namespace PuzzleGlass.Editor
 
             EditorGUILayout.BeginHorizontal();
             _gridWidth = EditorGUILayout.IntSlider("Genişlik (Sütun):", _gridWidth, 4, 32);
-            _gridHeight = EditorGUILayout.IntSlider("Yükseklik (Satır):", _gridHeight, 4, 32);
+            using (new EditorGUI.DisabledScope(_maintainAspect && _sourceTexture != null))
+            {
+                _gridHeight = EditorGUILayout.IntSlider("Yükseklik (Satır):", _gridHeight, 4, 32);
+            }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
@@ -202,6 +226,7 @@ namespace PuzzleGlass.Editor
             if (EditorGUI.EndChangeCheck())
             {
                 if (_sourceTexture != null) ConvertImageToPixelGrid();
+                else ResizeGrid(_gridWidth, _gridHeight);
             }
 
             EditorGUILayout.EndVertical();
@@ -488,6 +513,7 @@ namespace PuzzleGlass.Editor
             if (tex.LoadImage(fileData))
             {
                 tex.name = Path.GetFileNameWithoutExtension(filePath);
+                if (_sourceTexture != null && !EditorUtility.IsPersistent(_sourceTexture)) DestroyImmediate(_sourceTexture);
                 _sourceTexture = tex;
                 _lastLoadedPath = filePath;
                 _levelSaveName = $"Level_{tex.name}";
@@ -498,6 +524,12 @@ namespace PuzzleGlass.Editor
         private void ConvertImageToPixelGrid()
         {
             if (_sourceTexture == null) return;
+
+            if (_maintainAspect)
+            {
+                float aspect = (float)_sourceTexture.height / _sourceTexture.width;
+                _gridHeight = Mathf.Clamp(Mathf.RoundToInt(_gridWidth * aspect), 4, 32);
+            }
 
             // Texture okunabilir değilse veya boyutu ayarlanacaksa geçici RenderTexture kullan
             RenderTexture rt = RenderTexture.GetTemporary(_gridWidth, _gridHeight, 0, RenderTextureFormat.ARGB32);
@@ -540,21 +572,62 @@ namespace PuzzleGlass.Editor
                     }
 
                     // En yakın PuzzleColor'a eşle
-                    _convertedGrid[x, y] = FindClosestPuzzleColor(c);
+                    _convertedGrid[x, y] = FindClosestPuzzleColor(c, AllColors);
                 }
             }
 
             DestroyImmediate(resized);
+            LimitPaletteColors();
             UpdateColorCounts();
             Repaint();
         }
 
-        private PuzzleColor FindClosestPuzzleColor(Color target)
+        // En sık kullanılan renkleri korur, kalan pikselleri bunların en yakınına taşır
+        private void LimitPaletteColors()
+        {
+            UpdateColorCounts();
+            if (_colorCounts.Count <= _maxPaletteColors) return;
+
+            var keptColors = new List<PuzzleColor>(_colorCounts.Keys);
+            keptColors.Sort((a, b) => _colorCounts[b].CompareTo(_colorCounts[a]));
+            keptColors.RemoveRange(_maxPaletteColors, keptColors.Count - _maxPaletteColors);
+
+            for (int y = 0; y < _gridHeight; y++)
+            {
+                for (int x = 0; x < _gridWidth; x++)
+                {
+                    var c = _convertedGrid[x, y];
+                    if (!c.HasValue || keptColors.Contains(c.Value)) continue;
+
+                    _convertedGrid[x, y] = FindClosestPuzzleColor(PuzzleColorPalette.GetCubeColor(c.Value), keptColors);
+                }
+            }
+        }
+
+        private void ResizeGrid(int newW, int newH)
+        {
+            var newGrid = new PuzzleColor?[newW, newH];
+            int copyW = Mathf.Min(newW, _convertedGrid != null ? _convertedGrid.GetLength(0) : 0);
+            int copyH = Mathf.Min(newH, _convertedGrid != null ? _convertedGrid.GetLength(1) : 0);
+
+            for (int y = 0; y < copyH; y++)
+            {
+                for (int x = 0; x < copyW; x++)
+                {
+                    newGrid[x, y] = _convertedGrid[x, y];
+                }
+            }
+
+            _convertedGrid = newGrid;
+            UpdateColorCounts();
+        }
+
+        private PuzzleColor FindClosestPuzzleColor(Color target, IEnumerable<PuzzleColor> candidates)
         {
             PuzzleColor bestColor = PuzzleColor.Blue;
             float minDistance = float.MaxValue;
 
-            foreach (PuzzleColor pc in Enum.GetValues(typeof(PuzzleColor)))
+            foreach (PuzzleColor pc in candidates)
             {
                 Color candidate = PuzzleColorPalette.GetCubeColor(pc);
 
@@ -608,29 +681,20 @@ namespace PuzzleGlass.Editor
             }
 
             // SandSimulationEngine ve SandMonsterFlowBridge bileşenlerini doğrula
-            var engine = glass.GetComponent<SandSimulationEngine>() ?? glass.gameObject.AddComponent<SandSimulationEngine>();
-            var bridge = glass.GetComponent<SandMonsterFlowBridge>() ?? glass.gameObject.AddComponent<SandMonsterFlowBridge>();
+            var engine = glass.GetComponent<SandSimulationEngine>().OrNull() ?? glass.gameObject.AddComponent<SandSimulationEngine>();
+            var bridge = glass.GetComponent<SandMonsterFlowBridge>().OrNull() ?? glass.gameObject.AddComponent<SandMonsterFlowBridge>();
 
             engine.glassContainer = glass;
             bridge.sandEngine = engine;
             bridge.glassContainer = glass;
 
             // Hazneye otomatik sığdırma ve ortalama hesapla
-            float startY = (glass.spoutBottomY + 0.85f + glass.neckTopY) * 0.5f;
-            float centerX = (glass.contourPoints != null && glass.contourPoints.Count > 0) ? glass.contourPoints[0].centerX : 0f;
+            ApplyAutoSpacing(glass);
 
-            float spacing = _particleSpacing;
-            if (_autoCalculateSpacing)
-            {
-                glass.GetSafeCubeBoundsAtY(startY, out float safeLeft, out float safeRight);
-                float availableWidth = (safeRight - safeLeft) * 0.90f;
-                spacing = Mathf.Clamp(availableWidth / Mathf.Max(1, _gridWidth), 0.10f, 0.22f);
-                _particleSize = spacing * 0.95f;
-            }
-
-            engine.particleSize = _particleSize;
-            engine.InitializeFromGrid(_convertedGrid, spacing, startY, centerX);
-            engine.SetSimulationMode(SandSimulationMode.StaticImage);
+            glass.customPattern = PixelArtPattern.FromColorGrid(_levelSaveName, _convertedGrid);
+            glass.pixelArtPreset = PixelArtPreset.Custom;
+            glass.particleMode = ParticleArrangementMode.PixelArtVisual;
+            glass.RebuildContainer();
 
             Selection.activeGameObject = glass.gameObject;
             SceneView.RepaintAll();
@@ -640,12 +704,27 @@ namespace PuzzleGlass.Editor
             Debug.Log($"<color=#00E5FF>★ SAND IMAGE GENERATED:</color> {_convertedGrid.GetLength(0)}x{_convertedGrid.GetLength(1)} grid, {engine.sandAmount} kum tanesi hazneye yerleştirildi.");
         }
 
+        private static float GetSandCenterY(ShapedGlassContainer glass)
+        {
+            return (glass.spoutBottomY + 0.85f + glass.neckTopY) * 0.5f;
+        }
+
+        private void ApplyAutoSpacing(ShapedGlassContainer glass)
+        {
+            if (!_autoCalculateSpacing) return;
+
+            glass.GetSafeCubeBoundsAtY(GetSandCenterY(glass), out float safeLeft, out float safeRight);
+            float availableWidth = (safeRight - safeLeft) * 0.90f;
+            _particleSpacing = Mathf.Clamp(availableWidth / Mathf.Max(1, _gridWidth), 0.10f, 0.22f);
+            _particleSize = _particleSpacing * 0.95f;
+        }
+
         private void SyncMonstersWithSandColors()
         {
             UpdateColorCounts();
             if (_colorCounts.Count == 0) return;
 
-            var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+            var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
             if (gm == null)
             {
                 EditorUtility.DisplayDialog("GameManager Eksik", "Sahnede PuzzleGlassGameManager bulunamadı.", "Tamam");
@@ -653,25 +732,7 @@ namespace PuzzleGlass.Editor
             }
 
             // Piksel şablonunu oluştur
-            PixelArtPattern pattern = new PixelArtPattern
-            {
-                patternName = _levelSaveName,
-                width = _gridWidth,
-                height = _gridHeight,
-                rawAscii = new string[_gridHeight]
-            };
-
-            for (int r = 0; r < _gridHeight; r++)
-            {
-                int y = _gridHeight - 1 - r;
-                char[] line = new char[_gridWidth];
-                for (int x = 0; x < _gridWidth; x++)
-                {
-                    var c = _convertedGrid[x, y];
-                    line[x] = c.HasValue ? PixelArtPattern.ColorToChar(c.Value) : '.';
-                }
-                pattern.rawAscii[r] = new string(line);
-            }
+            PixelArtPattern pattern = PixelArtPattern.FromColorGrid(_levelSaveName, _convertedGrid);
 
             gm.SynchronizeMonstersForPattern(pattern);
             SceneView.RepaintAll();
@@ -682,9 +743,9 @@ namespace PuzzleGlass.Editor
         {
             if (_convertedGrid == null) return;
 
-            string folder = "Assets/Resources/Levels";
-            if (!AssetDatabase.IsValidFolder("Assets/Resources")) AssetDatabase.CreateFolder("Assets", "Resources");
-            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets/Resources", "Levels");
+            // Level Design Studio seviyeleri bu klasörden okur
+            string folder = "Assets/Levels";
+            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "Levels");
 
             string assetPath = $"{folder}/{_levelSaveName}.asset";
 
@@ -693,12 +754,14 @@ namespace PuzzleGlass.Editor
             if (levelData == null)
             {
                 levelData = CreateInstance<PuzzleGlassLevelData>();
+                levelData.levelNumber = AssetDatabase.FindAssets("t:PuzzleGlassLevelData", new[] { folder }).Length + 1;
                 isNew = true;
             }
 
             var glass = FindFirstObjectByType<ShapedGlassContainer>();
             if (glass != null)
             {
+                ApplyAutoSpacing(glass);
                 levelData.glassPreset = glass.shapePreset;
                 levelData.widthScale = glass.widthScale;
                 levelData.heightScale = glass.heightScale;
@@ -713,28 +776,7 @@ namespace PuzzleGlass.Editor
             levelData.pixelArtPreset = PixelArtPreset.Custom;
             levelData.initialSimulationMode = SandSimulationMode.StaticImage;
 
-            // Custom pattern ascii
-            PixelArtPattern pattern = new PixelArtPattern
-            {
-                patternName = _levelSaveName,
-                width = _gridWidth,
-                height = _gridHeight,
-                rawAscii = new string[_gridHeight]
-            };
-
-            for (int r = 0; r < _gridHeight; r++)
-            {
-                int y = _gridHeight - 1 - r;
-                char[] line = new char[_gridWidth];
-                for (int x = 0; x < _gridWidth; x++)
-                {
-                    var c = _convertedGrid[x, y];
-                    line[x] = c.HasValue ? PixelArtPattern.ColorToChar(c.Value) : '.';
-                }
-                pattern.rawAscii[r] = new string(line);
-            }
-
-            levelData.customPattern = pattern;
+            levelData.customPattern = PixelArtPattern.FromColorGrid(_levelSaveName, _convertedGrid);
 
             // Canavar hedeflerini kaydet
             levelData.monsters.Clear();
@@ -762,7 +804,7 @@ namespace PuzzleGlass.Editor
 
         private void LoadLevelFromAsset()
         {
-            string path = EditorUtility.OpenFilePanel("Seviye Dosyası Seç (.asset)", "Assets/Resources/Levels", "asset");
+            string path = EditorUtility.OpenFilePanel("Seviye Dosyası Seç (.asset)", "Assets/Levels", "asset");
             if (string.IsNullOrEmpty(path)) return;
 
             if (path.StartsWith(Application.dataPath))
@@ -771,19 +813,13 @@ namespace PuzzleGlass.Editor
                 var levelData = AssetDatabase.LoadAssetAtPath<PuzzleGlassLevelData>(relPath);
                 if (levelData != null)
                 {
-                    if (levelData.customPattern != null)
-                    {
-                        _gridWidth = levelData.customPattern.width;
-                        _gridHeight = levelData.customPattern.height;
-                        _convertedGrid = levelData.customPattern.GetColorGrid();
-                        _levelSaveName = levelData.levelName;
-                        UpdateColorCounts();
-                        Repaint();
-                    }
-                    else
-                    {
-                        LoadPreset(levelData.pixelArtPreset);
-                    }
+                    var pattern = PixelArtLibrary.Resolve(levelData.pixelArtPreset, levelData.customPattern);
+                    _gridWidth = pattern.width;
+                    _gridHeight = pattern.height;
+                    _convertedGrid = pattern.GetColorGrid();
+                    _levelSaveName = levelData.levelName;
+                    UpdateColorCounts();
+                    Repaint();
                 }
             }
         }

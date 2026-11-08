@@ -35,6 +35,9 @@ namespace PuzzleGlass
         public int height = 8;
         public string[] rawAscii;
 
+        // Unity never deserializes this class as null, so an unset pattern shows up as empty rows
+        public bool HasData => rawAscii != null && rawAscii.Length > 0;
+
         public PixelArtPattern() { }
 
         public PixelArtPattern(string name, int w, int h, string[] ascii)
@@ -43,6 +46,30 @@ namespace PuzzleGlass
             width = w;
             height = h;
             rawAscii = ascii;
+        }
+
+        /// <summary>
+        /// Builds a pattern from a [x, y] color grid where y=0 is the BOTTOM row (inverse of GetColorGrid).
+        /// </summary>
+        public static PixelArtPattern FromColorGrid(string name, PuzzleColor?[,] grid)
+        {
+            int w = grid.GetLength(0);
+            int h = grid.GetLength(1);
+            string[] ascii = new string[h];
+
+            for (int r = 0; r < h; r++)
+            {
+                int y = h - 1 - r;
+                char[] line = new char[w];
+                for (int x = 0; x < w; x++)
+                {
+                    var c = grid[x, y];
+                    line[x] = c.HasValue ? ColorToChar(c.Value) : '.';
+                }
+                ascii[r] = new string(line);
+            }
+
+            return new PixelArtPattern(name, w, h, ascii);
         }
 
         /// <summary>
@@ -116,6 +143,13 @@ namespace PuzzleGlass
     public static class PixelArtLibrary
     {
         public static char ColorToChar(PuzzleColor c) => PixelArtPattern.ColorToChar(c);
+
+        public static PixelArtPattern Resolve(PixelArtPreset preset, PixelArtPattern custom)
+        {
+            bool useCustom = preset == PixelArtPreset.Custom && custom != null && custom.HasData;
+            return useCustom ? custom : GetPreset(preset);
+        }
+
         public static PixelArtPattern GetPreset(PixelArtPreset preset)
         {
             switch (preset)

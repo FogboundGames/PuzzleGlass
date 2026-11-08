@@ -104,6 +104,7 @@ namespace PuzzleGlass
 
             Material m = new Material(candyShader);
             m.name = string.IsNullOrEmpty(matName) ? $"Mat_CandyCube_{color}" : matName;
+            m.enableInstancing = true; // SandSimulationEngine bu materyalleri DrawMeshInstanced ile çiziyor
 
             Color baseCol = GetCubeColor(color);
             Color shadowCol = GetCubeShadowColor(color);

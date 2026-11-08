@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace PuzzleGlass.Editor
 {
-    public class PixelArtImageStudioWindow : EditorWindow
+    public class PixelArtImageStudioWindow : EditorWindow, ISerializationCallbackReceiver
     {
         [MenuItem("Tools/PuzzleGlass/🎨 Pixel Art Görsel Stüdyosu", false, 1)]
         [MenuItem("Window/PuzzleGlass/🎨 Pixel Art Görsel Stüdyosu", false, 1)]
@@ -18,25 +18,25 @@ namespace PuzzleGlass.Editor
         }
 
         [Header("Kaynak Görsel")]
-        private Texture2D _sourceTexture;
-        private string _lastLoadedPath = "";
+        [SerializeField] private Texture2D _sourceTexture;
+        [SerializeField] private string _lastLoadedPath = "";
 
         [Header("Piksel Grid Ayarları")]
-        private int _gridWidth = 10;
-        private int _gridHeight = 10;
-        private bool _maintainAspect = true;
-        private bool _ignoreWhiteBackground = true;
+        [SerializeField] private int _gridWidth = 10;
+        [SerializeField] private int _gridHeight = 10;
+        [SerializeField] private bool _ignoreWhiteBackground = true;
         [Range(0.60f, 0.99f)]
-        private float _whiteThreshold = 0.88f;
+        [SerializeField] private float _whiteThreshold = 0.88f;
 
         [Header("Cam Şişe Şekli")]
-        private GlassShapePreset _containerShape = GlassShapePreset.SquareFlask;
+        [SerializeField] private GlassShapePreset _containerShape = GlassShapePreset.SquareFlask;
 
         // Dönüştürülmüş piksel matrisi
         private PuzzleColor?[,] _convertedGrid;
+        [SerializeField] private PixelArtPattern _gridSnapshot; // Çok boyutlu dizi serialize edilemediği için
         private Dictionary<PuzzleColor, int> _colorCounts = new Dictionary<PuzzleColor, int>();
-        private PuzzleColor _selectedBrushColor = PuzzleColor.Blue;
-        private bool _eraseMode = false;
+        [SerializeField] private PuzzleColor _selectedBrushColor = PuzzleColor.Blue;
+        [SerializeField] private bool _eraseMode = false;
         private Vector2 _scrollPos;
 
         private void OnEnable()
@@ -45,6 +45,24 @@ namespace PuzzleGlass.Editor
             {
                 // Varsayılan olarak defterdeki kalp veya kurbağa desenini yükle
                 LoadPreset(PixelArtPreset.Frog);
+                return;
+            }
+
+            _gridWidth = _convertedGrid.GetLength(0);
+            _gridHeight = _convertedGrid.GetLength(1);
+            UpdateColorCounts();
+        }
+
+        public void OnBeforeSerialize()
+        {
+            _gridSnapshot = _convertedGrid != null ? PixelArtPattern.FromColorGrid("GridSnapshot", _convertedGrid) : null;
+        }
+
+        public void OnAfterDeserialize()
+        {
+            if (_gridSnapshot != null && _gridSnapshot.HasData)
+            {
+                _convertedGrid = _gridSnapshot.GetColorGrid();
             }
         }
 
@@ -143,6 +161,7 @@ namespace PuzzleGlass.Editor
             if (EditorGUI.EndChangeCheck())
             {
                 if (_sourceTexture != null) ConvertImageToPixelArt();
+                else ResizeGrid(_gridWidth, _gridHeight);
             }
 
             EditorGUILayout.EndVertical();
@@ -231,6 +250,7 @@ namespace PuzzleGlass.Editor
                 Texture2D tex = new Texture2D(2, 2);
                 if (tex.LoadImage(bytes))
                 {
+                    if (_sourceTexture != null && !EditorUtility.IsPersistent(_sourceTexture)) DestroyImmediate(_sourceTexture);
                     _sourceTexture = tex;
                     _lastLoadedPath = filePath;
                     ConvertImageToPixelArt();
@@ -287,6 +307,7 @@ namespace PuzzleGlass.Editor
                 }
             }
 
+            DestroyImmediate(readable);
             UpdateColorCounts();
             Repaint();
         }
@@ -503,28 +524,11 @@ namespace PuzzleGlass.Editor
             Undo.RecordObject(container, "Apply Pixel Art Image");
 
             // 1. Deseni PixelArtPattern nesnesine dönüştür
-            PixelArtPattern pattern = new PixelArtPattern
-            {
-                patternName = !string.IsNullOrEmpty(_lastLoadedPath) ? Path.GetFileNameWithoutExtension(_lastLoadedPath) : "CustomImagePattern",
-                width = _gridWidth,
-                height = _gridHeight
-            };
+            string patternName = !string.IsNullOrEmpty(_lastLoadedPath) ? Path.GetFileNameWithoutExtension(_lastLoadedPath) : "CustomImagePattern";
+            PixelArtPattern pattern = PixelArtPattern.FromColorGrid(patternName, _convertedGrid);
 
-            int w = _gridWidth;
-            int h = _gridHeight;
-            string[] ascii = new string[h];
-
-            for (int y = 0; y < h; y++)
-            {
-                char[] line = new char[w];
-                for (int x = 0; x < w; x++)
-                {
-                    var col = _convertedGrid[x, y];
-                    line[x] = col.HasValue ? PixelArtLibrary.ColorToChar(col.Value) : '.';
-                }
-                ascii[y] = new string(line);
-            }
-            pattern.rawAscii = ascii;
+            int w = pattern.width;
+            int h = pattern.height;
 
             // 2. Cam Şişe Şeklini Ayarla (Kare, Dikdörtgen vb.)
             container.shapePreset = _containerShape;
@@ -543,12 +547,12 @@ namespace PuzzleGlass.Editor
             container.RebuildContainer();
 
             // 5. Cam Fizik Sınırlarını Yeniden İnşa Et
-            var bcm = container.GetComponent<BallContainerManager>() ?? container.gameObject.AddComponent<BallContainerManager>();
+            var bcm = container.GetComponent<BallContainerManager>().OrNull() ?? container.gameObject.AddComponent<BallContainerManager>();
             bcm.glassContainer = container;
             bcm.RebuildColliders();
 
             // 6. PuzzleGlassGameManager'daki alt canavarları bu görselin renklerine göre ayarla
-            var gameManager = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+            var gameManager = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
             if (gameManager != null)
             {
                 Undo.RecordObject(gameManager, "Update Monster Goals");

@@ -158,12 +158,7 @@ namespace PuzzleGlass
             _onEatenCallback = onEatenCallback;
 
             // Transition from dynamic physics to silky smooth ballistic flight
-            if (rb != null)
-            {
-                rb.isKinematic = true;
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-            }
+            StopAndMakeKinematic();
 
             if (sphereCollider != null)
             {
@@ -213,12 +208,7 @@ namespace PuzzleGlass
         {
             transform.DOKill();
             state = BallState.Pooled;
-            if (rb != null)
-            {
-                rb.isKinematic = true;
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-            }
+            StopAndMakeKinematic();
             if (sphereCollider != null)
             {
                 sphereCollider.enabled = false;
@@ -229,6 +219,16 @@ namespace PuzzleGlass
             {
                 BallObjectPool.Instance.ReturnBall(this);
             }
+        }
+
+        private void StopAndMakeKinematic()
+        {
+            if (rb == null || rb.isKinematic) return;
+
+            // Velocity can only be written while the body is still dynamic
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
         }
 
         private void OnDisable()

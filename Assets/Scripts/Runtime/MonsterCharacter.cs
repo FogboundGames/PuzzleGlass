@@ -513,6 +513,14 @@ namespace PuzzleGlass
             if (eyeRight != null) eyeRight.localScale = Vector3.one;
         }
 
+        /// <summary>
+        /// Canavarın doymasına kalan kum tanesi sayısı.
+        /// </summary>
+        public int GetGrainsNeeded(int grainsPerCount)
+        {
+            return Mathf.Max(0, remainingCount * grainsPerCount - _subParticleCounter);
+        }
+
         public void FeedParticle(int particlesPerCount)
         {
             if (_isCompleted) return;

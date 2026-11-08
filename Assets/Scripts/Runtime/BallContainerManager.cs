@@ -29,7 +29,7 @@ namespace PuzzleGlass
             Instance = this;
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
             }
         }
 
@@ -38,7 +38,7 @@ namespace PuzzleGlass
             Instance = this;
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
             }
         }
 
@@ -67,7 +67,7 @@ namespace PuzzleGlass
         {
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
                 if (glassContainer == null) return;
             }
 

@@ -208,7 +208,7 @@ namespace PuzzleGlass.Editor
             GUI.backgroundColor = new Color(0.25f, 0.90f, 0.55f);
             if (GUILayout.Button("🛡️ Colliders", GUILayout.Height(26)))
             {
-                var bcm = container.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+                var bcm = container.GetComponent<BallContainerManager>().OrNull() ?? FindFirstObjectByType<BallContainerManager>();
                 if (bcm != null)
                 {
                     bcm.RebuildColliders();
@@ -301,7 +301,7 @@ namespace PuzzleGlass.Editor
                     {
                         Undo.RecordObject(container, "Apply Pixel Art Preset");
                         container.ApplyPixelArtPreset(pPreset, true);
-                        var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                        var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                         if (gm != null) gm.SetupPixelArtPatternScenario(pPreset);
                         EditorUtility.SetDirty(container);
                         SceneView.RepaintAll();
@@ -319,7 +319,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Frog");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Frog, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Frog);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();
@@ -329,7 +329,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Heart");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Heart, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Heart);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();
@@ -339,7 +339,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Mushroom");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Mushroom, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();
@@ -352,7 +352,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Bee");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Bee, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Bee);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();
@@ -362,7 +362,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Penguin");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Penguin, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Penguin);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();
@@ -372,7 +372,7 @@ namespace PuzzleGlass.Editor
                 Undo.RecordObject(container, "Setup Square + Butterfly");
                 container.ApplyShapePreset(GlassShapePreset.SquareFlask, false);
                 container.ApplyPixelArtPreset(PixelArtPreset.Butterfly, true);
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
                 if (gm != null) gm.SetupPixelArtPatternScenario(PixelArtPreset.Butterfly);
                 EditorUtility.SetDirty(container);
                 SceneView.RepaintAll();

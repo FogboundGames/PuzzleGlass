@@ -222,7 +222,7 @@ namespace PuzzleGlass.Editor
                 GUI.backgroundColor = new Color(0.25f, 0.90f, 0.55f);
                 if (GUILayout.Button("🛡️ Generate Colliders", GUILayout.Height(28)))
                 {
-                    var bcm = _targetContainer.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+                    var bcm = _targetContainer.GetComponent<BallContainerManager>().OrNull() ?? FindFirstObjectByType<BallContainerManager>();
                     if (bcm != null)
                     {
                         bcm.RebuildColliders();
@@ -917,7 +917,7 @@ namespace PuzzleGlass.Editor
 
         private void DrawPhysicsCollidersSection()
         {
-            var bcm = _targetContainer.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = _targetContainer.GetComponent<BallContainerManager>().OrNull() ?? FindFirstObjectByType<BallContainerManager>();
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("🛡️ Fiziksel Duvarlar & Otomatik Collider Kafesi", EditorStyles.boldLabel);
@@ -1043,7 +1043,7 @@ namespace PuzzleGlass.Editor
             GUI.backgroundColor = new Color(0.35f, 0.85f, 1.0f);
             if (GUILayout.Button("🧪 Camın İçine Kum Doldur (Generate Sand)", GUILayout.Height(32)))
             {
-                var pat = PixelArtLibrary.GetPreset(_targetContainer.pixelArtPreset);
+                var pat = PixelArtLibrary.Resolve(_targetContainer.pixelArtPreset, _targetContainer.customPattern);
                 engine.InitializeFromPattern(pat);
                 _targetContainer.SpawnTestSandParticles(64);
                 EditorUtility.SetDirty(_targetContainer);

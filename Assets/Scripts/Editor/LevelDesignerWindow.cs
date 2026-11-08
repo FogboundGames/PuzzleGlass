@@ -173,7 +173,12 @@ namespace PuzzleGlass.Editor
             GUI.backgroundColor = Color.white;
             EditorGUILayout.EndHorizontal();
 
-            if (GUILayout.Button("🎲 5 Örnek Starter Level Paketi Üret", GUILayout.Height(24)))
+            if (GUILayout.Button("🎲 5 Örnek Starter Level Paketi Üret", GUILayout.Height(24))
+                && EditorUtility.DisplayDialog(
+                    "Starter Level Paketi",
+                    "Level_01 - Level_05 varsayılan değerlerle üzerine yazılacak. Devam edilsin mi?",
+                    "Üzerine Yaz",
+                    "Vazgeç"))
             {
                 GenerateStarterLevels();
             }
@@ -312,7 +317,7 @@ namespace PuzzleGlass.Editor
 
             if (lvl.particleMode == ParticleArrangementMode.PixelArtVisual)
             {
-                var pat = PixelArtLibrary.GetPreset(lvl.pixelArtPreset);
+                var pat = PixelArtLibrary.Resolve(lvl.pixelArtPreset, lvl.customPattern);
                 var grid = pat.GetColorGrid();
                 float cellW = (bottleRect.width - 16f) / pat.width;
                 float cellH = (bottleRect.height - 16f) / pat.height;
@@ -415,6 +420,7 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.EndHorizontal();
 
             lvl.levelName = EditorGUILayout.TextField("Bölüm Adı", lvl.levelName);
+            lvl.lockedSectionRatio = EditorGUILayout.Slider("Kilitli Üst Bölüm Oranı", lvl.lockedSectionRatio, 0f, 0.6f);
 
             EditorGUILayout.BeginHorizontal();
             lvl.slotCount = EditorGUILayout.IntSlider("Slot Sayısı (1 - 5)", lvl.slotCount, 1, 5);
@@ -723,10 +729,20 @@ namespace PuzzleGlass.Editor
         private void DeleteSelectedLevel()
         {
             if (_selectedLevel == null) return;
+
+            if (!EditorUtility.DisplayDialog(
+                    "Level Sil",
+                    $"'{_selectedLevel.levelName}' çöp kutusuna taşınacak. Devam edilsin mi?",
+                    "Sil",
+                    "Vazgeç"))
+            {
+                return;
+            }
+
             string path = AssetDatabase.GetAssetPath(_selectedLevel);
             if (!string.IsNullOrEmpty(path))
             {
-                AssetDatabase.DeleteAsset(path);
+                AssetDatabase.MoveAssetToTrash(path);
                 AssetDatabase.SaveAssets();
             }
             RefreshLevelList();

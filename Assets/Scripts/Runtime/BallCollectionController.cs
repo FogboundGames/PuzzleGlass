@@ -53,6 +53,8 @@ namespace PuzzleGlass
 
         private void Update()
         {
+            if (SandSimulationEngine.Instance != null) return; // Canavarları artık kum besliyor
+
             PollSlottedMonsters();
         }
 
@@ -84,7 +86,7 @@ namespace PuzzleGlass
         /// </summary>
         private void PollSlottedMonsters()
         {
-            SlotSystem slotSys = SlotSystem.Instance ?? FindFirstObjectByType<SlotSystem>();
+            SlotSystem slotSys = SlotSystem.Instance.OrNull() ?? FindFirstObjectByType<SlotSystem>();
             if (slotSys == null || slotSys.slots == null) return;
 
             // Remove any streams whose monster was detached, completed or destroyed
@@ -216,6 +218,7 @@ namespace PuzzleGlass
 
             float spoutExitY = container != null ? container.spoutBottomY : -0.70f;
             Vector3 exitPos = new Vector3(0f, spoutExitY, -0.10f);
+            if (container != null) exitPos = container.transform.TransformPoint(exitPos);
 
             for (int i = _attractingBalls.Count - 1; i >= 0; i--)
             {
@@ -230,7 +233,7 @@ namespace PuzzleGlass
                 ball.ApplyAttractionToExit(exitPos, attractionPullForce, maxBallSpeed);
 
                 // Check if ball reached or passed the spout exit threshold
-                if (ball.transform.position.y <= spoutExitY + exitTriggerYOffset)
+                if (ball.transform.position.y <= exitPos.y + exitTriggerYOffset)
                 {
                     _attractingBalls.RemoveAt(i);
 

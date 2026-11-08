@@ -5,18 +5,26 @@ using UnityEngine;
 
 namespace PuzzleGlass.Editor
 {
-    [InitializeOnLoad]
     public static class StarterLevelsSetup
     {
-        static StarterLevelsSetup()
-        {
-            EditorApplication.delayCall += EnsureStarterLevels;
-        }
-
         [MenuItem("Tools/PuzzleGlass/🚀 Hazır Seviyeleri Kur (Rainbow, Cat, Frog)", false, 10)]
         public static void EnsureStarterLevels()
         {
             const string levelsFolder = "Assets/Levels";
+
+            bool levelsExist = AssetDatabase.LoadAssetAtPath<PuzzleGlassLevelData>($"{levelsFolder}/Level_Rainbow.asset") != null
+                || AssetDatabase.LoadAssetAtPath<PuzzleGlassLevelData>($"{levelsFolder}/Level_Cat.asset") != null
+                || AssetDatabase.LoadAssetAtPath<PuzzleGlassLevelData>($"{levelsFolder}/Level_Frog.asset") != null;
+
+            if (levelsExist && !EditorUtility.DisplayDialog(
+                    "Hazır Seviyeleri Kur",
+                    "Level_Rainbow, Level_Cat ve Level_Frog varsayılan değerlerle üzerine yazılacak. Devam edilsin mi?",
+                    "Üzerine Yaz",
+                    "Vazgeç"))
+            {
+                return;
+            }
+
             if (!AssetDatabase.IsValidFolder(levelsFolder))
             {
                 AssetDatabase.CreateFolder("Assets", "Levels");
@@ -128,8 +136,8 @@ namespace PuzzleGlass.Editor
             var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
             if (glass != null)
             {
-                var engine = glass.GetComponent<SandSimulationEngine>() ?? glass.gameObject.AddComponent<SandSimulationEngine>();
-                var bridge = glass.GetComponent<SandMonsterFlowBridge>() ?? glass.gameObject.AddComponent<SandMonsterFlowBridge>();
+                var engine = glass.GetComponent<SandSimulationEngine>().OrNull() ?? glass.gameObject.AddComponent<SandSimulationEngine>();
+                var bridge = glass.GetComponent<SandMonsterFlowBridge>().OrNull() ?? glass.gameObject.AddComponent<SandMonsterFlowBridge>();
 
                 engine.glassContainer = glass;
                 bridge.sandEngine = engine;

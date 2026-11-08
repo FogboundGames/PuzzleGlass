@@ -23,8 +23,9 @@ namespace PuzzleGlass
         public SlotSystem slotSystem;
 
         [Header("Flow & Mouth Tuning")]
-        [Tooltip("Her kum tanesi için canavar sayacından kaç adet düşürüleceği")]
-        public int particlesPerCount = 1;
+        [Tooltip("Aynı renkten iki kum tanesinin hazneden serbest bırakılması arasındaki süre (saniye)")]
+        [Range(0.005f, 0.10f)]
+        public float grainReleaseInterval = 0.016f;
 
         [Tooltip("Kum tanesinin namludan canavar ağzına uçuş süresi (saniye)")]
         [Range(0.12f, 0.45f)]
@@ -37,14 +38,17 @@ namespace PuzzleGlass
         [Tooltip("Slotlarda uygun renkte canavar yoksa kapağı otomatik kapat")]
         public bool autoManageSpoutGate = true;
 
-        [Tooltip("İlk canavar slota oturduğunda statik görsel modundan dinamik fiziğe otomatik geç")]
-        public bool autoStartPhysicsOnMonsterSlotted = true;
-
         // Uçan kum küpü prefab ve havuzu
         private Transform _cubePoolRoot;
         private readonly Queue<GameObject> _cubePool = new Queue<GameObject>();
         private Mesh _cubeMesh;
         private readonly Dictionary<PuzzleColor, Material> _cubeMaterials = new Dictionary<PuzzleColor, Material>();
+
+        // Çıkışa veya ağza yolda olan taneler; aynı tanenin iki kez sayılmasını önler
+        private readonly Dictionary<PuzzleColor, int> _grainsInFlight = new Dictionary<PuzzleColor, int>();
+        private readonly Dictionary<PuzzleColor, int> _grainsNeeded = new Dictionary<PuzzleColor, int>();
+        private readonly Dictionary<MonsterCharacter, int> _reservedGrains = new Dictionary<MonsterCharacter, int>();
+        private float _releaseTimer;
 
         private void Awake()
         {
@@ -70,11 +74,11 @@ namespace PuzzleGlass
         {
             if (sandEngine == null)
             {
-                sandEngine = GetComponent<SandSimulationEngine>() ?? FindFirstObjectByType<SandSimulationEngine>();
+                sandEngine = GetComponent<SandSimulationEngine>().OrNull() ?? FindFirstObjectByType<SandSimulationEngine>();
             }
             if (glassContainer == null)
             {
-                glassContainer = GetComponent<ShapedGlassContainer>() ?? FindFirstObjectByType<ShapedGlassContainer>();
+                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
             }
             if (slotSystem == null)
             {
@@ -119,6 +123,7 @@ namespace PuzzleGlass
             if (sandEngine != null)
             {
                 sandEngine.OnParticleDrainedFromSpout += HandleParticleDrained;
+                sandEngine.OnSandRebuilt += ResetFlowState;
             }
         }
 
@@ -127,21 +132,75 @@ namespace PuzzleGlass
             if (sandEngine != null)
             {
                 sandEngine.OnParticleDrainedFromSpout -= HandleParticleDrained;
+                sandEngine.OnSandRebuilt -= ResetFlowState;
             }
         }
 
         private void Update()
         {
-            if (!Application.isPlaying) return;
+            if (!Application.isPlaying || sandEngine == null) return;
+
+            ReleaseGrainsForSlottedMonsters();
 
             // Kapı yönetimi: Eğer slotlarda hiç aktif canavar kalmadıysa kapağı kapat
-            if (autoManageSpoutGate && sandEngine != null)
+            if (autoManageSpoutGate && sandEngine.isGateOpen && !HasAnyHungrySlottedMonster())
             {
-                bool hasHungryMonster = HasAnyHungrySlottedMonster();
-                if (sandEngine.isGateOpen && !hasHungryMonster)
+                sandEngine.SetSpoutGate(false);
+            }
+        }
+
+        private void ResetFlowState()
+        {
+            _grainsInFlight.Clear();
+            _reservedGrains.Clear();
+            _releaseTimer = 0f;
+        }
+
+        private void ReleaseGrainsForSlottedMonsters()
+        {
+            if (slotSystem == null || slotSystem.slots == null) return;
+
+            _releaseTimer += Time.deltaTime;
+            if (_releaseTimer < grainReleaseInterval) return;
+            _releaseTimer = 0f;
+
+            _grainsNeeded.Clear();
+            int hungrySlots = 0;
+            for (int i = 0; i < slotSystem.slots.Count; i++)
+            {
+                var slot = slotSystem.slots[i];
+                if (slot == null || !slot.isOccupied || slot.currentMonster == null || slot.currentMonster.IsCompleted) continue;
+
+                hungrySlots++;
+                var monster = slot.currentMonster;
+                _grainsNeeded.TryGetValue(monster.colorType, out int needed);
+                _grainsNeeded[monster.colorType] = needed + monster.GetGrainsNeeded(sandEngine.GrainsPerCount);
+            }
+
+            bool anyGrainMoving = false;
+            foreach (var kvp in _grainsNeeded)
+            {
+                _grainsInFlight.TryGetValue(kvp.Key, out int inFlight);
+                if (kvp.Value > inFlight && sandEngine.TryReleaseGrain(kvp.Key))
                 {
-                    sandEngine.SetSpoutGate(false);
+                    _grainsInFlight[kvp.Key] = ++inFlight;
                 }
+                if (inFlight > 0) anyGrainMoving = true;
+            }
+
+            UnlockSectionIfReady(hungrySlots, anyGrainMoving);
+        }
+
+        // Kilit, alttaki renkli kum yenince açılır; slotlar dolu ve hepsi kilitli kumu bekliyorsa oyun tıkanmasın diye yine açılır
+        private void UnlockSectionIfReady(int hungrySlots, bool anyGrainMoving)
+        {
+            if (!sandEngine.HasLockedSection) return;
+
+            bool slotsBlocked = hungrySlots == slotSystem.slots.Count && !anyGrainMoving;
+            if (sandEngine.CountReachableArtGrains() == 0 || slotsBlocked)
+            {
+                sandEngine.UnlockSection();
+                if (glassContainer != null) glassContainer.PulseSpout();
             }
         }
 
@@ -153,15 +212,8 @@ namespace PuzzleGlass
             if (monster == null) return;
             EnsureReferences();
 
-            // Eğer kum simülasyonu henüz statik görsel modundaysa, oyunu başlatıp dinamik fiziğe geçir
-            if (autoStartPhysicsOnMonsterSlotted && sandEngine != null)
+            if (sandEngine != null)
             {
-                if (sandEngine.simulationMode == SandSimulationMode.StaticImage)
-                {
-                    sandEngine.SetSimulationMode(SandSimulationMode.DynamicPhysics);
-                }
-
-                // Alt çıkış kapağını aç
                 sandEngine.SetSpoutGate(true);
             }
 
@@ -172,42 +224,60 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Haznenin alt çıkışından dökülen kum parçacığını yakalar ve canavar ağzına gönderir.
+        /// Haznenin alt çıkışından dökülen kum parçacığını aynı renkteki aç canavarın ağzına gönderir.
         /// </summary>
         private void HandleParticleDrained(SandParticle particle)
         {
             if (!Application.isPlaying) return;
             EnsureReferences();
 
-            // Bu renkte kum bekleyen slotlanmış canavarı bul
-            MonsterCharacter target = GetSlottedMonsterForColor(particle.color);
+            MonsterCharacter target = ReserveMonsterForColor(particle.color);
+            if (target == null)
+            {
+                FinishGrainFlight(null, particle.color);
+                return;
+            }
 
             Vector3 spoutWorldPos = (glassContainer != null)
                 ? glassContainer.GetSpoutExitWorldPosition()
                 : transform.position;
 
-            if (target != null)
+            SpawnBallisticSandCube(spoutWorldPos, target, particle.color);
+        }
+
+        private MonsterCharacter ReserveMonsterForColor(PuzzleColor color)
+        {
+            if (slotSystem == null || slotSystem.slots == null) return null;
+
+            for (int i = 0; i < slotSystem.slots.Count; i++)
             {
-                // Hedef canavarın ağzına doğru balistik küp fırlat
-                SpawnBallisticSandCube(spoutWorldPos, target, particle.color);
+                var slot = slotSystem.slots[i];
+                if (slot == null || !slot.isOccupied || slot.currentMonster == null) continue;
+
+                var monster = slot.currentMonster;
+                if (monster.colorType != color || monster.IsCompleted) continue;
+
+                _reservedGrains.TryGetValue(monster, out int reserved);
+                if (monster.GetGrainsNeeded(sandEngine.GrainsPerCount) > reserved)
+                {
+                    _reservedGrains[monster] = reserved + 1;
+                    return monster;
+                }
             }
-            else
+
+            return null;
+        }
+
+        private void FinishGrainFlight(MonsterCharacter target, PuzzleColor color)
+        {
+            if (_grainsInFlight.TryGetValue(color, out int inFlight))
             {
-                // Slotlarda bu renkte canavar yoksa, herhangi bir aç canavara veya haznede bekletmeye uygun
-                // Fallback: İlk aç canavarı dene
-                MonsterCharacter fallbackTarget = GetAnyHungrySlottedMonster();
-                if (fallbackTarget != null)
-                {
-                    SpawnBallisticSandCube(spoutWorldPos, fallbackTarget, particle.color);
-                }
-                else
-                {
-                    // Slotlar boşsa kapağı kapat
-                    if (sandEngine != null)
-                    {
-                        sandEngine.SetSpoutGate(false);
-                    }
-                }
+                _grainsInFlight[color] = Mathf.Max(0, inFlight - 1);
+            }
+
+            if (target != null && _reservedGrains.TryGetValue(target, out int reserved))
+            {
+                _reservedGrains[target] = Mathf.Max(0, reserved - 1);
             }
         }
 
@@ -215,7 +285,7 @@ namespace PuzzleGlass
         {
             GameObject cubeObj = GetPooledCube();
             cubeObj.transform.position = startPos;
-            cubeObj.transform.localScale = Vector3.one;
+            cubeObj.transform.localScale = Vector3.one * (sandEngine.particleSize / 0.16f);
             cubeObj.SetActive(true);
 
             // Materyal ata
@@ -273,9 +343,10 @@ namespace PuzzleGlass
             }
 
             // Ağza ulaştı: Yutma ve sayaç düşürme
+            FinishGrainFlight(target, color);
             if (target != null && !target.IsCompleted)
             {
-                target.FeedParticle(particlesPerCount);
+                target.FeedParticle(sandEngine.GrainsPerCount);
             }
 
             // Küpü havuza geri gönder

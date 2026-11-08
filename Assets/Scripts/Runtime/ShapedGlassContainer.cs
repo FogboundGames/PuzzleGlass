@@ -229,7 +229,7 @@ namespace PuzzleGlass
 
         public void SpawnTestSandParticles(int count = 64)
         {
-            var pool = BallObjectPool.Instance ?? FindFirstObjectByType<BallObjectPool>();
+            var pool = BallObjectPool.Instance.OrNull() ?? FindFirstObjectByType<BallObjectPool>();
             if (pool == null)
             {
                 var poolObj = new GameObject("BallObjectPool");
@@ -240,7 +240,7 @@ namespace PuzzleGlass
             EnsureContourInitialized();
             SyncBoundsFromContour();
 
-            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = BallContainerManager.Instance.OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             if (bcm != null)
             {
                 bcm.RebuildColliders();
@@ -281,7 +281,7 @@ namespace PuzzleGlass
 
         public void ClearTestSandParticles()
         {
-            var pool = BallObjectPool.Instance ?? FindFirstObjectByType<BallObjectPool>();
+            var pool = BallObjectPool.Instance.OrNull() ?? FindFirstObjectByType<BallObjectPool>();
             if (pool != null)
             {
                 pool.ClearAllActiveBalls();
@@ -291,13 +291,13 @@ namespace PuzzleGlass
 
         public bool IsSpoutGateOpen()
         {
-            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = BallContainerManager.Instance.OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             return bcm != null && bcm.bottomSpoutStopper != null && !bcm.bottomSpoutStopper.enabled;
         }
 
         public void SetSpoutGate(bool open)
         {
-            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = BallContainerManager.Instance.OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             if (bcm != null)
             {
                 bcm.SetSpoutStopperActive(!open);
@@ -311,7 +311,7 @@ namespace PuzzleGlass
 
         public void ToggleSpoutGate()
         {
-            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = BallContainerManager.Instance.OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             if (bcm != null)
             {
                 bool isStopperActive = bcm.bottomSpoutStopper != null && bcm.bottomSpoutStopper.enabled;
@@ -415,7 +415,6 @@ namespace PuzzleGlass
         private void OnValidate()
         {
             if (particleSize < 0.12f) particleSize = 0.155f;
-            patternVerticalOffset = 0f;
             EnsureContourInitialized();
 
             UnityEditor.EditorApplication.delayCall += () =>
@@ -870,7 +869,7 @@ namespace PuzzleGlass
             BuildBottleContainer();
 
             // Synchronize airtight physics colliders automatically
-            var bcm = GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = GetComponent<BallContainerManager>().OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             if (bcm != null)
             {
                 bcm.RebuildColliders();
@@ -915,7 +914,7 @@ namespace PuzzleGlass
             SyncCubeTransforms();
 
             // Synchronize airtight physics colliders automatically
-            var bcm = GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+            var bcm = GetComponent<BallContainerManager>().OrNull() ?? FindFirstObjectByType<BallContainerManager>();
             if (bcm != null)
             {
                 bcm.RebuildColliders();
@@ -1211,7 +1210,7 @@ namespace PuzzleGlass
             frontLensMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             // 3. Thick 3D Tubular Glass Rims & Perimeter Sidewalls (Outer Blue Glossy Borders matching Reference Image!)
-            Material rimMat = _outerBlueRimMat ?? glassRimMaterial;
+            Material rimMat = _outerBlueRimMat.OrNull() ?? glassRimMaterial;
             float frontZ = -0.24f;
             float backZ = 0.08f;
 
@@ -1788,148 +1787,7 @@ namespace PuzzleGlass
             }
             _bottleCubes.Clear();
 
-            // Image 2 Pixel Art Visual Arrangement Mode
-            if (particleMode == ParticleArrangementMode.PixelArtVisual)
-            {
-                PopulatePixelArtVisual();
-                return;
-            }
-
-            int ratio = Mathf.Max(1, particlesPerMonsterCount);
-            List<(PuzzleColor color, int count)> colorBands = new List<(PuzzleColor, int)>();
-
-            var manager = PuzzleGlassGameManager.Instance != null
-                ? PuzzleGlassGameManager.Instance
-                : FindFirstObjectByType<PuzzleGlassGameManager>();
-
-            if (manager != null && manager.activeMonsters != null && manager.activeMonsters.Count > 0)
-            {
-                for (int i = 0; i < manager.activeMonsters.Count; i++)
-                {
-                    var m = manager.activeMonsters[i];
-                    if (m != null)
-                    {
-                        int baseCount = (m.initialCount > 0) ? m.initialCount : Mathf.Max(1, m.remainingCount);
-                        colorBands.Add((m.colorType, baseCount * ratio));
-                    }
-                }
-            }
-
-            if (colorBands.Count == 0)
-            {
-                colorBands.Add((PuzzleColor.Blue, 10));
-                colorBands.Add((PuzzleColor.Yellow, 20));
-            }
-
-            int totalMonsterCubes = 0;
-            for (int i = 0; i < colorBands.Count; i++) totalMonsterCubes += colorBands[i].count;
-
-            // If there are only a few monster cubes (e.g., 10 Blue + 20 Yellow = 30),
-            // add upper remaining color bands so that after the 10 or 20 cubes are collected, the rest stay in the bottle!
-            if (totalMonsterCubes <= 35)
-            {
-                colorBands.Add((PuzzleColor.Red, 15));
-                colorBands.Add((PuzzleColor.Purple, 15));
-            }
-
-            int totalNeeded = 0;
-            for (int i = 0; i < colorBands.Count; i++) totalNeeded += colorBands[i].count;
-
-            float colSpacing = Mathf.Clamp(particleSize * 1.09f, 0.10f, 0.24f);
-            float rowSpacing = Mathf.Clamp(particleSize * 0.96f, 0.09f, 0.21f);
-            float beadRadius = particleSize * 0.50f;
-
-            // Generate staggered honeycomb grid slots strictly inside the 2D Minkowski-eroded safe glass walls
-            List<Vector2> candidateSlots = new List<Vector2>(totalNeeded + 64);
-
-            // 1. Spout vertical channel slots
-            for (float y = spoutBottomY + beadRadius + 0.03f; y < spoutBottomY + 0.65f; y += rowSpacing * 1.02f)
-            {
-                GetSafeCubeBoundsAtY(y, out float minX, out float maxX);
-                float midX = (minX + maxX) * 0.5f;
-                int rowIdx = candidateSlots.Count;
-                float xOff = Mathf.Clamp((rowIdx % 2 == 0) ? -0.012f : 0.012f, minX - midX, maxX - midX);
-                candidateSlots.Add(new Vector2(midX + xOff, y));
-            }
-
-            // 2. Main chamber honeycomb grid slots using true 2D safe wall clearance
-            float startChamberY = spoutBottomY + 0.68f;
-            float maxChamberY = neckTopY - 0.12f;
-            int rIdx = 0;
-            for (float y = startChamberY; y <= maxChamberY && candidateSlots.Count < totalNeeded + 60; y += rowSpacing)
-            {
-                GetSafeCubeBoundsAtY(y, out float minX, out float maxX);
-                if (maxX <= minX + 0.01f) continue;
-
-                float stagger = (rIdx % 2 == 1) ? colSpacing * 0.5f : 0f;
-                for (float x = minX + stagger; x <= maxX; x += colSpacing)
-                {
-                    candidateSlots.Add(new Vector2(x, y));
-                }
-                rIdx++;
-            }
-
-            // Sort candidate slots according to the chosen layerPattern (VFunnelBands, HorizontalWaves, LeftRightSplit, DiagonalBands)
-            candidateSlots.Sort((a, b) =>
-            {
-                float scoreA = EvaluateLayerSortScore(a);
-                float scoreB = EvaluateLayerSortScore(b);
-                return scoreA.CompareTo(scoreB);
-            });
-
-            int slotCursor = 0;
-            for (int b = 0; b < colorBands.Count; b++)
-            {
-                PuzzleColor bandColor = colorBands[b].color;
-                int bandCount = colorBands[b].count;
-
-                for (int k = 0; k < bandCount; k++)
-                {
-                    Vector2 pos;
-                    if (slotCursor < candidateSlots.Count)
-                    {
-                        pos = candidateSlots[slotCursor];
-                    }
-                    else
-                    {
-                        float extraY = startChamberY + (slotCursor * 0.025f);
-                        GetSafeCubeBoundsAtY(extraY, out float sMinX, out float sMaxX);
-                        pos = new Vector2((sMinX + sMaxX) * 0.5f, extraY);
-                    }
-                    slotCursor++;
-
-                    // Deterministic, organic 3D tumble angles so each cube shows beveled 3D facets like Image 2
-                    float seed = (slotCursor * 1.6180339f);
-                    float rx = Mathf.Sin(seed * 3.1f) * 20f;
-                    float ry = Mathf.Cos(seed * 2.3f) * 22f;
-                    float rz = Mathf.Sin(seed * 4.7f) * 38f;
-
-                    _bottleCubes.Add(new BottleCube
-                    {
-                        color = bandColor,
-                        layerOrder = b,
-                        isFrozen = false,
-                        x = pos.x,
-                        y = pos.y,
-                        targetX = pos.x,
-                        targetY = pos.y,
-                        rotX = rx,
-                        rotY = ry,
-                        angle = rz
-                    });
-                }
-            }
-
-            // Settle initial resting positions cleanly from bottom to top without any upward bounce or color mixing
-            RecomputeLaminarTargets(true);
-
-            // Instantiate GameObjects
-            for (int i = 0; i < _bottleCubes.Count; i++)
-            {
-                var bc = _bottleCubes[i];
-                Vector3 localPos = new Vector3(bc.x, bc.y, -0.10f);
-                bc.gameObject = SpawnConveyorCube(localPos, bc.color, bc.rotX, bc.rotY, bc.angle);
-            }
+            PopulateSandVisual();
         }
 
         public float GetChamberFloorY()
@@ -1992,49 +1850,45 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Populates the container with a stunning, crisp Pixel Art formation using real 3D physical balls!
-        /// Spawns real 3D BallPhysicsControllers resting directly on the floor of the glass chamber,
-        /// builds airtight container colliders, and synchronizes matching cute monsters at the bottom.
+        /// Camın tek görseli olan kumu kurar: desen modunda piksel görseli, diğer modda canavar renk katmanları.
         /// </summary>
-        public void PopulatePixelArtVisual()
+        private void PopulateSandVisual()
         {
             CleanOrphanedChildren();
 
-            PixelArtPattern pattern = (pixelArtPreset == PixelArtPreset.Custom && customPattern != null)
-                ? customPattern
-                : PixelArtLibrary.GetPreset(pixelArtPreset);
+            var pool = FindFirstObjectByType<BallObjectPool>();
+            if (pool != null) pool.ClearAllActiveBalls();
 
-            if (pattern == null) pattern = PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
+            var engine = GetComponent<SandSimulationEngine>().OrNull() ?? gameObject.AddComponent<SandSimulationEngine>();
+            engine.glassContainer = this;
 
-            // 1. Rebuild Airtight Physics Colliders for this exact shape
-            var bcm = GetComponent<BallContainerManager>() ?? gameObject.AddComponent<BallContainerManager>();
-            bcm.glassContainer = this;
-            bcm.RebuildColliders();
+            var gameMgr = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
 
-            // 2. Spawn real 3D physical balls via BallPatternGenerator
-            var gen = BallPatternGenerator.Instance ?? FindFirstObjectByType<BallPatternGenerator>();
-            if (gen == null)
+            if (particleMode == ParticleArrangementMode.PixelArtVisual)
             {
-                var gm = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
-                if (gm != null) gen = gm.GetComponent<BallPatternGenerator>() ?? gm.gameObject.AddComponent<BallPatternGenerator>();
-                else gen = gameObject.AddComponent<BallPatternGenerator>();
+                PixelArtPattern pattern = PixelArtLibrary.Resolve(pixelArtPreset, customPattern);
+                engine.BuildFromPattern(pattern);
+                if (gameMgr != null) gameMgr.SynchronizeMonstersForPattern(pattern);
+                return;
             }
 
-            float spacing = (gridCellSpacing > 0.08f) ? gridCellSpacing : particleSize * 1.06f;
-            if (gen != null)
+            var layers = new List<LevelMonsterEntry>();
+            if (gameMgr != null && gameMgr.activeMonsters != null)
             {
-                gen.glassContainer = this;
-                gen.ballDiameter = particleSize > 0.05f ? particleSize : 0.165f;
-                gen.patternVerticalOffset = patternVerticalOffset;
-                gen.GenerateFromCustomPattern(pattern, spacing);
+                for (int i = 0; i < gameMgr.activeMonsters.Count; i++)
+                {
+                    var monster = gameMgr.activeMonsters[i];
+                    if (monster != null) layers.Add(new LevelMonsterEntry(monster.colorType, monster.initialCount));
+                }
             }
 
-            // 3. Synchronize cute monsters at the bottom staging tray to match pattern!
-            var gameMgr = PuzzleGlassGameManager.Instance ?? FindFirstObjectByType<PuzzleGlassGameManager>();
-            if (gameMgr != null)
+            if (layers.Count == 0)
             {
-                gameMgr.SynchronizeMonstersForPattern(pattern);
+                layers.Add(new LevelMonsterEntry(PuzzleColor.Blue, 10));
+                layers.Add(new LevelMonsterEntry(PuzzleColor.Yellow, 20));
             }
+
+            engine.BuildFromLayers(layers);
         }
 
         public void ApplyPixelArtPreset(PixelArtPreset preset, bool rebuildImmediate = true)
@@ -2048,7 +1902,7 @@ namespace PuzzleGlass
             }
         }
 
-        private float EvaluateLayerSortScore(Vector2 p)
+        public float EvaluateLayerSortScore(Vector2 p)
         {
             // Keep spout particles at the very bottom first
             if (p.y < spoutBottomY + 0.68f)
