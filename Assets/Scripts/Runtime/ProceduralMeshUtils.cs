@@ -430,6 +430,69 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Generates a smooth perimeter sidewall mesh between frontZ and backZ along an open path.
+        /// Perfect for sealing the glass container along left and right contours while keeping top & bottom open!
+        /// </summary>
+        public static Mesh CreatePerimeterWall(Vector3[] path, float frontZ, float backZ, bool facingInward, string meshName = "GlassPerimeterWall")
+        {
+            Mesh mesh = new Mesh();
+            mesh.name = meshName;
+            if (path == null || path.Length < 2) return mesh;
+
+            int n = path.Length;
+            List<Vector3> verts = new List<Vector3>(n * 2);
+            List<Vector3> norms = new List<Vector3>(n * 2);
+            List<Vector2> uvs = new List<Vector2>(n * 2);
+            List<int> tris = new List<int>((n - 1) * 6);
+
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 p = path[i];
+                verts.Add(new Vector3(p.x, p.y, frontZ));
+                verts.Add(new Vector3(p.x, p.y, backZ));
+
+                int prev = Mathf.Max(0, i - 1);
+                int next = Mathf.Min(n - 1, i + 1);
+                Vector3 tang = (path[next] - path[prev]).normalized;
+                Vector3 normal = Vector3.Cross(tang, Vector3.forward).normalized;
+                if (facingInward) normal = -normal;
+
+                norms.Add(normal);
+                norms.Add(normal);
+
+                float v = (float)i / (n - 1);
+                uvs.Add(new Vector2(0f, v));
+                uvs.Add(new Vector2(1f, v));
+            }
+
+            for (int i = 0; i < n - 1; i++)
+            {
+                int i0 = i * 2;
+                int i1 = i * 2 + 1;
+                int i2 = (i + 1) * 2;
+                int i3 = (i + 1) * 2 + 1;
+
+                if (facingInward)
+                {
+                    tris.Add(i0); tris.Add(i2); tris.Add(i1);
+                    tris.Add(i1); tris.Add(i2); tris.Add(i3);
+                }
+                else
+                {
+                    tris.Add(i0); tris.Add(i1); tris.Add(i2);
+                    tris.Add(i2); tris.Add(i1); tris.Add(i3);
+                }
+            }
+
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
         /// Generates a tapered pipe mesh whose radius smoothly grows and tapers at the ends.
         /// Ideal for stylized glass reflection highlight arcs!
         /// </summary>

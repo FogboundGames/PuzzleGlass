@@ -79,19 +79,20 @@ namespace PuzzleGlass.Editor
             "🟠 Kehribar Sarısı"
         };
 
-        [MenuItem("Tools/PuzzleGlass/✨ Glass Shape Studio (Cam Şekli Tasarım Aracı)", false, 1)]
+        [MenuItem("Tools/PuzzleGlass/✨ Glass Shape Editor (Cam Şekillendirme Aracı)", false, 1)]
+        [MenuItem("Window/PuzzleGlass/✨ Glass Shape Editor", false, 1)]
         public static void OpenWindow()
         {
-            var win = GetWindow<GlassShapeDesignerWindow>("Glass Shape Studio");
-            win.minSize = new Vector2(520f, 680f);
+            var win = GetWindow<GlassShapeDesignerWindow>("Glass Shape Editor");
+            win.minSize = new Vector2(540f, 720f);
             win.Show();
         }
 
         public static void OpenForContainer(ShapedGlassContainer container)
         {
-            var win = GetWindow<GlassShapeDesignerWindow>("Glass Shape Studio");
+            var win = GetWindow<GlassShapeDesignerWindow>("Glass Shape Editor");
             win._targetContainer = container;
-            win.minSize = new Vector2(520f, 680f);
+            win.minSize = new Vector2(540f, 720f);
             win.Show();
         }
 
@@ -143,32 +144,42 @@ namespace PuzzleGlass.Editor
 
             EditorGUILayout.Space(8);
 
-            // 2. Ready-to-Use Glass Shape Presets
+            // 2. Parametric Dimensions (Spout, Neck, Waist, Overall Scales)
+            DrawParametricDimensionsSection();
+
+            EditorGUILayout.Space(8);
+
+            // 3. Physical Collision Walls & Airtight Colliders
+            DrawPhysicsCollidersSection();
+
+            EditorGUILayout.Space(8);
+
+            // 4. Sand Fill & Flow Simulation Testing
+            DrawSandTestingSimulationSection();
+
+            EditorGUILayout.Space(8);
+
+            // 5. Ready-to-Use Glass Shape Presets
             DrawPresetsSection();
 
             EditorGUILayout.Space(8);
 
-            // 2.5 Kare & Dikdörtgen Cam Oluşturucu
+            // 6. Kare & Dikdörtgen Cam Oluşturucu
             DrawSquareRectangleSection();
 
             EditorGUILayout.Space(8);
 
-            // 2.8 2. Görseldeki Piksel Sanatı Görselleri (Pixel Art Presets)
+            // 7. 2. Görseldeki Piksel Sanatı Görselleri (Pixel Art Presets)
             DrawPixelArtSection();
 
             EditorGUILayout.Space(8);
 
-            // 3. Glass Color Themes & Material Aesthetics
+            // 8. Glass Color Themes & Material Aesthetics
             DrawColorThemeAndAestheticsSection();
 
             EditorGUILayout.Space(8);
 
-            // 4. Parametric Dimensions & Particle Settings
-            DrawDimensionsAndParticlesSection();
-
-            EditorGUILayout.Space(8);
-
-            // 5. Point-by-Point Contour Table & Save/Load JSON
+            // 9. Point-by-Point Contour Table & Save/Load JSON
             DrawContourPointListAndSaveLoadSection();
 
             EditorGUILayout.Space(16);
@@ -183,7 +194,7 @@ namespace PuzzleGlass.Editor
                 fontSize = 15,
                 alignment = TextAnchor.MiddleCenter
             };
-            EditorGUILayout.LabelField("✨ PuzzleGlass - Cam Şekli Tasarım Stüdyosu ✨", titleStyle, GUILayout.Height(24));
+            EditorGUILayout.LabelField("✨ PuzzleGlass – Glass Shape Editor (Cam Şekillendirme Aracı) ✨", titleStyle, GUILayout.Height(24));
 
             GUIStyle subStyle = new GUIStyle(EditorStyles.miniLabel)
             {
@@ -193,6 +204,67 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.LabelField(
                 "Aşağıdaki 2B tuvalden veya Scene ekranından noktaları sürükleyerek camı istediğiniz herhangi bir şekle sokabilirsiniz.",
                 subStyle);
+
+            EditorGUILayout.Space(4);
+
+            // Quick Action Buttons Bar
+            if (_targetContainer != null)
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUI.backgroundColor = new Color(0.25f, 0.75f, 1.0f);
+                if (GUILayout.Button("🔄 Generate Glass", GUILayout.Height(28)))
+                {
+                    _targetContainer.RebuildContainer();
+                    EditorUtility.SetDirty(_targetContainer);
+                    SceneView.RepaintAll();
+                }
+
+                GUI.backgroundColor = new Color(0.25f, 0.90f, 0.55f);
+                if (GUILayout.Button("🛡️ Generate Colliders", GUILayout.Height(28)))
+                {
+                    var bcm = _targetContainer.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+                    if (bcm != null)
+                    {
+                        bcm.RebuildColliders();
+                        EditorUtility.SetDirty(bcm);
+                    }
+                    SceneView.RepaintAll();
+                }
+
+                GUI.backgroundColor = new Color(1.0f, 0.85f, 0.35f);
+                if (GUILayout.Button("🧪 Generate Sand", GUILayout.Height(28)))
+                {
+                    _targetContainer.SpawnTestSandParticles(72);
+                    EditorUtility.SetDirty(_targetContainer);
+                    SceneView.RepaintAll();
+                }
+
+                GUI.backgroundColor = new Color(0.95f, 0.45f, 0.45f);
+                if (GUILayout.Button("🧹 Clear Sand", GUILayout.Height(28)))
+                {
+                    _targetContainer.ClearTestSandParticles();
+                    EditorUtility.SetDirty(_targetContainer);
+                    SceneView.RepaintAll();
+                }
+
+                bool gateOpen = _targetContainer.IsSpoutGateOpen();
+                GUI.backgroundColor = gateOpen ? new Color(0.35f, 0.90f, 0.55f) : new Color(1.0f, 0.60f, 0.20f);
+                if (GUILayout.Button(gateOpen ? "🚪 Kapağı Kapat" : "🚪 Kapağı Aç", GUILayout.Height(28)))
+                {
+                    _targetContainer.ToggleSpoutGate();
+                    SceneView.RepaintAll();
+                }
+
+                GUI.backgroundColor = new Color(0.70f, 0.45f, 1.0f);
+                if (GUILayout.Button("🎨 Sand Image Generator", GUILayout.Height(28)))
+                {
+                    SandImageGeneratorWindow.OpenWindow();
+                }
+
+                GUI.backgroundColor = Color.white;
+                EditorGUILayout.EndHorizontal();
+            }
+
             EditorGUILayout.EndVertical();
         }
 
@@ -784,46 +856,234 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private void DrawDimensionsAndParticlesSection()
+        private void DrawParametricDimensionsSection()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("📐 Genel Ölçek & Partikül Doluluk Ayarları", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("📐 Hazne Boyutları & Açıklık Kontrolleri (Parametric Shape)", EditorStyles.boldLabel);
 
+            // 1. Spout / Bottom Outlet
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🔻 Alt Çıkış (Spout / Bottom Outlet) Ayarları", EditorStyles.miniBoldLabel);
             EditorGUI.BeginChangeCheck();
-            float wScale = EditorGUILayout.Slider("Genişlik Ölçeği (Width Scale)", _targetContainer.widthScale, 0.5f, 1.8f);
-            float hScale = EditorGUILayout.Slider("Yükseklik Ölçeği (Height Scale)", _targetContainer.heightScale, 0.6f, 1.6f);
+            float spoutW = EditorGUILayout.Slider("Alt Çıkış Genişliği (Spout Width)", _targetContainer.SpoutWidth, 0.15f, 1.20f);
+            float spoutL = EditorGUILayout.Slider("Alt Çıkış Uzunluğu (Spout Length)", _targetContainer.SpoutLength, 0.15f, 1.20f);
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObject(_targetContainer, "Scale Glass Shape");
+                Undo.RecordObject(_targetContainer, "Modify Spout Dimensions");
+                _targetContainer.SpoutWidth = spoutW;
+                _targetContainer.SpoutLength = spoutL;
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndVertical();
+
+            // 2. Neck / Top Inlet
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🔺 Üst Giriş (Neck / Top Inlet) Ayarları", EditorStyles.miniBoldLabel);
+            EditorGUI.BeginChangeCheck();
+            float neckW = EditorGUILayout.Slider("Üst Giriş Genişliği (Neck Width)", _targetContainer.NeckWidth, 0.20f, 1.80f);
+            float neckL = EditorGUILayout.Slider("Üst Giriş Uzunluğu (Neck Length)", _targetContainer.NeckLength, 0.20f, 1.80f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(_targetContainer, "Modify Neck Dimensions");
+                _targetContainer.NeckWidth = neckW;
+                _targetContainer.NeckLength = neckL;
+                EditorUtility.SetDirty(_targetContainer);
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndVertical();
+
+            // 3. Waist / Middle narrowing & overall scaling
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("📏 Gövde, Bel & Genel Ölçek", EditorStyles.miniBoldLabel);
+            EditorGUI.BeginChangeCheck();
+            float waistW = EditorGUILayout.Slider("Hazne Orta / Bel Genişliği", _targetContainer.ChamberWaistWidth, 0.40f, 3.20f);
+            float wScale = EditorGUILayout.Slider("Genel Genişlik Ölçeği (Width Scale)", _targetContainer.widthScale, 0.5f, 1.8f);
+            float hScale = EditorGUILayout.Slider("Genel Yükseklik Ölçeği (Height Scale)", _targetContainer.heightScale, 0.6f, 1.6f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(_targetContainer, "Modify Scale and Waist");
+                _targetContainer.ChamberWaistWidth = waistW;
                 _targetContainer.widthScale = wScale;
                 _targetContainer.heightScale = hScale;
                 _targetContainer.RebuildGlassMeshAndSettleParticles();
                 EditorUtility.SetDirty(_targetContainer);
                 SceneView.RepaintAll();
             }
+            EditorGUILayout.EndVertical();
 
-            EditorGUILayout.Space(4);
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawPhysicsCollidersSection()
+        {
+            var bcm = _targetContainer.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🛡️ Fiziksel Duvarlar & Otomatik Collider Kafesi", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Camın görünür yüzeyi ile kumları tutan iç fiziksel çarpışma duvarları birbirinden bağımsızdır. Kumların dışarı kaçmasını engeller.", MessageType.Info);
+
+            if (bcm != null)
+            {
+                EditorGUI.BeginChangeCheck();
+                float wallThick = EditorGUILayout.Slider("İç Duvar Kalınlığı (Wall Thickness)", bcm.wallThickness, 0.04f, 0.25f);
+                float wallDepth = EditorGUILayout.Slider("Duvar Z Derinliği (Wall Depth)", bcm.wallDepth, 0.20f, 0.90f);
+                float frontZ = EditorGUILayout.Slider("Ön Cam Düzlemi (Front Plane Z)", bcm.frontPlaneZ, -0.40f, -0.15f);
+                float backZ = EditorGUILayout.Slider("Arka Cam Düzlemi (Back Plane Z)", bcm.backPlaneZ, -0.05f, 0.20f);
+                bool showGizmos = EditorGUILayout.Toggle("Sahne Ekranında Collider'ları Çiz (Gizmos)", bcm.showColliderGizmos);
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Undo.RecordObject(bcm, "Modify Collider Settings");
+                    bcm.wallThickness = wallThick;
+                    bcm.wallDepth = wallDepth;
+                    bcm.frontPlaneZ = frontZ;
+                    bcm.backPlaneZ = backZ;
+                    bcm.showColliderGizmos = showGizmos;
+                    bcm.RebuildColliders();
+                    EditorUtility.SetDirty(bcm);
+                    SceneView.RepaintAll();
+                }
+
+                EditorGUILayout.Space(4);
+                GUI.backgroundColor = new Color(0.28f, 0.90f, 0.55f);
+                if (GUILayout.Button("🛡️ Collider Kafesini Şimdi Yeniden Oluştur (Generate Colliders)", GUILayout.Height(30)))
+                {
+                    bcm.RebuildColliders();
+                    EditorUtility.SetDirty(bcm);
+                    SceneView.RepaintAll();
+                }
+                GUI.backgroundColor = Color.white;
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("BallContainerManager bileşeni sahnede bulunamadı.", MessageType.Warning);
+                if (GUILayout.Button("BallContainerManager Ekle", GUILayout.Height(28)))
+                {
+                    _targetContainer.gameObject.AddComponent<BallContainerManager>();
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSandTestingSimulationSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🧪 Phase 2 – Kum Fiziği & Simülasyon Testi", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Camın içinde GPU Instancing destekli hücresel kum simülasyonunu test edebilirsiniz. Kumlar camın iç sınırlarına çarpar, üst üste yığılır ve alt çıkıştan dökülür.", MessageType.Info);
+
+            var engine = _targetContainer.GetComponent<SandSimulationEngine>();
+            if (engine == null)
+            {
+                engine = _targetContainer.gameObject.AddComponent<SandSimulationEngine>();
+                engine.glassContainer = _targetContainer;
+            }
+
             EditorGUI.BeginChangeCheck();
-            float pSize = EditorGUILayout.Slider("Partikül Boyutu", _targetContainer.particleSize, 0.08f, 0.22f);
-            float pFill = EditorGUILayout.Slider("Cam Doluluk Oranı", _targetContainer.particleFillRatio, 0.15f, 0.85f);
-            int pFloat = EditorGUILayout.IntSlider("Havada Süzülen Partiküller", _targetContainer.floatingBeadCount, 0, 20);
+
+            EditorGUILayout.BeginHorizontal();
+            engine.particleSize = EditorGUILayout.Slider("Particle Size (Küp Boyutu):", engine.particleSize, 0.08f, 0.28f);
+            engine.sandDensity = EditorGUILayout.Slider("Sand Density (Yoğunluk):", engine.sandDensity, 0.2f, 3.0f);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            engine.gravity = EditorGUILayout.Slider("Gravity (Yerçekimi):", engine.gravity, -30f, -1f);
+            engine.flowSpeed = EditorGUILayout.Slider("Flow Speed (Akış Hızı):", engine.flowSpeed, 0.2f, 3.0f);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            engine.horizontalMovement = EditorGUILayout.Slider("Horizontal Move (Yatay Kayma):", engine.horizontalMovement, 0.1f, 3.0f);
+            engine.simulationResolution = EditorGUILayout.IntSlider("Sim Resolution (Alt-Adım):", engine.simulationResolution, 1, 6);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            engine.physicsQuality = (PhysicsQuality)EditorGUILayout.EnumPopup("Physics Quality:", engine.physicsQuality);
+            EditorGUILayout.LabelField($"Sand Amount: <b>{engine.sandAmount}</b> tanecik", new GUIStyle(EditorStyles.label) { richText = true });
+            EditorGUILayout.EndHorizontal();
+
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObject(_targetContainer, "Change Particle Settings");
-                _targetContainer.particleSize = pSize;
-                _targetContainer.particleFillRatio = pFill;
-                _targetContainer.floatingBeadCount = pFloat;
-                _targetContainer.RebuildContainer();
+                EditorUtility.SetDirty(engine);
+            }
+
+            EditorGUILayout.Space(4);
+
+            // Simülasyon Modları (Static Image, Dynamic Physics, Preview)
+            EditorGUILayout.BeginHorizontal();
+
+            bool isStatic = engine.simulationMode == SandSimulationMode.StaticImage;
+            GUI.backgroundColor = isStatic ? new Color(0.35f, 0.75f, 1.0f) : Color.white;
+            if (GUILayout.Button("📌 Static Image Mode", GUILayout.Height(30)))
+            {
+                engine.SetSimulationMode(SandSimulationMode.StaticImage);
+            }
+
+            bool isDynamic = engine.simulationMode == SandSimulationMode.DynamicPhysics;
+            GUI.backgroundColor = isDynamic ? new Color(0.40f, 0.90f, 0.50f) : Color.white;
+            if (GUILayout.Button("▶ Physics Mode", GUILayout.Height(30)))
+            {
+                engine.SetSimulationMode(SandSimulationMode.DynamicPhysics);
+            }
+
+            bool isPreview = engine.simulationMode == SandSimulationMode.Preview;
+            GUI.backgroundColor = isPreview ? new Color(1.0f, 0.80f, 0.30f) : Color.white;
+            if (GUILayout.Button("👁 Preview Mode", GUILayout.Height(30)))
+            {
+                engine.SetSimulationMode(SandSimulationMode.Preview);
+            }
+
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            // Aksiyon Butonları
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.35f, 0.85f, 1.0f);
+            if (GUILayout.Button("🧪 Camın İçine Kum Doldur (Generate Sand)", GUILayout.Height(32)))
+            {
+                var pat = PixelArtLibrary.GetPreset(_targetContainer.pixelArtPreset);
+                engine.InitializeFromPattern(pat);
+                _targetContainer.SpawnTestSandParticles(64);
                 EditorUtility.SetDirty(_targetContainer);
+                EditorUtility.SetDirty(engine);
                 SceneView.RepaintAll();
             }
 
-            GUI.backgroundColor = new Color(0.25f, 0.78f, 1.0f);
-            if (GUILayout.Button("🔄 Partikülleri Bu Cam Şekline Göre Yeniden Doldur & Yerleştir", GUILayout.Height(32)))
+            GUI.backgroundColor = new Color(0.95f, 0.45f, 0.45f);
+            if (GUILayout.Button("🧹 Kumları Temizle (Clear Sand)", GUILayout.Height(32)))
             {
-                _targetContainer.RebuildContainer();
+                engine.ClearAll();
+                _targetContainer.ClearTestSandParticles();
                 EditorUtility.SetDirty(_targetContainer);
+                EditorUtility.SetDirty(engine);
                 SceneView.RepaintAll();
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            bool gateOpen = engine.isGateOpen || _targetContainer.IsSpoutGateOpen();
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"Alt Çıkış Kapağı: {(gateOpen ? "<color=#2ED170><b>AÇIK (Kumlar Akıyor)</b></color>" : "<color=#FF4444><b>KAPALI (Kumlar İçeride)</b></color>")}",
+                new GUIStyle(EditorStyles.label) { richText = true });
+
+            GUI.backgroundColor = gateOpen ? new Color(0.95f, 0.70f, 0.30f) : new Color(0.28f, 0.90f, 0.55f);
+            if (GUILayout.Button(gateOpen ? "🚪 Kapağı Kapat (Tut)" : "🚪 Kapağı Aç (Akıt)", GUILayout.Height(28), GUILayout.Width(170)))
+            {
+                engine.ToggleSpoutGate();
+                SceneView.RepaintAll();
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+            GUI.backgroundColor = new Color(0.70f, 0.45f, 1.0f);
+            if (GUILayout.Button("🎨 Sand Image Generator'ı Aç (Görseli Kuma Dönüştür)", GUILayout.Height(30)))
+            {
+                SandImageGeneratorWindow.OpenWindow();
             }
             GUI.backgroundColor = Color.white;
 
@@ -948,7 +1208,7 @@ namespace PuzzleGlass.Editor
 
             File.WriteAllText(path, JsonUtility.ToJson(data, true));
             AssetDatabase.Refresh();
-            Debug.Log($"<color=#2ED170><b>[Glass Shape Studio]</b></color> Cam şekli kaydedildi: {path}");
+            Debug.Log($"<color=#2ED170><b>[Glass Shape Editor]</b></color> Cam şekli kaydedildi: {path}");
         }
 
         private void LoadShapeFromJson()

@@ -42,6 +42,7 @@ namespace PuzzleGlass
         public float y;
         public float halfWidth;
         public float centerX;
+        public float x => centerX;
         [Range(0f, 1f)]
         public float cornerTension;
 
@@ -148,6 +149,177 @@ namespace PuzzleGlass
         public float chamberWidth = 2.84f;
         public float neckWidth = 0.60f;
         public float glassWallDepth = 0.22f;
+
+        #region Parametric Shape Helpers (Glass Shape Editor)
+        public float SpoutWidth
+        {
+            get => (contourPoints != null && contourPoints.Count > 0) ? contourPoints[0].halfWidth * 2f * widthScale : spoutWidth;
+            set
+            {
+                if (contourPoints == null || contourPoints.Count < 2) return;
+                float hw = Mathf.Max(0.06f, value * 0.5f / Mathf.Max(0.1f, widthScale));
+                var cp0 = contourPoints[0]; cp0.halfWidth = hw; contourPoints[0] = cp0;
+                var cp1 = contourPoints[1]; cp1.halfWidth = hw; contourPoints[1] = cp1;
+                RebuildGlassMeshAndSettleParticles();
+            }
+        }
+
+        public float SpoutLength
+        {
+            get => (contourPoints != null && contourPoints.Count > 1) ? (contourPoints[1].y - contourPoints[0].y) * heightScale : (spoutTopY - spoutBottomY);
+            set
+            {
+                if (contourPoints == null || contourPoints.Count < 2) return;
+                float len = Mathf.Max(0.08f, value / Mathf.Max(0.1f, heightScale));
+                var cp0 = contourPoints[0];
+                cp0.y = contourPoints[1].y - len;
+                contourPoints[0] = cp0;
+                RebuildGlassMeshAndSettleParticles();
+            }
+        }
+
+        public float NeckWidth
+        {
+            get => (contourPoints != null && contourPoints.Count > 0) ? contourPoints[contourPoints.Count - 1].halfWidth * 2f * widthScale : neckWidth;
+            set
+            {
+                if (contourPoints == null || contourPoints.Count < 2) return;
+                int last = contourPoints.Count - 1;
+                float hw = Mathf.Max(0.06f, value * 0.5f / Mathf.Max(0.1f, widthScale));
+                var cplast = contourPoints[last]; cplast.halfWidth = hw; contourPoints[last] = cplast;
+                var cpprev = contourPoints[last - 1]; cpprev.halfWidth = hw; contourPoints[last - 1] = cpprev;
+                RebuildGlassMeshAndSettleParticles();
+            }
+        }
+
+        public float NeckLength
+        {
+            get => (contourPoints != null && contourPoints.Count > 1) ? (contourPoints[contourPoints.Count - 1].y - contourPoints[contourPoints.Count - 2].y) * heightScale : (neckTopY - neckBottomY);
+            set
+            {
+                if (contourPoints == null || contourPoints.Count < 2) return;
+                int last = contourPoints.Count - 1;
+                float len = Mathf.Max(0.10f, value / Mathf.Max(0.1f, heightScale));
+                var cplast = contourPoints[last];
+                cplast.y = contourPoints[last - 1].y + len;
+                contourPoints[last] = cplast;
+                RebuildGlassMeshAndSettleParticles();
+            }
+        }
+
+        public float ChamberWaistWidth
+        {
+            get
+            {
+                if (contourPoints == null || contourPoints.Count < 3) return chamberWidth;
+                int mid = contourPoints.Count / 2;
+                return contourPoints[mid].halfWidth * 2f * widthScale;
+            }
+            set
+            {
+                if (contourPoints == null || contourPoints.Count < 3) return;
+                int mid = contourPoints.Count / 2;
+                float hw = Mathf.Max(0.08f, value * 0.5f / Mathf.Max(0.1f, widthScale));
+                var cp = contourPoints[mid];
+                cp.halfWidth = hw;
+                contourPoints[mid] = cp;
+                RebuildGlassMeshAndSettleParticles();
+            }
+        }
+
+        public void SpawnTestSandParticles(int count = 64)
+        {
+            var pool = BallObjectPool.Instance ?? FindFirstObjectByType<BallObjectPool>();
+            if (pool == null)
+            {
+                var poolObj = new GameObject("BallObjectPool");
+                pool = poolObj.AddComponent<BallObjectPool>();
+            }
+            pool.ClearAllActiveBalls();
+
+            EnsureContourInitialized();
+            SyncBoundsFromContour();
+
+            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            if (bcm != null)
+            {
+                bcm.RebuildColliders();
+                bcm.SetSpoutStopperActive(true);
+            }
+
+            float minY = chamberBottomY + 0.15f;
+            float maxY = chamberTopY - 0.15f;
+            float r = Mathf.Clamp(particleSize * 0.5f, 0.045f, 0.10f);
+
+            PuzzleColor[] colors = new PuzzleColor[]
+            {
+                PuzzleColor.Blue, PuzzleColor.Green, PuzzleColor.Pink, PuzzleColor.Yellow,
+                PuzzleColor.Purple, PuzzleColor.Orange, PuzzleColor.Red, PuzzleColor.Cyan
+            };
+
+            int spawned = 0;
+            int maxAttempts = count * 8;
+            int attempts = 0;
+
+            while (spawned < count && attempts < maxAttempts)
+            {
+                attempts++;
+                float y = UnityEngine.Random.Range(minY, maxY);
+                GetSafeCubeBoundsAtY(y, out float safeLeft, out float safeRight);
+                if (safeRight - safeLeft < r * 2.4f) continue;
+
+                float x = UnityEngine.Random.Range(safeLeft + r * 1.2f, safeRight - r * 1.2f);
+                Vector3 worldPos = transform.TransformPoint(new Vector3(x, y, -0.10f));
+                PuzzleColor col = colors[spawned % colors.Length];
+
+                pool.SpawnBall(col, worldPos, r);
+                spawned++;
+            }
+
+            Debug.Log($"<color=#2ED170><b>[Glass Shape Editor]</b></color> {spawned} adet test kumu hazneye dolduruldu!");
+        }
+
+        public void ClearTestSandParticles()
+        {
+            var pool = BallObjectPool.Instance ?? FindFirstObjectByType<BallObjectPool>();
+            if (pool != null)
+            {
+                pool.ClearAllActiveBalls();
+            }
+            CleanOrphanedChildren();
+        }
+
+        public bool IsSpoutGateOpen()
+        {
+            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            return bcm != null && bcm.bottomSpoutStopper != null && !bcm.bottomSpoutStopper.enabled;
+        }
+
+        public void SetSpoutGate(bool open)
+        {
+            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            if (bcm != null)
+            {
+                bcm.SetSpoutStopperActive(!open);
+            }
+            var sand = GetComponent<SandSimulationEngine>();
+            if (sand != null)
+            {
+                sand.isGateOpen = open;
+            }
+        }
+
+        public void ToggleSpoutGate()
+        {
+            var bcm = BallContainerManager.Instance ?? FindFirstObjectByType<BallContainerManager>();
+            if (bcm != null)
+            {
+                bool isStopperActive = bcm.bottomSpoutStopper != null && bcm.bottomSpoutStopper.enabled;
+                SetSpoutGate(isStopperActive); // if active, open it
+                Debug.Log($"<color=#2ED170><b>[Glass Shape Editor]</b></color> Alt çıkış kapağı: {(isStopperActive ? "AÇIK (Kumlar Akabilir)" : "KAPALI")}");
+            }
+        }
+        #endregion
 
         [Header("Materials")]
         public Material glassMaterial;
@@ -696,6 +868,13 @@ namespace PuzzleGlass
 
             EnsureMaterials();
             BuildBottleContainer();
+
+            // Synchronize airtight physics colliders automatically
+            var bcm = GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+            if (bcm != null)
+            {
+                bcm.RebuildColliders();
+            }
         }
 
         /// <summary>
@@ -734,6 +913,13 @@ namespace PuzzleGlass
             BuildFlaskGeometry();
             RecomputeLaminarTargets(true);
             SyncCubeTransforms();
+
+            // Synchronize airtight physics colliders automatically
+            var bcm = GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+            if (bcm != null)
+            {
+                bcm.RebuildColliders();
+            }
         }
 
         private Material CreateConfiguredGlassMaterial(string matName, Color col, float smoothness, int renderQueue)
@@ -1024,7 +1210,70 @@ namespace PuzzleGlass
             frontLensMr.sharedMaterial = _frontGlassLensMat;
             frontLensMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-            // 3. Optional Creamy-White Shoulder Caps with Colored Pill Buttons (Left=Purple, Right=Yellow)
+            // 3. Thick 3D Tubular Glass Rims & Perimeter Sidewalls (Outer Blue Glossy Borders matching Reference Image!)
+            Material rimMat = _outerBlueRimMat ?? glassRimMaterial;
+            float frontZ = -0.24f;
+            float backZ = 0.08f;
+
+            // 3a. Left Perimeter Sidewall (Front to Back)
+            GameObject leftWallObj = new GameObject("LeftGlassPerimeterWall");
+            leftWallObj.transform.SetParent(_glassWallsObj.transform, false);
+            leftWallObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePerimeterWall(leftPath, frontZ, backZ, false);
+            var leftWallMr = leftWallObj.AddComponent<MeshRenderer>();
+            leftWallMr.sharedMaterial = rimMat;
+            leftWallMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 3b. Right Perimeter Sidewall (Front to Back)
+            GameObject rightWallObj = new GameObject("RightGlassPerimeterWall");
+            rightWallObj.transform.SetParent(_glassWallsObj.transform, false);
+            rightWallObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePerimeterWall(rightPath, frontZ, backZ, true);
+            var rightWallMr = rightWallObj.AddComponent<MeshRenderer>();
+            rightWallMr.sharedMaterial = rimMat;
+            rightWallMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 3c. Left Front Rounded Glass Rim Pipe
+            GameObject leftFrontRim = new GameObject("LeftFrontGlassRim");
+            leftFrontRim.transform.SetParent(_glassWallsObj.transform, false);
+            leftFrontRim.transform.localPosition = new Vector3(0f, 0f, frontZ);
+            leftFrontRim.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(leftPath, glassRimRadius, 10, false);
+            var lfmr = leftFrontRim.AddComponent<MeshRenderer>();
+            lfmr.sharedMaterial = rimMat;
+            lfmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 3d. Right Front Rounded Glass Rim Pipe
+            GameObject rightFrontRim = new GameObject("RightFrontGlassRim");
+            rightFrontRim.transform.SetParent(_glassWallsObj.transform, false);
+            rightFrontRim.transform.localPosition = new Vector3(0f, 0f, frontZ);
+            rightFrontRim.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(rightPath, glassRimRadius, 10, false);
+            var rfmr = rightFrontRim.AddComponent<MeshRenderer>();
+            rfmr.sharedMaterial = rimMat;
+            rfmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 3e. Left Back Rounded Glass Rim Pipe
+            GameObject leftBackRim = new GameObject("LeftBackGlassRim");
+            leftBackRim.transform.SetParent(_glassWallsObj.transform, false);
+            leftBackRim.transform.localPosition = new Vector3(0f, 0f, backZ);
+            leftBackRim.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(leftPath, glassRimRadius * 0.82f, 8, false);
+            var lbmr = leftBackRim.AddComponent<MeshRenderer>();
+            lbmr.sharedMaterial = rimMat;
+            lbmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 3f. Right Back Rounded Glass Rim Pipe
+            GameObject rightBackRim = new GameObject("RightBackGlassRim");
+            rightBackRim.transform.SetParent(_glassWallsObj.transform, false);
+            rightBackRim.transform.localPosition = new Vector3(0f, 0f, backZ);
+            rightBackRim.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePipeMesh(rightPath, glassRimRadius * 0.82f, 8, false);
+            var rbmr = rightBackRim.AddComponent<MeshRenderer>();
+            rbmr.sharedMaterial = rimMat;
+            rbmr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // 4. Glossy Specular Shoulder Highlights
+            if (showSpecularReflections)
+            {
+                BuildDomeSpecularReflections(leftInnerPath, rightInnerPath);
+            }
+
+            // 5. Optional Creamy-White Shoulder Caps with Colored Pill Buttons (Left=Purple, Right=Yellow)
             if (showShoulderHandles)
             {
                 BuildShoulderHandleEar(true, leftPath);

@@ -3,9 +3,28 @@ using UnityEngine;
 
 namespace PuzzleGlass
 {
+    [ExecuteAlways]
     public class BallObjectPool : MonoBehaviour
     {
-        public static BallObjectPool Instance { get; private set; }
+        private static BallObjectPool _instance;
+        public static BallObjectPool Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    _instance = FindFirstObjectByType<BallObjectPool>();
+                    if (_instance == null)
+                    {
+                        var poolObj = GameObject.Find("BallObjectPool");
+                        if (poolObj == null) poolObj = new GameObject("BallObjectPool");
+                        _instance = poolObj.GetComponent<BallObjectPool>() ?? poolObj.AddComponent<BallObjectPool>();
+                    }
+                }
+                return _instance;
+            }
+            private set => _instance = value;
+        }
 
         [Header("Pool Settings")]
         public int initialPoolSize = 120;

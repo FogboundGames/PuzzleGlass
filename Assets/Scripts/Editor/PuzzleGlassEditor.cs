@@ -64,7 +64,7 @@ namespace PuzzleGlass.Editor
             }
 
             GUI.backgroundColor = new Color(0.30f, 0.85f, 0.95f);
-            if (GUILayout.Button("✨ Cam Şekli Tasarım Stüdyosunu Aç (Glass Shape Studio)", GUILayout.Height(34)))
+            if (GUILayout.Button("✨ Glass Shape Editor'ı Aç (Cam Şekillendirme Aracı)", GUILayout.Height(34)))
             {
                 GlassShapeDesignerWindow.OpenForContainer(manager.glassContainer);
             }
@@ -165,16 +165,22 @@ namespace PuzzleGlass.Editor
 
             // Prominent Studio Launchers at top of Inspector
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUI.backgroundColor = new Color(0.28f, 0.88f, 0.55f);
-            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım Aracı)", GUILayout.Height(34)))
-            {
-                LevelDesignerWindow.OpenWindow();
-            }
-
             GUI.backgroundColor = new Color(0.22f, 0.82f, 0.98f);
-            if (GUILayout.Button("✨ Cam Şekli Tasarım Stüdyosunu Aç (Glass Shape Studio)", GUILayout.Height(36)))
+            if (GUILayout.Button("✨ Glass Shape Editor'ı Aç (Cam Şekillendirme Aracı)", GUILayout.Height(36)))
             {
                 GlassShapeDesignerWindow.OpenForContainer(container);
+            }
+
+            GUI.backgroundColor = new Color(0.70f, 0.45f, 1.0f);
+            if (GUILayout.Button("🎨 Sand Image Generator'ı Aç (Görseli Kuma Dönüştürme)", GUILayout.Height(34)))
+            {
+                SandImageGeneratorWindow.OpenWindow();
+            }
+
+            GUI.backgroundColor = new Color(0.28f, 0.88f, 0.55f);
+            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım Aracı)", GUILayout.Height(32)))
+            {
+                LevelDesignerWindow.OpenWindow();
             }
 
             GUI.backgroundColor = _enableSceneHandles ? new Color(0.35f, 0.90f, 0.55f) : new Color(0.75f, 0.75f, 0.75f);
@@ -187,6 +193,55 @@ namespace PuzzleGlass.Editor
                 _enableSceneHandles = !_enableSceneHandles;
                 SceneView.RepaintAll();
             }
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("⚡ Hızlı Kontroller & Simülasyon Testi:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.25f, 0.75f, 1.0f);
+            if (GUILayout.Button("🔄 Generate Glass", GUILayout.Height(26)))
+            {
+                container.RebuildContainer();
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(0.25f, 0.90f, 0.55f);
+            if (GUILayout.Button("🛡️ Colliders", GUILayout.Height(26)))
+            {
+                var bcm = container.GetComponent<BallContainerManager>() ?? FindFirstObjectByType<BallContainerManager>();
+                if (bcm != null)
+                {
+                    bcm.RebuildColliders();
+                    EditorUtility.SetDirty(bcm);
+                }
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(1.0f, 0.85f, 0.35f);
+            if (GUILayout.Button("🧪 Sand", GUILayout.Height(26)))
+            {
+                container.SpawnTestSandParticles(72);
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(0.95f, 0.45f, 0.45f);
+            if (GUILayout.Button("🧹 Clear", GUILayout.Height(26)))
+            {
+                container.ClearTestSandParticles();
+                EditorUtility.SetDirty(container);
+                SceneView.RepaintAll();
+            }
+
+            bool gateOpen = container.IsSpoutGateOpen();
+            GUI.backgroundColor = gateOpen ? new Color(0.35f, 0.90f, 0.55f) : new Color(1.0f, 0.60f, 0.20f);
+            if (GUILayout.Button(gateOpen ? "🚪 Kapat" : "🚪 Aç", GUILayout.Height(26)))
+            {
+                container.ToggleSpoutGate();
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndHorizontal();
+
             GUI.backgroundColor = Color.white;
             EditorGUILayout.EndVertical();
 
@@ -224,10 +279,10 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.HelpBox("Topların cam içinde 2. görseldeki gibi sabit durarak görsel oluşturmasını sağlar.", MessageType.Info);
 
-            GUI.backgroundColor = new Color(0.2f, 0.88f, 0.45f);
-            if (GUILayout.Button("🎨 Resim Yükle & Piksel Sanatı Yap (Pixel Art Image Studio)", GUILayout.Height(36)))
+            GUI.backgroundColor = new Color(0.70f, 0.45f, 1.0f);
+            if (GUILayout.Button("🎨 Sand Image Generator (Görseli Kuma Dönüştür)", GUILayout.Height(36)))
             {
-                PixelArtImageStudioWindow.OpenWindow();
+                SandImageGeneratorWindow.OpenWindow();
             }
             GUI.backgroundColor = Color.white;
 
@@ -355,8 +410,8 @@ namespace PuzzleGlass.Editor
 
             // Floating SceneView Overlay Toolbar
             Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(14, 14, 290, 145), EditorStyles.helpBox);
-            GUILayout.Label("✨ Cam Şekli Tasarım Aracı (Scene View)", EditorStyles.boldLabel);
+            GUILayout.BeginArea(new Rect(14, 14, 310, 180), EditorStyles.helpBox);
+            GUILayout.Label("✨ Glass Shape Editor (Scene View)", EditorStyles.boldLabel);
 
             _enableSceneHandles = GUILayout.Toggle(_enableSceneHandles, " Sahne Noktalarını Sürükleyerek Düzenle");
 
@@ -379,12 +434,37 @@ namespace PuzzleGlass.Editor
                 EditorUtility.SetDirty(container);
             }
 
+            // Quick Testing Actions inside SceneView HUD
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("🎨 Stüdyo Penceresini Aç", GUILayout.Height(24)))
+            GUI.backgroundColor = new Color(0.28f, 0.85f, 1.0f);
+            if (GUILayout.Button("🧪 Kum Doldur", GUILayout.Height(22)))
+            {
+                container.SpawnTestSandParticles(72);
+                EditorUtility.SetDirty(container);
+            }
+
+            GUI.backgroundColor = new Color(0.95f, 0.45f, 0.45f);
+            if (GUILayout.Button("🧹 Temizle", GUILayout.Height(22)))
+            {
+                container.ClearTestSandParticles();
+                EditorUtility.SetDirty(container);
+            }
+
+            bool gateOpen = container.IsSpoutGateOpen();
+            GUI.backgroundColor = gateOpen ? new Color(0.35f, 0.90f, 0.55f) : new Color(1.0f, 0.60f, 0.20f);
+            if (GUILayout.Button(gateOpen ? "🚪 Kapat" : "🚪 Aç", GUILayout.Height(22)))
+            {
+                container.ToggleSpoutGate();
+            }
+            GUI.backgroundColor = Color.white;
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("🎨 Editör Penceresini Aç", GUILayout.Height(24)))
             {
                 GlassShapeDesignerWindow.OpenForContainer(container);
             }
-            if (GUILayout.Button("🔄 Partikülleri Doldur", GUILayout.Height(24)))
+            if (GUILayout.Button("🔄 Camı Yenile", GUILayout.Height(24)))
             {
                 container.RebuildContainer();
                 EditorUtility.SetDirty(container);
@@ -417,7 +497,7 @@ namespace PuzzleGlass.Editor
                 }
             }
 
-            // Draw interactive draggable 3D handles for every control point
+            // Draw interactive draggable 3D handles for every control point with labels & color coding
             for (int i = 0; i < pts.Count; i++)
             {
                 var cp = pts[i];
@@ -435,9 +515,47 @@ namespace PuzzleGlass.Editor
                 Handles.DrawDottedLine(leftWorld, rightWorld, 2.5f);
 
                 float handleSize = HandleUtility.GetHandleSize(rightWorld) * 0.085f;
-                Handles.color = new Color(1.0f, 0.88f, 0.20f, 1.0f);
+
+                // Color-code by role: Spout (Yellow), Body/Funnel (Sky-Blue), Neck (Magenta)
+                Color handleCol;
+                string pointLabel = null;
+                if (i == 0)
+                {
+                    handleCol = new Color(1.0f, 0.82f, 0.15f, 1.0f);
+                    pointLabel = "Alt Çıkış Ucu (Spout Tip)";
+                }
+                else if (i == 1)
+                {
+                    handleCol = new Color(1.0f, 0.90f, 0.35f, 1.0f);
+                    pointLabel = "Alt Çıkış Boğazı (Spout Tube)";
+                }
+                else if (i == pts.Count - 1)
+                {
+                    handleCol = new Color(0.95f, 0.40f, 0.90f, 1.0f);
+                    pointLabel = "Üst Giriş (Top Inlet)";
+                }
+                else if (i == pts.Count - 2)
+                {
+                    handleCol = new Color(0.85f, 0.50f, 0.95f, 1.0f);
+                    pointLabel = "Boyun Boğazı (Neck)";
+                }
+                else
+                {
+                    handleCol = new Color(0.25f, 0.95f, 1.0f, 1.0f);
+                }
+
+                if (pointLabel != null)
+                {
+                    GUIStyle lblStyle = new GUIStyle(EditorStyles.boldLabel)
+                    {
+                        normal = { textColor = handleCol },
+                        fontSize = 11
+                    };
+                    Handles.Label(rightWorld + Vector3.right * 0.18f, pointLabel, lblStyle);
+                }
 
                 // Right handle
+                Handles.color = handleCol;
                 EditorGUI.BeginChangeCheck();
                 Vector3 newRightWorld = Handles.Slider2D(
                     rightWorld,
@@ -456,7 +574,7 @@ namespace PuzzleGlass.Editor
                 }
 
                 // Left handle
-                Handles.color = new Color(0.25f, 0.95f, 1.0f, 1.0f);
+                Handles.color = handleCol;
                 EditorGUI.BeginChangeCheck();
                 Vector3 newLeftWorld = Handles.Slider2D(
                     leftWorld,

@@ -15,6 +15,7 @@ namespace PuzzleGlass
         public float wallThickness = 0.10f;
         public float frontPlaneZ = -0.26f;
         public float backPlaneZ = +0.06f;
+        public bool showColliderGizmos = true;
 
         [Header("Spout Exit Gate")]
         public BoxCollider bottomSpoutStopper;
@@ -135,9 +136,13 @@ namespace PuzzleGlass
             bool isFlatBox = glassContainer.shapePreset == GlassShapePreset.SquareBox || glassContainer.shapePreset == GlassShapePreset.RectangleBox;
             float botWidth = isFlatBox ? (glassContainer.chamberWidth + 0.40f) : (glassContainer.spoutWidth + 0.20f);
 
+            float spoutCenterX = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                ? (glassContainer.symmetricMode ? 0f : glassContainer.contourPoints[0].centerX) * glassContainer.widthScale
+                : 0f;
+
             GameObject stopperObj = new GameObject("BottomSpoutStopperGate");
             stopperObj.transform.SetParent(_collidersRoot.transform, false);
-            stopperObj.transform.localPosition = new Vector3(0f, botY - 0.02f, -0.10f);
+            stopperObj.transform.localPosition = new Vector3(spoutCenterX, botY - 0.02f, -0.10f);
             bottomSpoutStopper = stopperObj.AddComponent<BoxCollider>();
             bottomSpoutStopper.size = new Vector3(botWidth, 0.10f, wallDepth);
             bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
@@ -145,7 +150,7 @@ namespace PuzzleGlass
             // 7. Spout Exit Trigger (Detects when a collecting ball clears the spout)
             GameObject triggerObj = new GameObject("SpoutExitTrigger");
             triggerObj.transform.SetParent(_collidersRoot.transform, false);
-            triggerObj.transform.localPosition = new Vector3(0f, botY - 0.08f, -0.10f);
+            triggerObj.transform.localPosition = new Vector3(spoutCenterX, botY - 0.08f, -0.10f);
             spoutExitTrigger = triggerObj.AddComponent<BoxCollider>();
             spoutExitTrigger.isTrigger = true;
             spoutExitTrigger.size = new Vector3(botWidth + 0.20f, 0.20f, wallDepth);
@@ -189,6 +194,40 @@ namespace PuzzleGlass
             {
                 bottomSpoutStopper.enabled = active;
             }
+        }
+
+        private void OnDrawGizmos()
+        {
+            if (!showColliderGizmos || _collidersRoot == null) return;
+
+            var boxColliders = _collidersRoot.GetComponentsInChildren<BoxCollider>();
+            for (int i = 0; i < boxColliders.Length; i++)
+            {
+                var box = boxColliders[i];
+                if (box == null) continue;
+
+                Gizmos.matrix = box.transform.localToWorldMatrix;
+                if (box == bottomSpoutStopper)
+                {
+                    Gizmos.color = box.enabled ? new Color(1.0f, 0.22f, 0.22f, 0.55f) : new Color(0.2f, 0.85f, 0.2f, 0.25f);
+                    Gizmos.DrawCube(box.center, box.size);
+                    Gizmos.DrawWireCube(box.center, box.size);
+                }
+                else if (box == spoutExitTrigger)
+                {
+                    Gizmos.color = new Color(1.0f, 0.85f, 0.15f, 0.30f);
+                    Gizmos.DrawCube(box.center, box.size);
+                    Gizmos.DrawWireCube(box.center, box.size);
+                }
+                else
+                {
+                    Gizmos.color = new Color(0.18f, 0.82f, 1.0f, 0.20f);
+                    Gizmos.DrawCube(box.center, box.size);
+                    Gizmos.color = new Color(0.12f, 0.65f, 1.0f, 0.70f);
+                    Gizmos.DrawWireCube(box.center, box.size);
+                }
+            }
+            Gizmos.matrix = Matrix4x4.identity;
         }
     }
 }

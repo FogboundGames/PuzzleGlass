@@ -179,6 +179,11 @@ namespace PuzzleGlass
                     targetSlot.AttachMonster(placedMonster);
                     OnMonsterPlaced?.Invoke(placedMonster, targetSlot);
 
+                    if (SandMonsterFlowBridge.Instance != null)
+                    {
+                        SandMonsterFlowBridge.Instance.NotifyMonsterPlacedInSlot(placedMonster);
+                    }
+
                     if (BallCollectionController.Instance != null)
                     {
                         BallCollectionController.Instance.OnMonsterPlacedInSlot(placedMonster);

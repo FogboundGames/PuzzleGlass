@@ -27,6 +27,9 @@ namespace PuzzleGlass
         Butterfly,
         Tulip,
         Saturn,
+        Rainbow,
+        Cat,
+        Star,
 
         // Fruits
         Strawberry,
@@ -86,13 +89,11 @@ namespace PuzzleGlass
             List<LevelMonsterEntry> monsterGoals = null,
             float customSpacing = -1f)
         {
-            if (BallObjectPool.Instance == null)
+            var pool = BallObjectPool.Instance;
+            if (pool != null)
             {
-                var poolObj = new GameObject("BallObjectPool");
-                poolObj.AddComponent<BallObjectPool>();
+                pool.ClearAllActiveBalls();
             }
-
-            BallObjectPool.Instance.ClearAllActiveBalls();
 
             float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.05f;
             float ballRadius = ballDiameter * 0.5f;
@@ -127,6 +128,15 @@ namespace PuzzleGlass
                     break;
                 case ShapePatternType.Saturn:
                     GenerateFromAscii(PixelArtLibrary.GetPreset(PixelArtPreset.Saturn), spacing, ballSpawns);
+                    break;
+                case ShapePatternType.Rainbow:
+                    GenerateFromAscii(PixelArtLibrary.GetPreset(PixelArtPreset.Rainbow), spacing, ballSpawns);
+                    break;
+                case ShapePatternType.Cat:
+                    GenerateFromAscii(PixelArtLibrary.GetPreset(PixelArtPreset.Cat), spacing, ballSpawns);
+                    break;
+                case ShapePatternType.Star:
+                    GenerateFromAscii(PixelArtLibrary.GetPreset(PixelArtPreset.Star), spacing, ballSpawns);
                     break;
 
                 case ShapePatternType.Strawberry:
@@ -163,17 +173,20 @@ namespace PuzzleGlass
 
             // Spawn real 3D physical balls from the object pool
             List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
-            for (int i = 0; i < ballSpawns.Count; i++)
+            if (pool != null)
             {
-                var entry = ballSpawns[i];
-                Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
-                var ball = BallObjectPool.Instance.SpawnBall(entry.col, worldPos, ballRadius);
-                if (ball != null && ball.rb != null)
+                for (int i = 0; i < ballSpawns.Count; i++)
                 {
-                    ball.rb.isKinematic = !Application.isPlaying;
-                    ball.rb.useGravity = Application.isPlaying;
+                    var entry = ballSpawns[i];
+                    Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
+                    var ball = pool.SpawnBall(entry.col, worldPos, ballRadius);
+                    if (ball != null && ball.rb != null)
+                    {
+                        ball.rb.isKinematic = !Application.isPlaying;
+                        ball.rb.useGravity = Application.isPlaying;
+                    }
+                    spawnedBalls.Add(ball);
                 }
-                spawnedBalls.Add(ball);
             }
 
             // In Play Mode, release to PhysX physics simulation!
@@ -189,13 +202,11 @@ namespace PuzzleGlass
         {
             if (pattern == null) return new List<BallPhysicsController>();
 
-            if (BallObjectPool.Instance == null)
+            var pool = BallObjectPool.Instance;
+            if (pool != null)
             {
-                var poolObj = new GameObject("BallObjectPool");
-                poolObj.AddComponent<BallObjectPool>();
+                pool.ClearAllActiveBalls();
             }
-
-            BallObjectPool.Instance.ClearAllActiveBalls();
 
             float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.05f;
             float ballRadius = ballDiameter * 0.5f;
@@ -204,17 +215,20 @@ namespace PuzzleGlass
             GenerateFromAscii(pattern, spacing, ballSpawns);
 
             List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
-            for (int i = 0; i < ballSpawns.Count; i++)
+            if (pool != null)
             {
-                var entry = ballSpawns[i];
-                Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
-                var ball = BallObjectPool.Instance.SpawnBall(entry.col, worldPos, ballRadius);
-                if (ball != null && ball.rb != null)
+                for (int i = 0; i < ballSpawns.Count; i++)
                 {
-                    ball.rb.isKinematic = !Application.isPlaying;
-                    ball.rb.useGravity = Application.isPlaying;
+                    var entry = ballSpawns[i];
+                    Vector3 worldPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
+                    var ball = pool.SpawnBall(entry.col, worldPos, ballRadius);
+                    if (ball != null && ball.rb != null)
+                    {
+                        ball.rb.isKinematic = !Application.isPlaying;
+                        ball.rb.useGravity = Application.isPlaying;
+                    }
+                    spawnedBalls.Add(ball);
                 }
-                spawnedBalls.Add(ball);
             }
 
             if (Application.isPlaying)

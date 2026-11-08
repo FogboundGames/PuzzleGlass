@@ -39,6 +39,7 @@ namespace PuzzleGlass
         private Tweener _idleTween;
         private Sequence _blinkSeq;
         private bool _isCompleted = false;
+        public bool IsCompleted => _isCompleted;
         private bool _isMovingToSlot = false;
         private int _subParticleCounter = 0;
         private float _lastGulpTime = -10f;
@@ -705,6 +706,11 @@ namespace PuzzleGlass
 
             // 3. Attach to slot & immediately start smooth feeding!
             slot.AttachMonster(this);
+
+            if (SandMonsterFlowBridge.Instance != null)
+            {
+                SandMonsterFlowBridge.Instance.NotifyMonsterPlacedInSlot(this);
+            }
 
             CubeDispenser dispenser = FindFirstObjectByType<CubeDispenser>();
             if (dispenser != null)

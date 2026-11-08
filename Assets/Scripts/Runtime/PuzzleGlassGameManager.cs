@@ -24,6 +24,8 @@ namespace PuzzleGlass
         public BallCollectionController collectionController;
         public BallPatternGenerator patternGenerator;
         public BallContainerManager containerPhysics;
+        public SandSimulationEngine sandEngine;
+        public SandMonsterFlowBridge flowBridge;
 
         [Header("Level System")]
         public List<PuzzleGlassLevelData> levels = new List<PuzzleGlassLevelData>();
@@ -161,6 +163,19 @@ namespace PuzzleGlass
             {
                 containerPhysics = glassContainer.GetComponent<BallContainerManager>() ?? glassContainer.gameObject.AddComponent<BallContainerManager>();
                 containerPhysics.glassContainer = glassContainer;
+
+                if (sandEngine == null)
+                {
+                    sandEngine = glassContainer.GetComponent<SandSimulationEngine>() ?? glassContainer.gameObject.AddComponent<SandSimulationEngine>();
+                    sandEngine.glassContainer = glassContainer;
+                }
+
+                if (flowBridge == null)
+                {
+                    flowBridge = glassContainer.GetComponent<SandMonsterFlowBridge>() ?? glassContainer.gameObject.AddComponent<SandMonsterFlowBridge>();
+                    flowBridge.sandEngine = sandEngine;
+                    flowBridge.glassContainer = glassContainer;
+                }
             }
         }
 
@@ -535,6 +550,33 @@ namespace PuzzleGlass
                 spawnedBalls = patternGenerator.GeneratePattern(patternType);
             }
 
+            // Phase 2 Sand Simulation Engine Initialization
+            if (sandEngine != null)
+            {
+                PixelArtPreset preset = PixelArtPreset.Frog;
+                switch (patternType)
+                {
+                    case ShapePatternType.Rainbow: preset = PixelArtPreset.Rainbow; break;
+                    case ShapePatternType.Cat: preset = PixelArtPreset.Cat; break;
+                    case ShapePatternType.Star: preset = PixelArtPreset.Star; break;
+                    case ShapePatternType.Frog: preset = PixelArtPreset.Frog; break;
+                    case ShapePatternType.Heart: preset = PixelArtPreset.Heart; break;
+                    case ShapePatternType.Mushroom: preset = PixelArtPreset.Mushroom; break;
+                    case ShapePatternType.Bee: preset = PixelArtPreset.Bee; break;
+                    case ShapePatternType.Octopus: preset = PixelArtPreset.OctopusSkull; break;
+                    case ShapePatternType.Penguin: preset = PixelArtPreset.Penguin; break;
+                    case ShapePatternType.Butterfly: preset = PixelArtPreset.Butterfly; break;
+                    case ShapePatternType.Tulip: preset = PixelArtPreset.Tulip; break;
+                    case ShapePatternType.Saturn: preset = PixelArtPreset.Saturn; break;
+                }
+                var pat = PixelArtLibrary.GetPreset(preset);
+                if (pat != null)
+                {
+                    sandEngine.InitializeFromPattern(pat);
+                    sandEngine.SetSimulationMode(SandSimulationMode.StaticImage);
+                }
+            }
+
             // Analyze spawned ball colors to configure monster quotas
             Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
             if (spawnedBalls != null)
@@ -673,6 +715,12 @@ namespace PuzzleGlass
             if (_showPatternSelector)
             {
                 GUILayout.Space(3);
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("🌈 Rainbow", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Rainbow);
+                if (GUILayout.Button("🐱 Cat", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Cat);
+                if (GUILayout.Button("⭐ Star", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Star);
+                GUILayout.EndHorizontal();
+
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("Frog", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Frog);
                 if (GUILayout.Button("Heart", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Heart);

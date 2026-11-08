@@ -88,6 +88,8 @@ namespace PuzzleGlass
         public ParticleArrangementMode particleMode = ParticleArrangementMode.OrganicPhysicsLayers;
         public ShapePatternType patternShape = ShapePatternType.Frog;
         public PixelArtPreset pixelArtPreset = PixelArtPreset.Frog;
+        public PixelArtPattern customPattern;
+        public SandSimulationMode initialSimulationMode = SandSimulationMode.StaticImage;
         public bool freezePatternInPlace = false;
         [Range(0.10f, 0.30f)]
         public float gridCellSpacing = 0.165f;

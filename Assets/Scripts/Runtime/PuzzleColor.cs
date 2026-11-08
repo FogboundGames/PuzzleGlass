@@ -161,4 +161,20 @@ namespace PuzzleGlass
             }
         }
     }
+
+    public static class PuzzleColorUtility
+    {
+        private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Material> _cachedMaterials 
+            = new System.Collections.Generic.Dictionary<PuzzleColor, Material>();
+
+        public static Material GetMaterial(PuzzleColor color)
+        {
+            if (!_cachedMaterials.TryGetValue(color, out var mat) || mat == null)
+            {
+                mat = PuzzleColorPalette.CreateCandyCubeMaterial(color);
+                _cachedMaterials[color] = mat;
+            }
+            return mat;
+        }
+    }
 }

@@ -21,7 +21,10 @@ namespace PuzzleGlass
         Saturn = 6,        // 🪐 Satürn Gezegeni ve Halkaları
         Penguin = 7,       // 🐧 Sevimli Penguen
         Butterfly = 8,     // 🦋 Mavi & Turkuaz Kelebek
-        Custom = 9         // 🎨 Kullanıcı Tanımlı Özel Piksel Sanatı
+        Rainbow = 9,       // 🌈 Renkli Gökkuşağı (Aşama 2-5 Referans)
+        Cat = 10,          // 🐱 Sevimli Mor & Beyaz Kedi (Aşama 2-5 Referans)
+        Star = 11,         // ⭐ Altın Yıldız (Aşama 2-5 Referans)
+        Custom = 12        // 🎨 Kullanıcı Tanımlı Özel Piksel Sanatı
     }
 
     [Serializable]
@@ -254,6 +257,49 @@ namespace PuzzleGlass
                         "..KK..KK..."
                     });
 
+                case PixelArtPreset.Rainbow:
+                    // 🌈 11x7: Gökkuşağı (Kırmızı, Turuncu, Sarı, Yeşil, Mavi)
+                    return new PixelArtPattern("Rainbow", 11, 7, new string[]
+                    {
+                        "..RRRRRRR..",
+                        ".ROOOOOOOR.",
+                        "ROOYYYYYOOR",
+                        "ROYGGGGGYOR",
+                        "ROYGBBBGYOR",
+                        "ROYG...GYOR",
+                        "RO.......OR"
+                    });
+
+                case PixelArtPreset.Cat:
+                    // 🐱 11x9: Mor & Beyaz Kedi (Mor kulaklar, beyaz yüz, siyah gözler, pembe yanaklar)
+                    return new PixelArtPattern("Cat", 11, 9, new string[]
+                    {
+                        "V.........V",
+                        "VV.......VV",
+                        "VVV.VVV.VVV",
+                        "VVWWWWWWWVV",
+                        "VWWKWWWKWWV",
+                        "VPWWWPWWPWV",
+                        "VWWWWWWWWWV",
+                        ".VWWWWWWWV.",
+                        "..VVVVVVV.."
+                    });
+
+                case PixelArtPreset.Star:
+                    // ⭐ 11x9: Altın Yıldız (Sarı ve turuncu tonlu)
+                    return new PixelArtPattern("Star", 11, 9, new string[]
+                    {
+                        ".....Y.....",
+                        "....YYY....",
+                        "...YYYYY...",
+                        "YYYYYYYYYYY",
+                        ".YYYYYYYYY.",
+                        "..YYYYYYY..",
+                        ".YYYY.YYYY.",
+                        "YYY.....YYY",
+                        "YY.......YY"
+                    });
+
                 default:
                     return GetPreset(PixelArtPreset.Frog);
             }
@@ -270,6 +316,9 @@ namespace PuzzleGlass
             "🪐 Satürn Gezegeni (Görsel 2)",
             "🐧 Sevimli Penguen (Görsel 2)",
             "🦋 Mavi Kelebek (Görsel 2)",
+            "🌈 Renkli Gökkuşağı (Aşama 2-5)",
+            "🐱 Sevimli Mor Kedi (Aşama 2-5)",
+            "⭐ Parlak Yıldız (Aşama 2-5)",
             "🎨 Özel Piksel Sanatı (Custom)"
         };
     }
