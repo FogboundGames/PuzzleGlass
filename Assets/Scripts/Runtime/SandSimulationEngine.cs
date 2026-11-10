@@ -237,6 +237,7 @@ namespace PuzzleGlass
             SetSpoutGate(!isGateOpen);
         }
 
+        public void ClearSand() => ClearAll();
         public void ClearAll()
         {
             _particles.Clear();

@@ -7,6 +7,7 @@ namespace PuzzleGlass
 {
     public enum PatternCategory
     {
+        ReferenceLayouts,
         AnimalSilhouette,
         HeartsAndStars,
         Fruits,
@@ -17,40 +18,47 @@ namespace PuzzleGlass
 
     public enum ShapePatternType
     {
-        // Animals (from notebook Image 2)
-        Frog,
-        Heart,
-        Mushroom,
-        Bee,
-        Octopus,
-        Penguin,
-        Butterfly,
-        Tulip,
-        Saturn,
-        Rainbow,
-        Cat,
-        Star,
+        // Reference 1: 4 Quadrants (Image 1 Ref: Blue top-left, Red top-right, Yellow bottom-left, Green bottom-right)
+        FourQuadrants = 0,
+
+        // Reference 2: Gumball Physics Mix (Image 2 Ref: Colorful candy balls settling under gravity)
+        GumballMix = 1,
+
+        // Animals & Silhouettes
+        Frog = 2,
+        Heart = 3,
+        Mushroom = 4,
+        Bee = 5,
+        Octopus = 6,
+        Penguin = 7,
+        Butterfly = 8,
+        Tulip = 9,
+        Saturn = 10,
+        Rainbow = 11,
+        Cat = 12,
+        Star = 13,
 
         // Fruits
-        Strawberry,
-        Cherry,
-        OrangeFruit,
+        Strawberry = 14,
+        Cherry = 15,
+        OrangeFruit = 16,
 
         // Geometric
-        Diamond,
-        Pyramid,
-        SquareGrid,
-        HexagonRing,
+        Diamond = 17,
+        Pyramid = 18,
+        SquareGrid = 19,
+        HexagonRing = 20,
 
         // Layers
-        HorizontalBands,
-        VFunnelBands,
-        DiagonalBands,
+        HorizontalBands = 21,
+        VFunnelBands = 22,
+        DiagonalBands = 23,
 
         // Random
-        RandomMosaic
+        RandomMosaic = 24
     }
 
+    [ExecuteAlways]
     public class BallPatternGenerator : MonoBehaviour
     {
         public static BallPatternGenerator Instance { get; private set; }
@@ -58,23 +66,28 @@ namespace PuzzleGlass
         public ShapedGlassContainer glassContainer;
 
         [Header("Spawn Settings")]
-        [Range(0.08f, 0.22f)]
-        public float ballDiameter = 0.165f;
+        [Range(0.08f, 0.35f)]
+        public float ballDiameter = 0.165f; // Small tactile candy spheres matching Image 2
         public float patternVerticalOffset = 0.0f;
-        public float initialShapeHoldTime = 0.45f; // Brief moment to admire shape before fully releasing
+        [Tooltip("İlk desen şeklinin serbest düşmeden önce kısaca hayranlıkla izlenmesi için kinematic bekleme süresi (0 = hemen düşer)")]
+        public float initialShapeHoldTime = 0.0f; // 0 = Immediately dynamic, obeying physics from frame 0!
+
+        private Coroutine _releaseHoldCoroutine;
 
         private void Awake()
         {
             Instance = this;
-            if (glassContainer == null)
-            {
-                glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
-            }
+            EnsureReferences();
         }
 
         private void OnEnable()
         {
             Instance = this;
+            EnsureReferences();
+        }
+
+        private void EnsureReferences()
+        {
             if (glassContainer == null)
             {
                 glassContainer = GetComponent<ShapedGlassContainer>().OrNull() ?? FindFirstObjectByType<ShapedGlassContainer>();
@@ -82,15 +95,39 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Builds any shape pattern as a pixel grid for the sand visual.
+        /// Generates and spawns 3D physical balls in the container matching the requested pattern!
+        /// Balls obey real 3D Newtonian physics with Rigidbody, SphereCollider, gravity, and collisions!
         /// </summary>
-        public PixelArtPattern BuildSandPattern(ShapePatternType patternType, List<LevelMonsterEntry> monsterGoals = null)
+        public List<BallPhysicsController> GeneratePattern(
+            ShapePatternType patternType,
+            List<LevelMonsterEntry> monsterGoals = null,
+            float customSpacing = -1f)
         {
-            float spacing = ballDiameter * 1.05f;
+            EnsureReferences();
+
+            if (BallObjectPool.Instance == null)
+            {
+                var poolObj = GameObject.Find("BallObjectPool");
+                if (poolObj == null) poolObj = new GameObject("BallObjectPool");
+                poolObj.AddComponent<BallObjectPool>();
+            }
+
+            BallObjectPool.Instance.ClearAllActiveBalls();
+
+            float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.04f;
+            float ballRadius = ballDiameter * 0.5f;
+
             List<(Vector2 pos, PuzzleColor col)> ballSpawns = new List<(Vector2, PuzzleColor)>();
 
             switch (patternType)
             {
+                case ShapePatternType.FourQuadrants:
+                    GenerateFourQuadrants(spacing, monsterGoals, ballSpawns);
+                    break;
+                case ShapePatternType.GumballMix:
+                    GenerateGumballMix(spacing, monsterGoals, ballSpawns);
+                    break;
+
                 case ShapePatternType.Frog:
                     GenerateFromAscii(PixelArtLibrary.GetPreset(PixelArtPreset.Frog), spacing, ballSpawns);
                     break;
@@ -162,42 +199,259 @@ namespace PuzzleGlass
 
             if (ballSpawns.Count == 0)
             {
-                return PixelArtLibrary.GetPreset(PixelArtPreset.Frog);
+                GenerateFourQuadrants(spacing, monsterGoals, ballSpawns);
             }
 
-            // Snap the generated layout onto a pixel grid
-            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
-            for (int i = 0; i < ballSpawns.Count; i++)
-            {
-                minX = Mathf.Min(minX, ballSpawns[i].pos.x);
-                minY = Mathf.Min(minY, ballSpawns[i].pos.y);
-                maxX = Mathf.Max(maxX, ballSpawns[i].pos.x);
-                maxY = Mathf.Max(maxY, ballSpawns[i].pos.y);
-            }
-
-            int cols = Mathf.RoundToInt((maxX - minX) / spacing) + 1;
-            int rows = Mathf.RoundToInt((maxY - minY) / spacing) + 1;
-            PuzzleColor?[,] grid = new PuzzleColor?[cols, rows];
+            List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
 
             for (int i = 0; i < ballSpawns.Count; i++)
             {
-                int x = Mathf.RoundToInt((ballSpawns[i].pos.x - minX) / spacing);
-                int y = Mathf.RoundToInt((ballSpawns[i].pos.y - minY) / spacing);
-                grid[x, y] = ballSpawns[i].col;
+                var entry = ballSpawns[i];
+                Vector3 localPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
+                Vector3 worldPos = (glassContainer != null)
+                    ? glassContainer.transform.TransformPoint(localPos)
+                    : localPos;
+
+                var ball = BallObjectPool.Instance.SpawnBall(entry.col, worldPos, ballRadius);
+                if (ball != null)
+                {
+                    if (initialShapeHoldTime > 0.05f || !Application.isPlaying)
+                    {
+                        ball.MakeKinematic();
+                    }
+                    else
+                    {
+                        ball.ReleaseToPhysics();
+                    }
+                    spawnedBalls.Add(ball);
+                }
             }
 
-            return PixelArtPattern.FromColorGrid(patternType.ToString(), grid);
+            if (initialShapeHoldTime > 0.05f && Application.isPlaying)
+            {
+                if (_releaseHoldCoroutine != null) StopCoroutine(_releaseHoldCoroutine);
+                _releaseHoldCoroutine = StartCoroutine(ReleaseBallsHoldRoutine(initialShapeHoldTime, spawnedBalls));
+            }
+
+            return spawnedBalls;
         }
 
-        private void GenerateFromAscii(PixelArtPattern pattern, float spacing, List<(Vector2, PuzzleColor)> list)
+        private IEnumerator ReleaseBallsHoldRoutine(float delay, List<BallPhysicsController> balls)
         {
+            yield return new WaitForSeconds(delay);
+
+            for (int i = 0; i < balls.Count; i++)
+            {
+                if (balls[i] != null)
+                {
+                    balls[i].ReleaseToPhysics();
+                }
+            }
+            _releaseHoldCoroutine = null;
+        }
+
+        /// <summary>
+        /// Generates the 4-Quadrant layout:
+        /// Top-Left: Blue, Top-Right: Red, Bottom-Left: Yellow, Bottom-Right: Green.
+        /// Packed in a dense, continuous, bottom-resting honeycomb pile with zero center gap and zero floating!
+        /// </summary>
+        private void GenerateFourQuadrants(float spacing, List<LevelMonsterEntry> goals, List<(Vector2, PuzzleColor)> list)
+        {
+            PuzzleColor cTopLeft = PuzzleColor.Blue;
+            PuzzleColor cTopRight = PuzzleColor.Red;
+            PuzzleColor cBottomLeft = PuzzleColor.Yellow;
+            PuzzleColor cBottomRight = PuzzleColor.Green;
+
+            if (goals != null && goals.Count >= 4)
+            {
+                cBottomLeft = goals[0].color;
+                cBottomRight = goals[1].color;
+                cTopLeft = goals[2].color;
+                cTopRight = goals[3].color;
+            }
+
+            float colSpacing = spacing;
+            float rowSpacing = colSpacing * 0.866025f;
+            float ballR = colSpacing * 0.5f;
+
+            float throatY = (glassContainer != null) ? glassContainer.GetSpoutThroatY() : -0.70f;
+            float startY = throatY + ballR * 1.08f + patternVerticalOffset;
+            int totalRows = 8;
+            int splitRow = totalRows / 2; // Rows 0-3 bottom, 4-7 top
+
+            for (int r = 0; r < totalRows; r++)
+            {
+                float y = startY + r * rowSpacing;
+
+                float minX, maxX;
+                if (glassContainer != null)
+                {
+                    glassContainer.GetSafeCubeBoundsAtY(y, out minX, out maxX);
+                }
+                else
+                {
+                    minX = -0.98f;
+                    maxX = 0.98f;
+                }
+
+                if (maxX - minX < colSpacing * 0.6f) continue;
+
+                float centerX = (minX + maxX) * 0.5f;
+                float stagger = (r % 2 == 1) ? (colSpacing * 0.5f) : 0f;
+
+                List<float> rowX = new List<float>();
+                for (int c = -14; c <= 14; c++)
+                {
+                    float x = centerX + c * colSpacing + stagger;
+                    if (x >= minX && x <= maxX)
+                    {
+                        rowX.Add(x);
+                    }
+                }
+
+                for (int i = 0; i < rowX.Count; i++)
+                {
+                    float x = rowX[i];
+                    PuzzleColor col;
+                    if (r < splitRow)
+                    {
+                        col = (x < centerX) ? cBottomLeft : cBottomRight;
+                    }
+                    else
+                    {
+                        col = (x < centerX) ? cTopLeft : cTopRight;
+                    }
+                    list.Add((new Vector2(x, y), col));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Generates the Gumball Physics Mix from Reference Image 2:
+        /// ~80-90 vibrant candy balls densely resting in hexagonal close packing at the bottom of the flask!
+        /// Resting naturally on the floor and walls under physics, with zero floating in mid-air and zero central gap.
+        /// </summary>
+        private void GenerateGumballMix(float spacing, List<LevelMonsterEntry> goals, List<(Vector2, PuzzleColor)> list)
+        {
+            float colSpacing = spacing;
+            float rowSpacing = colSpacing * 0.866025f; // sqrt(3)/2 for honeycomb packing
+            float ballR = colSpacing * 0.5f;
+
+            // Start row 0 right above the bottom stopper gate at the throat
+            float throatY = (glassContainer != null) ? glassContainer.GetSpoutThroatY() : -0.70f;
+            float startY = throatY + ballR * 1.08f + patternVerticalOffset;
+
+            int targetBallCount = 84;
+            List<PuzzleColor> colorPool = new List<PuzzleColor>();
+
+            if (goals != null && goals.Count > 0)
+            {
+                int totalGoalCount = 0;
+                for (int i = 0; i < goals.Count; i++) totalGoalCount += goals[i].count;
+
+                for (int i = 0; i < goals.Count; i++)
+                {
+                    int countForThis = Mathf.Max(4, Mathf.RoundToInt((float)goals[i].count / Mathf.Max(1, totalGoalCount) * targetBallCount));
+                    for (int k = 0; k < countForThis; k++)
+                    {
+                        colorPool.Add(goals[i].color);
+                    }
+                }
+            }
+
+            if (colorPool.Count == 0)
+            {
+                // 4 balanced candy colors matching the 4 slots and staging monsters
+                PuzzleColor[] palette = new PuzzleColor[]
+                {
+                    PuzzleColor.Blue,
+                    PuzzleColor.Yellow,
+                    PuzzleColor.Red,
+                    PuzzleColor.Green
+                };
+
+                int perColor = targetBallCount / palette.Length;
+                for (int p = 0; p < palette.Length; p++)
+                {
+                    for (int k = 0; k < perColor; k++)
+                    {
+                        colorPool.Add(palette[p]);
+                    }
+                }
+            }
+
+            // Pseudo-random shuffle of color pool for authentic mixed gumball appearance
+            for (int i = 0; i < colorPool.Count; i++)
+            {
+                int swapIdx = UnityEngine.Random.Range(i, colorPool.Count);
+                PuzzleColor tmp = colorPool[i];
+                colorPool[i] = colorPool[swapIdx];
+                colorPool[swapIdx] = tmp;
+            }
+
+            int colorIdx = 0;
+            int maxRows = 9;
+
+            for (int r = 0; r < maxRows; r++)
+            {
+                float y = startY + r * rowSpacing;
+
+                float minX, maxX;
+                if (glassContainer != null)
+                {
+                    glassContainer.GetSafeCubeBoundsAtY(y, out minX, out maxX);
+                }
+                else
+                {
+                    minX = -0.98f;
+                    maxX = 0.98f;
+                }
+
+                float safeSpan = maxX - minX;
+                if (safeSpan < colSpacing * 0.6f) continue;
+
+                float centerX = (minX + maxX) * 0.5f;
+                float stagger = (r % 2 == 1) ? (colSpacing * 0.5f) : 0f;
+
+                List<float> rowX = new List<float>();
+                for (int c = -14; c <= 14; c++)
+                {
+                    float x = centerX + c * colSpacing + stagger;
+                    if (x >= minX && x <= maxX)
+                    {
+                        rowX.Add(x);
+                    }
+                }
+
+                if (rowX.Count == 0) continue;
+
+                // Top row (r >= 7): slight natural settled crest profile
+                if (r >= 7)
+                {
+                    float crestRadius = 0.68f;
+                    rowX.RemoveAll(x => Mathf.Abs(x - centerX) > crestRadius);
+                }
+
+                for (int i = 0; i < rowX.Count; i++)
+                {
+                    PuzzleColor col = colorPool[colorIdx % colorPool.Count];
+                    colorIdx++;
+                    list.Add((new Vector2(rowX[i], y), col));
+                }
+
+                if (list.Count >= 86) break;
+            }
+        }
+
+        public void GenerateFromAscii(PixelArtPattern pattern, float spacing, List<(Vector2, PuzzleColor)> list)
+        {
+            if (pattern == null) return;
+
             var grid = pattern.GetColorGrid();
             int cols = pattern.width;
             int rows = pattern.height;
 
             float w = (cols - 1) * spacing;
-            float h = (rows - 1) * spacing;
-
             float centerOffset = (glassContainer != null && glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
                 ? glassContainer.contourPoints[0].centerX * glassContainer.widthScale : 0f;
             float startX = centerOffset - w * 0.5f;
@@ -220,7 +474,6 @@ namespace PuzzleGlass
 
         private void GenerateStrawberry(float spacing, List<(Vector2, PuzzleColor)> list)
         {
-            // Cute strawberry with green leafy top and red seeded body
             string[] ascii = new string[]
             {
                 "...GG.GG...",
@@ -238,7 +491,6 @@ namespace PuzzleGlass
 
         private void GenerateCherry(float spacing, List<(Vector2, PuzzleColor)> list)
         {
-            // Two ripe cherries connected by green stem
             string[] ascii = new string[]
             {
                 "....GG....",
@@ -254,7 +506,6 @@ namespace PuzzleGlass
 
         private void GenerateOrange(float spacing, List<(Vector2, PuzzleColor)> list)
         {
-            // Juicy orange fruit with green leaf
             string[] ascii = new string[]
             {
                 "....G.....",
@@ -358,15 +609,15 @@ namespace PuzzleGlass
             {
                 for (int i = 0; i < goals.Count; i++) totalBalls += goals[i].count;
             }
-            if (totalBalls <= 0) totalBalls = 35;
+            if (totalBalls <= 0) totalBalls = 40;
 
             PuzzleColor[] colors = GetGoalColors(goals);
 
             int cols = 8;
             int rows = Mathf.CeilToInt((float)totalBalls / cols);
-            float chamberCenterY = GetChamberCenterY();
+            float chamberFloorY = (glassContainer != null) ? glassContainer.GetChamberFloorY() : -0.46f;
+            float startY = chamberFloorY + spacing * 0.55f + patternVerticalOffset;
             float startX = -(cols - 1) * spacing * 0.5f;
-            float startY = chamberCenterY - (rows - 1) * spacing * 0.5f;
 
             int spawned = 0;
             for (int r = 0; r < rows && spawned < totalBalls; r++)
@@ -416,4 +667,3 @@ namespace PuzzleGlass
         }
     }
 }
-

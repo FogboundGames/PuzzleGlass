@@ -29,13 +29,13 @@ namespace PuzzleGlass
         }
 
         [Header("Pool Settings")]
-        public int initialPoolSize = 120;
-        public float defaultBallRadius = 0.082f;
+        public int initialPoolSize = 140;
+        public float defaultBallRadius = 0.0825f;
 
         [Header("Physics Material Settings")]
-        public float bounciness = 0.22f;
-        public float dynamicFriction = 0.24f;
-        public float staticFriction = 0.32f;
+        public float bounciness = 0.18f;
+        public float dynamicFriction = 0.20f;
+        public float staticFriction = 0.30f;
 
         private readonly Queue<BallPhysicsController> _availableBalls = new Queue<BallPhysicsController>();
         private readonly List<BallPhysicsController> _activeBalls = new List<BallPhysicsController>();
@@ -54,7 +54,6 @@ namespace PuzzleGlass
 
         private void OnEnable()
         {
-            // Domain reload calls OnEnable without Awake and clears the non-serialized pool state
             if (ClaimSingleton()) InitializePool();
         }
 
@@ -67,7 +66,6 @@ namespace PuzzleGlass
             return false;
         }
 
-        // Immediate destruction is unsafe while the hierarchy is still being activated
         private static void DestroyDeferred(GameObject target)
         {
             if (Application.isPlaying)
@@ -153,7 +151,7 @@ namespace PuzzleGlass
 
             if (_sharedSphereMesh == null)
             {
-                // Create a clean primitive sphere mesh once to share across all 100+ balls
+                // Create a clean primitive sphere mesh once to share across all balls
                 GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 var mf = temp.GetComponent<MeshFilter>();
                 if (mf != null && mf.sharedMesh != null)
@@ -188,13 +186,13 @@ namespace PuzzleGlass
             mr.receiveShadows = false;
 
             var sc = obj.AddComponent<SphereCollider>();
-            sc.radius = defaultBallRadius;
+            sc.radius = 0.5f; // PrimitiveType.Sphere mesh has radius 0.5
             sc.sharedMaterial = _sharedPhysMaterial;
 
             var rb = obj.AddComponent<Rigidbody>();
-            rb.mass = 0.20f;
-            rb.linearDamping = 0.40f;
-            rb.angularDamping = 0.80f;
+            rb.mass = 0.25f;
+            rb.linearDamping = 0.35f;
+            rb.angularDamping = 0.70f;
             rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.constraints = RigidbodyConstraints.FreezePositionZ;
@@ -228,7 +226,7 @@ namespace PuzzleGlass
 
             ball.transform.SetParent(_poolContainer.transform, false);
             ball.transform.position = position;
-            ball.transform.rotation = Quaternion.identity;
+            ball.transform.rotation = UnityEngine.Random.rotation;
             ball.gameObject.SetActive(true);
 
             Material mat = _candyMaterials.ContainsKey(color) ? _candyMaterials[color] : null;
@@ -255,7 +253,6 @@ namespace PuzzleGlass
         {
             if (_poolContainer == null) InitializePool();
 
-            // Scene-wide search so balls saved under old pools or lost after a reload are cleared too
             foreach (var ball in FindObjectsByType<BallPhysicsController>(FindObjectsSortMode.None))
             {
                 ball.RecycleSelf();
@@ -270,4 +267,3 @@ namespace PuzzleGlass
         }
     }
 }
-

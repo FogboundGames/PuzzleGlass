@@ -11,10 +11,10 @@ namespace PuzzleGlass
         public ShapedGlassContainer glassContainer;
 
         [Header("Physical Wall Settings")]
-        public float wallDepth = 0.55f;
-        public float wallThickness = 0.10f;
-        public float frontPlaneZ = -0.26f;
-        public float backPlaneZ = +0.06f;
+        public float wallDepth = 0.65f;
+        public float wallThickness = 0.12f;
+        public float frontPlaneZ = -0.35f;
+        public float backPlaneZ = +0.15f;
         public bool showColliderGizmos = true;
 
         [Header("Spout Exit Gate")]
@@ -48,9 +48,9 @@ namespace PuzzleGlass
             {
                 _glassPhysMaterial = new PhysicsMaterial("Mat_GlassContainerWall")
                 {
-                    bounciness = 0.20f,
-                    dynamicFriction = 0.15f,
-                    staticFriction = 0.25f,
+                    bounciness = 0.15f,
+                    dynamicFriction = 0.12f,
+                    staticFriction = 0.20f,
                     bounceCombine = PhysicsMaterialCombine.Minimum,
                     frictionCombine = PhysicsMaterialCombine.Average
                 };
@@ -128,13 +128,10 @@ namespace PuzzleGlass
             topCol.size = new Vector3(glassContainer.neckWidth + 0.40f, 0.15f, wallDepth);
             topCol.sharedMaterial = _glassPhysMaterial;
 
-            // 6. Bottom Spout Stopper Gate (Holds balls inside spout until collection)
-            float botY = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
-                ? glassContainer.contourPoints[0].y * glassContainer.heightScale
-                : glassContainer.spoutBottomY;
-
+            // 6. Bottom Spout Stopper Gate (Holds balls inside funnel/chamber until collection)
             bool isFlatBox = glassContainer.shapePreset == GlassShapePreset.SquareBox || glassContainer.shapePreset == GlassShapePreset.RectangleBox;
-            float botWidth = isFlatBox ? (glassContainer.chamberWidth + 0.40f) : (glassContainer.spoutWidth + 0.20f);
+            float throatY = isFlatBox ? (glassContainer.contourPoints[0].y * glassContainer.heightScale) : glassContainer.GetSpoutThroatY();
+            float stopperW = isFlatBox ? (glassContainer.chamberWidth + 0.40f) : (glassContainer.spoutWidth + 0.18f);
 
             float spoutCenterX = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
                 ? (glassContainer.symmetricMode ? 0f : glassContainer.contourPoints[0].centerX) * glassContainer.widthScale
@@ -142,18 +139,22 @@ namespace PuzzleGlass
 
             GameObject stopperObj = new GameObject("BottomSpoutStopperGate");
             stopperObj.transform.SetParent(_collidersRoot.transform, false);
-            stopperObj.transform.localPosition = new Vector3(spoutCenterX, botY - 0.02f, -0.10f);
+            stopperObj.transform.localPosition = new Vector3(spoutCenterX, throatY - 0.02f, -0.10f);
             bottomSpoutStopper = stopperObj.AddComponent<BoxCollider>();
-            bottomSpoutStopper.size = new Vector3(botWidth, 0.10f, wallDepth);
+            bottomSpoutStopper.size = new Vector3(stopperW, 0.08f, wallDepth);
             bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
 
-            // 7. Spout Exit Trigger (Detects when a collecting ball clears the spout)
+            // 7. Spout Exit Trigger (Detects when a collecting ball clears the spout tip)
+            float botY = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                ? glassContainer.contourPoints[0].y * glassContainer.heightScale
+                : glassContainer.spoutBottomY;
+
             GameObject triggerObj = new GameObject("SpoutExitTrigger");
             triggerObj.transform.SetParent(_collidersRoot.transform, false);
-            triggerObj.transform.localPosition = new Vector3(spoutCenterX, botY - 0.08f, -0.10f);
+            triggerObj.transform.localPosition = new Vector3(spoutCenterX, botY - 0.04f, -0.10f);
             spoutExitTrigger = triggerObj.AddComponent<BoxCollider>();
             spoutExitTrigger.isTrigger = true;
-            spoutExitTrigger.size = new Vector3(botWidth + 0.20f, 0.20f, wallDepth);
+            spoutExitTrigger.size = new Vector3(stopperW + 0.20f, 0.16f, wallDepth);
         }
 
         private void BuildWallSegmentColliders(Vector3[] path, bool isLeft)
@@ -182,8 +183,8 @@ namespace PuzzleGlass
                 segObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
 
                 var box = segObj.AddComponent<BoxCollider>();
-                // Slight overlap (+0.025f) between segments ensures zero gaps or edge snagging
-                box.size = new Vector3(segLen + 0.025f, wallThickness, wallDepth);
+                // Slight overlap (+0.035f) between segments ensures zero gaps or edge snagging
+                box.size = new Vector3(segLen + 0.035f, wallThickness, wallDepth);
                 box.sharedMaterial = _glassPhysMaterial;
             }
         }
@@ -231,4 +232,3 @@ namespace PuzzleGlass
         }
     }
 }
-

@@ -79,7 +79,7 @@ namespace PuzzleGlass
     public class ShapedGlassContainer : MonoBehaviour
     {
         [Header("Shape Preset & Symmetry")]
-        public GlassShapePreset shapePreset = GlassShapePreset.DiamondCarafe;
+        public GlassShapePreset shapePreset = GlassShapePreset.SquareFlask;
         public bool symmetricMode = true;
         [Range(4, 24)]
         public int curveSubdivisions = 14;
@@ -118,7 +118,7 @@ namespace PuzzleGlass
         [Header("Particle Fill & Granular Physics")]
         public BottleLayerPattern layerPattern = BottleLayerPattern.VFunnelBands;
         [Range(0.08f, 0.22f)]
-        public float particleSize = 0.155f;
+        public float particleSize = 0.165f;
         [Range(0.15f, 0.85f)]
         public float particleFillRatio = 0.48f;
         [Range(0, 20)]
@@ -127,7 +127,7 @@ namespace PuzzleGlass
         public int particlesPerMonsterCount = 1;
 
         [Header("Pixel Art Visual System (Image 2)")]
-        public ParticleArrangementMode particleMode = ParticleArrangementMode.PixelArtVisual;
+        public ParticleArrangementMode particleMode = ParticleArrangementMode.PhysicsBalls;
         public PixelArtPreset pixelArtPreset = PixelArtPreset.Frog;
         public bool freezePatternInPlace = true;
         [Range(0.10f, 0.30f)]
@@ -414,7 +414,7 @@ namespace PuzzleGlass
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            if (particleSize < 0.12f) particleSize = 0.155f;
+            if (particleSize < 0.08f) particleSize = 0.27f;
             EnsureContourInitialized();
 
             UnityEditor.EditorApplication.delayCall += () =>
@@ -1776,18 +1776,71 @@ namespace PuzzleGlass
         /// </summary>
         public void PopulateBottlePhysics()
         {
-            if (_bottleCubes == null) _bottleCubes = new List<BottleCube>();
-            for (int i = 0; i < _bottleCubes.Count; i++)
-            {
-                if (_bottleCubes[i]?.gameObject != null)
-                {
-                    if (Application.isPlaying) Destroy(_bottleCubes[i].gameObject);
-                    else DestroyImmediate(_bottleCubes[i].gameObject);
-                }
-            }
-            _bottleCubes.Clear();
+            CleanOrphanedChildren();
 
-            PopulateSandVisual();
+            // Disable sand simulation if present to prevent conflicts
+            var sand = GetComponent<SandSimulationEngine>();
+            if (sand != null)
+            {
+                sand.ClearAll();
+                sand.enabled = false;
+            }
+            var bridge = GetComponent<SandMonsterFlowBridge>();
+            if (bridge != null) bridge.enabled = false;
+
+            // 1. Rebuild Airtight Physics Colliders for this container
+            var bcm = GetComponent<BallContainerManager>().OrNull() ?? gameObject.AddComponent<BallContainerManager>();
+            bcm.glassContainer = this;
+            bcm.wallDepth = Mathf.Max(0.65f, particleSize * 2f + 0.20f);
+            bcm.frontPlaneZ = -0.10f - (particleSize * 0.5f + 0.12f);
+            bcm.backPlaneZ = -0.10f + (particleSize * 0.5f + 0.12f);
+            bcm.RebuildColliders();
+
+            // 2. Clear old physical balls
+            if (BallObjectPool.Instance != null)
+            {
+                BallObjectPool.Instance.ClearAllActiveBalls();
+            }
+
+            // 3. Spawn real 3D physical balls via BallPatternGenerator
+            var gen = BallPatternGenerator.Instance.OrNull() ?? FindFirstObjectByType<BallPatternGenerator>();
+            if (gen == null)
+            {
+                var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gm != null) gen = gm.GetComponent<BallPatternGenerator>().OrNull() ?? gm.gameObject.AddComponent<BallPatternGenerator>();
+                else gen = gameObject.AddComponent<BallPatternGenerator>();
+            }
+
+            gen.glassContainer = this;
+            gen.ballDiameter = (particleSize > 0.05f && particleSize <= 0.22f) ? particleSize : 0.165f;
+            gen.patternVerticalOffset = patternVerticalOffset;
+            gen.initialShapeHoldTime = 0f;
+
+            var gameMgr = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+            ShapePatternType shape = (gameMgr != null) ? gameMgr.activePatternType : ShapePatternType.FourQuadrants;
+
+            List<LevelMonsterEntry> goals = null;
+            if (gameMgr != null && gameMgr.currentLevel != null && gameMgr.currentLevel.monsters != null)
+            {
+                goals = gameMgr.currentLevel.monsters;
+            }
+
+            var balls = gen.GeneratePattern(shape, goals);
+
+            // 4. Synchronize cute monsters at the bottom staging tray to match balls!
+            if (gameMgr != null)
+            {
+                gameMgr.SynchronizeMonstersFromSpawnedBalls(balls);
+            }
+        }
+
+        public float GetSpoutThroatY()
+        {
+            if (contourPoints != null && contourPoints.Count >= 3)
+            {
+                return contourPoints[1].y * heightScale + 0.04f;
+            }
+            return spoutBottomY + 0.45f;
         }
 
         public float GetChamberFloorY()

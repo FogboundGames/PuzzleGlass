@@ -11,22 +11,30 @@ namespace PuzzleGlass
 
         [Header("Attraction Physics Settings")]
         [Tooltip("Force pulling matching balls down towards the spout exit.")]
-        public float attractionPullForce = 28f;
+        public float attractionPullForce = 16f;
 
         [Tooltip("Maximum velocity for balls while navigating towards exit.")]
-        public float maxBallSpeed = 4.2f;
+        public float maxBallSpeed = 2.4f;
 
-        [Tooltip("Interval between initiating collection of successive balls for a monster.")]
-        public float collectionInterval = 0.14f;
+        [Tooltip("Interval between initiating collection of successive balls from the spout.")]
+        [Range(0.18f, 0.60f)]
+        public float collectionInterval = 0.32f;
 
-        [Tooltip("Maximum balls currently traveling in spout/air per monster.")]
-        public int maxBallsInTransitPerMonster = 3;
+        [Tooltip("Maximum balls simultaneously traveling through the spout neck.")]
+        public int maxBallsInSpout = 1;
+
+        [Tooltip("Maximum balls currently traveling in air per monster.")]
+        public int maxBallsInTransitPerMonster = 2;
 
         [Tooltip("Vertical tolerance around spout bottom to trigger mouth launch.")]
-        public float exitTriggerYOffset = 0.08f;
+        public float exitTriggerYOffset = 0.14f;
+
+        [Tooltip("Vertical tolerance for balls considered part of the bottom layer in container.")]
+        public float bottomLayerTolerance = 0.07f;
 
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
+        private float _lastGlobalCollectionTime = -10f;
 
         private class ActiveMonsterStream
         {
@@ -53,7 +61,12 @@ namespace PuzzleGlass
 
         private void Update()
         {
-            if (SandSimulationEngine.Instance != null) return; // Canavarları artık kum besliyor
+            // If SandSimulation is actively running with sand grains (and no physical balls), yield to sand engine
+            if (SandSimulationEngine.Instance != null && SandSimulationEngine.Instance.enabled && SandSimulationEngine.Instance.sandAmount > 0)
+            {
+                if (BallObjectPool.Instance == null || BallObjectPool.Instance.ActiveBalls.Count == 0)
+                    return;
+            }
 
             PollSlottedMonsters();
         }
@@ -82,7 +95,8 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Checks all slotted monsters in the SlotSystem and triggers ball attraction.
+        /// Checks slotted monsters and attracts ONLY the bottom-most matching ball.
+        /// Upper balls cannot be pulled through other balls.
         /// </summary>
         private void PollSlottedMonsters()
         {
@@ -126,14 +140,12 @@ namespace PuzzleGlass
                 }
             }
 
-            // Process each active monster stream
-            float now = Time.time;
+            if (_activeStreams.Count == 0) return;
+
+            // Clean up finished balls in transit for all streams
             foreach (var kvp in _activeStreams)
             {
                 var stream = kvp.Value;
-                var monster = stream.monster;
-
-                // Clean up finished balls in transit
                 for (int b = stream.inTransitBalls.Count - 1; b >= 0; b--)
                 {
                     var ball = stream.inTransitBalls[b];
@@ -142,57 +154,129 @@ namespace PuzzleGlass
                         stream.inTransitBalls.RemoveAt(b);
                     }
                 }
+            }
 
-                if (stream.inTransitBalls.Count >= maxBallsInTransitPerMonster) continue;
-                if (now - stream.lastCollectionTime < collectionInterval) continue;
+            // Pacing & congestion limit: ensure smooth, readable flow without overcrowding the spout
+            float now = Time.time;
+            if (now - _lastGlobalCollectionTime < collectionInterval) return;
+            if (_attractingBalls.Count >= maxBallsInSpout) return;
 
-                // How many more balls does the monster need including balls already in flight?
-                int needed = monster.remainingCount - stream.inTransitBalls.Count;
-                if (needed <= 0) continue;
-
-                // Find best candidate ball in container
-                BallPhysicsController bestBall = FindNextMatchingBall(monster.colorType);
-                if (bestBall != null)
-                {
-                    StartBallAttraction(bestBall, monster, stream);
-                    stream.lastCollectionTime = now;
-                }
+            // Find strictly the bottom-most matching ball (upper layer balls are blocked)
+            BallPhysicsController bestBall = FindNextCollectableBall(out ActiveMonsterStream targetStream);
+            if (bestBall != null && targetStream != null)
+            {
+                StartBallAttraction(bestBall, targetStream.monster, targetStream);
+                _lastGlobalCollectionTime = now;
+                targetStream.lastCollectionTime = now;
             }
         }
 
         /// <summary>
-        /// Selects the matching ball closest to the bottom spout exit (lowest Y, centered X).
+        /// Searches only the bottom-most layer of balls. If a color is higher up in the container,
+        /// it CANNOT be collected until lower balls have emptied and it falls to the bottom.
         /// </summary>
-        private BallPhysicsController FindNextMatchingBall(PuzzleColor targetColor)
+        private BallPhysicsController FindNextCollectableBall(out ActiveMonsterStream targetStream)
         {
+            targetStream = null;
             if (BallObjectPool.Instance == null) return null;
 
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
-            BallPhysicsController bestBall = null;
-            float lowestY = float.MaxValue;
-            float closestAbsX = float.MaxValue;
+            if (activeBalls == null || activeBalls.Count == 0) return null;
 
+            ShapedGlassContainer container = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : FindFirstObjectByType<ShapedGlassContainer>();
+
+            float botY = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? container.contourPoints[0].y * container.heightScale
+                : (container != null ? container.spoutBottomY : -1.20f);
+
+            float spoutCenterX = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? (container.symmetricMode ? 0f : container.contourPoints[0].centerX) * container.widthScale
+                : 0f;
+
+            Vector3 localExit = new Vector3(spoutCenterX, botY, -0.10f);
+            Vector3 exitPos = (container != null) ? container.transform.TransformPoint(localExit) : localExit;
+
+            float throatY = (container != null) ? container.GetSpoutThroatY() : -0.72f;
+            float worldThroatY = (container != null) ? container.transform.TransformPoint(new Vector3(0f, throatY, 0f)).y : throatY;
+
+            // 1. Find the lowest Y position among resting balls in the container
+            float lowestY = float.MaxValue;
+            int restingCount = 0;
             for (int i = 0; i < activeBalls.Count; i++)
             {
-                var ball = activeBalls[i];
-                if (ball == null || ball.state != BallState.InContainer) continue;
-                if (ball.colorType != targetColor) continue;
-
-                Vector3 pos = ball.transform.position;
-                if (pos.y < lowestY || (Mathf.Abs(pos.y - lowestY) < 0.05f && Mathf.Abs(pos.x) < closestAbsX))
+                var b = activeBalls[i];
+                if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                restingCount++;
+                if (b.transform.position.y < lowestY)
                 {
-                    lowestY = pos.y;
-                    closestAbsX = Mathf.Abs(pos.x);
-                    bestBall = ball;
+                    lowestY = b.transform.position.y;
                 }
             }
 
-            return bestBall;
+            if (restingCount == 0 || lowestY == float.MaxValue) return null;
+
+            // 2. Tolerance check:
+            // If the bottom-most ball is inside the vertical spout tube, the tube is single-lane:
+            // ONLY that specific bottom ball can exit.
+            // If in the wider hopper, only balls within bottomLayerTolerance of the lowest Y are eligible.
+            bool lowestInSpout = lowestY <= worldThroatY + 0.04f;
+            float currentTolerance = lowestInSpout ? 0.035f : bottomLayerTolerance;
+
+            // 3. Filter candidates strictly to the bottom layer
+            List<BallPhysicsController> candidates = new List<BallPhysicsController>();
+            for (int i = 0; i < activeBalls.Count; i++)
+            {
+                var b = activeBalls[i];
+                if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+
+                if (b.transform.position.y <= lowestY + currentTolerance)
+                {
+                    candidates.Add(b);
+                }
+            }
+
+            if (candidates.Count == 0) return null;
+
+            // Sort candidates by closeness to spout exit
+            candidates.Sort((a, b) =>
+            {
+                float distA = Vector2.Distance(new Vector2(a.transform.position.x, a.transform.position.y), new Vector2(exitPos.x, exitPos.y));
+                float distB = Vector2.Distance(new Vector2(b.transform.position.x, b.transform.position.y), new Vector2(exitPos.x, exitPos.y));
+                return distA.CompareTo(distB);
+            });
+
+            // 4. Check if any candidate matches an active, hungry slotted monster
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                var cand = candidates[i];
+                foreach (var kvp in _activeStreams)
+                {
+                    var stream = kvp.Value;
+                    var monster = stream.monster;
+                    if (monster == null || monster.colorType != cand.colorType) continue;
+
+                    int needed = monster.remainingCount - stream.inTransitBalls.Count;
+                    if (needed <= 0) continue;
+                    if (stream.inTransitBalls.Count >= maxBallsInTransitPerMonster) continue;
+
+                    targetStream = stream;
+                    return cand;
+                }
+
+                // If lowest ball is inside the spout tube, it blocks the exit — no other ball can pass it
+                if (lowestInSpout)
+                {
+                    break;
+                }
+            }
+
+            return null;
         }
 
         private void StartBallAttraction(BallPhysicsController ball, MonsterCharacter monster, ActiveMonsterStream stream)
         {
-            ball.state = BallState.AttractingToExit;
             stream.inTransitBalls.Add(ball);
 
             if (!_attractingBalls.Contains(ball))
@@ -200,8 +284,25 @@ namespace PuzzleGlass
                 _attractingBalls.Add(ball);
             }
 
-            // Disable collision between this collecting ball and the bottom spout stopper
-            // so it can physically slide through the spout while non-matching balls stay inside!
+            ShapedGlassContainer container = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : FindFirstObjectByType<ShapedGlassContainer>();
+
+            float botY = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? container.contourPoints[0].y * container.heightScale
+                : (container != null ? container.spoutBottomY : -1.20f);
+
+            float spoutCenterX = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? (container.symmetricMode ? 0f : container.contourPoints[0].centerX) * container.widthScale
+                : 0f;
+
+            Vector3 localExit = new Vector3(spoutCenterX, botY, -0.10f);
+            Vector3 exitPos = (container != null) ? container.transform.TransformPoint(localExit) : localExit;
+
+            // Start attraction flow with trigger collision so it glides smoothly past other balls and stopper
+            ball.BeginAttraction(monster, exitPos);
+
+            // Also explicitly disable collision with stopper as extra guarantee
             if (BallContainerManager.Instance != null && BallContainerManager.Instance.bottomSpoutStopper != null)
             {
                 Physics.IgnoreCollision(ball.sphereCollider, BallContainerManager.Instance.bottomSpoutStopper, true);
@@ -216,9 +317,16 @@ namespace PuzzleGlass
                 ? BallContainerManager.Instance.glassContainer
                 : FindFirstObjectByType<ShapedGlassContainer>();
 
-            float spoutExitY = container != null ? container.spoutBottomY : -0.70f;
-            Vector3 exitPos = new Vector3(0f, spoutExitY, -0.10f);
-            if (container != null) exitPos = container.transform.TransformPoint(exitPos);
+            float botY = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? container.contourPoints[0].y * container.heightScale
+                : (container != null ? container.spoutBottomY : -1.20f);
+
+            float spoutCenterX = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
+                ? (container.symmetricMode ? 0f : container.contourPoints[0].centerX) * container.widthScale
+                : 0f;
+
+            Vector3 localExit = new Vector3(spoutCenterX, botY, -0.10f);
+            Vector3 exitPos = (container != null) ? container.transform.TransformPoint(localExit) : localExit;
 
             for (int i = _attractingBalls.Count - 1; i >= 0; i--)
             {
@@ -232,13 +340,21 @@ namespace PuzzleGlass
                 // Apply downward attraction force towards spout exit
                 ball.ApplyAttractionToExit(exitPos, attractionPullForce, maxBallSpeed);
 
-                // Check if ball reached or passed the spout exit threshold
-                if (ball.transform.position.y <= exitPos.y + exitTriggerYOffset)
+                // Check if ball reached or passed the spout exit threshold OR timed out fail-safe
+                bool reachedExit = ball.transform.position.y <= exitPos.y + exitTriggerYOffset;
+                bool timedOut = ball.AttractionTime > 1.25f;
+
+                if (reachedExit || timedOut)
                 {
                     _attractingBalls.RemoveAt(i);
 
-                    // Find which monster is waiting for this ball
-                    MonsterCharacter targetMonster = FindMonsterForColor(ball.colorType);
+                    // Prefer the monster that ordered this ball, fallback to any matching monster
+                    MonsterCharacter targetMonster = ball.TargetMonster;
+                    if (targetMonster == null || targetMonster.remainingCount <= 0 || !targetMonster.gameObject.activeInHierarchy)
+                    {
+                        targetMonster = FindMonsterForColor(ball.colorType);
+                    }
+
                     if (targetMonster != null)
                     {
                         Vector3 launchPos = ball.transform.position;
@@ -295,6 +411,7 @@ namespace PuzzleGlass
             _attractingBalls.Clear();
             _activeStreams.Clear();
             _totalCollectedThisLevel = 0;
+            _lastGlobalCollectionTime = -10f;
         }
     }
 }

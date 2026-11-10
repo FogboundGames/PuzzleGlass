@@ -7,7 +7,8 @@ namespace PuzzleGlass
     public enum ParticleArrangementMode
     {
         OrganicPhysicsLayers = 0, // Klasik Huni/Dalga/Fizik Katmanları
-        PixelArtVisual = 1        // 2. Görseldeki Piksel Sanatı Görsel Dizilimi (Grid)
+        PixelArtVisual = 1,       // 2. Görseldeki Piksel Sanatı Görsel Dizilimi (Grid)
+        PhysicsBalls = 2          // 3D Fizik Kurallarına Uyumlu Topçuklar (Görsel 1 & 2)
     }
 
     public enum PixelArtPreset

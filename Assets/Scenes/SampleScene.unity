@@ -744,7 +744,7 @@ MonoBehaviour:
   - {fileID: 341870870}
   - {fileID: 345790496}
   isLevelCompleted: 0
-  activePatternType: 0
+  activePatternType: 1
   showDebugGui: 1
 --- !u!4 &31291712
 Transform:
@@ -780,9 +780,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.BallPatternGenerator
   glassContainer: {fileID: 1250048960}
-  ballDiameter: 0.155
+  ballDiameter: 0.165
   patternVerticalOffset: 0
-  initialShapeHoldTime: 0.45
+  initialShapeHoldTime: 0
 --- !u!114 &31291714
 MonoBehaviour:
   m_ObjectHideFlags: 0

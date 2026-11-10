@@ -39,7 +39,7 @@ namespace PuzzleGlass
         [Header("Active Monsters & Gameplay State")]
         public List<MonsterCharacter> activeMonsters = new List<MonsterCharacter>();
         public bool isLevelCompleted = false;
-        public ShapePatternType activePatternType = ShapePatternType.Frog;
+        public ShapePatternType activePatternType = ShapePatternType.GumballMix;
 
         [Header("Testing & Debug GUI")]
         public bool showDebugGui = true;
@@ -65,29 +65,34 @@ namespace PuzzleGlass
 
             if (Application.isPlaying)
             {
-                RebuildSandVisual();
+                RebuildContainerPhysics();
                 return;
             }
 
             SyncCurrentMonstersWithPattern();
         }
 
-        // Kum Play başında yeniden kurulur; akış ızgarası sahneyle birlikte kaydedilmez
+        public void RebuildContainerPhysics()
+        {
+            if (glassContainer == null)
+            {
+                glassContainer = FindFirstObjectByType<ShapedGlassContainer>();
+            }
+
+            if (glassContainer != null)
+            {
+                glassContainer.CleanOrphanedChildren();
+                glassContainer.RebuildContainer();
+            }
+        }
+
         private void RebuildSandVisual()
         {
-            if (glassContainer == null) return;
-
-            glassContainer.CleanOrphanedChildren();
-            glassContainer.RebuildContainer();
-            PlaySandFillIfPlaying();
+            RebuildContainerPhysics();
         }
 
         private void PlaySandFillIfPlaying()
         {
-            if (Application.isPlaying && sandEngine != null)
-            {
-                sandEngine.PlayFillAnimation();
-            }
         }
 
         private PuzzleGlassLevelData GetGlassShapeSource(PuzzleGlassLevelData levelData)
@@ -154,6 +159,52 @@ namespace PuzzleGlass
             {
                 entries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
                 entries.Add(new LevelMonsterEntry(PuzzleColor.Pink, 8));
+            }
+
+            SpawnMonsterStagingArea(entries);
+        }
+
+        public void SynchronizeMonstersFromSpawnedBalls(List<BallPhysicsController> balls)
+        {
+            ClearMonsters();
+
+            if (balls == null || balls.Count == 0)
+            {
+                List<LevelMonsterEntry> fallback = new List<LevelMonsterEntry>()
+                {
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 12),
+                    new LevelMonsterEntry(PuzzleColor.Green, 12),
+                    new LevelMonsterEntry(PuzzleColor.Blue, 12),
+                    new LevelMonsterEntry(PuzzleColor.Red, 12)
+                };
+                SpawnMonsterStagingArea(fallback);
+                return;
+            }
+
+            Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
+            for (int i = 0; i < balls.Count; i++)
+            {
+                if (balls[i] == null) continue;
+                PuzzleColor c = balls[i].colorType;
+                if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
+                colorCounts[c]++;
+            }
+
+            List<LevelMonsterEntry> entries = new List<LevelMonsterEntry>();
+            foreach (var kvp in colorCounts)
+            {
+                if (kvp.Value > 0)
+                {
+                    entries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
+                }
+            }
+
+            if (entries.Count == 0)
+            {
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Yellow, 12));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 12));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Red, 12));
             }
 
             SpawnMonsterStagingArea(entries);
@@ -522,10 +573,13 @@ namespace PuzzleGlass
         public void SetupShapePatternScenario(ShapePatternType patternType)
         {
             EnsureGameplayControllers();
-            if (patternGenerator == null) return;
-
             activePatternType = patternType;
-            SetupCustomPatternScenario(patternGenerator.BuildSandPattern(patternType));
+
+            if (glassContainer != null)
+            {
+                glassContainer.CleanOrphanedChildren();
+                glassContainer.RebuildContainer();
+            }
         }
 
         [ContextMenu("Setup Reference Scenario")]
@@ -612,7 +666,8 @@ namespace PuzzleGlass
             GUILayout.Label($"Active Pattern: {activePatternType}", subStyle);
 
             int grainCount = sandEngine != null ? sandEngine.sandAmount : 0;
-            GUILayout.Label($"Sand in Jar: {grainCount} | Drag to Slots!", subStyle);
+            int ballCount = BallObjectPool.Instance != null ? BallObjectPool.Instance.ActiveBalls.Count : 0;
+            GUILayout.Label($"Balls in Jar: {ballCount} | Drag to Slots!", subStyle);
 
             if (isLevelCompleted)
             {
@@ -642,6 +697,15 @@ namespace PuzzleGlass
             if (_showPatternSelector)
             {
                 GUILayout.Space(3);
+                GUILayout.BeginHorizontal();
+                GUI.backgroundColor = new Color(0.1f, 0.85f, 0.4f, 1f);
+                if (GUILayout.Button("★ 4 Quadrants (Image 1)", btnStyle, GUILayout.Height(24))) SetupShapePatternScenario(ShapePatternType.FourQuadrants);
+                GUI.backgroundColor = new Color(0.9f, 0.5f, 0.2f, 1f);
+                if (GUILayout.Button("★ Gumballs (Image 2)", btnStyle, GUILayout.Height(24))) SetupShapePatternScenario(ShapePatternType.GumballMix);
+                GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f, 1f);
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(2);
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("🌈 Rainbow", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Rainbow);
                 if (GUILayout.Button("🐱 Cat", btnStyle, GUILayout.Height(22))) SetupShapePatternScenario(ShapePatternType.Cat);
