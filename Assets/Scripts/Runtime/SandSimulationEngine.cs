@@ -36,6 +36,7 @@ namespace PuzzleGlass
         public bool isBackground;
         public bool isFlowing;
         public bool isFilling;
+        public bool isLocked;
         public float fillDelay;
         public int cellX;
         public int cellY;
@@ -82,10 +83,9 @@ namespace PuzzleGlass
         [Tooltip("Her desen pikselinin bir kenarındaki kum tanesi sayısı")]
         [Range(1, 4)]
         public int grainsPerPixel = 3;
-        public bool fillBackground = true;
+        [Tooltip("Desen dışındaki boş alanı sarı arka plan toplarıyla doldurur")]
+        public bool fillBackgroundBalls = false;
         public Color backgroundSandColor = new Color(0.96f, 0.83f, 0.52f, 1f);
-        public float settleStepInterval = 0.03f;
-        public float settleGrainSpeed = 3.5f;
         public float flowGrainSpeed = 6f;
         public float fillGrainSpeed = 9f;
 
@@ -94,7 +94,28 @@ namespace PuzzleGlass
         public float lockedSectionRatio = 0.3f;
         public Color lockBarrierColor = new Color(0.36f, 0.69f, 0.97f, 1f);
 
-        public bool HasLockedSection => _lockRow >= 0;
+        [Header("Top Fiziği")]
+        [Tooltip("Yerleşimde ızgaradan rastgele sapma (top çapı oranında); taneler düz sıralar yerine doğal yığılır")]
+        [Range(0f, 0.45f)]
+        public float spawnJitter = 0.22f;
+        [Tooltip("Level kurulurken topların fiziksel olarak oturması için önceden koşulan adım sayısı (1/120 sn)")]
+        [Range(0, 600)]
+        public int presettleSteps = 240;
+        [Range(1, 10)]
+        public int solverIterations = 5;
+        [Range(-30f, -1f)]
+        public float ballGravity = -9.8f;
+        [Tooltip("Adım başına hız korunumu (1 = sönümsüz)")]
+        [Range(0.9f, 1f)]
+        public float ballDamping = 0.985f;
+        [Tooltip("Taban ve duvarlarda yatay sürtünme")]
+        [Range(0f, 1f)]
+        public float wallFriction = 0.25f;
+        [Tooltip("Görsel top çapının fiziksel çapa oranı")]
+        [Range(0.8f, 1.05f)]
+        public float ballVisualScale = 0.98f;
+
+        public bool HasLockedSection => _lockActive;
 
         /// <summary>Canavar sayacını bir düşürmek için gereken kum tanesi sayısı.</summary>
         public int GrainsPerCount { get; private set; } = 1;
@@ -132,9 +153,13 @@ namespace PuzzleGlass
         private float _cellSpacing;
         private int[] _cellGrains;
         private bool[] _validCells;
-        private float _settleTimer;
-        private int _settleTick;
-        private int _lockRow = -1; // Bu satır ve üstü kilitli
+        private int _lockRow = -1; // Bu satır ve üstü kilitli (kurulumda)
+        private bool _lockActive;
+        private float _lockBarrierY;
+        private float _physicsAccumulator;
+        private System.Random _rng = new System.Random(1);
+        private const float BallStep = 1f / 120f;
+        private Mesh _barrierMesh;
         private Material _lockBarrierMaterial;
         private readonly List<Matrix4x4> _lockBarrierBatch = new List<Matrix4x4>(64);
         private Material _backgroundMaterial;
@@ -170,8 +195,12 @@ namespace PuzzleGlass
         {
             if (_particleMesh == null)
             {
-                // Defterdeki ve referans görseldeki gibi tatlı, yuvarlatılmış şeker küpü (Candy Cube)
-                _particleMesh = ProceduralMeshUtils.CreateRoundedCube(0.16f, 0.045f, 3);
+                // Haznedeki taneler fiziksel toplar olarak çizilir (birim çaplı küre)
+                _particleMesh = ProceduralMeshUtils.GetSphereMesh();
+            }
+            if (_barrierMesh == null)
+            {
+                _barrierMesh = ProceduralMeshUtils.CreateRoundedCube(0.16f, 0.045f, 3);
             }
 
             foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
@@ -242,6 +271,7 @@ namespace PuzzleGlass
             _particles.Clear();
             _cellGrains = null;
             _lockRow = -1;
+            _lockActive = false;
             sandAmount = 0;
             OnAllSandCleared?.Invoke();
         }
@@ -285,7 +315,7 @@ namespace PuzzleGlass
                     PuzzleColor? color = inArt ? art[(col - artCol) / scale, (row - artRow) / scale] : null;
 
                     if (color.HasValue) AddGrain(col, row, color.Value, false);
-                    else if (fillBackground && _validCells[CellIndex(col, row)]) AddGrain(col, row, PuzzleColor.Yellow, true);
+                    else if (fillBackgroundBalls && _validCells[CellIndex(col, row)]) AddGrain(col, row, PuzzleColor.Yellow, true);
                 }
             }
 
@@ -330,7 +360,7 @@ namespace PuzzleGlass
                 {
                     int cell = CellIndex(col, row);
                     if (assigned[cell].HasValue) AddGrain(col, row, assigned[cell].Value, false);
-                    else if (fillBackground && _validCells[cell]) AddGrain(col, row, PuzzleColor.Yellow, true);
+                    else if (fillBackgroundBalls && _validCells[cell]) AddGrain(col, row, PuzzleColor.Yellow, true);
                 }
             }
 
@@ -349,6 +379,9 @@ namespace PuzzleGlass
             _particles.Clear();
             _cellGrains = null;
             _lockRow = -1;
+            _lockActive = false;
+            _physicsAccumulator = 0f;
+            _rng = new System.Random(1);
 
             if (glassContainer == null) return false;
             glassContainer.EnsureContourInitialized();
@@ -361,6 +394,7 @@ namespace PuzzleGlass
             particleSize = _cellSpacing;
             simulationMode = SandSimulationMode.StaticImage;
             ApplySectionLock();
+            PresettleBalls();
             OnSandRebuilt?.Invoke();
         }
 
@@ -380,12 +414,34 @@ namespace PuzzleGlass
             if (maxRow < 0) return;
 
             int lockedRows = Mathf.RoundToInt((maxRow - minRow + 1) * lockedSectionRatio);
-            if (lockedRows > 0) _lockRow = maxRow + 1 - lockedRows;
+            if (lockedRows <= 0) return;
+
+            _lockRow = maxRow + 1 - lockedRows;
+            _lockActive = true;
+            _lockBarrierY = _originY + (_lockRow - 0.5f) * _cellSpacing;
+
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                p.isLocked = p.cellY >= _lockRow;
+                _particles[i] = p;
+            }
         }
 
+        /// <summary>
+        /// Kilidi kaldırır; üst bölmedeki toplar bariyer kalkınca fiziksel olarak aşağı düşer.
+        /// </summary>
         public void UnlockSection()
         {
             _lockRow = -1;
+            _lockActive = false;
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                if (!p.isLocked) continue;
+                p.isLocked = false;
+                _particles[i] = p;
+            }
         }
 
         /// <summary>
@@ -393,14 +449,11 @@ namespace PuzzleGlass
         /// </summary>
         public int CountReachableArtGrains()
         {
-            if (_cellGrains == null) return 0;
-
-            int rowLimit = HasLockedSection ? _lockRow : _rows;
             int count = 0;
-            for (int cell = 0; cell < rowLimit * _cols; cell++)
+            for (int i = 0; i < _particles.Count; i++)
             {
-                int grain = _cellGrains[cell];
-                if (grain >= 0 && !_particles[grain].isBackground) count++;
+                var p = _particles[i];
+                if (!p.isBackground && !p.isLocked && !p.isFlowing && !p.isDraining) count++;
             }
             return count;
         }
@@ -513,6 +566,12 @@ namespace PuzzleGlass
         private void AddGrain(int col, int row, PuzzleColor color, bool isBackground)
         {
             Vector2 pos = CellCenter(col, row);
+            if (spawnJitter > 0f)
+            {
+                float j = spawnJitter * _cellSpacing;
+                pos.x += ((float)_rng.NextDouble() * 2f - 1f) * j;
+                pos.y += ((float)_rng.NextDouble() * 2f - 1f) * j * 0.5f;
+            }
             int cell = CellIndex(col, row);
             _validCells[cell] = true;
             _cellGrains[cell] = _particles.Count;
@@ -529,7 +588,7 @@ namespace PuzzleGlass
                 isBackground = isBackground,
                 cellX = col,
                 cellY = row,
-                depthZ = -0.10f + ((col + row) % 3 - 1) * 0.008f
+                depthZ = -0.10f + ((col + row) % 3 - 1) * 0.004f
             });
         }
 
@@ -552,52 +611,39 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Bu renkteki, çıkışa en yakın taneyi serbest bırakıp çıkışa yollar.
+        /// Bu renkteki, çıkışa en yakın (en alttaki) topu serbest bırakıp çıkışa yollar.
         /// </summary>
         public bool TryReleaseGrain(PuzzleColor color)
         {
-            if (_cellGrains == null) return false;
+            float spoutX = GetSpoutCenterX();
+            int best = -1;
+            float bestScore = float.MaxValue;
 
-            int middle = _cols / 2;
-            int rowLimit = HasLockedSection ? _lockRow : _rows;
-            for (int row = 0; row < rowLimit; row++)
+            for (int i = 0; i < _particles.Count; i++)
             {
-                int bestCol = -1;
-                for (int col = 0; col < _cols; col++)
+                var p = _particles[i];
+                if (p.isBackground || p.isFilling || p.isFlowing || p.isDraining || p.isLocked || p.color != color) continue;
+
+                float score = p.position.y + Mathf.Abs(p.position.x - spoutX) * 0.35f;
+                if (score < bestScore)
                 {
-                    int grain = _cellGrains[CellIndex(col, row)];
-                    if (grain < 0) continue;
-
-                    var p = _particles[grain];
-                    if (p.isBackground || p.isFilling || p.color != color) continue;
-                    if (bestCol < 0 || Mathf.Abs(col - middle) < Mathf.Abs(bestCol - middle)) bestCol = col;
+                    bestScore = score;
+                    best = i;
                 }
-
-                if (bestCol < 0) continue;
-
-                int cell = CellIndex(bestCol, row);
-                int index = _cellGrains[cell];
-                var released = _particles[index];
-                released.isFlowing = true;
-                released.depthZ = -0.18f;
-                _particles[index] = released;
-                _cellGrains[cell] = -1;
-                return true;
             }
 
-            return false;
+            if (best < 0) return false;
+
+            var released = _particles[best];
+            released.isFlowing = true;
+            released.depthZ = -0.18f;
+            _particles[best] = released;
+            return true;
         }
 
         private void StepGrainFlow(float dt)
         {
-            if (_cellGrains == null) return;
-
-            _settleTimer += dt;
-            if (_settleTimer >= settleStepInterval)
-            {
-                _settleTimer = 0f;
-                SettleGrainsOneStep();
-            }
+            if (_particles.Count == 0) return;
 
             float spoutX = GetSpoutCenterX();
             Vector2 funnelMouth = new Vector2(spoutX, _floorY);
@@ -614,7 +660,12 @@ namespace PuzzleGlass
                     if (p.fillDelay <= 0f)
                     {
                         p.position = Vector2.MoveTowards(p.position, p.staticHomePos, fillGrainSpeed * dt);
-                        if (p.position == p.staticHomePos) p.isFilling = false;
+                        if (p.position == p.staticHomePos)
+                        {
+                            // Yerine oturdu: buradan sonra fizik devralır
+                            p.isFilling = false;
+                            p.prevPosition = p.position;
+                        }
                     }
                 }
                 else if (p.isFlowing)
@@ -633,51 +684,203 @@ namespace PuzzleGlass
                 }
                 else
                 {
-                    p.position = Vector2.MoveTowards(p.position, p.staticHomePos, settleGrainSpeed * dt);
+                    continue;
                 }
 
                 _particles[i] = p;
             }
+
+            // Hazne içindeki toplar sabit zaman adımlı fizikle hareket eder
+            _physicsAccumulator += Mathf.Min(dt, 0.05f);
+            int steps = 0;
+            while (_physicsAccumulator >= BallStep && steps < 6)
+            {
+                SimulateBallStep(BallStep);
+                _physicsAccumulator -= BallStep;
+                steps++;
+            }
+            if (steps == 6) _physicsAccumulator = 0f;
         }
 
-        // Taneler boşalan hücrelere önce düz aşağı, olmazsa çapraz aşağı kayar; görsel böylece bozulmadan iner
-        private void SettleGrainsOneStep()
+        /// <summary>
+        /// Level kurulurken topları yerçekimiyle önceden oturtur; böylece ilk karede de fiziksel bir yığın görünür.
+        /// </summary>
+        private void PresettleBalls()
         {
-            _settleTick++;
-
-            int rowLimit = HasLockedSection ? _lockRow : _rows;
-            for (int row = 1; row < rowLimit; row++)
+            for (int i = 0; i < _particles.Count; i++)
             {
-                for (int col = 0; col < _cols; col++)
-                {
-                    int cell = CellIndex(col, row);
-                    int grain = _cellGrains[cell];
-                    if (grain < 0 || _particles[grain].isFilling) continue;
+                var p = _particles[i];
+                p.prevPosition = p.position;
+                _particles[i] = p;
+            }
 
-                    int side = ((_settleTick + col + row) & 1) == 0 ? 1 : -1;
-                    if (TryMoveGrain(grain, cell, col, row - 1)) continue;
-                    if (TryMoveGrain(grain, cell, col + side, row - 1)) continue;
-                    TryMoveGrain(grain, cell, col - side, row - 1);
+            for (int step = 0; step < presettleSteps; step++)
+            {
+                SimulateBallStep(BallStep);
+            }
+
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                p.prevPosition = p.position;
+                p.staticHomePos = p.position;
+                _particles[i] = p;
+            }
+        }
+
+        private static bool IsPhysicsBall(in SandParticle p)
+        {
+            return !p.isDraining && !p.isFlowing && !p.isFilling;
+        }
+
+        /// <summary>
+        /// Verlet tabanlı top fiziği: yerçekimi, top-top çarpışması, cam duvar/taban ve kilit bariyeri.
+        /// </summary>
+        private void SimulateBallStep(float h)
+        {
+            int count = _particles.Count;
+            if (count == 0 || glassContainer == null) return;
+
+            float radius = Mathf.Max(0.005f, particleSize * 0.5f);
+            float diameter = radius * 2f;
+            float diameterSq = diameter * diameter;
+            float gravityStep = ballGravity * h * h;
+
+            // 1. Entegrasyon
+            for (int i = 0; i < count; i++)
+            {
+                var p = _particles[i];
+                if (!IsPhysicsBall(p)) continue;
+
+                Vector2 velocity = (p.position - p.prevPosition) * ballDamping;
+                p.prevPosition = p.position;
+                p.position += velocity;
+                p.position.y += gravityStep;
+                _particles[i] = p;
+            }
+
+            // 2. Mekânsal ızgara
+            _lastCellSize = diameter;
+            if (_gridNext.Length < count) _gridNext = new int[count * 2];
+            Array.Fill(_gridHead, -1);
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsPhysicsBall(_particles[i])) continue;
+                int hash = GetCellHash(_particles[i].position.x, _particles[i].position.y, _lastCellSize);
+                _gridNext[i] = _gridHead[hash];
+                _gridHead[hash] = i;
+            }
+
+            // 3. Kısıt çözümü
+            for (int iter = 0; iter < solverIterations; iter++)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var pi = _particles[i];
+                    if (!IsPhysicsBall(pi)) continue;
+
+                    int cx = Mathf.FloorToInt(pi.position.x / _lastCellSize);
+                    int cy = Mathf.FloorToInt(pi.position.y / _lastCellSize);
+
+                    for (int nx = -1; nx <= 1; nx++)
+                    {
+                        for (int ny = -1; ny <= 1; ny++)
+                        {
+                            int j = _gridHead[GetCellHashDirect(cx + nx, cy + ny)];
+                            while (j != -1)
+                            {
+                                if (j > i)
+                                {
+                                    var pj = _particles[j];
+                                    Vector2 diff = pi.position - pj.position;
+                                    float distSq = diff.sqrMagnitude;
+                                    if (distSq < diameterSq)
+                                    {
+                                        Vector2 normal;
+                                        float dist;
+                                        if (distSq > 1e-10f)
+                                        {
+                                            dist = Mathf.Sqrt(distSq);
+                                            normal = diff / dist;
+                                        }
+                                        else
+                                        {
+                                            dist = 0f;
+                                            normal = new Vector2(((i + j) & 1) == 0 ? 1f : -1f, 0f);
+                                        }
+
+                                        Vector2 correction = normal * ((diameter - dist) * 0.5f);
+                                        pi.position += correction;
+                                        pj.position -= correction;
+                                        _particles[j] = pj;
+                                    }
+                                }
+                                j = _gridNext[j];
+                            }
+                        }
+                    }
+
+                    ConstrainBall(ref pi, radius);
+                    _particles[i] = pi;
                 }
             }
         }
 
-        private bool TryMoveGrain(int grain, int fromCell, int col, int row)
+        private void ConstrainBall(ref SandParticle p, float radius)
         {
-            if (col < 0 || col >= _cols) return false;
+            bool touched = false;
 
-            int toCell = CellIndex(col, row);
-            if (!_validCells[toCell] || _cellGrains[toCell] >= 0) return false;
+            // Haznenin tabanı (çıkış kapalı)
+            float floor = _floorY + radius;
+            if (p.position.y < floor)
+            {
+                p.position.y = floor;
+                touched = true;
+            }
 
-            _cellGrains[fromCell] = -1;
-            _cellGrains[toCell] = grain;
+            // Kilit bariyeri üst bölmeyi alttakinden ayırır
+            if (_lockActive)
+            {
+                if (p.isLocked)
+                {
+                    float minY = _lockBarrierY + radius;
+                    if (p.position.y < minY)
+                    {
+                        p.position.y = minY;
+                        touched = true;
+                    }
+                }
+                else
+                {
+                    float maxY = _lockBarrierY - radius;
+                    if (p.position.y > maxY) p.position.y = maxY;
+                }
+            }
 
-            var p = _particles[grain];
-            p.cellX = col;
-            p.cellY = row;
-            p.staticHomePos = CellCenter(col, row);
-            _particles[grain] = p;
-            return true;
+            // Cam yan duvarları
+            glassContainer.GetSafeCubeBoundsAtY(p.position.y, out float left, out float right);
+            left += radius;
+            right -= radius;
+            if (left > right)
+            {
+                p.position.x = (left + right) * 0.5f;
+                touched = true;
+            }
+            else if (p.position.x < left)
+            {
+                p.position.x = left;
+                touched = true;
+            }
+            else if (p.position.x > right)
+            {
+                p.position.x = right;
+                touched = true;
+            }
+
+            if (touched && wallFriction > 0f)
+            {
+                p.prevPosition = Vector2.Lerp(p.prevPosition, p.position, wallFriction);
+            }
         }
 
         private void Update()
@@ -958,7 +1161,7 @@ namespace PuzzleGlass
             }
             _backgroundBatch.Clear();
 
-            Vector3 scale = Vector3.one * (particleSize / 0.16f);
+            Vector3 scale = Vector3.one * (particleSize * ballVisualScale);
 
             // Parçacık konumları cam haznenin yerel uzayında tutulur
             Matrix4x4 localToWorld = glassContainer != null ? glassContainer.transform.localToWorldMatrix : Matrix4x4.identity;
@@ -985,35 +1188,35 @@ namespace PuzzleGlass
 
             // Her renk grubunu DrawMeshInstanced ile GPU'ya gönder (maksimum 1023'lük dilimler)
             CollectLockBarrier(localToWorld);
-            DrawBatch(_backgroundMaterial, _backgroundBatch);
-            DrawBatch(_lockBarrierMaterial, _lockBarrierBatch);
+            DrawBatch(_particleMesh, _backgroundMaterial, _backgroundBatch);
+            DrawBatch(_barrierMesh, _lockBarrierMaterial, _lockBarrierBatch);
             foreach (var kvp in _batches)
             {
-                if (_materials.TryGetValue(kvp.Key, out var mat)) DrawBatch(mat, kvp.Value);
+                if (_materials.TryGetValue(kvp.Key, out var mat)) DrawBatch(_particleMesh, mat, kvp.Value);
             }
         }
 
         private void CollectLockBarrier(Matrix4x4 localToWorld)
         {
             _lockBarrierBatch.Clear();
-            if (!HasLockedSection || _validCells == null) return;
+            if (!_lockActive || glassContainer == null || _cellSpacing <= 0f) return;
 
             float meshScale = _cellSpacing / 0.16f;
             Vector3 barScale = new Vector3(meshScale * 1.05f, meshScale * 0.45f, meshScale);
-            float y = _originY + (_lockRow - 0.5f) * _cellSpacing;
+            glassContainer.GetSafeCubeBoundsAtY(_lockBarrierY, out float left, out float right);
 
-            for (int col = 0; col < _cols; col++)
+            int segments = Mathf.Max(1, Mathf.RoundToInt((right - left) / _cellSpacing));
+            float step = (right - left) / segments;
+            for (int k = 0; k < segments; k++)
             {
-                if (!_validCells[CellIndex(col, _lockRow)]) continue;
-
-                Vector3 pos = new Vector3(_originX + col * _cellSpacing, y, -0.16f);
+                Vector3 pos = new Vector3(left + (k + 0.5f) * step, _lockBarrierY, -0.16f);
                 _lockBarrierBatch.Add(localToWorld * Matrix4x4.TRS(pos, Quaternion.identity, barScale));
             }
         }
 
-        private void DrawBatch(Material mat, List<Matrix4x4> list)
+        private void DrawBatch(Mesh mesh, Material mat, List<Matrix4x4> list)
         {
-            if (mat == null) return;
+            if (mat == null || mesh == null) return;
 
             int count = list.Count;
             int offset = 0;
@@ -1023,7 +1226,7 @@ namespace PuzzleGlass
                 list.CopyTo(offset, _tempMatrixArray, 0, batchSize);
 
                 Graphics.DrawMeshInstanced(
-                    _particleMesh,
+                    mesh,
                     0,
                     mat,
                     _tempMatrixArray,

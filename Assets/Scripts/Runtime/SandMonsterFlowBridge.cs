@@ -90,7 +90,7 @@ namespace PuzzleGlass
         {
             if (_cubeMesh == null)
             {
-                _cubeMesh = ProceduralMeshUtils.CreateRoundedCube(0.16f, 0.045f, 3);
+                _cubeMesh = ProceduralMeshUtils.GetSphereMesh();
             }
 
             foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
@@ -285,7 +285,7 @@ namespace PuzzleGlass
         {
             GameObject cubeObj = GetPooledCube();
             cubeObj.transform.position = startPos;
-            cubeObj.transform.localScale = Vector3.one * (sandEngine.particleSize / 0.16f);
+            cubeObj.transform.localScale = Vector3.one * (sandEngine.particleSize * sandEngine.ballVisualScale);
             cubeObj.SetActive(true);
 
             // Materyal ata

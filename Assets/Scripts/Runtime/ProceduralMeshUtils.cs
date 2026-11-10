@@ -6,6 +6,23 @@ namespace PuzzleGlass
 {
     public static class ProceduralMeshUtils
     {
+        private static Mesh _sphereMesh;
+
+        /// <summary>
+        /// Unity'nin yerleşik birim çaplı küre mesh'i (paylaşımlı, bir kez alınır).
+        /// </summary>
+        public static Mesh GetSphereMesh()
+        {
+            if (_sphereMesh != null) return _sphereMesh;
+
+            GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            temp.hideFlags = HideFlags.HideAndDontSave;
+            var mf = temp.GetComponent<MeshFilter>();
+            if (mf != null) _sphereMesh = mf.sharedMesh;
+            UnityEngine.Object.DestroyImmediate(temp);
+            return _sphereMesh;
+        }
+
         /// <summary>
         /// Generates a plump, tactile 3D rounded-bevel cube mesh (Image 2 Reference Candy/Resin Cube)
         /// with outward-facing normals and guaranteed front-face clockwise triangle winding.
