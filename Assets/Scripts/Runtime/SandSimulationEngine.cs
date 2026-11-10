@@ -160,6 +160,15 @@ namespace PuzzleGlass
         private System.Random _rng = new System.Random(1);
         private const float BallStep = 1f / 120f;
         private Mesh _barrierMesh;
+
+        // Top tabanı: x'e göre haznenin iç zemini (çıkış boğazı topa kapalı)
+        private const int FloorLutSize = 96;
+        private readonly float[] _floorLut = new float[FloorLutSize];
+        private float _floorLutMinX;
+        private float _floorLutMaxX;
+        private bool _floorLutValid;
+        private float _floorLutRadius = -1f;
+        private bool _loggedVersion;
         private Material _lockBarrierMaterial;
         private readonly List<Matrix4x4> _lockBarrierBatch = new List<Matrix4x4>(64);
         private Material _backgroundMaterial;
@@ -381,6 +390,7 @@ namespace PuzzleGlass
             _lockRow = -1;
             _lockActive = false;
             _physicsAccumulator = 0f;
+            _floorLutValid = false;
             _rng = new System.Random(1);
 
             if (glassContainer == null) return false;
@@ -632,7 +642,11 @@ namespace PuzzleGlass
                 }
             }
 
-            if (best < 0) return false;
+            if (best < 0)
+            {
+                LogReleaseFailure(color);
+                return false;
+            }
 
             var released = _particles[best];
             released.isFlowing = true;
@@ -641,8 +655,34 @@ namespace PuzzleGlass
             return true;
         }
 
+        private float _lastReleaseFailLog = -10f;
+
+        private void LogReleaseFailure(PuzzleColor color)
+        {
+            if (Time.unscaledTime - _lastReleaseFailLog < 2f) return;
+            _lastReleaseFailLog = Time.unscaledTime;
+
+            int total = 0, locked = 0, filling = 0, flowing = 0;
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                if (p.isBackground || p.isDraining || p.color != color) continue;
+                total++;
+                if (p.isLocked) locked++;
+                if (p.isFilling) filling++;
+                if (p.isFlowing) flowing++;
+            }
+            Debug.Log($"[SandSimulationEngine] {color} için bırakılacak top yok. Toplam {total}, kilitli {locked}, dolumda {filling}, akan {flowing}.");
+        }
+
         private void StepGrainFlow(float dt)
         {
+            if (!_loggedVersion)
+            {
+                _loggedVersion = true;
+                Debug.Log($"[SandSimulationEngine] Top fiziği aktif (v3). Top sayısı: {_particles.Count}, tane/sayaç: {GrainsPerCount}, kilit: {_lockActive}");
+            }
+
             if (_particles.Count == 0) return;
 
             float spoutX = GetSpoutCenterX();
@@ -707,6 +747,8 @@ namespace PuzzleGlass
         /// </summary>
         private void PresettleBalls()
         {
+            BuildFloorLut(Mathf.Max(0.005f, particleSize * 0.5f));
+
             for (int i = 0; i < _particles.Count; i++)
             {
                 var p = _particles[i];
@@ -826,12 +868,92 @@ namespace PuzzleGlass
             }
         }
 
+        /// <summary>
+        /// Her x için topun oturabileceği en alçak y'yi hesaplar. Tarama, çıkış boğazının genişlediği noktadan başlar;
+        /// böylece toplar boruya düşmez, haznenin eğimli zemininde durur.
+        /// </summary>
+        private void BuildFloorLut(float radius)
+        {
+            _floorLutValid = false;
+            if (glassContainer == null || glassContainer.contourPoints == null || glassContainer.contourPoints.Count < 2) return;
+
+            var points = glassContainer.contourPoints;
+            float hs = glassContainer.heightScale;
+            float spoutHalf = points[0].halfWidth;
+
+            float startY = points[0].y * hs;
+            for (int k = 1; k < points.Count; k++)
+            {
+                if (points[k].halfWidth > spoutHalf * 1.05f)
+                {
+                    startY = points[k].y * hs;
+                    break;
+                }
+            }
+            startY = Mathf.Max(startY, _floorY);
+            float topY = glassContainer.neckTopY;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            for (float y = startY; y <= topY; y += 0.02f)
+            {
+                glassContainer.GetSafeCubeBoundsAtY(y, out float l, out float r);
+                minX = Mathf.Min(minX, l);
+                maxX = Mathf.Max(maxX, r);
+            }
+            if (maxX <= minX) return;
+
+            _floorLutMinX = minX;
+            _floorLutMaxX = maxX;
+            const float scanStep = 0.004f;
+            for (int i = 0; i < FloorLutSize; i++)
+            {
+                float x = Mathf.Lerp(minX, maxX, i / (float)(FloorLutSize - 1));
+                float found = float.NaN;
+                for (float y = startY + radius; y <= topY; y += scanStep)
+                {
+                    glassContainer.GetSafeCubeBoundsAtY(y, out float l, out float r);
+                    if (x >= l + radius - 0.002f && x <= r - radius + 0.002f)
+                    {
+                        found = y;
+                        break;
+                    }
+                }
+                _floorLut[i] = found;
+            }
+
+            // Duvar dibinde top sığmayan x'ler en yakın geçerli zemini alır (duvar kısıtı x'i zaten içeri iter)
+            int firstValid = -1;
+            for (int i = 0; i < FloorLutSize; i++)
+            {
+                if (!float.IsNaN(_floorLut[i])) { firstValid = i; break; }
+            }
+            if (firstValid < 0) return;
+            for (int i = 0; i < firstValid; i++) _floorLut[i] = _floorLut[firstValid];
+            for (int i = firstValid + 1; i < FloorLutSize; i++)
+            {
+                if (float.IsNaN(_floorLut[i])) _floorLut[i] = _floorLut[i - 1];
+            }
+
+            _floorLutRadius = radius;
+            _floorLutValid = true;
+        }
+
+        private float SampleFloor(float x)
+        {
+            if (!_floorLutValid) return _floorY + _floorLutRadius;
+            float t = Mathf.InverseLerp(_floorLutMinX, _floorLutMaxX, x) * (FloorLutSize - 1);
+            int i0 = Mathf.Clamp(Mathf.FloorToInt(t), 0, FloorLutSize - 1);
+            int i1 = Mathf.Min(i0 + 1, FloorLutSize - 1);
+            return Mathf.Lerp(_floorLut[i0], _floorLut[i1], t - i0);
+        }
+
         private void ConstrainBall(ref SandParticle p, float radius)
         {
             bool touched = false;
 
-            // Haznenin tabanı (çıkış kapalı)
-            float floor = _floorY + radius;
+            // Haznenin tabanı (çıkış boğazı kapalı)
+            if (!_floorLutValid || !Mathf.Approximately(_floorLutRadius, radius)) BuildFloorLut(radius);
+            float floor = SampleFloor(p.position.x);
             if (p.position.y < floor)
             {
                 p.position.y = floor;

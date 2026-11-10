@@ -215,6 +215,8 @@ namespace PuzzleGlass
             if (monster == null) return;
             EnsureReferences();
 
+            Debug.Log($"[SandMonsterFlowBridge] {monster.colorType} canavar slota oturdu. Gereken tane: {(sandEngine != null ? monster.GetGrainsNeeded(sandEngine.GrainsPerCount) : -1)}, slot sistemi: {(slotSystem != null ? "var" : "YOK")}, kum motoru: {(sandEngine != null ? "var" : "YOK")}");
+
             if (sandEngine != null)
             {
                 sandEngine.SetSpoutGate(true);
