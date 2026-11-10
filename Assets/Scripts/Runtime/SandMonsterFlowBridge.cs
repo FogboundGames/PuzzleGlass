@@ -38,6 +38,14 @@ namespace PuzzleGlass
         [Tooltip("Slotlarda uygun renkte canavar yoksa kapağı otomatik kapat")]
         public bool autoManageSpoutGate = true;
 
+        [Header("Teşhis")]
+        [Tooltip("Oyun ekranının sol üstünde akış durumunu gösterir")]
+        public bool showDebugOverlay = true;
+        private int _releasedTotal;
+        private int _drainedTotal;
+        private int _fedTotal;
+        private int _updateFrames;
+
         // Uçan kum küpü prefab ve havuzu
         private Transform _cubePoolRoot;
         private readonly Queue<GameObject> _cubePool = new Queue<GameObject>();
@@ -140,7 +148,10 @@ namespace PuzzleGlass
 
         private void Update()
         {
-            if (!Application.isPlaying || sandEngine == null) return;
+            if (!Application.isPlaying) return;
+            _updateFrames++;
+            if (sandEngine == null) EnsureReferences();
+            if (sandEngine == null) return;
 
             ReleaseGrainsForSlottedMonsters();
 
@@ -192,6 +203,7 @@ namespace PuzzleGlass
                 if (kvp.Value > inFlight && sandEngine.TryReleaseGrain(kvp.Key))
                 {
                     inFlight++;
+                    _releasedTotal++;
                 }
                 _grainsInFlight[kvp.Key] = inFlight;
                 if (inFlight > 0) anyGrainMoving = true;
@@ -241,6 +253,7 @@ namespace PuzzleGlass
         {
             if (!Application.isPlaying) return;
             EnsureReferences();
+            _drainedTotal++;
 
             MonsterCharacter target = ReserveMonsterForColor(particle.color);
             if (target == null)
@@ -357,6 +370,7 @@ namespace PuzzleGlass
 
             // Ağza ulaştı: Yutma ve sayaç düşürme
             FinishGrainFlight(target, color);
+            _fedTotal++;
             if (target != null && !target.IsCompleted)
             {
                 target.FeedParticle(sandEngine.GrainsPerCount);
@@ -433,6 +447,45 @@ namespace PuzzleGlass
                 }
             }
             return null;
+        }
+
+        private GUIStyle _debugStyle;
+
+        private void OnGUI()
+        {
+            if (!showDebugOverlay || !Application.isPlaying) return;
+
+            if (_debugStyle == null)
+            {
+                _debugStyle = new GUIStyle(GUI.skin.label) { fontSize = Mathf.Max(11, Screen.height / 70) };
+                _debugStyle.normal.textColor = Color.black;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"AKIŞ v4 | kare {_updateFrames} | motor {(sandEngine != null ? "var" : "YOK")} | slotlar {(slotSystem != null && slotSystem.slots != null ? slotSystem.slots.Count.ToString() : "YOK")}");
+            if (sandEngine != null)
+            {
+                sb.AppendLine($"top {sandEngine.GetParticleCount()} | tane/sayaç {sandEngine.GrainsPerCount} | kapak {(sandEngine.isGateOpen ? "açık" : "kapalı")} | kilit {(sandEngine.IsSectionLocked ? "var" : "yok")} | mod {sandEngine.simulationMode}");
+            }
+            sb.AppendLine($"bırakılan {_releasedTotal} | çıkan {_drainedTotal} | yenen {_fedTotal}");
+
+            if (slotSystem != null && slotSystem.slots != null)
+            {
+                for (int i = 0; i < slotSystem.slots.Count; i++)
+                {
+                    var slot = slotSystem.slots[i];
+                    if (slot == null) { sb.AppendLine($"slot {i}: null"); continue; }
+                    var m = slot.currentMonster;
+                    if (m == null) { sb.AppendLine($"slot {i}: boş (dolu={slot.isOccupied})"); continue; }
+
+                    int needed = sandEngine != null ? m.GetGrainsNeeded(sandEngine.GrainsPerCount) : -1;
+                    int free = sandEngine != null ? sandEngine.CountReleasable(m.colorType) : -1;
+                    int flowing = sandEngine != null ? sandEngine.CountFlowing(m.colorType) : -1;
+                    sb.AppendLine($"slot {i}: {m.colorType} kalan {m.remainingCount} gereken {needed} | haznede {free} akan {flowing} | zıplıyor {m.IsMovingToSlot} bitti {m.IsCompleted}");
+                }
+            }
+
+            GUI.Label(new Rect(8, 8, Screen.width - 16, Screen.height * 0.4f), sb.ToString(), _debugStyle);
         }
 
         public bool HasAnyHungrySlottedMonster()

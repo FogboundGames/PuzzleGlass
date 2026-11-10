@@ -112,6 +112,9 @@ namespace PuzzleGlass
         [Tooltip("Taban ve duvarlarda yatay sürtünme")]
         [Range(0f, 1f)]
         public float wallFriction = 0.25f;
+        [Tooltip("Top çapının yerleşim ızgarası aralığına oranı; küçültünce toplar daha küçük olur ve aralarında boşluk kalır")]
+        [Range(0.5f, 1f)]
+        public float ballSizeScale = 0.85f;
         [Tooltip("Görsel top çapının fiziksel çapa oranı")]
         [Range(0.8f, 1.05f)]
         public float ballVisualScale = 0.98f;
@@ -402,7 +405,7 @@ namespace PuzzleGlass
         private void FinishBuild()
         {
             sandAmount = _particles.Count;
-            particleSize = _cellSpacing;
+            particleSize = _cellSpacing * ballSizeScale;
             simulationMode = SandSimulationMode.StaticImage;
             ApplySectionLock();
             PresettleBalls();
@@ -660,6 +663,22 @@ namespace PuzzleGlass
         /// <summary>
         /// Bu renkte hazneden çıkışa doğru akmakta olan top sayısı.
         /// </summary>
+        public bool IsSectionLocked => _lockActive;
+
+        /// <summary>
+        /// Bu renkte şu an bırakılabilecek (kilitsiz, haznede duran) top sayısı.
+        /// </summary>
+        public int CountReleasable(PuzzleColor color)
+        {
+            int count = 0;
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                if (p.color == color && !p.isBackground && !p.isFilling && !p.isFlowing && !p.isDraining && !p.isLocked) count++;
+            }
+            return count;
+        }
+
         public int CountFlowing(PuzzleColor color)
         {
             int count = 0;
