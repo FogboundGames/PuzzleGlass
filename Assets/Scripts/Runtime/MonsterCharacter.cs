@@ -87,8 +87,12 @@ namespace PuzzleGlass
 
         private void OnMouseDown()
         {
+            // Tıklamalar MonsterDragController üzerinden gelir (yeni Input System'de OnMouseDown çalışmaz)
+            if (MonsterDragController.Instance != null) return;
             TryHopToNextAvailableSlot();
         }
+
+        public bool IsMovingToSlot => _isMovingToSlot;
 
         private void OnDisable()
         {

@@ -172,6 +172,9 @@ namespace PuzzleGlass
                 if (slot == null || !slot.isOccupied || slot.currentMonster == null || slot.currentMonster.IsCompleted) continue;
 
                 hungrySlots++;
+                // Canavar slota oturana kadar (zıplama/sürükleme animasyonu) top gönderme
+                if (slot.currentMonster.assignedSlot != slot) continue;
+
                 var monster = slot.currentMonster;
                 _grainsNeeded.TryGetValue(monster.colorType, out int needed);
                 _grainsNeeded[monster.colorType] = needed + monster.GetGrainsNeeded(sandEngine.GrainsPerCount);

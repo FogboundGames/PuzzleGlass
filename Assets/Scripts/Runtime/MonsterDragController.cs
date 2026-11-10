@@ -18,6 +18,11 @@ namespace PuzzleGlass
         public float dragFollowSpeed = 35f;
         public float dragLiftScale = 1.15f;
 
+        [Header("Tap Settings")]
+        [Tooltip("Ekran yüksekliğine oranla bu mesafeden az hareket eden basış tıklama sayılır ve canavar ilk boş slota zıplar")]
+        public float tapMaxMoveScreenRatio = 0.03f;
+        public float tapMaxDuration = 0.35f;
+
         [Header("State (Read Only)")]
         [SerializeField] private MonsterCharacter _draggedMonster;
         [SerializeField] private SlotPlatform _hoveredSlot;
@@ -27,6 +32,9 @@ namespace PuzzleGlass
         private Vector3 _dragStartScale = Vector3.one;
         private Vector3 _dragOffset;
         private Camera _mainCam;
+        private Vector2 _pointerDownScreenPos;
+        private float _pointerDownTime;
+        private bool _movedBeyondTap;
 
         public event Action<MonsterCharacter, SlotPlatform> OnMonsterPlaced;
 
@@ -91,11 +99,14 @@ namespace PuzzleGlass
                 }
             }
 
-            // Cannot drag already-slotted monsters or null
-            if (selectedMonster == null || selectedMonster.assignedSlot != null) return;
+            // Cannot drag already-slotted monsters, monsters hopping to a slot, or null
+            if (selectedMonster == null || selectedMonster.assignedSlot != null || selectedMonster.IsMovingToSlot || selectedMonster.IsCompleted) return;
 
-            // Start Dragging
+            // Start Dragging (a quick release without moving counts as a tap)
             _isDragging = true;
+            _pointerDownScreenPos = screenPos;
+            _pointerDownTime = Time.unscaledTime;
+            _movedBeyondTap = false;
             _draggedMonster = selectedMonster;
             _dragOriginPos = _draggedMonster.transform.position;
             _dragStartScale = _draggedMonster.transform.localScale;
@@ -118,6 +129,11 @@ namespace PuzzleGlass
             {
                 _isDragging = false;
                 return;
+            }
+
+            if (!_movedBeyondTap && Vector2.Distance(screenPos, _pointerDownScreenPos) > Screen.height * tapMaxMoveScreenRatio)
+            {
+                _movedBeyondTap = true;
             }
 
             Vector3 pointerWorld = ScreenToWorldOnPlane(screenPos, dragHeightZ);
@@ -153,6 +169,13 @@ namespace PuzzleGlass
             if (_draggedMonster == null)
             {
                 _isDragging = false;
+                return;
+            }
+
+            bool isTap = !_movedBeyondTap && Time.unscaledTime - _pointerDownTime <= tapMaxDuration;
+            if (isTap)
+            {
+                HandleTap();
                 return;
             }
 
@@ -208,6 +231,26 @@ namespace PuzzleGlass
                 returnSeq.Append(returningMonster.transform.DOMove(_dragOriginPos, 0.22f).SetEase(Ease.OutQuad));
                 returnSeq.Join(returningMonster.transform.DOScale(_dragStartScale, 0.20f).SetEase(Ease.OutQuad));
             }
+        }
+
+        // Tıklama: canavarı bıraktığı yere koy ve ilk boş slota zıplat; besleme slota oturunca başlar
+        private void HandleTap()
+        {
+            if (_hoveredSlot != null)
+            {
+                _hoveredSlot.SetHighlight(false);
+                _hoveredSlot = null;
+            }
+
+            MonsterCharacter tapped = _draggedMonster;
+            _draggedMonster = null;
+            _isDragging = false;
+
+            tapped.transform.DOKill();
+            tapped.transform.position = _dragOriginPos;
+            tapped.transform.localScale = _dragStartScale;
+
+            tapped.TryHopToNextAvailableSlot();
         }
 
         private SlotPlatform FindClosestAvailableSlot(Vector3 monsterPos)
