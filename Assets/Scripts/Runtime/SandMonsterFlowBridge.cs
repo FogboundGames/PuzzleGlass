@@ -49,6 +49,8 @@ namespace PuzzleGlass
         private readonly Dictionary<PuzzleColor, int> _grainsNeeded = new Dictionary<PuzzleColor, int>();
         private readonly Dictionary<MonsterCharacter, int> _reservedGrains = new Dictionary<MonsterCharacter, int>();
         private float _releaseTimer;
+        // Çıkıştan ağza uçmakta olan taneler (hazne içinde akanları motor kendisi sayar)
+        private readonly Dictionary<PuzzleColor, int> _airborneGrains = new Dictionary<PuzzleColor, int>();
 
         private void Awake()
         {
@@ -152,6 +154,7 @@ namespace PuzzleGlass
         private void ResetFlowState()
         {
             _grainsInFlight.Clear();
+            _airborneGrains.Clear();
             _reservedGrains.Clear();
             _releaseTimer = 0f;
         }
@@ -172,8 +175,8 @@ namespace PuzzleGlass
                 if (slot == null || !slot.isOccupied || slot.currentMonster == null || slot.currentMonster.IsCompleted) continue;
 
                 hungrySlots++;
-                // Canavar slota oturana kadar (zıplama/sürükleme animasyonu) top gönderme
-                if (slot.currentMonster.assignedSlot != slot) continue;
+                // Canavar slota zıplarken top gönderme
+                if (slot.currentMonster.IsMovingToSlot) continue;
 
                 var monster = slot.currentMonster;
                 _grainsNeeded.TryGetValue(monster.colorType, out int needed);
@@ -183,11 +186,14 @@ namespace PuzzleGlass
             bool anyGrainMoving = false;
             foreach (var kvp in _grainsNeeded)
             {
-                _grainsInFlight.TryGetValue(kvp.Key, out int inFlight);
+                // Yoldaki tane sayısı her karede gerçek durumdan hesaplanır; kaybolan bir tane akışı kilitleyemez
+                _airborneGrains.TryGetValue(kvp.Key, out int airborne);
+                int inFlight = sandEngine.CountFlowing(kvp.Key) + airborne;
                 if (kvp.Value > inFlight && sandEngine.TryReleaseGrain(kvp.Key))
                 {
-                    _grainsInFlight[kvp.Key] = ++inFlight;
+                    inFlight++;
                 }
+                _grainsInFlight[kvp.Key] = inFlight;
                 if (inFlight > 0) anyGrainMoving = true;
             }
 
@@ -247,6 +253,8 @@ namespace PuzzleGlass
                 ? glassContainer.GetSpoutExitWorldPosition()
                 : transform.position;
 
+            _airborneGrains.TryGetValue(particle.color, out int airborne);
+            _airborneGrains[particle.color] = airborne + 1;
             SpawnBallisticSandCube(spoutWorldPos, target, particle.color);
         }
 
@@ -275,9 +283,9 @@ namespace PuzzleGlass
 
         private void FinishGrainFlight(MonsterCharacter target, PuzzleColor color)
         {
-            if (_grainsInFlight.TryGetValue(color, out int inFlight))
+            if (target != null && _airborneGrains.TryGetValue(color, out int airborne))
             {
-                _grainsInFlight[color] = Mathf.Max(0, inFlight - 1);
+                _airborneGrains[color] = Mathf.Max(0, airborne - 1);
             }
 
             if (target != null && _reservedGrains.TryGetValue(target, out int reserved))

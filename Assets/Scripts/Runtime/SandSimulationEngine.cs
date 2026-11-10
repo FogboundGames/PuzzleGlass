@@ -35,6 +35,7 @@ namespace PuzzleGlass
         public float depthZ;
         public bool isBackground;
         public bool isFlowing;
+        public bool reachedMouth;
         public bool isFilling;
         public bool isLocked;
         public float fillDelay;
@@ -650,9 +651,24 @@ namespace PuzzleGlass
 
             var released = _particles[best];
             released.isFlowing = true;
+            released.reachedMouth = false;
             released.depthZ = -0.18f;
             _particles[best] = released;
             return true;
+        }
+
+        /// <summary>
+        /// Bu renkte hazneden çıkışa doğru akmakta olan top sayısı.
+        /// </summary>
+        public int CountFlowing(PuzzleColor color)
+        {
+            int count = 0;
+            for (int i = 0; i < _particles.Count; i++)
+            {
+                var p = _particles[i];
+                if (p.isFlowing && !p.isDraining && p.color == color) count++;
+            }
+            return count;
         }
 
         private float _lastReleaseFailLog = -10f;
@@ -710,10 +726,15 @@ namespace PuzzleGlass
                 }
                 else if (p.isFlowing)
                 {
-                    Vector2 target = p.position.y > funnelMouth.y + 0.01f ? funnelMouth : exit;
+                    // Önce boğaz ağzına, sonra çıkışa; aşama bayrağı hedefin ileri geri değişip topun takılmasını önler
+                    Vector2 target = p.reachedMouth ? exit : funnelMouth;
                     p.position = Vector2.MoveTowards(p.position, target, flowGrainSpeed * dt);
+                    if (!p.reachedMouth && (p.position - funnelMouth).sqrMagnitude < 0.000001f)
+                    {
+                        p.reachedMouth = true;
+                    }
 
-                    if ((p.position - exit).sqrMagnitude < 0.0001f)
+                    if (p.reachedMouth && (p.position - exit).sqrMagnitude < 0.0001f)
                     {
                         p.isDraining = true;
                         sandAmount = Mathf.Max(0, sandAmount - 1);
@@ -879,12 +900,15 @@ namespace PuzzleGlass
 
             var points = glassContainer.contourPoints;
             float hs = glassContainer.heightScale;
-            float spoutHalf = points[0].halfWidth;
+
+            // Zemin, haznenin geniş gövdesinin başladığı yerden başlar; çıkış boğazının ağzı topa kapalıdır
+            float maxHalf = 0f;
+            for (int k = 0; k < points.Count; k++) maxHalf = Mathf.Max(maxHalf, points[k].halfWidth);
 
             float startY = points[0].y * hs;
             for (int k = 1; k < points.Count; k++)
             {
-                if (points[k].halfWidth > spoutHalf * 1.05f)
+                if (points[k].halfWidth >= maxHalf * 0.6f)
                 {
                     startY = points[k].y * hs;
                     break;
