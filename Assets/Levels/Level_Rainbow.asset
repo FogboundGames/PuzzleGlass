@@ -17,11 +17,11 @@ MonoBehaviour:
   difficulty: 0
   slotCount: 4
   slotSpacing: 0.84
-  glassPreset: 10
+  glassPreset: 14
   colorTheme: 0
   layerPattern: 0
   symmetricMode: 1
-  curveSubdivisions: 12
+  curveSubdivisions: 14
   widthScale: 1
   heightScale: 1
   glassBodyColor: {r: 0.35, g: 0.7, b: 0.98, a: 0.76}
@@ -33,12 +33,12 @@ MonoBehaviour:
   glassRimRadius: 0.042
   innerRimInset: 0.064
   glassShellDepth: 0.08
-  showShoulderHandles: 1
+  showShoulderHandles: 0
   showSpecularReflections: 1
-  particleSize: 0.16
+  particleSize: 0.24
   particlesPerMonsterCount: 1
-  particleMode: 1
-  patternShape: 9
+  particleMode: 0
+  patternShape: 1
   pixelArtPreset: 9
   customPattern:
     patternName: Rainbow
@@ -54,19 +54,18 @@ MonoBehaviour:
     - RO.......OR
   initialSimulationMode: 0
   freezePatternInPlace: 0
-  gridCellSpacing: 0.165
-  patternVerticalOffset: 0.45
+  gridCellSpacing: 0.24
+  patternVerticalOffset: 0
   fillEmptyWithColor: 0
   emptyCellColor: 0
   contourPoints: []
+  compartmentPreset: 0
+  dividers: []
+  compartmentZones: []
   monsters:
-  - color: 2
-    count: 19
-  - color: 5
-    count: 19
+  - color: 0
+    count: 10
   - color: 1
     count: 11
-  - color: 3
-    count: 9
-  - color: 0
-    count: 3
+  - color: 2
+    count: 10

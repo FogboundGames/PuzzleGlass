@@ -56,20 +56,16 @@ namespace PuzzleGlass
         {
             Instance = this;
             EnsureGameplayControllers();
-            SyncCurrentMonstersWithPattern();
+            if (glassContainer != null && (BallObjectPool.Instance == null || BallObjectPool.Instance.ActiveBalls.Count == 0))
+            {
+                RebuildContainerPhysics();
+            }
         }
 
         private void Start()
         {
             EnsureGameplayControllers();
-
-            if (Application.isPlaying)
-            {
-                RebuildContainerPhysics();
-                return;
-            }
-
-            SyncCurrentMonstersWithPattern();
+            RebuildContainerPhysics();
         }
 
         public void RebuildContainerPhysics()
@@ -172,39 +168,45 @@ namespace PuzzleGlass
             {
                 List<LevelMonsterEntry> fallback = new List<LevelMonsterEntry>()
                 {
-                    new LevelMonsterEntry(PuzzleColor.Yellow, 12),
-                    new LevelMonsterEntry(PuzzleColor.Green, 12),
-                    new LevelMonsterEntry(PuzzleColor.Blue, 12),
-                    new LevelMonsterEntry(PuzzleColor.Red, 12)
+                    new LevelMonsterEntry(PuzzleColor.Red, 10),
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 11),
+                    new LevelMonsterEntry(PuzzleColor.Blue, 10)
                 };
                 SpawnMonsterStagingArea(fallback);
                 return;
             }
 
+            List<PuzzleColor> colorOrder = new List<PuzzleColor>();
             Dictionary<PuzzleColor, int> colorCounts = new Dictionary<PuzzleColor, int>();
             for (int i = 0; i < balls.Count; i++)
             {
                 if (balls[i] == null) continue;
                 PuzzleColor c = balls[i].colorType;
-                if (!colorCounts.ContainsKey(c)) colorCounts[c] = 0;
+                if (!colorCounts.ContainsKey(c))
+                {
+                    colorCounts[c] = 0;
+                    colorOrder.Add(c);
+                }
                 colorCounts[c]++;
             }
 
+            // Place monsters in reverse layer order (e.g., Red on left, Yellow in middle, Blue on right)
+            // so the player can test selecting either the top color (Red) or bottom color (Blue).
             List<LevelMonsterEntry> entries = new List<LevelMonsterEntry>();
-            foreach (var kvp in colorCounts)
+            for (int i = colorOrder.Count - 1; i >= 0; i--)
             {
-                if (kvp.Value > 0)
+                PuzzleColor c = colorOrder[i];
+                if (colorCounts[c] > 0)
                 {
-                    entries.Add(new LevelMonsterEntry(kvp.Key, kvp.Value));
+                    entries.Add(new LevelMonsterEntry(c, colorCounts[c]));
                 }
             }
 
             if (entries.Count == 0)
             {
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Yellow, 12));
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Green, 12));
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 12));
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Red, 12));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Red, 10));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Yellow, 11));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 10));
             }
 
             SpawnMonsterStagingArea(entries);
@@ -244,6 +246,11 @@ namespace PuzzleGlass
 
             if (glassContainer != null)
             {
+                if (!glassContainer.enabled)
+                {
+                    glassContainer.enabled = true;
+                }
+
                 containerPhysics = glassContainer.GetComponent<BallContainerManager>().OrNull() ?? glassContainer.gameObject.AddComponent<BallContainerManager>();
                 containerPhysics.glassContainer = glassContainer;
 
@@ -379,17 +386,17 @@ namespace PuzzleGlass
             SpawnMonsterStagingArea(levelData.monsters);
 
             // 3. Configure & Rebuild ShapedGlassContainer
+            activePatternType = ShapePatternType.GumballMix;
+
             if (glassContainer != null)
             {
-                PuzzleGlassLevelData shapeSource = GetGlassShapeSource(levelData);
-
-                glassContainer.shapePreset = shapeSource.glassPreset;
+                glassContainer.shapePreset = GlassShapePreset.RectangleBox;
                 glassContainer.colorTheme = levelData.colorTheme;
                 glassContainer.layerPattern = levelData.layerPattern;
-                glassContainer.symmetricMode = shapeSource.symmetricMode;
-                glassContainer.curveSubdivisions = shapeSource.curveSubdivisions;
-                glassContainer.widthScale = shapeSource.widthScale;
-                glassContainer.heightScale = shapeSource.heightScale;
+                glassContainer.symmetricMode = true;
+                glassContainer.curveSubdivisions = 14;
+                glassContainer.widthScale = 1.0f;
+                glassContainer.heightScale = 1.0f;
 
                 glassContainer.glassBodyColor = levelData.glassBodyColor;
                 glassContainer.glassCenterGlowColor = levelData.glassCenterGlowColor;
@@ -401,28 +408,52 @@ namespace PuzzleGlass
                 glassContainer.glassRimRadius = levelData.glassRimRadius;
                 glassContainer.innerRimInset = levelData.innerRimInset;
                 glassContainer.glassShellDepth = levelData.glassShellDepth;
-                glassContainer.showShoulderHandles = levelData.showShoulderHandles;
+                glassContainer.showShoulderHandles = false;
                 glassContainer.showSpecularReflections = levelData.showSpecularReflections;
 
-                glassContainer.particleSize = levelData.particleSize;
-                glassContainer.particlesPerMonsterCount = Mathf.Max(1, levelData.particlesPerMonsterCount);
-                glassContainer.particleMode = levelData.particleMode;
+                glassContainer.particleSize = 0.24f;
+                glassContainer.particlesPerMonsterCount = 1;
+                glassContainer.particleMode = ParticleArrangementMode.PhysicsBalls;
                 glassContainer.pixelArtPreset = levelData.pixelArtPreset;
                 glassContainer.customPattern = levelData.customPattern;
-                glassContainer.freezePatternInPlace = false; // Allow balls to tumble naturally
-                glassContainer.gridCellSpacing = levelData.gridCellSpacing;
-                glassContainer.patternVerticalOffset = 0f; // Kum görseli hazne ortasına hizalanır
+                glassContainer.freezePatternInPlace = false;
+                glassContainer.gridCellSpacing = 0.24f;
+                glassContainer.patternVerticalOffset = 0f;
                 if (sandEngine != null) sandEngine.lockedSectionRatio = levelData.lockedSectionRatio;
 
-                if (shapeSource.contourPoints != null && shapeSource.contourPoints.Count >= 3)
+                // Copy per-level compartment dividers & color zones
+                glassContainer.compartmentPreset = levelData.compartmentPreset;
+                glassContainer.dividers = new List<GlassDividerData>();
+                if (levelData.dividers != null)
                 {
-                    glassContainer.contourPoints = new List<GlassContourPoint>(shapeSource.contourPoints);
-                }
-                else
-                {
-                    glassContainer.ApplyShapePreset(shapeSource.glassPreset, false);
+                    for (int i = 0; i < levelData.dividers.Count; i++)
+                    {
+                        if (levelData.dividers[i] != null)
+                            glassContainer.dividers.Add(levelData.dividers[i].Clone());
+                    }
                 }
 
+                glassContainer.compartmentZones = new List<CompartmentColorZone>();
+                if (levelData.compartmentZones != null)
+                {
+                    for (int i = 0; i < levelData.compartmentZones.Count; i++)
+                    {
+                        if (levelData.compartmentZones[i] != null)
+                            glassContainer.compartmentZones.Add(levelData.compartmentZones[i].Clone());
+                    }
+                }
+
+                if (levelData.compartmentPreset != GlassCompartmentPreset.Custom &&
+                    levelData.compartmentPreset != GlassCompartmentPreset.None_OrderedPool &&
+                    glassContainer.dividers.Count == 0)
+                {
+                    ShapedGlassContainer.BuildCompartmentPresetLists(
+                        levelData.compartmentPreset,
+                        glassContainer.dividers,
+                        glassContainer.compartmentZones);
+                }
+
+                glassContainer.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
                 glassContainer.RebuildContainer();
 
                 // 4. Rebuild Airtight Physics Colliders around container
@@ -432,8 +463,6 @@ namespace PuzzleGlass
                 }
             }
 
-            // 5. Yeni görsel üst açıklıktan dökülerek oluşur
-            activePatternType = levelData.patternShape;
             PlaySandFillIfPlaying();
         }
 
@@ -463,6 +492,7 @@ namespace PuzzleGlass
                 monObj.transform.localScale = Vector3.one * scale;
 
                 MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
+                mon.SetStagingHome(new Vector3(x, y, 0f), Vector3.one * scale);
                 mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}");
                 activeMonsters.Add(mon);
             }

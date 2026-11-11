@@ -17,11 +17,11 @@ MonoBehaviour:
   difficulty: 0
   slotCount: 4
   slotSpacing: 0.84
-  glassPreset: 0
+  glassPreset: 14
   colorTheme: 0
   layerPattern: 0
   symmetricMode: 1
-  curveSubdivisions: 12
+  curveSubdivisions: 14
   widthScale: 1
   heightScale: 1
   glassBodyColor: {r: 0.35, g: 0.7, b: 0.98, a: 0.76}
@@ -33,12 +33,12 @@ MonoBehaviour:
   glassRimRadius: 0.042
   innerRimInset: 0.064
   glassShellDepth: 0.08
-  showShoulderHandles: 1
+  showShoulderHandles: 0
   showSpecularReflections: 1
-  particleSize: 0.16
+  particleSize: 0.24
   particlesPerMonsterCount: 1
-  particleMode: 1
-  patternShape: 0
+  particleMode: 0
+  patternShape: 1
   pixelArtPreset: 0
   customPattern:
     patternName: Frog
@@ -55,15 +55,20 @@ MonoBehaviour:
     - .KKKKKKKKK.
   initialSimulationMode: 0
   freezePatternInPlace: 0
-  gridCellSpacing: 0.165
-  patternVerticalOffset: 0.45
+  gridCellSpacing: 0.24
+  patternVerticalOffset: 0
   fillEmptyWithColor: 0
   emptyCellColor: 0
   contourPoints: []
+  compartmentPreset: 1
+  dividers: []
+  compartmentZones: []
   monsters:
-  - color: 7
-    count: 35
+  - color: 0
+    count: 10
   - color: 3
-    count: 39
-  - color: 6
-    count: 2
+    count: 5
+  - color: 1
+    count: 5
+  - color: 2
+    count: 10

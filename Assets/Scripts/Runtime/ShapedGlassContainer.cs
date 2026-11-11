@@ -79,7 +79,8 @@ namespace PuzzleGlass
     public class ShapedGlassContainer : MonoBehaviour
     {
         [Header("Shape Preset & Symmetry")]
-        public GlassShapePreset shapePreset = GlassShapePreset.SquareFlask;
+        public GlassShapePreset shapePreset = GlassShapePreset.RectangleBox;
+        public bool IsFlatBottomBox => shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox;
         public bool symmetricMode = true;
         [Range(4, 24)]
         public int curveSubdivisions = 14;
@@ -90,6 +91,11 @@ namespace PuzzleGlass
 
         [Header("Glass Contour Control Points (Bottom Spout -> Top Neck)")]
         public List<GlassContourPoint> contourPoints = new List<GlassContourPoint>();
+
+        [Header("Glass Compartments & Internal Dividers (Per-Level)")]
+        public GlassCompartmentPreset compartmentPreset = GlassCompartmentPreset.None_OrderedPool;
+        public List<GlassDividerData> dividers = new List<GlassDividerData>();
+        public List<CompartmentColorZone> compartmentZones = new List<CompartmentColorZone>();
 
         [Header("Glass Color & Material Aesthetics")]
         public GlassColorTheme colorTheme = GlassColorTheme.SkyBlueGlossy;
@@ -117,8 +123,8 @@ namespace PuzzleGlass
 
         [Header("Particle Fill & Granular Physics")]
         public BottleLayerPattern layerPattern = BottleLayerPattern.VFunnelBands;
-        [Range(0.08f, 0.22f)]
-        public float particleSize = 0.165f;
+        [Range(0.08f, 0.30f)]
+        public float particleSize = 0.24f;
         [Range(0.15f, 0.85f)]
         public float particleFillRatio = 0.48f;
         [Range(0, 20)]
@@ -349,6 +355,8 @@ namespace PuzzleGlass
         private Material _leftEarPillMat;
         private Material _rightEarPillMat;
         private Material _glassFakeShadowMat;
+        private Material _dividerOuterRimMat;
+        private Material _dividerInnerCoreMat;
 
         private List<BottleCube> _bottleCubes = new List<BottleCube>();
         private List<Vector3> _splineWaypoints = new List<Vector3>();
@@ -374,8 +382,14 @@ namespace PuzzleGlass
 
         private void Awake()
         {
+            if (shapePreset == GlassShapePreset.SquareFlask)
+            {
+                shapePreset = GlassShapePreset.RectangleBox;
+                transform.localPosition = new Vector3(0f, 1.35f, 0f);
+            }
             particlesPerMonsterCount = 1;
-            if (particleSize < 0.145f) particleSize = 0.155f;
+            if (IsFlatBottomBox) particleSize = 0.24f;
+            else if (particleSize < 0.145f) particleSize = 0.155f;
             patternVerticalOffset = 0f;
             EnsureContourInitialized();
             CleanOrphanedChildren();
@@ -384,8 +398,14 @@ namespace PuzzleGlass
 
         private void OnEnable()
         {
+            if (shapePreset == GlassShapePreset.SquareFlask)
+            {
+                shapePreset = GlassShapePreset.RectangleBox;
+                transform.localPosition = new Vector3(0f, 1.35f, 0f);
+            }
             particlesPerMonsterCount = 1;
-            if (particleSize < 0.145f) particleSize = 0.155f;
+            if (IsFlatBottomBox) particleSize = 0.24f;
+            else if (particleSize < 0.145f) particleSize = 0.155f;
             patternVerticalOffset = 0f;
             EnsureContourInitialized();
             CleanOrphanedChildren();
@@ -414,7 +434,13 @@ namespace PuzzleGlass
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            if (particleSize < 0.08f) particleSize = 0.27f;
+            if (shapePreset == GlassShapePreset.SquareFlask)
+            {
+                shapePreset = GlassShapePreset.RectangleBox;
+                transform.localPosition = new Vector3(0f, 1.35f, 0f);
+            }
+            if (IsFlatBottomBox) particleSize = 0.24f;
+            else if (particleSize < 0.08f) particleSize = 0.24f;
             EnsureContourInitialized();
 
             UnityEditor.EditorApplication.delayCall += () =>
@@ -450,6 +476,12 @@ namespace PuzzleGlass
         public void EnsureContourInitialized()
         {
             if (contourPoints == null || contourPoints.Count < 3)
+            {
+                ApplyShapePreset(shapePreset, false);
+                return;
+            }
+
+            if (IsFlatBottomBox && (contourPoints.Count != 4 || Mathf.Abs(contourPoints[0].halfWidth - 1.320f) > 0.05f))
             {
                 ApplyShapePreset(shapePreset, false);
             }
@@ -685,23 +717,14 @@ namespace PuzzleGlass
                     break;
 
                 case GlassShapePreset.SquareBox:
-                    // Düz Tabanlı Tam Kare Cam Kutu (Boğazsız ve Hunisiz vitrin kutusu)
-                    symmetricMode = true;
-                    showShoulderHandles = false;
-                    contourPoints.Add(new GlassContourPoint(-0.75f, 1.100f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint(-0.70f, 1.100f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 1.35f, 1.100f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 1.40f, 1.100f, 0f, 1.00f));
-                    break;
-
                 case GlassShapePreset.RectangleBox:
-                    // Düz Tabanlı Tam Dikdörtgen Cam Kutu
+                    // Reference Image 2: Wide Rounded-Rectangle Periwinkle-Framed Sky-Blue Glass Ball Pool (11*D = 2.64m inner width)
                     symmetricMode = true;
                     showShoulderHandles = false;
-                    contourPoints.Add(new GlassContourPoint(-0.85f, 0.850f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint(-0.80f, 0.850f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 1.60f, 0.850f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 1.65f, 0.850f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint(-0.56f, 1.320f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint(-0.52f, 1.320f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 0.58f, 1.320f, 0f, 1.00f));
+                    contourPoints.Add(new GlassContourPoint( 0.62f, 1.320f, 0f, 1.00f));
                     break;
             }
 
@@ -1010,7 +1033,10 @@ namespace PuzzleGlass
                 _chamberInnerGlowMat.SetFloat("_WallThickness", wallThickWorld);
                 _chamberInnerGlowMat.SetFloat("_SheenIntensity", sheenStrength);
                 _chamberInnerGlowMat.SetFloat("_IsFrontLens", 0.0f);
-                _chamberInnerGlowMat.renderQueue = 2990;
+                _chamberInnerGlowMat.SetFloat("_IsRoundedBoxPool", IsFlatBottomBox ? 1.0f : 0.0f);
+                _chamberInnerGlowMat.SetFloat("_BoxAspect", 1.97975f);
+                // Render back glass chamber before 3D balls (Geometry+15 = 2015) so balls inside the pool are never occluded
+                _chamberInnerGlowMat.renderQueue = 1998;
             }
             else
             {
@@ -1018,8 +1044,25 @@ namespace PuzzleGlass
                     "Mat_FlaskCenterGlow",
                     glassCenterGlowColor,
                     0.98f,
-                    2992);
+                    1998);
             }
+
+            // Internal Glass Compartment Divider Materials (Periwinkle outer frame + Icy sky-blue inner glass bar)
+            _dividerOuterRimMat = new Material(litShader);
+            _dividerOuterRimMat.name = "Mat_GlassDividerOuterRim";
+            Color divOuterCol = new Color(0.52f, 0.50f, 0.96f, 1.0f);
+            _dividerOuterRimMat.color = divOuterCol;
+            if (_dividerOuterRimMat.HasProperty("_BaseColor")) _dividerOuterRimMat.SetColor("_BaseColor", divOuterCol);
+            if (_dividerOuterRimMat.HasProperty("_Smoothness")) _dividerOuterRimMat.SetFloat("_Smoothness", 0.92f);
+            _dividerOuterRimMat.renderQueue = 2018;
+
+            _dividerInnerCoreMat = new Material(litShader);
+            _dividerInnerCoreMat.name = "Mat_GlassDividerInnerCore";
+            Color divInnerCol = new Color(0.84f, 0.94f, 1.00f, 1.0f);
+            _dividerInnerCoreMat.color = divInnerCol;
+            if (_dividerInnerCoreMat.HasProperty("_BaseColor")) _dividerInnerCoreMat.SetColor("_BaseColor", divInnerCol);
+            if (_dividerInnerCoreMat.HasProperty("_Smoothness")) _dividerInnerCoreMat.SetFloat("_Smoothness", 0.96f);
+            _dividerInnerCoreMat.renderQueue = 2019;
 
             // 3. Sleek Translucent Hypercasual Glass Border Rim Materials
             Color outerTranslucentRim = glassOuterRimColor;
@@ -1067,6 +1110,8 @@ namespace PuzzleGlass
                 _frontGlassLensMat.SetFloat("_WallThickness", wallThickWorld);
                 _frontGlassLensMat.SetFloat("_SheenIntensity", sheenStrength);
                 _frontGlassLensMat.SetFloat("_IsFrontLens", 1.0f);
+                _frontGlassLensMat.SetFloat("_IsRoundedBoxPool", IsFlatBottomBox ? 1.0f : 0.0f);
+                _frontGlassLensMat.SetFloat("_BoxAspect", 1.97975f);
                 _frontGlassLensMat.renderQueue = 3020;
             }
             else
@@ -1185,6 +1230,58 @@ namespace PuzzleGlass
             cachedLeftInnerPath = leftInnerPath;
             cachedRightInnerPath = rightInnerPath;
 
+            if (IsFlatBottomBox)
+            {
+                float innerFloorY = GetChamberFloorY();
+                float innerCeilY = (contourPoints != null && contourPoints.Count > 0)
+                    ? contourPoints[contourPoints.Count - 1].y * heightScale
+                    : 0.62f * heightScale;
+                float centerY = (innerFloorY + innerCeilY) * 0.5f;
+                float innerHalfH = Mathf.Max(0.25f, (innerCeilY - innerFloorY) * 0.5f);
+                float innerHalfW = (contourPoints != null && contourPoints.Count > 0)
+                    ? contourPoints[0].halfWidth * widthScale
+                    : 1.32f * widthScale;
+
+                // Exact alignment with EvaluateRoundedBoxPool SDF (innerHalf = outerHalf - 0.115, outerHalf.y = 0.86 => innerHalf.y = 0.745)
+                float quadHalfH = innerHalfH / 0.745f;
+                float quadHalfW = (innerHalfW + 0.115f * quadHalfH) / 0.90f;
+                float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
+
+                if (_chamberInnerGlowMat != null)
+                {
+                    _chamberInnerGlowMat.SetFloat("_IsRoundedBoxPool", 1.0f);
+                    _chamberInnerGlowMat.SetFloat("_BoxAspect", boxAspect);
+                }
+                if (_frontGlassLensMat != null)
+                {
+                    _frontGlassLensMat.SetFloat("_IsRoundedBoxPool", 1.0f);
+                    _frontGlassLensMat.SetFloat("_BoxAspect", boxAspect);
+                }
+
+                Mesh boxQuadMesh = CreateRoundedBoxPoolQuadMesh(quadHalfW, quadHalfH, centerY);
+
+                GameObject poolBackObj = new GameObject("FlaskInnerCenterGlow");
+                poolBackObj.transform.SetParent(_glassWallsObj.transform, false);
+                poolBackObj.transform.localPosition = new Vector3(0f, 0f, 0.08f);
+                poolBackObj.AddComponent<MeshFilter>().sharedMesh = boxQuadMesh;
+                var poolBackMr = poolBackObj.AddComponent<MeshRenderer>();
+                poolBackMr.sharedMaterial = _chamberInnerGlowMat;
+                poolBackMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                poolBackMr.receiveShadows = false;
+
+                GameObject poolFrontObj = new GameObject("FlaskFrontGlassLens");
+                poolFrontObj.transform.SetParent(_glassWallsObj.transform, false);
+                poolFrontObj.transform.localPosition = new Vector3(0f, 0f, -0.24f);
+                poolFrontObj.AddComponent<MeshFilter>().sharedMesh = boxQuadMesh;
+                var poolFrontMr = poolFrontObj.AddComponent<MeshRenderer>();
+                poolFrontMr.sharedMaterial = _frontGlassLensMat;
+                poolFrontMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                poolFrontMr.receiveShadows = false;
+
+                BuildGlassDividersGeometry();
+                return;
+            }
+
             // 0. Soft Feathered Warm Fake Drop Shadow behind the entire custom glass contour
             BuildGlassFakeDropShadow(leftPath, rightPath);
 
@@ -1278,6 +1375,174 @@ namespace PuzzleGlass
                 BuildShoulderHandleEar(true, leftPath);
                 BuildShoulderHandleEar(false, rightPath);
             }
+
+            // 6. Internal Glass Compartment Dividers
+            BuildGlassDividersGeometry();
+        }
+
+        /// <summary>
+        /// Builds 3D glossy periwinkle & icy-blue rounded glass divider bars inside the container for all enabled dividers.
+        /// </summary>
+        private void BuildGlassDividersGeometry()
+        {
+            if (dividers == null || dividers.Count == 0 || _glassWallsObj == null) return;
+
+            for (int i = 0; i < dividers.Count; i++)
+            {
+                var div = dividers[i];
+                if (div == null || !div.enabled) continue;
+
+                float len = Mathf.Max(0.10f, div.length);
+                float thick = Mathf.Max(0.035f, div.thickness);
+                float cornerR = Mathf.Min(thick * 0.48f, len * 0.25f);
+
+                GameObject divRoot = new GameObject($"GlassDivider_{i + 1}_{div.name}");
+                divRoot.transform.SetParent(_glassWallsObj.transform, false);
+                divRoot.transform.localPosition = new Vector3(div.center.x, div.center.y, -0.10f);
+                divRoot.transform.localRotation = Quaternion.Euler(0f, 0f, div.angleDegrees);
+
+                // Outer periwinkle-violet glossy frame bar
+                Mesh outerBarMesh = ProceduralMeshUtils.CreatePillBadge(len, thick, 0.14f, cornerR);
+                divRoot.AddComponent<MeshFilter>().sharedMesh = outerBarMesh;
+                var outerMr = divRoot.AddComponent<MeshRenderer>();
+                outerMr.sharedMaterial = _dividerOuterRimMat != null ? _dividerOuterRimMat : _outerBlueRimMat;
+                outerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                outerMr.receiveShadows = false;
+
+                // Inner icy-cyan refractive glass core highlight
+                float innerLen = Mathf.Max(0.03f, len - 0.022f);
+                float innerThick = Mathf.Max(0.016f, thick - 0.022f);
+                float innerCornerR = Mathf.Min(innerThick * 0.48f, innerLen * 0.25f);
+
+                GameObject innerCoreObj = new GameObject("InnerGlassCore");
+                innerCoreObj.transform.SetParent(divRoot.transform, false);
+                innerCoreObj.transform.localPosition = new Vector3(0f, 0f, -0.008f);
+                innerCoreObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(innerLen, innerThick, 0.145f, innerCornerR);
+                var innerMr = innerCoreObj.AddComponent<MeshRenderer>();
+                innerMr.sharedMaterial = _dividerInnerCoreMat != null ? _dividerInnerCoreMat : _innerCyanRimMat;
+                innerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                innerMr.receiveShadows = false;
+            }
+        }
+
+        public void ApplyCompartmentPreset(GlassCompartmentPreset preset, bool rebuildImmediate = true)
+        {
+            compartmentPreset = preset;
+            if (dividers == null) dividers = new List<GlassDividerData>();
+            if (compartmentZones == null) compartmentZones = new List<CompartmentColorZone>();
+
+            if (preset != GlassCompartmentPreset.Custom)
+            {
+                BuildCompartmentPresetLists(preset, dividers, compartmentZones);
+            }
+
+            if (rebuildImmediate)
+            {
+                RebuildContainer();
+            }
+        }
+
+        public static void BuildCompartmentPresetLists(
+            GlassCompartmentPreset preset,
+            List<GlassDividerData> outDividers,
+            List<CompartmentColorZone> outZones)
+        {
+            if (outDividers == null || outZones == null) return;
+            outDividers.Clear();
+            outZones.Clear();
+
+            switch (preset)
+            {
+                case GlassCompartmentPreset.None_OrderedPool:
+                default:
+                    // Clean 3-layer ordered horizontal pool (Row 0 Blue, Row 1 Yellow, Row 2 Red)
+                    break;
+
+                case GlassCompartmentPreset.TwoVertical_LeftRight:
+                    // Central vertical glass divider splitting the pool into Left and Right compartments
+                    outDividers.Add(new GlassDividerData("Orta Dikey Bölme", new Vector2(0f, -0.02f), 1.04f, 0.085f, 90f, true));
+                    outZones.Add(new CompartmentColorZone("Sol Alt",  -1.0f, 0.0f, 0, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Sol Orta", -1.0f, 0.0f, 1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Sol Üst",  -1.0f, 0.0f, 2, PuzzleColor.Red));
+                    outZones.Add(new CompartmentColorZone("Sağ Alt",   0.0f, 1.0f, 0, PuzzleColor.Green));
+                    outZones.Add(new CompartmentColorZone("Sağ Orta",  0.0f, 1.0f, 1, PuzzleColor.Red));
+                    outZones.Add(new CompartmentColorZone("Sağ Üst",   0.0f, 1.0f, 2, PuzzleColor.Blue));
+                    break;
+
+                case GlassCompartmentPreset.ThreeVertical_Columns:
+                    // Two vertical glass dividers splitting the pool into 3 vertical columns (Left / Center / Right)
+                    outDividers.Add(new GlassDividerData("Sol Sütun Bölmesi", new Vector2(-0.44f, -0.02f), 1.04f, 0.080f, 90f, true));
+                    outDividers.Add(new GlassDividerData("Sağ Sütun Bölmesi", new Vector2( 0.44f, -0.02f), 1.04f, 0.080f, 90f, true));
+                    outZones.Add(new CompartmentColorZone("Sol Sütun",  -1.00f, -0.34f, -1, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Orta Sütun", -0.34f,  0.34f, -1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Sağ Sütun",   0.34f,  1.00f, -1, PuzzleColor.Red));
+                    break;
+
+                case GlassCompartmentPreset.InvertedT_BottomRowPlusSplitTop:
+                    // Upper vertical divider above Row 0: Bottom row is a full continuous row, upper rows are split Left/Right!
+                    outDividers.Add(new GlassDividerData("Üst Ayırıcı Bölme", new Vector2(0f, 0.11f), 0.76f, 0.085f, 90f, true));
+                    outZones.Add(new CompartmentColorZone("Alt Tam Sıra",  -1.0f, 1.0f,  0, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Üst Sol Bölme", -1.0f, 0.0f, -1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Üst Sağ Bölme",  0.0f, 1.0f, -1, PuzzleColor.Red));
+                    break;
+
+                case GlassCompartmentPreset.TopT_SplitBottomPlusTopRow:
+                    // Lower vertical divider splitting Rows 0 & 1, with a full continuous Row 2 across the top
+                    outDividers.Add(new GlassDividerData("Alt Ayırıcı Bölme", new Vector2(0f, -0.22f), 0.64f, 0.085f, 90f, true));
+                    outZones.Add(new CompartmentColorZone("Alt Sol",      -1.0f, 0.0f, 0, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Alt Sağ",       0.0f, 1.0f, 0, PuzzleColor.Green));
+                    outZones.Add(new CompartmentColorZone("Orta Sol",     -1.0f, 0.0f, 1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Orta Sağ",      0.0f, 1.0f, 1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Üst Tam Sıra", -1.0f, 1.0f, 2, PuzzleColor.Red));
+                    break;
+
+                case GlassCompartmentPreset.VFunnel_SlopedChannels:
+                    // Angled V-funnel baffles guiding upper balls toward the center channel
+                    outDividers.Add(new GlassDividerData("Sol Eğimli Kanal", new Vector2(-0.62f, -0.02f), 0.72f, 0.080f, -26f, true));
+                    outDividers.Add(new GlassDividerData("Sağ Eğimli Kanal", new Vector2( 0.62f, -0.02f), 0.72f, 0.080f,  26f, true));
+                    outZones.Add(new CompartmentColorZone("Alt Katman",  -1.0f, 1.0f, 0, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Orta Katman", -1.0f, 1.0f, 1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Üst Katman",  -1.0f, 1.0f, 2, PuzzleColor.Red));
+                    break;
+
+                case GlassCompartmentPreset.ZigZag_Shelves:
+                    // Staggered sloped shelves inside the pool
+                    outDividers.Add(new GlassDividerData("Sol Alt Raf", new Vector2(-0.46f, -0.14f), 0.88f, 0.075f, -12f, true));
+                    outDividers.Add(new GlassDividerData("Sağ Üst Raf", new Vector2( 0.46f,  0.12f), 0.88f, 0.075f,  12f, true));
+                    outZones.Add(new CompartmentColorZone("Alt Katman",  -1.0f, 1.0f, 0, PuzzleColor.Blue));
+                    outZones.Add(new CompartmentColorZone("Orta Katman", -1.0f, 1.0f, 1, PuzzleColor.Yellow));
+                    outZones.Add(new CompartmentColorZone("Üst Katman",  -1.0f, 1.0f, 2, PuzzleColor.Red));
+                    break;
+            }
+        }
+
+        private static Mesh CreateRoundedBoxPoolQuadMesh(float halfW, float halfH, float centerY)
+        {
+            Mesh m = new Mesh { name = "RoundedBoxGlassPoolQuad" };
+            m.vertices = new Vector3[]
+            {
+                new Vector3(-halfW, centerY - halfH, 0f),
+                new Vector3( halfW, centerY - halfH, 0f),
+                new Vector3(-halfW, centerY + halfH, 0f),
+                new Vector3( halfW, centerY + halfH, 0f)
+            };
+            m.uv = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0f),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f)
+            };
+            m.normals = new Vector3[]
+            {
+                Vector3.back,
+                Vector3.back,
+                Vector3.back,
+                Vector3.back
+            };
+            m.triangles = new int[] { 0, 2, 1, 2, 3, 1 };
+            m.RecalculateBounds();
+            return m;
         }
 
         private void BuildGlassFakeDropShadow(Vector3[] leftPath, Vector3[] rightPath)
@@ -1811,13 +2076,18 @@ namespace PuzzleGlass
                 else gen = gameObject.AddComponent<BallPatternGenerator>();
             }
 
+            if (IsFlatBottomBox)
+            {
+                particleSize = 0.24f;
+            }
+
             gen.glassContainer = this;
-            gen.ballDiameter = (particleSize > 0.05f && particleSize <= 0.22f) ? particleSize : 0.165f;
+            gen.ballDiameter = IsFlatBottomBox ? 0.24f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.24f);
             gen.patternVerticalOffset = patternVerticalOffset;
             gen.initialShapeHoldTime = 0f;
 
             var gameMgr = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
-            ShapePatternType shape = (gameMgr != null) ? gameMgr.activePatternType : ShapePatternType.FourQuadrants;
+            ShapePatternType shape = (gameMgr != null) ? gameMgr.activePatternType : ShapePatternType.GumballMix;
 
             List<LevelMonsterEntry> goals = null;
             if (gameMgr != null && gameMgr.currentLevel != null && gameMgr.currentLevel.monsters != null)
@@ -1836,6 +2106,10 @@ namespace PuzzleGlass
 
         public float GetSpoutThroatY()
         {
+            if (IsFlatBottomBox)
+            {
+                return GetChamberFloorY();
+            }
             if (contourPoints != null && contourPoints.Count >= 3)
             {
                 return contourPoints[1].y * heightScale + 0.04f;
@@ -1845,13 +2119,13 @@ namespace PuzzleGlass
 
         public float GetChamberFloorY()
         {
-            if (shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox)
+            if (IsFlatBottomBox)
             {
                 if (contourPoints != null && contourPoints.Count > 0)
                 {
                     return contourPoints[0].y * heightScale;
                 }
-                return -0.75f * heightScale;
+                return -0.56f * heightScale;
             }
 
             if (contourPoints != null && contourPoints.Count >= 4)

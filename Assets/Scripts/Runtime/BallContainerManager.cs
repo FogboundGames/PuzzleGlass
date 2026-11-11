@@ -48,11 +48,11 @@ namespace PuzzleGlass
             {
                 _glassPhysMaterial = new PhysicsMaterial("Mat_GlassContainerWall")
                 {
-                    bounciness = 0.15f,
-                    dynamicFriction = 0.12f,
-                    staticFriction = 0.20f,
+                    bounciness = 0.10f,
+                    dynamicFriction = 0.04f,
+                    staticFriction = 0.05f,
                     bounceCombine = PhysicsMaterialCombine.Minimum,
-                    frictionCombine = PhysicsMaterialCombine.Average
+                    frictionCombine = PhysicsMaterialCombine.Minimum
                 };
             }
         }
@@ -84,6 +84,97 @@ namespace PuzzleGlass
             _collidersRoot.transform.SetParent(transform, false);
             _collidersRoot.transform.localPosition = Vector3.zero;
             _collidersRoot.transform.localRotation = Quaternion.identity;
+
+            if (glassContainer.IsFlatBottomBox)
+            {
+                float floorY = glassContainer.GetChamberFloorY();
+                float ceilY = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                    ? glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y * glassContainer.heightScale
+                    : 0.62f * glassContainer.heightScale;
+                float innerHalfW = (glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                    ? glassContainer.contourPoints[0].halfWidth * glassContainer.widthScale
+                    : 1.32f * glassContainer.widthScale;
+
+                float centerY = (floorY + ceilY) * 0.5f;
+                float boxH = Mathf.Max(0.5f, (ceilY - floorY) + 0.40f);
+                float boxW = innerHalfW * 2f + 0.60f;
+
+                // Left vertical wall (inner face at -innerHalfW)
+                GameObject leftBoxWall = new GameObject("LeftGlassWallCollider");
+                leftBoxWall.transform.SetParent(_collidersRoot.transform, false);
+                leftBoxWall.transform.localPosition = new Vector3(-innerHalfW - wallThickness * 0.5f, centerY, -0.10f);
+                var leftCol = leftBoxWall.AddComponent<BoxCollider>();
+                leftCol.size = new Vector3(wallThickness, boxH, wallDepth);
+                leftCol.sharedMaterial = _glassPhysMaterial;
+
+                // Right vertical wall (inner face at +innerHalfW)
+                GameObject rightBoxWall = new GameObject("RightGlassWallCollider");
+                rightBoxWall.transform.SetParent(_collidersRoot.transform, false);
+                rightBoxWall.transform.localPosition = new Vector3(innerHalfW + wallThickness * 0.5f, centerY, -0.10f);
+                var rightCol = rightBoxWall.AddComponent<BoxCollider>();
+                rightCol.size = new Vector3(wallThickness, boxH, wallDepth);
+                rightCol.sharedMaterial = _glassPhysMaterial;
+
+                // Front & Back Z containment walls
+                GameObject frontBoxWall = new GameObject("FrontGlassWallCollider");
+                frontBoxWall.transform.SetParent(_collidersRoot.transform, false);
+                frontBoxWall.transform.localPosition = new Vector3(0f, centerY, frontPlaneZ);
+                var frontBoxCol = frontBoxWall.AddComponent<BoxCollider>();
+                frontBoxCol.size = new Vector3(boxW + 1.0f, boxH + 1.0f, 0.08f);
+                frontBoxCol.sharedMaterial = _glassPhysMaterial;
+
+                GameObject backBoxWall = new GameObject("BackGlassWallCollider");
+                backBoxWall.transform.SetParent(_collidersRoot.transform, false);
+                backBoxWall.transform.localPosition = new Vector3(0f, centerY, backPlaneZ);
+                var backBoxCol = backBoxWall.AddComponent<BoxCollider>();
+                backBoxCol.size = new Vector3(boxW + 1.0f, boxH + 1.0f, 0.08f);
+                backBoxCol.sharedMaterial = _glassPhysMaterial;
+
+                // Top Ceiling (bottom face at ceilY)
+                GameObject topBoxCeiling = new GameObject("TopCeilingCollider");
+                topBoxCeiling.transform.SetParent(_collidersRoot.transform, false);
+                topBoxCeiling.transform.localPosition = new Vector3(0f, ceilY + 0.075f, -0.10f);
+                var topBoxCol = topBoxCeiling.AddComponent<BoxCollider>();
+                topBoxCol.size = new Vector3(boxW, 0.15f, wallDepth);
+                topBoxCol.sharedMaterial = _glassPhysMaterial;
+
+                // Flat Floor Stopper (top surface at floorY)
+                GameObject floorStopperObj = new GameObject("BottomSpoutStopperGate");
+                floorStopperObj.transform.SetParent(_collidersRoot.transform, false);
+                floorStopperObj.transform.localPosition = new Vector3(0f, floorY - 0.04f, -0.10f);
+                bottomSpoutStopper = floorStopperObj.AddComponent<BoxCollider>();
+                bottomSpoutStopper.size = new Vector3(boxW, 0.08f, wallDepth);
+                bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
+
+                // Rounded Bottom Corner Fillets (matches the curved bottom-left and bottom-right glass corners of Image 2
+                // so the 10 bottom-row balls sit snugly between [-1.20, +1.20] while the 11 middle-row balls span [-1.32, +1.32])
+                float filletW = 0.116f;
+                float filletH = 0.18f;
+                GameObject leftFilletObj = new GameObject("LeftBottomCornerFillet");
+                leftFilletObj.transform.SetParent(_collidersRoot.transform, false);
+                leftFilletObj.transform.localPosition = new Vector3(-innerHalfW + filletW * 0.5f, floorY + filletH * 0.5f, -0.10f);
+                var leftFilletCol = leftFilletObj.AddComponent<BoxCollider>();
+                leftFilletCol.size = new Vector3(filletW, filletH, wallDepth);
+                leftFilletCol.sharedMaterial = _glassPhysMaterial;
+
+                GameObject rightFilletObj = new GameObject("RightBottomCornerFillet");
+                rightFilletObj.transform.SetParent(_collidersRoot.transform, false);
+                rightFilletObj.transform.localPosition = new Vector3(innerHalfW - filletW * 0.5f, floorY + filletH * 0.5f, -0.10f);
+                var rightFilletCol = rightFilletObj.AddComponent<BoxCollider>();
+                rightFilletCol.size = new Vector3(filletW, filletH, wallDepth);
+                rightFilletCol.sharedMaterial = _glassPhysMaterial;
+
+                // Exit Trigger below floor
+                GameObject boxTriggerObj = new GameObject("SpoutExitTrigger");
+                boxTriggerObj.transform.SetParent(_collidersRoot.transform, false);
+                boxTriggerObj.transform.localPosition = new Vector3(0f, floorY - 0.12f, -0.10f);
+                spoutExitTrigger = boxTriggerObj.AddComponent<BoxCollider>();
+                spoutExitTrigger.isTrigger = true;
+                spoutExitTrigger.size = new Vector3(boxW, 0.16f, wallDepth);
+
+                BuildDividerColliders();
+                return;
+            }
 
             // Generate latest smooth paths
             glassContainer.GenerateFlaskPaths(
@@ -155,6 +246,28 @@ namespace PuzzleGlass
             spoutExitTrigger = triggerObj.AddComponent<BoxCollider>();
             spoutExitTrigger.isTrigger = true;
             spoutExitTrigger.size = new Vector3(stopperW + 0.20f, 0.16f, wallDepth);
+
+            BuildDividerColliders();
+        }
+
+        private void BuildDividerColliders()
+        {
+            if (glassContainer == null || glassContainer.dividers == null || _collidersRoot == null) return;
+
+            for (int i = 0; i < glassContainer.dividers.Count; i++)
+            {
+                var div = glassContainer.dividers[i];
+                if (div == null || !div.enabled) continue;
+
+                GameObject divColObj = new GameObject($"DividerCollider_{i + 1}_{div.name}");
+                divColObj.transform.SetParent(_collidersRoot.transform, false);
+                divColObj.transform.localPosition = new Vector3(div.center.x, div.center.y, -0.10f);
+                divColObj.transform.localRotation = Quaternion.Euler(0f, 0f, div.angleDegrees);
+
+                var box = divColObj.AddComponent<BoxCollider>();
+                box.size = new Vector3(Mathf.Max(0.08f, div.length), Mathf.Max(0.03f, div.thickness), wallDepth);
+                box.sharedMaterial = _glassPhysMaterial;
+            }
         }
 
         private void BuildWallSegmentColliders(Vector3[] path, bool isLeft)

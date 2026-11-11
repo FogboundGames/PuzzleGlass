@@ -16,6 +16,11 @@ namespace PuzzleGlass
         public int initialCount = 10;
         public SlotPlatform assignedSlot;
 
+        [Header("Staging Home State (For Returning from Slot)")]
+        public Vector3 stagingHomePosition;
+        public Vector3 stagingHomeScale = Vector3.one;
+        public bool hasStagingHome = false;
+
         [Header("Visual Parts")]
         public Transform bodyPivot;
         public Transform mouthTransform;
@@ -85,9 +90,21 @@ namespace PuzzleGlass
             col.center = new Vector3(0f, 0.15f, 0f);
         }
 
-        private void OnMouseDown()
+        public void SetStagingHome(Vector3 homePos, Vector3 homeScale)
         {
-            TryHopToNextAvailableSlot();
+            stagingHomePosition = homePos;
+            stagingHomeScale = homeScale;
+            hasStagingHome = true;
+        }
+
+        public void EnsureStagingHomeRecorded()
+        {
+            if (!hasStagingHome && assignedSlot == null)
+            {
+                stagingHomePosition = transform.position;
+                stagingHomeScale = transform.localScale;
+                hasStagingHome = true;
+            }
         }
 
         private void OnDisable()
@@ -122,6 +139,7 @@ namespace PuzzleGlass
             _subParticleCounter = 0;
             _isCompleted = false;
             monsterId = string.IsNullOrEmpty(id) ? $"Monster_{color}_{Guid.NewGuid().ToString().Substring(0, 4)}" : id;
+            EnsureStagingHomeRecorded();
             RebuildMonsterVisuals();
             UpdateBadgeText();
         }
@@ -666,13 +684,13 @@ namespace PuzzleGlass
         public bool TryHopToNextAvailableSlot()
         {
             if (_isMovingToSlot || _isCompleted) return false;
+            EnsureStagingHomeRecorded();
 
             if (assignedSlot != null)
             {
-                // Playful wiggle in slot
-                transform.DOKill(true);
-                transform.DOPunchScale(new Vector3(-0.06f, 0.12f, 0f), 0.22f, 6, 0.5f);
-                return false;
+                // Already in a slot -> Tap returns the monster back to its staging home!
+                ReturnToStagingHome();
+                return true;
             }
 
             SlotSystem slotSys = SlotSystem.Instance;
@@ -691,6 +709,62 @@ namespace PuzzleGlass
             targetSlot.ReserveSlot(this);
             StartCoroutine(HopToSlotRoutine(targetSlot));
             return true;
+        }
+
+        /// <summary>
+        /// Detaches this monster from any assigned slot and hops it smoothly back to its original staging tray position.
+        /// </summary>
+        public void ReturnToStagingHome(Action onComplete = null)
+        {
+            if (_isCompleted) return;
+            EnsureStagingHomeRecorded();
+
+            StopAllCoroutines();
+            _isMovingToSlot = false;
+
+            if (assignedSlot != null)
+            {
+                assignedSlot.DetachMonster();
+                assignedSlot = null;
+            }
+
+            if (BallCollectionController.Instance != null)
+            {
+                BallCollectionController.Instance.OnMonsterRemovedFromSlot(this);
+            }
+
+            Vector3 targetHomePos = hasStagingHome ? stagingHomePosition : new Vector3(transform.position.x, -1.98f, 0f);
+            Vector3 targetHomeScale = (hasStagingHome && stagingHomeScale.sqrMagnitude > 0.01f) ? stagingHomeScale : Vector3.one * 0.64f;
+
+            transform.DOKill(false);
+            if (bodyPivot != null) bodyPivot.localRotation = Quaternion.identity;
+
+            Sequence returnSeq = DOTween.Sequence();
+            returnSeq.Join(transform.DOJump(targetHomePos, jumpPower: 0.36f, numJumps: 1, duration: 0.24f).SetEase(Ease.OutQuad));
+            returnSeq.Join(transform.DOScale(targetHomeScale, 0.22f).SetEase(Ease.OutBack));
+            returnSeq.OnComplete(() =>
+            {
+                transform.position = targetHomePos;
+                transform.localScale = targetHomeScale;
+                if (Application.isPlaying)
+                {
+                    StartIdleAndBlink();
+                }
+                onComplete?.Invoke();
+            });
+        }
+
+        /// <summary>
+        /// Subtle head-tilt / puzzled feedback when placed in a slot where its balls are currently blocked above other balls.
+        /// </summary>
+        public void PlayWaitingForBallsFeedback()
+        {
+            if (_isCompleted || bodyPivot == null) return;
+            bodyPivot.DOKill(false);
+            Sequence s = DOTween.Sequence();
+            s.Append(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, 9f), 0.10f).SetEase(Ease.OutSine));
+            s.Append(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -9f), 0.14f).SetEase(Ease.InOutSine));
+            s.Append(bodyPivot.DOLocalRotate(Vector3.zero, 0.10f).SetEase(Ease.OutSine));
         }
 
         private IEnumerator HopToSlotRoutine(SlotPlatform slot)
@@ -714,6 +788,11 @@ namespace PuzzleGlass
 
             // 3. Attach to slot & immediately start smooth feeding!
             slot.AttachMonster(this);
+
+            if (BallCollectionController.Instance != null)
+            {
+                BallCollectionController.Instance.OnMonsterPlacedInSlot(this);
+            }
 
             if (SandMonsterFlowBridge.Instance != null)
             {

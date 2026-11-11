@@ -10,6 +10,12 @@ Shader "PuzzleGlass/GlassChamberLit"
         _WallThickness ("Physical Wall Thickness (World Units)", Range(0.03, 0.16)) = 0.086
         _SheenIntensity ("Glass Specular Intensity", Range(0.0, 1.5)) = 0.85
         _IsFrontLens ("Front Glass Specular Lens Mode", Float) = 0.0
+        _IsRoundedBoxPool ("Image 2 Rounded Box Pool Mode", Float) = 1.0
+        _BoxAspect ("Box Width/Height Aspect", Float) = 1.88
+        _FrameColor ("Outer Frame Periwinkle", Color) = (0.53, 0.50, 0.96, 1.0)
+        _FrameHighlight ("Frame Top Highlight", Color) = (0.85, 0.84, 1.00, 1.0)
+        _FrameEdgeShade ("Frame Outer Lip Shade", Color) = (0.40, 0.37, 0.88, 1.0)
+        _FakeShadowColor ("Drop Shadow Color", Color) = (0.76, 0.62, 0.48, 0.32)
     }
 
     SubShader
@@ -45,6 +51,12 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _WallThickness;
                 float _SheenIntensity;
                 float _IsFrontLens;
+                float _IsRoundedBoxPool;
+                float _BoxAspect;
+                float4 _FrameColor;
+                float4 _FrameHighlight;
+                float4 _FrameEdgeShade;
+                float4 _FakeShadowColor;
             CBUFFER_END
 
             struct Attributes
@@ -73,6 +85,164 @@ Shader "PuzzleGlass/GlassChamberLit"
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
                 OUT.positionOS = IN.positionOS.xyz;
                 return OUT;
+            }
+
+            float sdRoundBox2D(float2 p, float2 b, float r)
+            {
+                float2 q = abs(p) - b + r;
+                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+            }
+
+            half4 EvaluateRoundedBoxPool(Varyings IN)
+            {
+                // Map UV [0..1] to aspect-corrected coordinates centered at (0,0)
+                // Extra margin is reserved around the quad so the soft drop shadow never clips
+                float aspect = max(_BoxAspect, 1.0);
+                float2 p = (IN.uv - 0.5) * 2.0;
+                p.x *= aspect;
+
+                // Outer Periwinkle Frame half-extents & corner radius (matching Image 2 proportions)
+                float2 outerHalf = float2(aspect * 0.90, 0.86);
+                float outerRad   = 0.22;
+
+                // Inner Sky-Blue Glass Chamber half-extents & corner radius
+                float frameThick = 0.115;
+                float2 innerHalf = outerHalf - float2(frameThick, frameThick);
+                float innerRad   = max(0.09, outerRad - frameThick * 0.65);
+
+                float dOuter = sdRoundBox2D(p, outerHalf, outerRad);
+                float dInner = sdRoundBox2D(p, innerHalf, innerRad);
+
+                // 1. Soft Warm Drop Shadow behind the container (only rendered on Back layer)
+                float shadowAlpha = 0.0;
+                float3 shadowRGB = _FakeShadowColor.rgb;
+                if (_IsFrontLens < 0.5)
+                {
+                    float2 pShadFar  = p - float2(-0.045, -0.075);
+                    float2 pShadNear = p - float2(-0.020, -0.035);
+                    float dShadFar   = sdRoundBox2D(pShadFar, outerHalf, outerRad + 0.02);
+                    float dShadNear  = sdRoundBox2D(pShadNear, outerHalf, outerRad);
+                    float aFar  = (1.0 - smoothstep(-0.06, 0.16, dShadFar)) * _FakeShadowColor.a;
+                    float aNear = (1.0 - smoothstep(-0.02, 0.07, dShadNear)) * (_FakeShadowColor.a * 0.65);
+                    shadowAlpha = saturate(aFar + aNear);
+                }
+
+                float outerMask = 1.0 - smoothstep(-0.008, 0.008, dOuter);
+                float innerMask = 1.0 - smoothstep(-0.008, 0.008, dInner);
+                float frameMask = saturate(outerMask - innerMask);
+
+                // 2. 3D Pillowy Periwinkle Outer Frame Shading (Image 2 signature border!)
+                float eps = 0.005;
+                float2 gradOuter = normalize(float2(
+                    sdRoundBox2D(p + float2(eps, 0.0), outerHalf, outerRad) - sdRoundBox2D(p - float2(eps, 0.0), outerHalf, outerRad),
+                    sdRoundBox2D(p + float2(0.0, eps), outerHalf, outerRad) - sdRoundBox2D(p - float2(0.0, eps), outerHalf, outerRad)
+                ) + 1e-5);
+
+                float ringT = saturate((-dOuter) / max(0.02, frameThick));
+                float radialSlope = cos(ringT * 3.14159265);
+                float3 frameNormal = normalize(float3(gradOuter * radialSlope * 0.65, -0.76));
+                float3 lightDir = normalize(float3(-0.30, 0.74, -0.60));
+                float frameLit = saturate(dot(frameNormal, lightDir) * 0.55 + 0.45);
+
+                float3 frameCol = lerp(_FrameEdgeShade.rgb, _FrameColor.rgb, smoothstep(0.12, 0.72, frameLit));
+
+                // Glossy Lavender-White 3D Ridge Highlight along the frame arch (strongest on top & corners)
+                float crestMask = sin(ringT * 3.14159265);
+                float topCatch  = saturate(p.y * 0.65 - p.x * 0.15 + 0.55);
+                float cornerBoost = smoothstep(innerHalf.x - 0.18, outerHalf.x, abs(p.x)) * smoothstep(0.25, outerHalf.y, abs(p.y));
+                float specRidge = pow(max(0.0, crestMask), 2.0) * saturate(topCatch * 0.82 + cornerBoost * 0.45);
+                frameCol = lerp(frameCol, _FrameHighlight.rgb, saturate(specRidge));
+
+                // Outer edge lip shade
+                float outerLip = 1.0 - smoothstep(0.0, 0.028, -dOuter);
+                frameCol = lerp(frameCol, _FrameEdgeShade.rgb * 0.86, outerLip * 0.60);
+
+                // Inner frame bevel highlight
+                float innerBevel = 1.0 - smoothstep(0.0, 0.025, abs(dInner));
+                frameCol = lerp(frameCol, _FrameHighlight.rgb, innerBevel * 0.48);
+
+                // 3. Inside the Sky-Blue Glass Chamber (dInner < 0)
+                float dIn = max(0.0, -dInner); // distance inward from frame border into glass well
+                float2 normIn = p / max(innerHalf, float2(0.01, 0.01)); // normalized [-1..+1] inside chamber
+
+                // Inner cobalt meniscus groove right against the periwinkle frame
+                float grooveBand = exp(-pow((dIn - 0.018) / 0.020, 2.0));
+                // Crisp icy-white/cyan inner glass rim highlight
+                float innerRimBand = exp(-pow((dIn - 0.042) / 0.022, 2.0));
+
+                // Left & Right Vertical Glossy White Glass Reflection Pillars (Image 2 signature!)
+                float dSideWall = innerHalf.x - abs(p.x);
+                float vMaskPillars = smoothstep(-innerHalf.y + 0.05, -innerHalf.y + 0.16, p.y)
+                                   * (1.0 - smoothstep(innerHalf.y - 0.16, innerHalf.y - 0.03, p.y));
+                float sidePillarMain = exp(-pow((dSideWall - 0.055) / 0.032, 2.0)) * vMaskPillars;
+                float sidePillarSoft = exp(-pow((dSideWall - 0.110) / 0.065, 2.0)) * vMaskPillars * 0.45;
+
+                // Bright Top-Left & Top-Right Corner Specular Glints inside the glass walls (Image 2!)
+                float topCornerY = smoothstep(innerHalf.y - 0.28, innerHalf.y - 0.10, p.y)
+                                 * (1.0 - smoothstep(innerHalf.y - 0.09, innerHalf.y - 0.01, p.y));
+                float topCornerGlint = exp(-pow((dSideWall - 0.058) / 0.036, 2.0)) * topCornerY * 1.15;
+
+                // Bottom Horizontal Icy-White Glass Floor Reflection Strip (where the bottom balls rest!)
+                float dBotFloor = p.y - (-innerHalf.y);
+                float hMaskFloor = 1.0 - smoothstep(innerHalf.x - 0.16, innerHalf.x - 0.02, abs(p.x));
+                float botFloorGlow = exp(-pow((dBotFloor - 0.038) / 0.024, 2.0)) * hMaskFloor * 0.90;
+
+                // Top Horizontal Soft Glass Ceiling Sheen
+                float dTopCeil = innerHalf.y - p.y;
+                float topCeilGlow = exp(-pow((dTopCeil - 0.045) / 0.035, 2.0)) * hMaskFloor * 0.50;
+
+                float glassHighlights = saturate((sidePillarMain + sidePillarSoft + topCornerGlint + botFloorGlow + topCeilGlow) * _SheenIntensity);
+
+                if (_IsFrontLens > 0.5)
+                {
+                    // FRONT LENS OVERLAY (sits at z = -0.24 in front of the 3D balls):
+                    // Renders the full opaque periwinkle 3D frame, the inner glass meniscus rim,
+                    // the left & right vertical glass reflection pillars, and the bottom glass floor lip,
+                    // while keeping the central glass window crystal-clear so the 3D balls are 100% vibrant!
+                    float rimMask = saturate(grooveBand * 0.65 + innerRimBand * 0.85);
+                    float3 glassFrontRgb = lerp(_InnerGrooveColor.rgb, _RimGlowColor.rgb, saturate(innerRimBand + glassHighlights));
+                    float glassFrontAlpha = saturate(max(rimMask * 0.72, glassHighlights * 0.78));
+
+                    // Keep the central area where balls sit super clear
+                    float centerClear = smoothstep(0.0, 0.12, dIn) * (1.0 - smoothstep(innerHalf.x - 0.14, innerHalf.x, abs(p.x)));
+                    glassFrontAlpha *= lerp(1.0, 0.22, centerClear * (1.0 - botFloorGlow));
+
+                    float3 finalFrontRgb = lerp(glassFrontRgb, frameCol, frameMask);
+                    float finalFrontAlpha = saturate(frameMask + innerMask * glassFrontAlpha);
+                    if (finalFrontAlpha < 0.002) discard;
+                    return half4(saturate(finalFrontRgb), finalFrontAlpha);
+                }
+                else
+                {
+                    // BACK GLASS CHAMBER (sits at z = +0.08 behind the 3D balls):
+                    // Renders the warm drop shadow, the periwinkle frame, and the rich Sky-Blue glass interior!
+                    // Vertical gradient matching Image 2: richer sky-blue at the top, luminous icy sky-blue toward center/bottom
+                    float vGrad = saturate(normIn.y * 0.5 + 0.5);
+                    float3 topGlassCol = float3(0.47, 0.68, 0.98);
+                    float3 midGlassCol = float3(0.68, 0.84, 1.00);
+                    float3 botGlassCol = float3(0.56, 0.78, 0.99);
+
+                    float3 chamberRgb = lerp(midGlassCol, topGlassCol, smoothstep(0.35, 0.98, vGrad));
+                    chamberRgb = lerp(botGlassCol, chamberRgb, smoothstep(0.0, 0.30, vGrad));
+
+                    // Subtle Fresnel darkening near the inner glass walls
+                    float wallProx = exp(-dIn / 0.14);
+                    chamberRgb = lerp(chamberRgb, _InnerGrooveColor.rgb, wallProx * 0.38);
+                    chamberRgb = lerp(chamberRgb, _InnerGrooveColor.rgb * 0.90, grooveBand * 0.75);
+
+                    // Add icy-white inner rim & vertical reflection pillars
+                    float specSum = saturate(innerRimBand * 0.75 + glassHighlights * 0.92);
+                    chamberRgb = lerp(chamberRgb, _RimGlowColor.rgb, specSum);
+
+                    float3 boxRgb = lerp(frameCol, chamberRgb, innerMask);
+                    float boxAlpha = outerMask; // Solid backing inside the glass container like Image 2!
+
+                    float finalAlpha = saturate(boxAlpha + shadowAlpha * (1.0 - outerMask));
+                    if (finalAlpha < 0.002) discard;
+
+                    float3 finalRgb = lerp(shadowRGB, boxRgb, outerMask);
+                    return half4(saturate(finalRgb), finalAlpha);
+                }
             }
 
             // Evaluates the 1-to-1 optical blown-glass wall profile and interior reflections
@@ -134,6 +304,11 @@ Shader "PuzzleGlass/GlassChamberLit"
 
             half4 frag(Varyings IN) : SV_Target
             {
+                if (_IsRoundedBoxPool > 0.5)
+                {
+                    return EvaluateRoundedBoxPool(IN);
+                }
+
                 // xNorm in [-1, +1] across the horizontal width of the glass at this height
                 float xNorm = IN.uv.x * 2.0 - 1.0;
                 float absX = abs(xNorm);

@@ -137,6 +137,15 @@ namespace PuzzleGlass.Editor
 
             _targetContainer.EnsureContourInitialized();
 
+            Color prevBtnBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.42f, 0.48f, 0.96f, 1f);
+            if (GUILayout.Button("🧩 Cam Bölme & Level Tasarımcısı Aracını Aç (Compartment Tool)", GUILayout.Height(30f)))
+            {
+                GlassCompartmentEditorWindow.ShowWindow();
+            }
+            GUI.backgroundColor = prevBtnBg;
+            EditorGUILayout.Space(4);
+
             _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
 
             // 1. Interactive 2D Blueprint Canvas

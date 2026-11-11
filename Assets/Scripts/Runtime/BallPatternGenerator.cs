@@ -67,7 +67,7 @@ namespace PuzzleGlass
 
         [Header("Spawn Settings")]
         [Range(0.08f, 0.35f)]
-        public float ballDiameter = 0.165f; // Small tactile candy spheres matching Image 2
+        public float ballDiameter = 0.24f; // Glossy 3D pool spheres matching Reference Image 2 (10 / 11 / 10 honeycomb rows)
         public float patternVerticalOffset = 0.0f;
         [Tooltip("İlk desen şeklinin serbest düşmeden önce kısaca hayranlıkla izlenmesi için kinematic bekleme süresi (0 = hemen düşer)")]
         public float initialShapeHoldTime = 0.0f; // 0 = Immediately dynamic, obeying physics from frame 0!
@@ -114,7 +114,7 @@ namespace PuzzleGlass
 
             BallObjectPool.Instance.ClearAllActiveBalls();
 
-            float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter * 1.04f;
+            float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter;
             float ballRadius = ballDiameter * 0.5f;
 
             List<(Vector2 pos, PuzzleColor col)> ballSpawns = new List<(Vector2, PuzzleColor)>();
@@ -125,7 +125,9 @@ namespace PuzzleGlass
                     GenerateFourQuadrants(spacing, monsterGoals, ballSpawns);
                     break;
                 case ShapePatternType.GumballMix:
-                    GenerateGumballMix(spacing, monsterGoals, ballSpawns);
+                case ShapePatternType.HorizontalBands:
+                case ShapePatternType.VFunnelBands:
+                    GenerateOrderedBallPool(ballDiameter, monsterGoals, ballSpawns);
                     break;
 
                 case ShapePatternType.Frog:
@@ -188,19 +190,80 @@ namespace PuzzleGlass
                     GenerateHexagon(spacing, monsterGoals, ballSpawns);
                     break;
 
-                case ShapePatternType.HorizontalBands:
-                case ShapePatternType.VFunnelBands:
                 case ShapePatternType.DiagonalBands:
                 case ShapePatternType.RandomMosaic:
-                default:
                     GenerateLayeredOrRandomBands(patternType, spacing, monsterGoals, ballSpawns);
+                    break;
+                default:
+                    GenerateOrderedBallPool(ballDiameter, monsterGoals, ballSpawns);
                     break;
             }
 
             if (ballSpawns.Count == 0)
             {
-                GenerateFourQuadrants(spacing, monsterGoals, ballSpawns);
+                GenerateOrderedBallPool(ballDiameter, monsterGoals, ballSpawns);
             }
+
+            // Ensure no spawned ball overlaps any active internal glass divider
+            bool hasSlopedDivider = false;
+            if (glassContainer != null && glassContainer.dividers != null && glassContainer.dividers.Count > 0)
+            {
+                for (int d = 0; d < glassContainer.dividers.Count; d++)
+                {
+                    var div = glassContainer.dividers[d];
+                    if (div != null && div.enabled && Mathf.Abs(div.angleDegrees) < 78f)
+                    {
+                        hasSlopedDivider = true;
+                    }
+                }
+
+                for (int i = ballSpawns.Count - 1; i >= 0; i--)
+                {
+                    Vector2 pt = ballSpawns[i].pos;
+                    bool overlapsDivider = false;
+                    for (int d = 0; d < glassContainer.dividers.Count; d++)
+                    {
+                        var div = glassContainer.dividers[d];
+                        if (div != null && div.enabled && div.OverlapsCircle(pt, ballRadius, 0.006f))
+                        {
+                            overlapsDivider = true;
+                            break;
+                        }
+                    }
+                    if (overlapsDivider)
+                    {
+                        ballSpawns.RemoveAt(i);
+                    }
+                }
+            }
+
+            // Compute ordered layer indices (0 = bottom-most row, 1 = second row from bottom, etc.)
+            List<float> rowYCenters = new List<float>();
+            float rowClusterThreshold = ballDiameter * 0.42f;
+            for (int i = 0; i < ballSpawns.Count; i++)
+            {
+                float y = ballSpawns[i].pos.y;
+                bool foundCluster = false;
+                for (int r = 0; r < rowYCenters.Count; r++)
+                {
+                    if (Mathf.Abs(y - rowYCenters[r]) <= rowClusterThreshold)
+                    {
+                        foundCluster = true;
+                        break;
+                    }
+                }
+                if (!foundCluster)
+                {
+                    rowYCenters.Add(y);
+                }
+            }
+            rowYCenters.Sort();
+
+            float localFloorY = (glassContainer != null) ? glassContainer.GetChamberFloorY() : -0.56f;
+            float worldFloorY = (glassContainer != null)
+                ? glassContainer.transform.TransformPoint(new Vector3(0f, localFloorY, 0f)).y
+                : localFloorY;
+            float worldRowStepY = ballDiameter * 0.855f * ((glassContainer != null) ? glassContainer.transform.lossyScale.y : 1f);
 
             List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
 
@@ -212,9 +275,28 @@ namespace PuzzleGlass
                     ? glassContainer.transform.TransformPoint(localPos)
                     : localPos;
 
+                int layerIdx = 0;
+                float bestDiff = float.MaxValue;
+                for (int r = 0; r < rowYCenters.Count; r++)
+                {
+                    float diff = Mathf.Abs(entry.pos.y - rowYCenters[r]);
+                    if (diff < bestDiff)
+                    {
+                        bestDiff = diff;
+                        layerIdx = r;
+                    }
+                }
+
                 var ball = BallObjectPool.Instance.SpawnBall(entry.col, worldPos, ballRadius);
                 if (ball != null)
                 {
+                    ball.ConfigurePoolLayer(layerIdx, worldPos.x, worldFloorY, worldRowStepY);
+                    if (hasSlopedDivider)
+                    {
+                        // Allow balls to roll sideways along sloped shelves/ramps
+                        ball.hasHomeX = false;
+                    }
+
                     if (initialShapeHoldTime > 0.05f || !Application.isPlaying)
                     {
                         ball.MakeKinematic();
@@ -322,6 +404,117 @@ namespace PuzzleGlass
                         col = (x < centerX) ? cTopLeft : cTopRight;
                     }
                     list.Add((new Vector2(x, y), col));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Generates the Ordered Ball Pool layout from Reference Image 2:
+        /// Staggered horizontal color rows (e.g., Row 0 Bottom = 10 Blue, Row 1 Middle = 11 Yellow, Row 2 Top = 10 Red)
+        /// resting in hexagonal close-packing inside the rounded-rectangle glass pool.
+        /// Balls obey real 3D physics and are collected strictly from the bottom-most row to the top-most row.
+        /// </summary>
+        private void GenerateOrderedBallPool(float ballDiam, List<LevelMonsterEntry> goals, List<(Vector2, PuzzleColor)> list)
+        {
+            float colSpacing = Mathf.Max(0.12f, ballDiam);
+            float rowSpacing = colSpacing * 0.855f; // Honeycomb vertical support step matching 0.495f sphere collider radius
+            float ballR = colSpacing * 0.5f;
+
+            float floorY = (glassContainer != null) ? glassContainer.GetChamberFloorY() : -0.56f;
+            float startY = floorY + ballR + patternVerticalOffset;
+
+            List<PuzzleColor> rowColors = new List<PuzzleColor>();
+            if (goals != null && goals.Count > 0)
+            {
+                for (int i = 0; i < goals.Count && rowColors.Count < 4; i++)
+                {
+                    if (goals[i] != null && !rowColors.Contains(goals[i].color))
+                    {
+                        rowColors.Add(goals[i].color);
+                    }
+                }
+            }
+
+            // Default to Reference Image 2: Bottom = Blue (10), Middle = Yellow (11), Top = Red (10)
+            if (rowColors.Count == 0)
+            {
+                rowColors.Add(PuzzleColor.Blue);
+                rowColors.Add(PuzzleColor.Yellow);
+                rowColors.Add(PuzzleColor.Red);
+            }
+
+            int totalRows = Mathf.Max(3, rowColors.Count);
+            float innerHalfW = (glassContainer != null && glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                ? glassContainer.contourPoints[0].halfWidth * glassContainer.widthScale
+                : 1.32f;
+
+            bool hasZones = glassContainer != null && glassContainer.compartmentZones != null && glassContainer.compartmentZones.Count > 0;
+            bool hasDividers = glassContainer != null && glassContainer.dividers != null && glassContainer.dividers.Count > 0;
+
+            for (int r = 0; r < totalRows; r++)
+            {
+                PuzzleColor defaultRowCol = rowColors[r % rowColors.Count];
+                float y = startY + r * rowSpacing;
+
+                // Even rows (0, 2): 10 balls centered at (-4.5 .. +4.5) * colSpacing
+                // Odd rows  (1, 3): 11 balls centered at (-5.0 .. +5.0) * colSpacing
+                int countInRow = (r % 2 == 0) ? 10 : 11;
+                float firstX = -(countInRow - 1) * 0.5f * colSpacing;
+
+                for (int c = 0; c < countInRow; c++)
+                {
+                    float x = firstX + c * colSpacing;
+                    Vector2 candidatePt = new Vector2(x, y);
+
+                    if (hasDividers)
+                    {
+                        bool blocked = false;
+                        for (int d = 0; d < glassContainer.dividers.Count; d++)
+                        {
+                            var div = glassContainer.dividers[d];
+                            if (div != null && div.enabled && div.OverlapsCircle(candidatePt, ballR, 0.008f))
+                            {
+                                blocked = true;
+                                break;
+                            }
+                        }
+                        if (blocked) continue;
+                    }
+
+                    PuzzleColor ballCol = defaultRowCol;
+                    if (hasZones)
+                    {
+                        float normX = Mathf.Clamp(x / Mathf.Max(0.1f, innerHalfW), -1f, 1f);
+                        bool matchedExactRow = false;
+
+                        // 1. Prefer zone matching exact rowLayer == r
+                        for (int z = 0; z < glassContainer.compartmentZones.Count; z++)
+                        {
+                            var zone = glassContainer.compartmentZones[z];
+                            if (zone != null && zone.rowLayer == r && zone.Matches(normX, r))
+                            {
+                                ballCol = zone.color;
+                                matchedExactRow = true;
+                                break;
+                            }
+                        }
+
+                        // 2. Fallback to wildcard zone (rowLayer == -1)
+                        if (!matchedExactRow)
+                        {
+                            for (int z = 0; z < glassContainer.compartmentZones.Count; z++)
+                            {
+                                var zone = glassContainer.compartmentZones[z];
+                                if (zone != null && zone.rowLayer < 0 && zone.Matches(normX, r))
+                                {
+                                    ballCol = zone.color;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    list.Add((candidatePt, ballCol));
                 }
             }
         }

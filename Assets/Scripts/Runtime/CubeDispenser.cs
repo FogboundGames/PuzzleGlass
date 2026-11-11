@@ -49,6 +49,7 @@ namespace PuzzleGlass
         private void Update()
         {
             if (!Application.isPlaying) return;
+            if (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls.Count > 0) return;
 
             // Single deterministic feed loop: whenever the cube closest to the tip of the bottle
             // matches a slotted monster's color, that monster collects it 1-by-1!

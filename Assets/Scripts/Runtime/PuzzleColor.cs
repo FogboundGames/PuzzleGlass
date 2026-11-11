@@ -49,6 +49,11 @@ namespace PuzzleGlass
             return GetCubeColor(color);
         }
 
+        public static Color GetPrimaryColor(PuzzleColor color)
+        {
+            return GetBodyColor(color);
+        }
+
         /// <summary>
         /// Warm subsurface-scattered shadow tone for Image 2 tactile candy/resin cubes (never muddy gray/black).
         /// </summary>

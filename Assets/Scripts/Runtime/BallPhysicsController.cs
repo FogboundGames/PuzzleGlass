@@ -23,10 +23,20 @@ namespace PuzzleGlass
         public MeshFilter meshFilter;
 
         [Header("Physical Settings")]
-        public float ballRadius = 0.135f;
-        public float defaultMass = 0.25f;
-        public float defaultDrag = 0.35f;
-        public float defaultAngularDrag = 0.70f;
+        public float ballRadius = 0.12f;
+        public float defaultMass = 0.32f;
+        public float defaultDrag = 0.45f;
+        public float defaultAngularDrag = 0.65f;
+        [Tooltip("Top havuzu toplarının tok ve hızlı düşmesi için ek yerçekimi ivmesi")]
+        public float extraGravity = 14.0f;
+
+        [Header("Ordered Ball Pool Layer Info")]
+        [Tooltip("0 = Bottom-most layer, 1 = Second layer from bottom, 2 = Third layer, etc.")]
+        public int layerIndex = 0;
+        public float homeWorldX = 0f;
+        public bool hasHomeX = false;
+        public float containerFloorWorldY = -10f;
+        public float rowStepWorldY = 0.20f;
 
         private MonsterCharacter _targetMonster;
         private Action<BallPhysicsController> _onEatenCallback;
@@ -56,17 +66,72 @@ namespace PuzzleGlass
                 rb.linearDamping = defaultDrag;
                 rb.angularDamping = defaultAngularDrag;
                 rb.useGravity = true;
-                rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
-                // Lock strictly to the Z = -0.10f plane so balls stay sealed in front of back glass and behind front glass
+                // Lock strictly to the Z = -0.10f plane while allowing free X, Y movement and 3D rolling rotation!
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
             }
 
             if (sphereCollider != null)
             {
-                // Primitive sphere mesh radius is 0.5f. Since transform.localScale = (diameter, diameter, diameter),
-                // world collider radius is 0.5f * (2 * ballRadius) = ballRadius!
-                sphereCollider.radius = 0.5f;
+                // 0.496f radius lets 11 balls sit wall-to-wall without horizontal jamming while rolling smoothly into pockets
+                sphereCollider.radius = 0.496f;
+            }
+        }
+
+        public void ConfigurePoolLayer(int layerIdx, float worldX, float floorWorldY, float stepWorldY)
+        {
+            layerIndex = layerIdx;
+            homeWorldX = worldX;
+            // Free 2D X-Y Newtonian ball-pit physics so balls roll naturally into gaps when lower balls are collected!
+            hasHomeX = false;
+            containerFloorWorldY = floorWorldY;
+            rowStepWorldY = stepWorldY;
+        }
+
+        private void FixedUpdate()
+        {
+            if (state != BallState.InContainer || rb == null || rb.isKinematic) return;
+
+            Vector3 pos = transform.position;
+
+            // Extra downward gravity gives balls a crisp, tactile marble weight in the ball pool
+            if (extraGravity > 0.01f)
+            {
+                rb.AddForce(Vector3.down * extraGravity, ForceMode.Acceleration);
+            }
+
+            Vector3 vel = rb.linearVelocity;
+
+            // Clamp excessive upward pop so balls settle cleanly into pockets without jittering
+            if (vel.y > 0.65f)
+            {
+                vel.y = 0.65f;
+            }
+            vel.x = Mathf.Clamp(vel.x, -4.2f, 4.2f);
+            vel.y = Mathf.Clamp(vel.y, -6.5f, 0.65f);
+            vel.z = 0f;
+
+            // Settle micro-jitter when resting nearly stationary in a pocket
+            if (vel.sqrMagnitude < 0.0006f)
+            {
+                vel = Vector3.zero;
+                rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, Vector3.zero, 18f * Time.fixedDeltaTime);
+            }
+            else
+            {
+                // Authentic 3D rolling rotation proportional to horizontal & vertical movement
+                float r = Mathf.Max(0.05f, ballRadius);
+                Vector3 targetAngVel = new Vector3(-vel.y * 2.5f, 0f, -vel.x / r);
+                rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 16f * Time.fixedDeltaTime);
+            }
+
+            rb.linearVelocity = vel;
+
+            if (Mathf.Abs(pos.z - (-0.10f)) > 0.001f)
+            {
+                pos.z = -0.10f;
+                transform.position = pos;
             }
         }
 
@@ -86,6 +151,8 @@ namespace PuzzleGlass
             ballRadius = Mathf.Max(0.04f, radius);
             state = BallState.InContainer;
             _attractionStartTime = -1f;
+            layerIndex = 0;
+            hasHomeX = false;
 
             if (meshFilter != null && sphereMesh != null)
             {
@@ -105,7 +172,7 @@ namespace PuzzleGlass
 
             if (sphereCollider != null)
             {
-                sphereCollider.radius = 0.5f;
+                sphereCollider.radius = 0.496f;
                 sphereCollider.sharedMaterial = physMaterial;
                 sphereCollider.enabled = true;
                 sphereCollider.isTrigger = false;
@@ -144,7 +211,44 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Begins the smooth attraction flow toward the spout exit.
+        /// If the target monster is removed from its slot before the ball exits the container,
+        /// returns the ball back to normal container physics so it drops back onto the pool floor.
+        /// </summary>
+        public void CancelAttractionAndReturnToContainer()
+        {
+            if (state != BallState.AttractingToExit) return;
+
+            state = BallState.InContainer;
+            _attractionStartTime = -1f;
+            _targetMonster = null;
+
+            Vector3 p = transform.position;
+            p.z = -0.10f;
+            transform.position = p;
+            transform.localScale = _originalScale;
+
+            if (sphereCollider != null)
+            {
+                sphereCollider.enabled = true;
+                sphereCollider.isTrigger = false;
+                if (BallContainerManager.Instance != null && BallContainerManager.Instance.bottomSpoutStopper != null)
+                {
+                    Physics.IgnoreCollision(sphereCollider, BallContainerManager.Instance.bottomSpoutStopper, false);
+                }
+            }
+
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+                rb.useGravity = true;
+                rb.constraints = RigidbodyConstraints.FreezePositionZ;
+                rb.linearVelocity = new Vector3(0f, -1.2f, 0f);
+                rb.WakeUp();
+            }
+        }
+
+        /// <summary>
+        /// Begins the smooth attraction flow toward the bottom exit.
         /// </summary>
         public void BeginAttraction(MonsterCharacter targetMonster, Vector3 exitWorldPos)
         {
@@ -152,13 +256,15 @@ namespace PuzzleGlass
             _attractionStartTime = Time.time;
             _targetMonster = targetMonster;
 
+            Vector3 vacatedPos = transform.position;
+
             if (sphereCollider != null)
             {
-                // Become trigger so this ball glides smoothly through resting balls and past the stopper
+                // Become trigger so this ball glides smoothly out of the bottom rim
                 sphereCollider.isTrigger = true;
             }
 
-            // Bring slightly forward in Z so it smoothly and visibly glides in front of resting balls
+            // Bring slightly forward in Z so it visibly pops in front of resting balls
             Vector3 p = transform.position;
             p.z = -0.16f;
             transform.position = p;
@@ -173,21 +279,31 @@ namespace PuzzleGlass
                 toExit.z = 0f;
                 if (toExit.sqrMagnitude > 0.001f)
                 {
-                    rb.linearVelocity = toExit.normalized * 2.2f;
+                    rb.linearVelocity = toExit.normalized * 2.6f;
                 }
                 rb.WakeUp();
             }
 
-            // Wake up remaining balls in container so they naturally tumble down and fill the freed space
+            // Wake up remaining balls in container and nudge upper neighbors so they cascade into the vacated gap!
             if (BallObjectPool.Instance != null)
             {
                 var activeList = BallObjectPool.Instance.ActiveBalls;
+                float wakeRangeX = ballRadius * 4.8f;
                 for (int i = 0; i < activeList.Count; i++)
                 {
                     var other = activeList[i];
                     if (other != null && other != this && other.state == BallState.InContainer && other.rb != null)
                     {
                         other.rb.WakeUp();
+
+                        Vector3 op = other.transform.position;
+                        float dx = vacatedPos.x - op.x;
+                        float dy = op.y - vacatedPos.y;
+                        if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.0f && Mathf.Abs(dx) <= wakeRangeX)
+                        {
+                            float inwardVx = Mathf.Clamp(dx * 1.8f, -0.55f, 0.55f);
+                            other.rb.linearVelocity += new Vector3(inwardVx, -0.45f, 0f);
+                        }
                     }
                 }
             }
@@ -196,7 +312,7 @@ namespace PuzzleGlass
         /// <summary>
         /// Applies controlled attraction physics toward the bottom exit while preserving 2D container containment.
         /// </summary>
-        public void ApplyAttractionToExit(Vector3 exitWorldPos, float pullForce = 16f, float maxSpeed = 2.4f)
+        public void ApplyAttractionToExit(Vector3 exitWorldPos, float pullForce = 24f, float maxSpeed = 3.4f)
         {
             if (state == BallState.FlyingToMonster || state == BallState.Pooled || rb == null) return;
 
@@ -218,7 +334,7 @@ namespace PuzzleGlass
 
             Vector3 myPos = transform.position;
             Vector3 toExit = exitWorldPos - myPos;
-            toExit.z = 0f; // strictly 2D attraction
+            toExit.z = 0f;
 
             float dist = toExit.magnitude;
             if (dist > 0.001f)
@@ -227,25 +343,11 @@ namespace PuzzleGlass
                 Vector3 targetVel = dir * maxSpeed;
 
                 rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, targetVel, pullForce * Time.fixedDeltaTime);
-
-                // Spout centering: When approaching or inside the spout chute, center X
-                ShapedGlassContainer container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
-                float throatY = (container != null) ? container.GetSpoutThroatY() : -0.72f;
-                float worldThroatY = (container != null) ? container.transform.TransformPoint(new Vector3(0f, throatY, 0f)).y : throatY;
-
-                if (myPos.y <= worldThroatY + 0.35f)
-                {
-                    float targetX = Mathf.MoveTowards(myPos.x, exitWorldPos.x, 3.2f * Time.fixedDeltaTime);
-                    Vector3 p = transform.position;
-                    p.x = targetX;
-                    p.z = -0.16f;
-                    transform.position = p;
-                }
             }
         }
 
         /// <summary>
-        /// Smooth ballistic flight from the spout exit directly into the target monster's open mouth!
+        /// Smooth ballistic flight from the container exit directly into the target monster's open mouth!
         /// </summary>
         public void LaunchToMonsterMouth(
             Vector3 spoutExitPos,
@@ -258,7 +360,6 @@ namespace PuzzleGlass
             _targetMonster = targetMonster;
             _onEatenCallback = onEatenCallback;
 
-            // Transition from dynamic physics to silky smooth ballistic flight
             StopAndMakeKinematic();
 
             if (sphereCollider != null)
@@ -277,21 +378,19 @@ namespace PuzzleGlass
                 ? targetMonster.mouthTargetPoint.position
                 : (targetMonster != null ? targetMonster.transform.position + new Vector3(0f, 0.04f, -0.15f) : spoutExitPos);
 
-            // Notify monster that a delicious ball is incoming so it opens its mouth in anticipation!
             if (targetMonster != null)
             {
                 targetMonster.OnBallIncoming(this);
             }
 
-            float duration = Mathf.Clamp(Vector3.Distance(startPos, mouthPos) * 0.22f, 0.34f, 0.48f);
+            float duration = Mathf.Clamp(Vector3.Distance(startPos, mouthPos) * 0.19f, 0.28f, 0.42f);
 
-            // Parabolic jump arc with subtle organic rolling
+            // Tactile pop-scale + parabolic jump arc with lively 3D rolling into the monster's mouth!
             Sequence flightSeq = DOTween.Sequence();
-            flightSeq.Join(transform.DOJump(mouthPos, jumpPower: 0.32f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
-            flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
-
-            // Rapid absorption shrink directly at the mouth threshold
-            flightSeq.Insert(duration * 0.72f, transform.DOScale(Vector3.zero, duration * 0.28f).SetEase(Ease.InBack));
+            flightSeq.Join(transform.DOJump(mouthPos, jumpPower: 0.34f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
+            flightSeq.Join(transform.DORotate(new Vector3(220f, 0f, 120f), duration, RotateMode.FastBeyond360));
+            flightSeq.Insert(0f, transform.DOScale(_originalScale * 1.12f, duration * 0.35f).SetEase(Ease.OutQuad));
+            flightSeq.Insert(duration * 0.70f, transform.DOScale(Vector3.zero, duration * 0.30f).SetEase(Ease.InBack));
 
             flightSeq.OnComplete(() =>
             {

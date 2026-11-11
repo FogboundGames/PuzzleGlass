@@ -120,14 +120,21 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float upperBevelLight = bevelMask * saturate(ndl * 0.65 + 0.35) * saturate(N.y + 0.42);
                 col = lerp(col, highTone, upperBevelLight * _BevelHighlight);
 
-                // 4. Dual-lobe Satin Toy-Resin Specular Highlight
+                // 4. Dual-lobe Satin Toy-Resin Specular Highlight + Crisp Upper-Right Gumball Catchlight (Image 2!)
                 float3 H = normalize(L_key + V);
                 float ndh = saturate(dot(N, H));
                 float specPower = lerp(12.0, 56.0, _Smoothness);
                 float specBroad = pow(ndh, 11.0) * 0.18;
                 float specGloss = pow(ndh, specPower) * (0.22 + 0.26 * bevelMask);
-                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.97), 0.55);
-                col += specColor * (specBroad + specGloss);
+
+                // Crisp glossy studio catchlight on upper-right of each sphere matching Image 2
+                float3 L_catch = normalize(float3(0.34, 0.48, -0.81));
+                float3 H_catch = normalize(L_catch + V);
+                float catchDot = saturate(dot(N, H_catch));
+                float catchSpot = smoothstep(0.91, 0.985, catchDot) * 0.62 + pow(catchDot, 22.0) * 0.24;
+
+                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.98), 0.65);
+                col += specColor * (specBroad + specGloss + catchSpot);
 
                 // 5. 3D Silhouette & Lower Bevel Cushion AO (keeps adjacent same-color cubes distinctly separated!)
                 float ndv = saturate(dot(N, V));

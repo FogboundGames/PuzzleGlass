@@ -33,9 +33,9 @@ namespace PuzzleGlass
         public float defaultBallRadius = 0.0825f;
 
         [Header("Physics Material Settings")]
-        public float bounciness = 0.18f;
-        public float dynamicFriction = 0.20f;
-        public float staticFriction = 0.30f;
+        public float bounciness = 0.12f;
+        public float dynamicFriction = 0.06f;
+        public float staticFriction = 0.08f;
 
         private readonly Queue<BallPhysicsController> _availableBalls = new Queue<BallPhysicsController>();
         private readonly List<BallPhysicsController> _activeBalls = new List<BallPhysicsController>();
@@ -141,11 +141,11 @@ namespace PuzzleGlass
             {
                 _sharedPhysMaterial = new PhysicsMaterial("Mat_BallPhysical")
                 {
-                    bounciness = bounciness,
-                    dynamicFriction = dynamicFriction,
-                    staticFriction = staticFriction,
+                    bounciness = 0.12f,
+                    dynamicFriction = 0.06f,
+                    staticFriction = 0.08f,
                     bounceCombine = PhysicsMaterialCombine.Minimum,
-                    frictionCombine = PhysicsMaterialCombine.Average
+                    frictionCombine = PhysicsMaterialCombine.Minimum
                 };
             }
 
