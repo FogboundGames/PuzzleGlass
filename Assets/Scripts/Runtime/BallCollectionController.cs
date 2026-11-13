@@ -35,6 +35,7 @@ namespace PuzzleGlass
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
         private float _lastGlobalCollectionTime = -10f;
+        private float _levelStartTime = -10f;
 
         private class ActiveMonsterStream
         {
@@ -59,6 +60,7 @@ namespace PuzzleGlass
         private void OnEnable()
         {
             Instance = this;
+            _levelStartTime = Time.time;
         }
 
         private void Update()
@@ -70,7 +72,35 @@ namespace PuzzleGlass
                     return;
             }
 
+            AutoActivateMatchingTopEdgeBlocks();
             PollSlottedMonsters();
+        }
+
+        /// <summary>
+        /// Automatically activates any grid Carrier Block docked at the top row ("en üst taraf")
+        /// whenever the bottom floor of the glass exposes balls of that block's color.
+        /// </summary>
+        private void AutoActivateMatchingTopEdgeBlocks()
+        {
+            if (Time.time - _levelStartTime < 0.35f) return;
+            var grid = StagingGridBoard.Instance;
+            var gm = PuzzleGlassGameManager.Instance;
+            if (grid == null || gm == null || gm.activeMonsters == null || gm.isLevelCompleted || gm.isLevelFailed) return;
+
+            var drag = MonsterDragController.Instance;
+            for (int i = 0; i < gm.activeMonsters.Count; i++)
+            {
+                var m = gm.activeMonsters[i];
+                if (m == null || m.IsCompleted || m.remainingCount <= 0 || !m.gameObject.activeInHierarchy || m.isCollectingInGrid || !m.armedAtTopEdge)
+                    continue;
+                if (drag != null && drag.IsBlockCurrentlyDragged(m))
+                    continue;
+
+                if (grid.IsBlockAtTopExit(m))
+                {
+                    m.TryStartInGridCollection(playDenialFeedback: false);
+                }
+            }
         }
 
         private void FixedUpdate()
@@ -140,20 +170,24 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Checks slotted monsters and attracts ONLY balls that have physically reached the bottom/near side of the glass
-        /// and have no other balls underneath them.
+        /// Registers a grid Carrier Block as an active collector stream in place (no upper slot needed).
+        /// </summary>
+        public void ActivateGridCollector(MonsterCharacter monster)
+        {
+            OnMonsterPlacedInSlot(monster);
+        }
+
+        /// <summary>
+        /// Checks active grid collectors (and any legacy slotted boxes) and pulls matching bottom-floor balls.
         /// </summary>
         private void PollSlottedMonsters()
         {
-            SlotSystem slotSys = SlotSystem.Instance.OrNull() ?? FindFirstObjectByType<SlotSystem>();
-            if (slotSys == null || slotSys.slots == null) return;
-
-            // Remove any streams whose monster was detached, completed or destroyed
+            // Remove any streams whose block was detached, completed or hidden
             List<string> keysToRemove = null;
             foreach (var kvp in _activeStreams)
             {
                 var s = kvp.Value;
-                if (s.monster == null || s.monster.assignedSlot == null || s.monster.remainingCount <= 0 || !s.monster.gameObject.activeInHierarchy)
+                if (s.monster == null || !s.monster.IsActivelyCollecting)
                 {
                     if (keysToRemove == null) keysToRemove = new List<string>();
                     keysToRemove.Add(kvp.Key);
@@ -167,22 +201,26 @@ namespace PuzzleGlass
                 }
             }
 
-            // Register any slotted monster not yet in streams
-            for (int i = 0; i < slotSys.slots.Count; i++)
+            // Register any actively collecting monster from PuzzleGlassGameManager
+            if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.activeMonsters != null)
             {
-                var slot = slotSys.slots[i];
-                if (slot != null && slot.isOccupied && slot.currentMonster != null && slot.currentMonster.remainingCount > 0)
+                var all = PuzzleGlassGameManager.Instance.activeMonsters;
+                for (int i = 0; i < all.Count; i++)
                 {
-                    string id = slot.currentMonster.monsterId;
-                    if (!_activeStreams.ContainsKey(id))
+                    var m = all[i];
+                    if (m != null && m.IsActivelyCollecting)
                     {
-                        _activeStreams[id] = new ActiveMonsterStream
+                        string id = m.monsterId;
+                        if (!string.IsNullOrEmpty(id) && !_activeStreams.ContainsKey(id))
                         {
-                            monster = slot.currentMonster,
-                            lastCollectionTime = -10f,
-                            placedTime = Time.time,
-                            playedBlockedFeedback = false
-                        };
+                            _activeStreams[id] = new ActiveMonsterStream
+                            {
+                                monster = m,
+                                lastCollectionTime = -10f,
+                                placedTime = Time.time,
+                                playedBlockedFeedback = false
+                            };
+                        }
                     }
                 }
             }
@@ -204,11 +242,16 @@ namespace PuzzleGlass
             }
 
             // Pacing & congestion limit: ensure smooth, readable flow without overcrowding
-            float now = Time.time;
-            if (now - _lastGlobalCollectionTime < collectionInterval) return;
-            if (_attractingBalls.Count >= maxBallsInSpout) return;
+            // During Fever Mode (Streak >= 3), vacuum speed is 2x faster!
+            bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
+            float effectiveInterval = isFever ? (collectionInterval * 0.45f) : collectionInterval;
+            int effectiveMaxInSpout = isFever ? (maxBallsInSpout + 2) : maxBallsInSpout;
 
-            // Find a physically accessible bottom-floor ball matching a slotted monster
+            float now = Time.time;
+            if (now - _lastGlobalCollectionTime < effectiveInterval) return;
+            if (_attractingBalls.Count >= effectiveMaxInSpout) return;
+
+            // Find a physically accessible bottom-floor ball matching an active box's aligned columns
             BallPhysicsController bestBall = FindNextCollectableBall(out ActiveMonsterStream targetStream);
             if (bestBall != null && targetStream != null)
             {
@@ -217,35 +260,92 @@ namespace PuzzleGlass
                 targetStream.lastCollectionTime = now;
                 targetStream.playedBlockedFeedback = true;
             }
-            else
+
+            // Pause any in-grid stream that has no balls in flight and no reachable matching balls in its own columns
+            List<MonsterCharacter> idleGridToPause = null;
+            foreach (var kvp in _activeStreams)
             {
-                // If a monster was recently placed in a slot but its balls are blocked in upper rows, play subtle feedback once
-                foreach (var kvp in _activeStreams)
+                var s = kvp.Value;
+                if (s.monster == null || s == targetStream) continue;
+
+                if (!s.playedBlockedFeedback && s.inTransitBalls.Count == 0 && (now - s.placedTime) > 0.25f)
                 {
-                    var s = kvp.Value;
-                    if (!s.playedBlockedFeedback && s.inTransitBalls.Count == 0 && (now - s.placedTime) > 0.25f)
-                    {
-                        s.playedBlockedFeedback = true;
-                        if (s.monster != null)
-                        {
-                            s.monster.PlayWaitingForBallsFeedback();
-                        }
-                    }
+                    s.playedBlockedFeedback = true;
+                    s.monster.PlayWaitingForBallsFeedback();
+                }
+
+                if (s.monster.assignedSlot == null &&
+                    s.inTransitBalls.Count == 0 &&
+                    (now - s.placedTime) > 0.45f &&
+                    (now - s.lastCollectionTime) > 0.45f &&
+                    !HasReachableBottomBallForColor(s.monster.colorType, s.monster))
+                {
+                    if (idleGridToPause == null) idleGridToPause = new List<MonsterCharacter>();
+                    idleGridToPause.Add(s.monster);
+                }
+            }
+
+            if (idleGridToPause != null)
+            {
+                for (int i = 0; i < idleGridToPause.Count; i++)
+                {
+                    idleGridToPause[i].PauseInGridCollection();
                 }
             }
         }
 
-        /// <summary>
-        /// Physically evaluates which balls are resting on the bottom/near side of the glass container with zero balls
-        /// blocking them from below, and matches them to the closest hungry slotted monster on the same side.
-        /// </summary>
-        private BallPhysicsController FindNextCollectableBall(out ActiveMonsterStream targetStream)
+        public bool HasBallsInTransitFor(MonsterCharacter monster)
         {
-            targetStream = null;
-            if (BallObjectPool.Instance == null) return null;
+            if (monster == null || string.IsNullOrEmpty(monster.monsterId)) return false;
+            if (_activeStreams.TryGetValue(monster.monsterId, out ActiveMonsterStream stream))
+            {
+                return stream.inTransitBalls != null && stream.inTransitBalls.Count > 0;
+            }
+            return false;
+        }
+
+        private bool IsBallInMonsterCollectionZone(MonsterCharacter monster, BallPhysicsController ball)
+        {
+            if (monster == null || ball == null) return false;
+            if (monster.assignedSlot != null) return true;
+
+            var grid = StagingGridBoard.Instance;
+            if (grid == null) return true;
+
+            ShapedGlassContainer container = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : null;
+            float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;
+            float edgeTolerance = Mathf.Max(0.06f, ballDiam * 0.32f);
+
+            var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
+            return grid.IsWorldXAlignedWithBlockTopColumns(monster, ball.transform.position.x, edgeTolerance, allMonsters);
+        }
+
+        /// <summary>
+        /// Returns true if at least one unblocked bottom-row ball inside the glass container matches targetColor
+        /// (and lies within forMonster's aligned horizontal zone when provided).
+        /// </summary>
+        public bool HasReachableBottomBallForColor(PuzzleColor targetColor, MonsterCharacter forMonster = null)
+        {
+            List<BallPhysicsController> bottomCandidates = CollectBottomCandidates();
+            for (int i = 0; i < bottomCandidates.Count; i++)
+            {
+                var cand = bottomCandidates[i];
+                if (cand == null || cand.colorType != targetColor) continue;
+                if (forMonster != null && !IsBallInMonsterCollectionZone(forMonster, cand)) continue;
+                return true;
+            }
+            return false;
+        }
+
+        private List<BallPhysicsController> CollectBottomCandidates()
+        {
+            List<BallPhysicsController> bottomCandidates = new List<BallPhysicsController>();
+            if (BallObjectPool.Instance == null) return bottomCandidates;
 
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
-            if (activeBalls == null || activeBalls.Count == 0) return null;
+            if (activeBalls == null || activeBalls.Count == 0) return bottomCandidates;
 
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
@@ -255,31 +355,45 @@ namespace PuzzleGlass
             float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;
             float ballRad = ballDiam * 0.5f;
 
-            // Maximum local Y center for a ball resting on the bottom floor of the glass (Row 0 is at floorLocalY + 0.12f,
-            // while Row 1 is at floorLocalY + 0.325f). Setting threshold to floorLocalY + ballDiam * 0.85f (+0.204f)
-            // guarantees only balls that have physically reached the bottom floor can be collected!
-            float maxBottomFloorCenterLocalY = floorLocalY + ballDiam * 0.85f;
-
-            List<BallPhysicsController> bottomCandidates = new List<BallPhysicsController>();
+            // Maximum local Y center for a ball resting at the bottom of its column with no ball underneath it
+            float maxBottomFloorCenterLocalY = floorLocalY + ballDiam * 1.15f;
 
             for (int i = 0; i < activeBalls.Count; i++)
             {
                 var b = activeBalls[i];
                 if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
 
-                // Wait until a dropping ball has settled onto the floor (not falling in mid-air)
-                if (b.rb != null && !b.rb.isKinematic && Mathf.Abs(b.rb.linearVelocity.y) > 1.10f)
+                if (b.rb != null && !b.rb.isKinematic && Mathf.Abs(b.rb.linearVelocity.y) > 1.35f)
                     continue;
 
                 Vector3 bLocal = (container != null)
                     ? container.transform.InverseTransformPoint(b.transform.position)
                     : b.transform.position;
 
-                // 1. Must be physically on the bottom floor ("yakın tarafta")
                 if (bLocal.y > maxBottomFloorCenterLocalY)
                     continue;
 
-                // 2. Check that NO other resting ball in the same compartment is underneath or blocking this ball
+                bool blockedByShelf = false;
+                if (container != null && container.dividers != null)
+                {
+                    for (int d = 0; d < container.dividers.Count; d++)
+                    {
+                        var div = container.dividers[d];
+                        if (div == null || !div.enabled || div.runtimeIsOpened || div.mechanicType != DividerMechanicType.StaticGlass)
+                            continue;
+                        if (Mathf.Abs(div.angleDegrees) < 55f)
+                        {
+                            float halfSpanX = div.length * 0.5f;
+                            if (bLocal.y > div.center.y - 0.02f && Mathf.Abs(bLocal.x - div.center.x) <= halfSpanX)
+                            {
+                                blockedByShelf = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (blockedByShelf) continue;
+
                 bool blockedFromBelow = false;
                 for (int j = 0; j < activeBalls.Count; j++)
                 {
@@ -296,16 +410,7 @@ namespace PuzzleGlass
 
                     float dy = bLocal.y - oLocal.y;
                     float dx = Mathf.Abs(bLocal.x - oLocal.x);
-
-                    // If another ball is below this ball and horizontally overlapping its downward path
-                    if (dy > ballRad * 0.35f && dx < ballDiam * 0.86f)
-                    {
-                        blockedFromBelow = true;
-                        break;
-                    }
-
-                    // If a lower-layer ball is immediately adjacent on the bottom floor, finish the lower layer first
-                    if (other.layerIndex < b.layerIndex && dx < ballDiam * 1.18f && oLocal.y <= maxBottomFloorCenterLocalY + 0.04f)
+                    if (dy > ballRad * 0.35f && dx < ballDiam * 0.85f)
                     {
                         blockedFromBelow = true;
                         break;
@@ -318,6 +423,17 @@ namespace PuzzleGlass
                 }
             }
 
+            return bottomCandidates;
+        }
+
+        /// <summary>
+        /// Physically evaluates which balls are resting on the bottom/near side of the glass container with zero balls
+        /// blocking them from below, and matches them to the closest hungry active Carrier Block.
+        /// </summary>
+        private BallPhysicsController FindNextCollectableBall(out ActiveMonsterStream targetStream)
+        {
+            targetStream = null;
+            List<BallPhysicsController> bottomCandidates = CollectBottomCandidates();
             if (bottomCandidates.Count == 0) return null;
 
             // 3. Match against active slotted monsters, prioritizing the ball closest horizontally to each monster's slot!
@@ -336,29 +452,16 @@ namespace PuzzleGlass
                 if (stream.inTransitBalls.Count >= maxBallsInTransitPerMonster) continue;
 
                 float monsterWorldX = monster.transform.position.x;
-                float monsterLocalX = (container != null)
-                    ? container.transform.InverseTransformPoint(monster.transform.position).x
-                    : monsterWorldX;
 
                 for (int i = 0; i < bottomCandidates.Count; i++)
                 {
                     var cand = bottomCandidates[i];
                     if (cand.colorType != monster.colorType) continue;
-
-                    Vector3 candLocal = (container != null)
-                        ? container.transform.InverseTransformPoint(cand.transform.position)
-                        : cand.transform.position;
-
-                    // If a vertical glass divider separates the bottom pool into compartments,
-                    // a monster can only collect from the compartment aligned with / reachable from its slot side!
-                    if (!ArePositionsInSameBottomCompartment(container, monsterLocalX, candLocal.x, floorLocalY + ballRad))
-                    {
-                        continue;
-                    }
+                    if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
                     float distX = Mathf.Abs(cand.transform.position.x - monsterWorldX);
-                    // Prefer lower layerIndex first, then closest horizontal distance to the monster's slot
-                    float score = cand.layerIndex * 0.35f + distX;
+                    // Prefer lower layerIndex first (strictly bottom-to-top), then closest horizontal distance to the carrier box's slot
+                    float score = cand.layerIndex * 0.50f + distX;
                     if (score < bestOverallScore)
                     {
                         bestOverallScore = score;
@@ -417,6 +520,7 @@ namespace PuzzleGlass
                         : b.transform.position;
 
                     if (bLocal.y > maxBottomY) continue;
+                    if (!IsBallInMonsterCollectionZone(monster, b)) continue;
                     if (!ArePositionsInSameBottomCompartment(container, monsterLocalX, bLocal.x, floorLocalY + ballDiam * 0.5f))
                         continue;
 
@@ -511,11 +615,11 @@ namespace PuzzleGlass
                     continue;
                 }
 
-                // If the target monster was removed from its slot while the ball was still inside the container, return it
+                // If the target block finished or became inactive while a ball was inside the container, re-route or return
                 MonsterCharacter targetMonster = ball.TargetMonster;
-                if (targetMonster == null || targetMonster.assignedSlot == null || targetMonster.remainingCount <= 0 || !targetMonster.gameObject.activeInHierarchy)
+                if (targetMonster == null || !targetMonster.IsActivelyCollecting)
                 {
-                    targetMonster = FindMonsterForColor(ball.colorType);
+                    targetMonster = FindMonsterForBall(ball);
                     if (targetMonster == null)
                     {
                         ball.CancelAttractionAndReturnToContainer();
@@ -526,10 +630,14 @@ namespace PuzzleGlass
 
                 Vector3 exitPos = GetExitWorldPosForBall(container, ball);
 
-                ball.ApplyAttractionToExit(exitPos, attractionPullForce, maxBallSpeed);
+                bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
+                float pullF = isFever ? (attractionPullForce * 2.0f) : attractionPullForce;
+                float maxSpd = isFever ? (maxBallSpeed * 1.95f) : maxBallSpeed;
+
+                ball.ApplyAttractionToExit(exitPos, pullF, maxSpd);
 
                 bool reachedExit = ball.transform.position.y <= exitPos.y + exitTriggerYOffset;
-                bool timedOut = ball.AttractionTime > 0.55f;
+                bool timedOut = ball.AttractionTime > (isFever ? 0.30f : 0.55f);
 
                 if (reachedExit || timedOut)
                 {
@@ -551,14 +659,17 @@ namespace PuzzleGlass
             }
         }
 
-        private MonsterCharacter FindMonsterForColor(PuzzleColor color)
+        private MonsterCharacter FindMonsterForBall(BallPhysicsController ball)
         {
+            if (ball == null) return null;
             foreach (var kvp in _activeStreams)
             {
-                if (kvp.Value.monster != null && kvp.Value.monster.assignedSlot != null &&
-                    kvp.Value.monster.colorType == color && kvp.Value.monster.remainingCount > 0)
+                var m = kvp.Value.monster;
+                if (m != null && m.IsActivelyCollecting &&
+                    m.colorType == ball.colorType &&
+                    IsBallInMonsterCollectionZone(m, ball))
                 {
-                    return kvp.Value.monster;
+                    return m;
                 }
             }
             return null;
@@ -567,6 +678,7 @@ namespace PuzzleGlass
         private void OnBallReachedMonster(BallPhysicsController ball, MonsterCharacter monster)
         {
             _totalCollectedThisLevel++;
+            PuzzleSoundManager.Instance?.PlayBallPop();
             OnBallCollected?.Invoke(ball, monster);
             CheckLevelCompletion();
         }
@@ -584,12 +696,41 @@ namespace PuzzleGlass
             }
         }
 
+        public bool HasAnyBallInTransitOrAttracting()
+        {
+            if (_attractingBalls.Count > 0) return true;
+            foreach (var kvp in _activeStreams)
+            {
+                if (kvp.Value != null && kvp.Value.inTransitBalls != null && kvp.Value.inTransitBalls.Count > 0)
+                    return true;
+            }
+            if (BallObjectPool.Instance != null)
+            {
+                var active = BallObjectPool.Instance.ActiveBalls;
+                for (int i = 0; i < active.Count; i++)
+                {
+                    var b = active[i];
+                    if (b != null && b.gameObject.activeInHierarchy && b.state != BallState.InContainer && b.state != BallState.Pooled)
+                        return true;
+                    if (b != null && b.gameObject.activeInHierarchy && b.rb != null && !b.rb.isKinematic && b.rb.linearVelocity.sqrMagnitude > 0.15f)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        public bool HasAnyCollectableMoveForSlottedMonsters()
+        {
+            return FindNextCollectableBall(out _) != null;
+        }
+
         public void ClearAll()
         {
             _attractingBalls.Clear();
             _activeStreams.Clear();
             _totalCollectedThisLevel = 0;
             _lastGlobalCollectionTime = -10f;
+            _levelStartTime = Time.time;
         }
     }
 }

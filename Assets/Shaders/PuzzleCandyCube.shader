@@ -6,9 +6,9 @@ Shader "PuzzleGlass/CandyCubeLit"
         _Color ("Color", Color) = (0.18, 0.68, 0.96, 1.0)
         _ShadowColor ("Warm Subsurface Shadow Color", Color) = (0.07, 0.40, 0.72, 1.0)
         _HighlightColor ("Creamy Bevel Highlight Color", Color) = (0.62, 0.92, 1.00, 1.0)
-        _Smoothness ("Satin Smoothness", Range(0.0, 1.0)) = 0.74
-        _BevelHighlight ("3D Bevel Edge Catchlight", Range(0.0, 1.0)) = 0.55
-        _RimSeparation ("3D Cube Border Separation", Range(0.0, 1.0)) = 0.38
+        _Smoothness ("Satin Smoothness", Range(0.0, 1.0)) = 0.56
+        _BevelHighlight ("3D Bevel Edge Catchlight", Range(0.0, 1.0)) = 0.24
+        _RimSeparation ("3D Cube Border Separation", Range(0.0, 1.0)) = 0.42
     }
 
     SubShader
@@ -113,27 +113,26 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float fillTerm = saturate(dot(N, L_fill)) * 0.14;
                 col = lerp(col, baseAlbedo * 1.06, fillTerm);
 
-                // 3. 3D Rounded Bevel Edge Catchlight (Image 2 signature tactile bevel ridge!)
-                // On flat face centers, maxAxis is ~1.0; on the rounded bevel edges & corners, maxAxis drops to 0.57..0.95
+                // 3. Soft Tactile Bevel Edge Catchlight (reduced on curved spheres so colors stay rich)
                 float maxAxis = max(abs(nOS.x), max(abs(nOS.y), abs(nOS.z)));
-                float bevelMask = saturate((0.985 - maxAxis) * 3.6);
-                float upperBevelLight = bevelMask * saturate(ndl * 0.65 + 0.35) * saturate(N.y + 0.42);
+                float bevelMask = saturate((0.975 - maxAxis) * 2.4) * 0.55;
+                float upperBevelLight = bevelMask * saturate(ndl * 0.60 + 0.35) * saturate(N.y + 0.38);
                 col = lerp(col, highTone, upperBevelLight * _BevelHighlight);
 
-                // 4. Dual-lobe Satin Toy-Resin Specular Highlight + Crisp Upper-Right Gumball Catchlight (Image 2!)
+                // 4. Controlled Satin Toy Specular + Delicate Pin-Point Catchlight (no white blowout)
                 float3 H = normalize(L_key + V);
                 float ndh = saturate(dot(N, H));
-                float specPower = lerp(12.0, 56.0, _Smoothness);
-                float specBroad = pow(ndh, 11.0) * 0.18;
-                float specGloss = pow(ndh, specPower) * (0.22 + 0.26 * bevelMask);
+                float specPower = lerp(16.0, 64.0, _Smoothness);
+                float specBroad = pow(ndh, 9.0) * 0.07;
+                float specGloss = pow(ndh, specPower) * (0.09 + 0.09 * bevelMask);
 
-                // Crisp glossy studio catchlight on upper-right of each sphere matching Image 2
-                float3 L_catch = normalize(float3(0.34, 0.48, -0.81));
+                // Crisp small catchlight on upper-right without washing out the color
+                float3 L_catch = normalize(float3(0.36, 0.50, -0.79));
                 float3 H_catch = normalize(L_catch + V);
                 float catchDot = saturate(dot(N, H_catch));
-                float catchSpot = smoothstep(0.91, 0.985, catchDot) * 0.62 + pow(catchDot, 22.0) * 0.24;
+                float catchSpot = smoothstep(0.955, 0.992, catchDot) * 0.24 + pow(catchDot, 28.0) * 0.07;
 
-                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.98), 0.65);
+                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.98), 0.42);
                 col += specColor * (specBroad + specGloss + catchSpot);
 
                 // 5. 3D Silhouette & Lower Bevel Cushion AO (keeps adjacent same-color cubes distinctly separated!)

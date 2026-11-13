@@ -1232,19 +1232,7 @@ namespace PuzzleGlass
 
             if (IsFlatBottomBox)
             {
-                float innerFloorY = GetChamberFloorY();
-                float innerCeilY = (contourPoints != null && contourPoints.Count > 0)
-                    ? contourPoints[contourPoints.Count - 1].y * heightScale
-                    : 0.62f * heightScale;
-                float centerY = (innerFloorY + innerCeilY) * 0.5f;
-                float innerHalfH = Mathf.Max(0.25f, (innerCeilY - innerFloorY) * 0.5f);
-                float innerHalfW = (contourPoints != null && contourPoints.Count > 0)
-                    ? contourPoints[0].halfWidth * widthScale
-                    : 1.32f * widthScale;
-
-                // Exact alignment with EvaluateRoundedBoxPool SDF (innerHalf = outerHalf - 0.115, outerHalf.y = 0.86 => innerHalf.y = 0.745)
-                float quadHalfH = innerHalfH / 0.745f;
-                float quadHalfW = (innerHalfW + 0.115f * quadHalfH) / 0.90f;
+                GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out _, out _);
                 float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
 
                 if (_chamberInnerGlowMat != null)
@@ -1380,17 +1368,24 @@ namespace PuzzleGlass
             BuildGlassDividersGeometry();
         }
 
+        private readonly List<Transform> _dividerVisualRoots = new List<Transform>();
+
         /// <summary>
-        /// Builds 3D glossy periwinkle & icy-blue rounded glass divider bars inside the container for all enabled dividers.
+        /// Builds 3D glossy rounded glass divider bars inside the container.
         /// </summary>
         private void BuildGlassDividersGeometry()
         {
+            _dividerVisualRoots.Clear();
             if (dividers == null || dividers.Count == 0 || _glassWallsObj == null) return;
 
             for (int i = 0; i < dividers.Count; i++)
             {
                 var div = dividers[i];
-                if (div == null || !div.enabled) continue;
+                if (div == null || !div.enabled || div.runtimeIsOpened || div.mechanicType != DividerMechanicType.StaticGlass)
+                {
+                    _dividerVisualRoots.Add(null);
+                    continue;
+                }
 
                 float len = Mathf.Max(0.10f, div.length);
                 float thick = Mathf.Max(0.035f, div.thickness);
@@ -1400,16 +1395,20 @@ namespace PuzzleGlass
                 divRoot.transform.SetParent(_glassWallsObj.transform, false);
                 divRoot.transform.localPosition = new Vector3(div.center.x, div.center.y, -0.10f);
                 divRoot.transform.localRotation = Quaternion.Euler(0f, 0f, div.angleDegrees);
+                _dividerVisualRoots.Add(divRoot.transform);
 
-                // Outer periwinkle-violet glossy frame bar
+                Material outerMatToUse = _dividerOuterRimMat != null ? _dividerOuterRimMat : _outerBlueRimMat;
+                Material innerMatToUse = _dividerInnerCoreMat != null ? _dividerInnerCoreMat : _innerCyanRimMat;
+
+                // Outer glossy frame bar
                 Mesh outerBarMesh = ProceduralMeshUtils.CreatePillBadge(len, thick, 0.14f, cornerR);
                 divRoot.AddComponent<MeshFilter>().sharedMesh = outerBarMesh;
                 var outerMr = divRoot.AddComponent<MeshRenderer>();
-                outerMr.sharedMaterial = _dividerOuterRimMat != null ? _dividerOuterRimMat : _outerBlueRimMat;
+                outerMr.sharedMaterial = outerMatToUse;
                 outerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 outerMr.receiveShadows = false;
 
-                // Inner icy-cyan refractive glass core highlight
+                // Inner core highlight
                 float innerLen = Mathf.Max(0.03f, len - 0.022f);
                 float innerThick = Mathf.Max(0.016f, thick - 0.022f);
                 float innerCornerR = Mathf.Min(innerThick * 0.48f, innerLen * 0.25f);
@@ -1419,9 +1418,71 @@ namespace PuzzleGlass
                 innerCoreObj.transform.localPosition = new Vector3(0f, 0f, -0.008f);
                 innerCoreObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(innerLen, innerThick, 0.145f, innerCornerR);
                 var innerMr = innerCoreObj.AddComponent<MeshRenderer>();
-                innerMr.sharedMaterial = _dividerInnerCoreMat != null ? _dividerInnerCoreMat : _innerCyanRimMat;
+                innerMr.sharedMaterial = innerMatToUse;
                 innerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 innerMr.receiveShadows = false;
+            }
+        }
+
+        /// <summary>
+        /// Tactile Shake / Tilt mechanic: rocks the glass container left & right while applying lateral + upward
+        /// velocity impulses to all resting balls inside the container to unstick wedged balls.
+        /// </summary>
+        public void ShakeAndTiltContainer(float intensity = 1.0f)
+        {
+            if (_glassWallsObj != null)
+            {
+                Transform visualTr = _glassWallsObj.transform;
+                visualTr.DOKill(true);
+                visualTr.localRotation = Quaternion.identity;
+                visualTr.localPosition = Vector3.zero;
+
+                Sequence tiltSeq = DOTween.Sequence();
+                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, 5.5f * intensity), 0.07f).SetEase(Ease.OutSine));
+                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, -5.5f * intensity), 0.11f).SetEase(Ease.InOutSine));
+                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, 3.2f * intensity), 0.09f).SetEase(Ease.InOutSine));
+                tiltSeq.Append(visualTr.DOLocalRotate(Vector3.zero, 0.08f).SetEase(Ease.OutBack));
+                tiltSeq.Join(visualTr.DOPunchPosition(new Vector3(0.09f * intensity, 0.05f * intensity, 0f), 0.32f, 16, 0.8f));
+            }
+
+            if (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls != null)
+            {
+                var balls = BallObjectPool.Instance.ActiveBalls;
+                for (int i = 0; i < balls.Count; i++)
+                {
+                    var b = balls[i];
+                    if (b == null || b.state != BallState.InContainer || b.rb == null || b.rb.isKinematic)
+                        continue;
+
+                    b.rb.WakeUp();
+                    float sideDir = (i % 2 == 0) ? 1f : -1f;
+                    float vx = (sideDir * UnityEngine.Random.Range(1.35f, 2.35f) + UnityEngine.Random.Range(-0.45f, 0.45f)) * intensity;
+                    float vy = UnityEngine.Random.Range(0.75f, 1.55f) * intensity;
+                    b.rb.linearVelocity = new Vector3(vx, vy, 0f);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Highlights the glass container rim & center glow when Fever Mode (Streak 3+ / 2x Vacuum) is active.
+        /// </summary>
+        public void SetFeverVisualGlow(bool feverActive)
+        {
+            if (_outerBlueRimMat != null)
+            {
+                Color c = feverActive
+                    ? Color.Lerp(glassOuterRimColor, new Color(1.0f, 0.78f, 0.18f, 1.0f), 0.65f)
+                    : glassOuterRimColor;
+                _outerBlueRimMat.color = c;
+                if (_outerBlueRimMat.HasProperty("_BaseColor")) _outerBlueRimMat.SetColor("_BaseColor", c);
+            }
+            if (_chamberInnerGlowMat != null)
+            {
+                Color g = feverActive
+                    ? Color.Lerp(glassCenterGlowColor, new Color(1.0f, 0.90f, 0.48f, 0.56f), 0.55f)
+                    : glassCenterGlowColor;
+                _chamberInnerGlowMat.color = g;
+                if (_chamberInnerGlowMat.HasProperty("_BaseColor")) _chamberInnerGlowMat.SetColor("_BaseColor", g);
             }
         }
 
@@ -2078,11 +2139,11 @@ namespace PuzzleGlass
 
             if (IsFlatBottomBox)
             {
-                particleSize = 0.24f;
+                particleSize = 0.265f;
             }
 
             gen.glassContainer = this;
-            gen.ballDiameter = IsFlatBottomBox ? 0.24f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.24f);
+            gen.ballDiameter = IsFlatBottomBox ? 0.265f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.265f);
             gen.patternVerticalOffset = patternVerticalOffset;
             gen.initialShapeHoldTime = 0f;
 
@@ -2097,10 +2158,17 @@ namespace PuzzleGlass
 
             var balls = gen.GeneratePattern(shape, goals);
 
-            // 4. Synchronize cute monsters at the bottom staging tray to match balls!
+            // 4. Synchronize Carrier Boxes at the bottom staging tray ONLY when no level asset/procedural boxes exist!
             if (gameMgr != null)
             {
-                gameMgr.SynchronizeMonstersFromSpawnedBalls(balls);
+                bool hasLevelBoxes = gameMgr.currentLevel != null &&
+                                     gameMgr.currentLevel.monsters != null &&
+                                     gameMgr.currentLevel.monsters.Count > 0 &&
+                                     shape == ShapePatternType.GumballMix;
+                if (!hasLevelBoxes)
+                {
+                    gameMgr.SynchronizeMonstersFromSpawnedBalls(balls);
+                }
             }
         }
 
@@ -2140,6 +2208,70 @@ namespace PuzzleGlass
             }
 
             return -0.46f * heightScale;
+        }
+
+        private void GetRoundedBoxPoolExtents(
+            out float centerY,
+            out float quadHalfW,
+            out float quadHalfH,
+            out float visibleHalfW,
+            out float visibleHalfH)
+        {
+            float innerFloorY = GetChamberFloorY();
+            float innerCeilY = (contourPoints != null && contourPoints.Count > 0)
+                ? contourPoints[contourPoints.Count - 1].y * heightScale
+                : 0.62f * heightScale;
+            centerY = (innerFloorY + innerCeilY) * 0.5f;
+            float innerHalfH = Mathf.Max(0.25f, (innerCeilY - innerFloorY) * 0.5f);
+            float innerHalfW = (contourPoints != null && contourPoints.Count > 0)
+                ? contourPoints[0].halfWidth * widthScale
+                : 1.32f * widthScale;
+
+            // Exact alignment with EvaluateRoundedBoxPool SDF (innerHalf = outerHalf - 0.115, outerHalf.y = 0.86 => innerHalf.y = 0.745)
+            quadHalfH = innerHalfH / 0.745f;
+            quadHalfW = (innerHalfW + 0.115f * quadHalfH) / 0.90f;
+            visibleHalfW = 0.90f * quadHalfW;
+            visibleHalfH = 0.86f * quadHalfH;
+        }
+
+        /// <summary>
+        /// Returns the world-space bounds of the visible outer glass frame (excluding shader drop-shadow padding).
+        /// </summary>
+        public bool TryGetVisibleFrameWorldBounds(out float minX, out float maxX, out float minY, out float maxY)
+        {
+            EnsureContourInitialized();
+
+            if (IsFlatBottomBox)
+            {
+                GetRoundedBoxPoolExtents(out float centerY, out _, out _, out float visibleHalfW, out float visibleHalfH);
+                Vector3 worldMin = transform.TransformPoint(new Vector3(-visibleHalfW, centerY - visibleHalfH, 0f));
+                Vector3 worldMax = transform.TransformPoint(new Vector3( visibleHalfW, centerY + visibleHalfH, 0f));
+                minX = Mathf.Min(worldMin.x, worldMax.x);
+                maxX = Mathf.Max(worldMin.x, worldMax.x);
+                minY = Mathf.Min(worldMin.y, worldMax.y);
+                maxY = Mathf.Max(worldMin.y, worldMax.y);
+                return true;
+            }
+
+            Renderer[] rends = GetComponentsInChildren<Renderer>(false);
+            bool foundAny = false;
+            minX = float.MaxValue;
+            maxX = float.MinValue;
+            minY = float.MaxValue;
+            maxY = float.MinValue;
+            for (int i = 0; i < rends.Length; i++)
+            {
+                if (rends[i] == null || !rends[i].enabled) continue;
+                string rName = rends[i].gameObject.name;
+                if (rName.Contains("Shadow") || rName.Contains("Ball") || rName.Contains("Sand")) continue;
+                Bounds b = rends[i].bounds;
+                if (b.min.x < minX) minX = b.min.x;
+                if (b.max.x > maxX) maxX = b.max.x;
+                if (b.min.y < minY) minY = b.min.y;
+                if (b.max.y > maxY) maxY = b.max.y;
+                foundAny = true;
+            }
+            return foundAny;
         }
 
         public float CalculateChamberCenterY()

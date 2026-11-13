@@ -112,7 +112,7 @@ namespace PuzzleGlass
         public Vector3 GetPlacementPosition()
         {
             // Center of the slot tray, resting directly in the recessed socket in front of the UI slot
-            return transform.position + new Vector3(0f, 0.08f, -0.15f);
+            return transform.position + new Vector3(0f, 0.03f, -0.15f);
         }
 
         public void ReserveSlot(MonsterCharacter monster)

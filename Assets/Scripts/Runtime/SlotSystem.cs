@@ -8,7 +8,8 @@ namespace PuzzleGlass
     {
         public static SlotSystem Instance { get; private set; }
 
-        [Header("Slot Configuration (Reference Photo 2)")]
+        [Header("Slot Configuration")]
+        public bool slotsEnabled = false;
         public int slotCount = 4;
         public float slotSpacing = 0.84f;
 
@@ -23,19 +24,13 @@ namespace PuzzleGlass
         private void Awake()
         {
             Instance = this;
-            if (slots.Count == 0 || transform.childCount == 0 || transform.Find("Slot_0/SlotShadow") == null)
-            {
-                RebuildSlots();
-            }
+            RebuildSlots();
         }
 
         private void OnEnable()
         {
             Instance = this;
-            if (slots.Count == 0 || transform.childCount == 0 || transform.Find("Slot_0/SlotShadow") == null)
-            {
-                RebuildSlots();
-            }
+            RebuildSlots();
         }
 
         [ContextMenu("Rebuild Slots")]
@@ -49,6 +44,11 @@ namespace PuzzleGlass
                     DestroyImmediate(transform.GetChild(i).gameObject);
             }
             slots.Clear();
+
+            if (!slotsEnabled)
+            {
+                return;
+            }
 
             EnsureMaterials();
 

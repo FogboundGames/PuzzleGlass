@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using DG.Tweening;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -31,10 +32,16 @@ namespace PuzzleGlass
         private bool _wasSlottedOnDragStart = false;
         private SlotPlatform _previousSlot;
         private bool _hasMovedBeyondTapThreshold = false;
+        private bool _isLiftedOutOfGrid = false;
         private Camera _mainCam;
 
         public event Action<MonsterCharacter, SlotPlatform> OnMonsterPlaced;
         public event Action<MonsterCharacter> OnMonsterReturnedToTray;
+
+        public bool IsBlockCurrentlyDragged(MonsterCharacter block)
+        {
+            return _isDragging && _draggedMonster != null && _draggedMonster == block;
+        }
 
         private void Awake()
         {
@@ -68,19 +75,36 @@ namespace PuzzleGlass
 
         private void HandlePointerDown(Vector2 screenPos)
         {
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                return;
+            }
+            if (PuzzleGlassGameManager.Instance != null &&
+                (PuzzleGlassGameManager.Instance.isLevelCompleted || PuzzleGlassGameManager.Instance.isLevelFailed))
+            {
+                return;
+            }
+
             Ray ray = _mainCam.ScreenPointToRay(screenPos);
+            RaycastHit[] allHits = Physics.RaycastAll(ray, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            Vector3 worldTouch = ScreenToWorldOnPlane(screenPos, 0f);
+
             MonsterCharacter selectedMonster = null;
 
             // 1. Raycast for Monster BoxCollider (includes both staging monsters AND slotted monsters!)
-            if (Physics.Raycast(ray, out RaycastHit hit, 100f))
+            for (int i = 0; i < allHits.Length; i++)
             {
-                selectedMonster = hit.collider.GetComponentInParent<MonsterCharacter>();
+                var m = allHits[i].collider.GetComponentInParent<MonsterCharacter>();
+                if (m != null)
+                {
+                    selectedMonster = m;
+                    break;
+                }
             }
 
             // 2. Proximity fallback: check distance on screen / world plane (both staging and slotted monsters)
             if (selectedMonster == null)
             {
-                Vector3 worldTouch = ScreenToWorldOnPlane(screenPos, 0f);
                 float closestDist = 0.85f;
 
                 var allMonsters = FindObjectsByType<MonsterCharacter>(FindObjectsSortMode.None);
@@ -100,6 +124,23 @@ namespace PuzzleGlass
 
             if (selectedMonster == null || selectedMonster.IsCompleted || selectedMonster.remainingCount <= 0) return;
 
+            // Lock legacy slotted boxes, and lock in-grid boxes only while balls are actively flying into them
+            if (selectedMonster.assignedSlot != null)
+            {
+                selectedMonster.PlayLockedInSlotFeedback();
+                return;
+            }
+            if (selectedMonster.isCollectingInGrid)
+            {
+                if (BallCollectionController.Instance != null &&
+                    BallCollectionController.Instance.HasBallsInTransitFor(selectedMonster))
+                {
+                    selectedMonster.PlayLockedInSlotFeedback();
+                    return;
+                }
+                selectedMonster.PauseInGridCollection();
+            }
+
             selectedMonster.EnsureStagingHomeRecorded();
 
             _isDragging = true;
@@ -107,22 +148,22 @@ namespace PuzzleGlass
             _pointerDownScreenPos = screenPos;
             _pointerDownTime = Time.time;
             _hasMovedBeyondTapThreshold = false;
+            _isLiftedOutOfGrid = false;
 
-            _wasSlottedOnDragStart = (selectedMonster.assignedSlot != null);
-            _previousSlot = selectedMonster.assignedSlot;
+            _wasSlottedOnDragStart = false;
+            _previousSlot = null;
 
             _dragOriginPos = _draggedMonster.transform.position;
-            _dragStartScale = (_draggedMonster.hasStagingHome && _draggedMonster.stagingHomeScale.sqrMagnitude > 0.01f)
+            _dragStartScale = (_draggedMonster.hasStagingHome && _draggedMonster.stagingHomeScale.sqrMagnitude > 0.001f)
                 ? _draggedMonster.stagingHomeScale
                 : _draggedMonster.transform.localScale;
 
-            Vector3 pointerWorld = ScreenToWorldOnPlane(screenPos, dragHeightZ);
+            Vector3 pointerWorld = ScreenToWorldOnPlane(screenPos, 0f);
             _dragOffset = _dragOriginPos - pointerWorld;
             _dragOffset.z = 0f;
 
             _draggedMonster.StopAllCoroutines();
             _draggedMonster.transform.DOKill();
-            _draggedMonster.transform.DOScale(_dragStartScale * dragLiftScale, 0.12f).SetEase(Ease.OutQuad);
         }
 
         private void HandlePointerDrag(Vector2 screenPos)
@@ -135,25 +176,76 @@ namespace PuzzleGlass
 
             if (!_hasMovedBeyondTapThreshold)
             {
-                if (Vector2.Distance(screenPos, _pointerDownScreenPos) > 12f)
+                if (Vector2.Distance(screenPos, _pointerDownScreenPos) > 10f)
                 {
                     _hasMovedBeyondTapThreshold = true;
-
-                    // Detach from previous slot as soon as the player starts dragging it out
-                    if (_previousSlot != null)
-                    {
-                        _previousSlot.DetachMonster();
-                        _draggedMonster.assignedSlot = null;
-                        if (BallCollectionController.Instance != null)
-                        {
-                            BallCollectionController.Instance.OnMonsterRemovedFromSlot(_draggedMonster);
-                        }
-                    }
                 }
                 else
                 {
                     return;
                 }
+            }
+
+            var grid = StagingGridBoard.Instance;
+            var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
+
+            if (grid != null)
+            {
+                Vector3 pointerWorldGrid = ScreenToWorldOnPlane(screenPos, 0f);
+                bool exitClear = grid.IsBlockExitClearToSlots(_draggedMonster, allMonsters);
+                bool wantsPullActivate = exitClear && pointerWorldGrid.y > grid.TopFrameInnerY + 0.04f;
+
+                if (wantsPullActivate)
+                {
+                    // Gentle upward tug feedback while keeping the block aligned in its top grid cell;
+                    // release triggers direct in-grid collection!
+                    _isLiftedOutOfGrid = true;
+                    Vector3 snappedAnchorPos = grid.GetWorldPositionForAnchor(_draggedMonster.gridAnchor, _draggedMonster.blockShape);
+                    Vector3 tugPos = snappedAnchorPos + new Vector3(0f, Mathf.Min(0.14f, (pointerWorldGrid.y - grid.TopFrameInnerY) * 0.4f), -0.05f);
+                    _draggedMonster.transform.position = Vector3.Lerp(
+                        _draggedMonster.transform.position,
+                        tugPos,
+                        28f * Time.deltaTime);
+                    _draggedMonster.transform.localScale = Vector3.Lerp(
+                        _draggedMonster.transform.localScale,
+                        _dragStartScale * 1.05f,
+                        20f * Time.deltaTime);
+                    return;
+                }
+
+                // Sliding smoothly inside the bottom grid tray with solid collision against walls & other blocks
+                if (_isLiftedOutOfGrid)
+                {
+                    _isLiftedOutOfGrid = false;
+                }
+
+                Vector3 desiredCenter = pointerWorldGrid + _dragOffset;
+                desiredCenter.z = 0f;
+
+                Vector2Int desiredAnchor = grid.WorldCenterToNearestAnchor(desiredCenter, _draggedMonster.blockShape);
+                Vector2Int stepped = grid.SlideAnchorStepByStep(_draggedMonster, desiredAnchor, allMonsters);
+                if (stepped != _draggedMonster.gridAnchor)
+                {
+                    _draggedMonster.gridAnchor = stepped;
+                    _draggedMonster.stagingColumn = stepped.x;
+                    _draggedMonster.stagingRow = stepped.y;
+                    grid.RefreshAllGridBlockHighlightStates(allMonsters);
+                    PuzzleSoundManager.Instance?.PlayGridSlide();
+                }
+
+                Vector3 snappedWorld = grid.GetWorldPositionForAnchor(_draggedMonster.gridAnchor, _draggedMonster.blockShape);
+                Vector3 previewPos = ComputeConstrainedGridPreview(grid, _draggedMonster, snappedWorld, desiredCenter, allMonsters);
+                previewPos.z = -0.05f;
+
+                _draggedMonster.transform.position = Vector3.Lerp(
+                    _draggedMonster.transform.position,
+                    previewPos,
+                    Mathf.Max(dragFollowSpeed, 38f) * Time.deltaTime);
+                _draggedMonster.transform.localScale = Vector3.Lerp(
+                    _draggedMonster.transform.localScale,
+                    _dragStartScale,
+                    22f * Time.deltaTime);
+                return;
             }
 
             Vector3 pointerWorld = ScreenToWorldOnPlane(screenPos, dragHeightZ);
@@ -165,9 +257,11 @@ namespace PuzzleGlass
                 targetPos,
                 dragFollowSpeed * Time.deltaTime);
 
-            // Check hover over any slot (empty or occupied for swap)
-            SlotPlatform bestSlot = FindClosestSlot(_draggedMonster.transform.position);
+            UpdateHoveredSlotHighlight(FindClosestSlot(_draggedMonster.transform.position));
+        }
 
+        private void UpdateHoveredSlotHighlight(SlotPlatform bestSlot)
+        {
             if (bestSlot != _hoveredSlot)
             {
                 if (_hoveredSlot != null)
@@ -184,6 +278,27 @@ namespace PuzzleGlass
             }
         }
 
+        private Vector3 ComputeConstrainedGridPreview(
+            StagingGridBoard grid,
+            MonsterCharacter block,
+            Vector3 anchorWorld,
+            Vector3 desiredWorld,
+            List<MonsterCharacter> allMonsters)
+        {
+            Vector3 delta = desiredWorld - anchorWorld;
+            float maxOpen = grid.cellSize * 0.45f;
+            float maxBlocked = 0.022f;
+
+            float minX = grid.CanPlaceBlockAt(block, block.gridAnchor + Vector2Int.left, allMonsters) ? -maxOpen : -maxBlocked;
+            float maxX = grid.CanPlaceBlockAt(block, block.gridAnchor + Vector2Int.right, allMonsters) ? maxOpen : maxBlocked;
+            float minY = grid.CanPlaceBlockAt(block, block.gridAnchor + Vector2Int.down, allMonsters) ? -maxOpen : -maxBlocked;
+            float maxY = grid.CanPlaceBlockAt(block, block.gridAnchor + Vector2Int.up, allMonsters) ? maxOpen : maxBlocked;
+
+            float cx = Mathf.Clamp(delta.x, minX, maxX);
+            float cy = Mathf.Clamp(delta.y, minY, maxY);
+            return new Vector3(anchorWorld.x + cx, anchorWorld.y + cy, 0f);
+        }
+
         private void HandlePointerUp(Vector2 screenPos)
         {
             if (_draggedMonster == null)
@@ -194,75 +309,53 @@ namespace PuzzleGlass
 
             MonsterCharacter monster = _draggedMonster;
             SlotPlatform targetSlot = _hoveredSlot;
+            bool wasLifted = _isLiftedOutOfGrid;
 
-            if (_hoveredSlot != null)
-            {
-                _hoveredSlot.SetHighlight(false);
-                _hoveredSlot = null;
-            }
+            UpdateHoveredSlotHighlight(null);
 
             _draggedMonster = null;
             _isDragging = false;
+            _isLiftedOutOfGrid = false;
+
+            var grid = StagingGridBoard.Instance;
+            var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
 
             bool isQuickTap = !_hasMovedBeyondTapThreshold && (Time.time - _pointerDownTime < 0.30f);
 
-            // 1. Quick Tap Behavior:
-            // - If monster was in a slot -> Return it to its staging home!
-            // - If monster was in staging tray -> Hop it to the first available empty slot!
-            if (isQuickTap)
+            // Always settle visually onto the valid grid anchor cleanly first
+            if (grid != null)
             {
-                if (_wasSlottedOnDragStart)
+                Vector3 finalPos = grid.GetWorldPositionForAnchor(monster.gridAnchor, monster.blockShape);
+                bool atTopExit = grid.IsBlockAtTopExit(monster);
+                monster.armedAtTopEdge = atTopExit;
+                monster.SetGridState(monster.gridAnchor, finalPos, _dragStartScale, monster.GetSlotFitScale(), atTopExit, animateMove: !isQuickTap);
+                if (isQuickTap)
                 {
-                    monster.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(monster));
+                    monster.transform.localScale = _dragStartScale;
                 }
                 else
                 {
-                    monster.transform.localScale = _dragStartScale;
-                    monster.TryHopToNextAvailableSlot();
+                    PuzzleSoundManager.Instance?.PlayBlockSnap();
                 }
-                _previousSlot = null;
-                return;
+                grid.RefreshAllGridBlockHighlightStates(allMonsters);
             }
 
-            // 2. Drag & Drop onto a Slot (Empty or Swap with Occupied Slot)
-            if (targetSlot != null)
+            // 1. Quick Tap OR sliding/bringing a block up to the top exit row:
+            // Starts direct in-grid collection automatically if at the top row & matching bottom ball color!
+            if (isQuickTap || wasLifted)
             {
-                if (targetSlot.isOccupied && targetSlot.currentMonster != null && targetSlot.currentMonster != monster)
-                {
-                    MonsterCharacter displacedMonster = targetSlot.currentMonster;
-                    targetSlot.DetachMonster();
-                    displacedMonster.assignedSlot = null;
-
-                    if (BallCollectionController.Instance != null)
-                    {
-                        BallCollectionController.Instance.OnMonsterRemovedFromSlot(displacedMonster);
-                    }
-
-                    // If we dragged from another slot, swap the displaced monster into our previous slot;
-                    // otherwise send the displaced monster back to its staging tray home!
-                    if (_previousSlot != null && !_previousSlot.isOccupied)
-                    {
-                        PlaceMonsterIntoSlot(displacedMonster, _previousSlot, _dragStartScale);
-                    }
-                    else
-                    {
-                        displacedMonster.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(displacedMonster));
-                    }
-                }
-
-                PlaceMonsterIntoSlot(monster, targetSlot, _dragStartScale);
-                _previousSlot = null;
-                return;
+                monster.TryStartInGridCollection(playDenialFeedback: true);
             }
-
-            // 3. Dropped outside any slot -> Return monster to its staging home tray!
-            if (_previousSlot != null && monster.assignedSlot == _previousSlot)
+            else if (grid != null && grid.IsBlockAtTopExit(monster))
             {
-                _previousSlot.DetachMonster();
-                monster.assignedSlot = null;
+                monster.TryStartInGridCollection(playDenialFeedback: false);
             }
 
-            monster.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(monster));
+            // 2. Fallback if grid is missing
+            if (grid == null)
+            {
+                monster.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(monster));
+            }
             _previousSlot = null;
         }
 
@@ -272,6 +365,11 @@ namespace PuzzleGlass
 
             Vector3 slotPlacePos = targetSlot.GetPlacementPosition();
             targetSlot.ReserveSlot(placedMonster);
+
+            if (PuzzleGlassGameManager.Instance != null)
+            {
+                PuzzleGlassGameManager.Instance.OnStagingBoxPlacedInSlot(placedMonster);
+            }
 
             placedMonster.transform.DOKill();
             Sequence snapSeq = DOTween.Sequence();
@@ -305,7 +403,7 @@ namespace PuzzleGlass
             for (int i = 0; i < slotSys.slots.Count; i++)
             {
                 var slot = slotSys.slots[i];
-                if (slot == null) continue;
+                if (slot == null || slot.isOccupied || slot.currentMonster != null) continue;
 
                 float dist = Vector2.Distance(
                     new Vector2(monsterPos.x, monsterPos.y),

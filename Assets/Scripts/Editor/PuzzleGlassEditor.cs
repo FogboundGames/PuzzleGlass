@@ -58,13 +58,58 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
             GUI.backgroundColor = new Color(0.28f, 0.88f, 0.55f);
-            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım Aracı)", GUILayout.Height(36)))
+            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım & Üretim Aracı)", GUILayout.Height(36)))
             {
                 LevelDesignerWindow.OpenWindow();
             }
 
+            GUI.backgroundColor = new Color(0.98f, 0.78f, 0.25f);
+            if (GUILayout.Button("🎲 10 Levellık İlerlemeli Paket Üret (Kolay -> Zor -> Boss)", GUILayout.Height(32)))
+            {
+                var win = EditorWindow.GetWindow<LevelDesignerWindow>("Level Design Studio");
+                win.GenerateProgressiveLevelPack(10);
+            }
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("⚡ Sahneye Anında Yeni Level Üret (Zorluk Seç):", EditorStyles.miniBoldLabel);
+            EditorGUILayout.BeginHorizontal();
+            int nextNum = (manager.currentLevel != null) ? manager.currentLevel.levelNumber + 1 : 1;
+
+            GUI.backgroundColor = new Color(0.24f, 0.85f, 0.48f);
+            if (GUILayout.Button("🟢 Kolay", GUILayout.Height(28)))
+            {
+                manager.GenerateAndLoadProceduralLevel(nextNum, LevelDifficulty.Easy);
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(0.28f, 0.72f, 0.98f);
+            if (GUILayout.Button("🔵 Orta", GUILayout.Height(28)))
+            {
+                manager.GenerateAndLoadProceduralLevel(nextNum, LevelDifficulty.Medium);
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(0.98f, 0.65f, 0.22f);
+            if (GUILayout.Button("🟠 Zor", GUILayout.Height(28)))
+            {
+                manager.GenerateAndLoadProceduralLevel(nextNum, LevelDifficulty.Hard);
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
+            }
+
+            GUI.backgroundColor = new Color(0.95f, 0.35f, 0.45f);
+            if (GUILayout.Button("🔴 Boss", GUILayout.Height(28)))
+            {
+                manager.GenerateAndLoadProceduralLevel(nextNum, LevelDifficulty.Boss);
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.EndHorizontal();
+
             GUI.backgroundColor = new Color(0.30f, 0.85f, 0.95f);
-            if (GUILayout.Button("✨ Glass Shape Editor'ı Aç (Cam Şekillendirme Aracı)", GUILayout.Height(34)))
+            if (GUILayout.Button("✨ Glass Shape Editor'ı Aç (Cam Şekillendirme Aracı)", GUILayout.Height(32)))
             {
                 GlassShapeDesignerWindow.OpenForContainer(manager.glassContainer);
             }
@@ -117,9 +162,21 @@ namespace PuzzleGlass.Editor
             MonsterCharacter monster = (MonsterCharacter)target;
 
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("Yaratık Testleri", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Kutu / Yuva Ayarları", EditorStyles.boldLabel);
 
-            if (GUILayout.Button("Yaratık Görünümünü Yeniden Oluştur", GUILayout.Height(28)))
+            EditorGUI.BeginChangeCheck();
+            int currentSockets = Mathf.Clamp((monster.initialCount > 0) ? monster.initialCount : Mathf.Max(1, monster.remainingCount), 1, MonsterCharacter.MaxVisualSockets);
+            int newSockets = EditorGUILayout.IntSlider("Yuva (Boşluk) Sayısı", currentSockets, 1, MonsterCharacter.MaxVisualSockets);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(monster, "Change Monster Socket Count");
+                monster.initialCount = newSockets;
+                monster.remainingCount = newSockets;
+                EditorUtility.SetDirty(monster);
+                monster.RebuildMonsterVisuals();
+            }
+
+            if (GUILayout.Button("Kutu Görünümünü Yeniden Oluştur", GUILayout.Height(28)))
             {
                 monster.RebuildMonsterVisuals();
             }

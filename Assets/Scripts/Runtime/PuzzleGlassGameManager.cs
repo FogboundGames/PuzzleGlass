@@ -16,6 +16,7 @@ namespace PuzzleGlass
         [Header("Core References")]
         public ShapedGlassContainer glassContainer;
         public SlotSystem slotSystem;
+        public StagingGridBoard stagingGridBoard;
         public CubeDispenser cubeDispenser;
         public Camera mainCamera;
 
@@ -39,11 +40,20 @@ namespace PuzzleGlass
         [Header("Active Monsters & Gameplay State")]
         public List<MonsterCharacter> activeMonsters = new List<MonsterCharacter>();
         public bool isLevelCompleted = false;
+        public bool isLevelFailed = false;
         public ShapePatternType activePatternType = ShapePatternType.GumballMix;
 
+        [Header("Combo / Fever Mode & Shake Mechanic")]
+        public int comboStreak = 0;
+        public float feverRemainingTime = 0f;
+        public bool IsFeverActive => feverRemainingTime > 0f;
+        public int maxShakesPerLevel = 3;
+        public int remainingShakes = 3;
+
         [Header("Testing & Debug GUI")]
-        public bool showDebugGui = true;
+        public bool showDebugGui = false;
         private bool _showPatternSelector = false;
+        private float _deadlockTimer = 0f;
 
         private void Awake()
         {
@@ -65,6 +75,21 @@ namespace PuzzleGlass
         private void Start()
         {
             EnsureGameplayControllers();
+            if (Application.isPlaying)
+            {
+                if (currentLevel != null)
+                {
+                    LoadLevel(currentLevel);
+                    return;
+                }
+                if (levels != null && levels.Count > 0 && levels[0] != null)
+                {
+                    LoadLevelByIndex(currentLevelIndex);
+                    return;
+                }
+                GenerateAndLoadProceduralLevel(1, LevelDifficulty.Easy);
+                return;
+            }
             RebuildContainerPhysics();
         }
 
@@ -168,9 +193,15 @@ namespace PuzzleGlass
             {
                 List<LevelMonsterEntry> fallback = new List<LevelMonsterEntry>()
                 {
-                    new LevelMonsterEntry(PuzzleColor.Red, 10),
-                    new LevelMonsterEntry(PuzzleColor.Yellow, 11),
-                    new LevelMonsterEntry(PuzzleColor.Blue, 10)
+                    new LevelMonsterEntry(PuzzleColor.Blue, 3),
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 3),
+                    new LevelMonsterEntry(PuzzleColor.Red, 3),
+                    new LevelMonsterEntry(PuzzleColor.Blue, 3),
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 3),
+                    new LevelMonsterEntry(PuzzleColor.Red, 3),
+                    new LevelMonsterEntry(PuzzleColor.Blue, 3),
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 3),
+                    new LevelMonsterEntry(PuzzleColor.Red, 3)
                 };
                 SpawnMonsterStagingArea(fallback);
                 return;
@@ -190,23 +221,31 @@ namespace PuzzleGlass
                 colorCounts[c]++;
             }
 
-            // Place monsters in reverse layer order (e.g., Red on left, Yellow in middle, Blue on right)
-            // so the player can test selecting either the top color (Red) or bottom color (Blue).
+            // Build variable-socket Carrier Boxes matching the spawned ball counts
+            int boxCap = (currentLevel != null) ? Mathf.Clamp(currentLevel.ballsPerBox, 1, MonsterCharacter.MaxVisualSockets) : 3;
             List<LevelMonsterEntry> entries = new List<LevelMonsterEntry>();
-            for (int i = colorOrder.Count - 1; i >= 0; i--)
+            bool addedAny = true;
+            while (addedAny)
             {
-                PuzzleColor c = colorOrder[i];
-                if (colorCounts[c] > 0)
+                addedAny = false;
+                for (int i = 0; i < colorOrder.Count; i++)
                 {
-                    entries.Add(new LevelMonsterEntry(c, colorCounts[c]));
+                    PuzzleColor c = colorOrder[i];
+                    if (colorCounts[c] > 0)
+                    {
+                        int take = Mathf.Min(boxCap, colorCounts[c]);
+                        entries.Add(new LevelMonsterEntry(c, take));
+                        colorCounts[c] -= take;
+                        addedAny = true;
+                    }
                 }
             }
 
             if (entries.Count == 0)
             {
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Red, 10));
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Yellow, 11));
-                entries.Add(new LevelMonsterEntry(PuzzleColor.Blue, 10));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Blue, boxCap));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Yellow, boxCap));
+                entries.Add(new LevelMonsterEntry(PuzzleColor.Red, boxCap));
             }
 
             SpawnMonsterStagingArea(entries);
@@ -222,6 +261,20 @@ namespace PuzzleGlass
             if (slotSystem == null)
             {
                 slotSystem = FindFirstObjectByType<SlotSystem>();
+            }
+            if (slotSystem != null && slotSystem.gameObject.activeSelf)
+            {
+                slotSystem.gameObject.SetActive(false);
+            }
+
+            if (stagingGridBoard == null)
+            {
+                stagingGridBoard = FindFirstObjectByType<StagingGridBoard>();
+                if (stagingGridBoard == null)
+                {
+                    GameObject gridObj = new GameObject("StagingGridBoard");
+                    stagingGridBoard = gridObj.AddComponent<StagingGridBoard>();
+                }
             }
 
             if (cubeDispenser == null)
@@ -242,6 +295,16 @@ namespace PuzzleGlass
             if (patternGenerator == null)
             {
                 patternGenerator = GetComponent<BallPatternGenerator>().OrNull() ?? gameObject.AddComponent<BallPatternGenerator>();
+            }
+
+            if (FindFirstObjectByType<PuzzleGlassBackdrop>() == null)
+            {
+                gameObject.AddComponent<PuzzleGlassBackdrop>();
+            }
+            PuzzleSoundManager.GetOrCreate();
+            if (FindFirstObjectByType<PuzzleGlassHUD>() == null)
+            {
+                gameObject.AddComponent<PuzzleGlassHUD>();
             }
 
             if (glassContainer != null)
@@ -287,11 +350,33 @@ namespace PuzzleGlass
                 mainCamera.orthographic = true;
                 mainCamera.orthographicSize = 4.2f;
             }
+
+            var backdrop = PuzzleGlassBackdrop.Instance ?? FindFirstObjectByType<PuzzleGlassBackdrop>();
+            if (backdrop != null)
+            {
+                backdrop.SyncWithCamera(force: true);
+            }
         }
 
         private void Update()
         {
             HandleKeyboardInput();
+            if (Application.isPlaying)
+            {
+                if (feverRemainingTime > 0f)
+                {
+                    feverRemainingTime -= Time.deltaTime;
+                    if (feverRemainingTime <= 0f)
+                    {
+                        feverRemainingTime = 0f;
+                        if (glassContainer != null)
+                        {
+                            glassContainer.SetFeverVisualGlow(false);
+                        }
+                    }
+                }
+                CheckDeadlockState();
+            }
         }
 
         private void HandleKeyboardInput()
@@ -305,6 +390,7 @@ namespace PuzzleGlass
                 if (kb.digit3Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
                 if (kb.digit4Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
                 if (kb.digit5Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
+                if (kb.sKey.wasPressedThisFrame || kb.tKey.wasPressedThisFrame) TryShakeContainer();
                 if (kb.rKey.wasPressedThisFrame) RestartCurrentPattern();
                 if (kb.nKey.wasPressedThisFrame) LoadNextLevel();
             }
@@ -314,6 +400,7 @@ namespace PuzzleGlass
             if (Input.GetKeyDown(KeyCode.Alpha3)) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
             if (Input.GetKeyDown(KeyCode.Alpha4)) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
             if (Input.GetKeyDown(KeyCode.Alpha5)) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
+            if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.T)) TryShakeContainer();
             if (Input.GetKeyDown(KeyCode.R)) RestartCurrentPattern();
             if (Input.GetKeyDown(KeyCode.N)) LoadNextLevel();
 #endif
@@ -325,6 +412,7 @@ namespace PuzzleGlass
             {
                 if (activeMonsters[i] != null)
                 {
+                    activeMonsters[i].gameObject.SetActive(false);
                     if (Application.isPlaying)
                         Destroy(activeMonsters[i].gameObject);
                     else
@@ -338,12 +426,15 @@ namespace PuzzleGlass
             {
                 if (strayMonsters[i] != null)
                 {
+                    strayMonsters[i].gameObject.SetActive(false);
                     if (Application.isPlaying)
                         Destroy(strayMonsters[i].gameObject);
                     else
                         DestroyImmediate(strayMonsters[i].gameObject);
                 }
             }
+
+            CleanupLegacyStraySceneObjects();
 
             if (slotSystem != null)
             {
@@ -359,14 +450,69 @@ namespace PuzzleGlass
             }
         }
 
+        private static readonly string[] LegacyStrayObjectPrefixes =
+        {
+            "BallLinkConnector",
+            "ChainRod",
+            "ChainBead_",
+            "LockMedallion",
+            "IceShell",
+            "IceOuterSphere",
+            "IceFacetCube",
+            "OverlayBadge",
+            "PullPinHandleKnob",
+            "PullPinLabel",
+            "ColorGateLockBadge",
+            "LockBadgeText"
+        };
+
+        /// <summary>
+        /// Removes leftover experimental scene objects (e.g., unreferenced chain connectors or badges)
+        /// that may remain in an unsaved scene hierarchy without valid materials.
+        /// </summary>
+        private void CleanupLegacyStraySceneObjects()
+        {
+            var allTransforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                Transform tr = allTransforms[i];
+                if (tr == null) continue;
+
+                string objName = tr.gameObject.name;
+                bool isLegacyStray = false;
+                for (int p = 0; p < LegacyStrayObjectPrefixes.Length; p++)
+                {
+                    if (objName.StartsWith(LegacyStrayObjectPrefixes[p], StringComparison.Ordinal))
+                    {
+                        isLegacyStray = true;
+                        break;
+                    }
+                }
+
+                if (!isLegacyStray) continue;
+
+                if (Application.isPlaying)
+                    Destroy(tr.gameObject);
+                else
+                    DestroyImmediate(tr.gameObject);
+            }
+        }
+
         /// <summary>
         /// Loads any PuzzleGlassLevelData asset into the scene.
         /// </summary>
         public void LoadLevel(PuzzleGlassLevelData levelData)
         {
             if (levelData == null) return;
+            levelData.EnsureCarrierBoxPuzzleFormat();
+
             currentLevel = levelData;
             isLevelCompleted = false;
+            isLevelFailed = false;
+            _deadlockTimer = 0f;
+            comboStreak = 0;
+            feverRemainingTime = 0f;
+            remainingShakes = Mathf.Max(1, maxShakesPerLevel);
 
             int foundIdx = levels != null ? levels.IndexOf(levelData) : -1;
             if (foundIdx >= 0) currentLevelIndex = foundIdx;
@@ -374,18 +520,13 @@ namespace PuzzleGlass
             EnsureGameplayControllers();
             ClearMonsters();
 
-            // 1. Configure Slot System
+            // 1. Upper 4 square slots are disabled — direct in-grid collection is used
             if (slotSystem != null)
             {
-                slotSystem.slotCount = Mathf.Clamp(levelData.slotCount, 1, 5);
-                slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.60f, 1.10f);
-                slotSystem.RebuildSlots();
+                slotSystem.gameObject.SetActive(false);
             }
 
-            // 2. Spawn Monsters arranged neatly in staging area below slots
-            SpawnMonsterStagingArea(levelData.monsters);
-
-            // 3. Configure & Rebuild ShapedGlassContainer
+            // 2. Configure & Rebuild ShapedGlassContainer FIRST so StagingGridBoard aligns snugly right underneath it!
             activePatternType = ShapePatternType.GumballMix;
 
             if (glassContainer != null)
@@ -411,13 +552,13 @@ namespace PuzzleGlass
                 glassContainer.showShoulderHandles = false;
                 glassContainer.showSpecularReflections = levelData.showSpecularReflections;
 
-                glassContainer.particleSize = 0.24f;
+                glassContainer.particleSize = 0.265f;
                 glassContainer.particlesPerMonsterCount = 1;
                 glassContainer.particleMode = ParticleArrangementMode.PhysicsBalls;
                 glassContainer.pixelArtPreset = levelData.pixelArtPreset;
                 glassContainer.customPattern = levelData.customPattern;
                 glassContainer.freezePatternInPlace = false;
-                glassContainer.gridCellSpacing = 0.24f;
+                glassContainer.gridCellSpacing = 0.265f;
                 glassContainer.patternVerticalOffset = 0f;
                 if (sandEngine != null) sandEngine.lockedSectionRatio = levelData.lockedSectionRatio;
 
@@ -456,12 +597,19 @@ namespace PuzzleGlass
                 glassContainer.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
                 glassContainer.RebuildContainer();
 
-                // 4. Rebuild Airtight Physics Colliders around container
+                // 3. Rebuild Airtight Physics Colliders around container
                 if (containerPhysics != null)
                 {
                     containerPhysics.RebuildColliders();
                 }
             }
+
+            // 4. Configure framed bottom StagingGridBoard right beneath ShapedGlassContainer & spawn blocks inside it
+            if (stagingGridBoard != null)
+            {
+                stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer);
+            }
+            SpawnMonsterStagingArea(levelData.monsters);
 
             PlaySandFillIfPlaying();
         }
@@ -470,51 +618,205 @@ namespace PuzzleGlass
         {
             if (monsterEntries == null || monsterEntries.Count == 0) return;
 
-            int totalM = monsterEntries.Count;
-            int maxPerRow = 4;
+            if (stagingGridBoard == null)
+            {
+                stagingGridBoard = FindFirstObjectByType<StagingGridBoard>();
+                if (stagingGridBoard == null)
+                {
+                    GameObject gridObj = new GameObject("StagingGridBoard");
+                    stagingGridBoard = gridObj.AddComponent<StagingGridBoard>();
+                }
+                int gCols = (currentLevel != null) ? currentLevel.stagingGridCols : 5;
+                int gRows = (currentLevel != null) ? currentLevel.stagingGridRows : 4;
+                stagingGridBoard.Configure(gCols, gRows);
+            }
 
-            for (int i = 0; i < totalM; i++)
+            float gridCellScale = stagingGridBoard.cellSize;
+
+            for (int i = 0; i < monsterEntries.Count; i++)
             {
                 var entry = monsterEntries[i];
-                int row = i / maxPerRow;
-                int indexInRow = i % maxPerRow;
-                int countInThisRow = Mathf.Min(maxPerRow, totalM - row * maxPerRow);
+                CarrierBlockShape shape = entry.blockShape;
 
-                float spacingX = countInThisRow <= 2 ? 1.50f : (countInThisRow == 3 ? 1.05f : 0.84f);
-                float startX = -(countInThisRow - 1) * spacingX * 0.5f;
-                float x = startX + indexInRow * spacingX;
-                float y = -1.98f - row * 0.92f;
-                float scale = countInThisRow <= 2 ? 0.72f : (countInThisRow == 3 ? 0.64f : 0.58f);
+                Vector2Int anchor;
+                if (entry.hasGridAnchor && IsAnchorFreeForShape(stagingGridBoard, entry.gridAnchor, shape, activeMonsters))
+                {
+                    anchor = entry.gridAnchor;
+                }
+                else
+                {
+                    if (!stagingGridBoard.TryFindEmptyPlacement(shape, activeMonsters, out anchor))
+                    {
+                        shape = CarrierBlockShape.Rect1x1;
+                        if (!stagingGridBoard.TryFindEmptyPlacement(shape, activeMonsters, out anchor))
+                        {
+                            continue;
+                        }
+                    }
+                }
 
-                GameObject monObj = new GameObject($"Monster_{entry.color}_{entry.count}_{i + 1}");
+                Vector3 pos = stagingGridBoard.GetWorldPositionForAnchor(anchor, shape);
+                Vector3 gridScale = Vector3.one * gridCellScale;
+                Vector3 slotFitScale = Vector3.one * stagingGridBoard.GetSlotFitScaleForShape(shape);
+
+                GameObject monObj = new GameObject($"CarrierBox_{entry.color}_{shape}_{entry.count}_{i + 1}");
                 monObj.transform.SetParent(transform, false);
-                monObj.transform.position = new Vector3(x, y, 0f);
-                monObj.transform.localScale = Vector3.one * scale;
+                monObj.transform.position = pos;
+                monObj.transform.localScale = gridScale;
 
                 MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
-                mon.SetStagingHome(new Vector3(x, y, 0f), Vector3.one * scale);
-                mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}");
+                mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}", shape);
+                mon.SetGridState(anchor, pos, gridScale, slotFitScale, exitClear: true, animateMove: false);
                 activeMonsters.Add(mon);
             }
+
+            stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+        }
+
+        private static bool IsAnchorFreeForShape(
+            StagingGridBoard board,
+            Vector2Int anchor,
+            CarrierBlockShape shape,
+            List<MonsterCharacter> placedBlocks)
+        {
+            if (board == null || !board.IsInsideGrid(anchor, shape)) return false;
+            if (placedBlocks == null || placedBlocks.Count == 0) return true;
+
+            Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
+            for (int m = 0; m < placedBlocks.Count; m++)
+            {
+                var other = placedBlocks[m];
+                if (other == null || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0) continue;
+                Vector2Int[] otherCells = CarrierBlockShapeUtility.GetCells(other.blockShape);
+                for (int i = 0; i < myCells.Length; i++)
+                {
+                    int mx = anchor.x + myCells[i].x;
+                    int my = anchor.y + myCells[i].y;
+                    for (int j = 0; j < otherCells.Length; j++)
+                    {
+                        if (mx == other.gridAnchor.x + otherCells[j].x && my == other.gridAnchor.y + otherCells[j].y)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Called when a Carrier Block activates collection in place or completes inside the grid.
+        /// Refreshes top-exit clearance highlights for remaining blocks in StagingGridBoard.
+        /// </summary>
+        public void OnStagingBoxPlacedInSlot(MonsterCharacter placedBox)
+        {
+            if (placedBox == null || activeMonsters == null) return;
+            _deadlockTimer = 0f;
+
+            if (stagingGridBoard != null)
+            {
+                stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+            }
+        }
+
+        /// <summary>
+        /// Called when a Carrier Block finishes filling its sockets and leaves the grid,
+        /// freeing its cells so previously blocked blocks behind it can now slide and activate!
+        /// </summary>
+        public void OnGridBlockCompleted(MonsterCharacter completedBlock)
+        {
+            _deadlockTimer = 0f;
+            if (stagingGridBoard != null && activeMonsters != null)
+            {
+                stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+            }
+        }
+
+        /// <summary>
+        /// Called when a Carrier Box seals its 3 balls with the transparent lid and completes!
+        /// Increments Combo Streak and triggers Fever Mode (2x Vacuum) at 3+ consecutive completions.
+        /// </summary>
+        public void OnCarrierBoxCompleted(MonsterCharacter completedBox)
+        {
+            if (completedBox == null) return;
+            _deadlockTimer = 0f;
+
+            comboStreak++;
+            if (comboStreak >= 3)
+            {
+                feverRemainingTime = 8.0f;
+                if (glassContainer != null)
+                {
+                    glassContainer.SetFeverVisualGlow(true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Called when a Carrier Box is placed in a slot where its balls are blocked in upper layers.
+        /// Resets the consecutive Combo Streak.
+        /// </summary>
+        public void OnCarrierBoxBlockedInSlot(MonsterCharacter blockedBox)
+        {
+            comboStreak = 0;
+        }
+
+        /// <summary>
+        /// Uses 1 Shake / Tilt charge to rock the glass container and unstick wedged balls.
+        /// </summary>
+        public void TryShakeContainer()
+        {
+            if (remainingShakes <= 0 || glassContainer == null) return;
+            remainingShakes--;
+            _deadlockTimer = 0f;
+            isLevelFailed = false;
+            PuzzleSoundManager.Instance?.PlayShakeGlass();
+            glassContainer.ShakeAndTiltContainer(1.0f);
+        }
+
+        public void GenerateAndLoadProceduralLevel(int levelNum, LevelDifficulty diff)
+        {
+            PuzzleGlassLevelData runtimeLvl = ScriptableObject.CreateInstance<PuzzleGlassLevelData>();
+            runtimeLvl.levelNumber = Mathf.Max(1, levelNum);
+            runtimeLvl.difficulty = diff;
+            runtimeLvl.useStagingColumnQueue = true;
+            PuzzleLevelGenerator.GenerateForLevelData(runtimeLvl);
+            LoadLevel(runtimeLvl);
         }
 
         public void LoadLevelByIndex(int index)
         {
-            if (levels == null || levels.Count == 0) return;
+            if (levels == null || levels.Count == 0)
+            {
+                int nextNum = (currentLevel != null) ? currentLevel.levelNumber + 1 : 1;
+                GenerateAndLoadProceduralLevel(nextNum, PuzzleLevelGenerator.GetProgressiveDifficulty(nextNum));
+                return;
+            }
             currentLevelIndex = ((index % levels.Count) + levels.Count) % levels.Count;
             LoadLevel(levels[currentLevelIndex]);
         }
 
         public void LoadNextLevel()
         {
-            if (levels == null || levels.Count == 0) return;
-            LoadLevelByIndex(currentLevelIndex + 1);
+            if (levels != null && levels.Count > 0 && currentLevelIndex + 1 < levels.Count)
+            {
+                LoadLevelByIndex(currentLevelIndex + 1);
+                return;
+            }
+
+            // Generate endless progressive levels automatically when reaching the end of saved levels!
+            int nextNum = (currentLevel != null) ? currentLevel.levelNumber + 1 : 1;
+            LevelDifficulty nextDiff = PuzzleLevelGenerator.GetProgressiveDifficulty(nextNum);
+            GenerateAndLoadProceduralLevel(nextNum, nextDiff);
         }
 
         public void LoadPreviousLevel()
         {
-            if (levels == null || levels.Count == 0) return;
-            LoadLevelByIndex(currentLevelIndex - 1);
+            if (levels != null && levels.Count > 0)
+            {
+                LoadLevelByIndex(currentLevelIndex - 1);
+                return;
+            }
+            int prevNum = (currentLevel != null) ? Mathf.Max(1, currentLevel.levelNumber - 1) : 1;
+            GenerateAndLoadProceduralLevel(prevNum, PuzzleLevelGenerator.GetProgressiveDifficulty(prevNum));
         }
 
         public void FeedOneCube()
@@ -648,13 +950,114 @@ namespace PuzzleGlass
             if (allFinished && !isLevelCompleted)
             {
                 isLevelCompleted = true;
+                isLevelFailed = false;
                 OnLevelCleared();
             }
         }
 
+        private void CheckDeadlockState()
+        {
+            if (isLevelCompleted || isLevelFailed) return;
+            // Upper holding slots are disabled in direct-grid mode; blocks never lock out a slot buffer.
+            if (slotSystem == null || !slotSystem.gameObject.activeInHierarchy || slotSystem.slots == null || slotSystem.slots.Count == 0)
+            {
+                _deadlockTimer = 0f;
+                return;
+            }
+
+            // Check if every slot is currently occupied by a locked Carrier Box that still needs balls
+            for (int i = 0; i < slotSystem.slots.Count; i++)
+            {
+                var slot = slotSystem.slots[i];
+                if (slot == null || !slot.isOccupied || slot.currentMonster == null)
+                {
+                    _deadlockTimer = 0f;
+                    return;
+                }
+                if (slot.currentMonster.IsCompleted || slot.currentMonster.remainingCount <= 0)
+                {
+                    _deadlockTimer = 0f;
+                    return;
+                }
+            }
+
+            // If any ball is still flying, attracting, or can be collected by any slotted box, not deadlocked
+            if (collectionController != null)
+            {
+                if (collectionController.HasAnyBallInTransitOrAttracting() ||
+                    collectionController.HasAnyCollectableMoveForSlottedMonsters())
+                {
+                    _deadlockTimer = 0f;
+                    return;
+                }
+            }
+
+            _deadlockTimer += Time.deltaTime;
+            if (_deadlockTimer >= 1.15f)
+            {
+                isLevelFailed = true;
+                _deadlockTimer = 0f;
+                OnLevelDeadlocked();
+            }
+        }
+
+        private void OnLevelDeadlocked()
+        {
+            Debug.LogWarning("<color=#FF6655>⚠️ SLOTLAR DOLDU - HAMLE KALMADI! (Alt katmandaki toplarla eşleşen boş slot kalmadı) ⚠️</color>");
+            PuzzleSoundManager.Instance?.PlayLevelFail();
+
+            if (slotSystem != null && slotSystem.slots != null)
+            {
+                for (int i = 0; i < slotSystem.slots.Count; i++)
+                {
+                    var slot = slotSystem.slots[i];
+                    if (slot != null && slot.currentMonster != null)
+                    {
+                        slot.currentMonster.PlayLockedInSlotFeedback();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recovery helper when all slots are locked: opens +1 extra slot while keeping existing locked boxes in place!
+        /// </summary>
+        public void UnlockOneExtraSlotAndContinue()
+        {
+            if (slotSystem == null || slotSystem.slots == null) return;
+            if (slotSystem.slotCount >= 5) return;
+
+            List<MonsterCharacter> currentlySlotted = new List<MonsterCharacter>();
+            for (int i = 0; i < slotSystem.slots.Count; i++)
+            {
+                if (slotSystem.slots[i] != null && slotSystem.slots[i].currentMonster != null)
+                {
+                    currentlySlotted.Add(slotSystem.slots[i].currentMonster);
+                }
+            }
+
+            slotSystem.slotCount = Mathf.Min(5, slotSystem.slotCount + 1);
+            slotSystem.slotSpacing = (slotSystem.slotCount >= 4) ? 0.78f : 0.86f;
+            slotSystem.RebuildSlots();
+
+            for (int i = 0; i < currentlySlotted.Count && i < slotSystem.slots.Count; i++)
+            {
+                var mon = currentlySlotted[i];
+                var slot = slotSystem.slots[i];
+                if (mon != null && slot != null)
+                {
+                    slot.AttachMonster(mon);
+                }
+            }
+
+            isLevelFailed = false;
+            _deadlockTimer = 0f;
+        }
+
         private void OnLevelCleared()
         {
-            Debug.Log("<color=#00FF88>★ LEVEL CLEARED! ALL MONSTER ORDERS FULFILLED! ★</color>");
+            Debug.Log("<color=#00FF88>★ LEVEL CLEARED! ALL CARRIER BOXES FILLED! ★</color>");
+            PuzzleSoundManager.Instance?.PlayLevelClear();
 
             if (Application.isPlaying)
             {
@@ -671,12 +1074,12 @@ namespace PuzzleGlass
             panelStyle.normal.background = Texture2D.whiteTexture;
 
             Color oldBg = GUI.backgroundColor;
-            GUI.backgroundColor = new Color(0.10f, 0.14f, 0.22f, 0.90f);
+            GUI.backgroundColor = new Color(0.10f, 0.14f, 0.22f, 0.92f);
 
-            int panelW = 270;
-            int panelH = _showPatternSelector ? 430 : 250;
+            int panelW = 290;
+            int panelH = _showPatternSelector ? 545 : (isLevelFailed ? 415 : 365);
             GUILayout.BeginArea(new Rect(14, 14, panelW, panelH), panelStyle);
-            GUILayout.Space(6);
+            GUILayout.Space(5);
 
             GUIStyle titleStyle = new GUIStyle(GUI.skin.label)
             {
@@ -685,19 +1088,57 @@ namespace PuzzleGlass
                 fontSize = 13
             };
             titleStyle.normal.textColor = Color.white;
-            GUILayout.Label("PuzzleGlass 3D Physics Puzzle", titleStyle);
+
+            int lvlNum = (currentLevel != null) ? currentLevel.levelNumber : 1;
+            LevelDifficulty diff = (currentLevel != null) ? currentLevel.difficulty : LevelDifficulty.Easy;
+            string diffLabel = PuzzleLevelGenerator.GetDifficultyTurkishLabel(diff).ToUpperInvariant();
+            GUILayout.Label($"Level {lvlNum}  •  Zorluk: {diffLabel}", titleStyle);
 
             GUIStyle subStyle = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
                 fontSize = 10
             };
-            subStyle.normal.textColor = new Color(0.7f, 0.85f, 1f, 1f);
-            GUILayout.Label($"Active Pattern: {activePatternType}", subStyle);
+            subStyle.normal.textColor = new Color(0.75f, 0.88f, 1f, 1f);
 
-            int grainCount = sandEngine != null ? sandEngine.sandAmount : 0;
             int ballCount = BallObjectPool.Instance != null ? BallObjectPool.Instance.ActiveBalls.Count : 0;
-            GUILayout.Label($"Balls in Jar: {ballCount} | Drag to Slots!", subStyle);
+            int remBoxes = 0;
+            if (activeMonsters != null)
+            {
+                for (int i = 0; i < activeMonsters.Count; i++)
+                {
+                    if (activeMonsters[i] != null && activeMonsters[i].remainingCount > 0) remBoxes++;
+                }
+            }
+            int sCount = (slotSystem != null) ? slotSystem.slotCount : 3;
+            GUILayout.Label($"Toplar: {ballCount} | Kalan Kutu: {remBoxes} | Slot: {sCount}", subStyle);
+
+            // Combo Streak / Fever 2x Vacuum Status Bar
+            GUIStyle feverStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 11
+            };
+            if (IsFeverActive)
+            {
+                feverStyle.normal.textColor = new Color(1.0f, 0.82f, 0.18f, 1f);
+                GUILayout.Label($"🔥 FEVER 2X VAKUM AKTİF! ({feverRemainingTime:F1}sn) 🔥", feverStyle);
+            }
+            else
+            {
+                feverStyle.normal.textColor = comboStreak > 0 ? new Color(0.45f, 0.95f, 0.65f, 1f) : new Color(0.68f, 0.76f, 0.88f, 1f);
+                GUILayout.Label($"⚡ Kombo Zinciri: {comboStreak} / 3 (3'te 2x Vakum!)", feverStyle);
+            }
+
+            // Shake / Tilt Action Row
+            GUILayout.BeginHorizontal();
+            GUI.backgroundColor = remainingShakes > 0 ? new Color(0.96f, 0.64f, 0.16f, 1f) : new Color(0.45f, 0.45f, 0.50f, 1f);
+            if (GUILayout.Button($"📳 Camı Salla ({remainingShakes}/{maxShakesPerLevel}) [S]", GUILayout.Height(24)))
+            {
+                TryShakeContainer();
+            }
+            GUILayout.EndHorizontal();
 
             if (isLevelCompleted)
             {
@@ -708,7 +1149,34 @@ namespace PuzzleGlass
                     fontSize = 13
                 };
                 winStyle.normal.textColor = new Color(0.2f, 1f, 0.4f, 1f);
-                GUILayout.Label("★ LEVEL CLEARED! ★", winStyle);
+                GUILayout.Label("★ LEVEL TAMAMLANDI! ★", winStyle);
+            }
+            else if (isLevelFailed)
+            {
+                GUIStyle failStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 12
+                };
+                failStyle.normal.textColor = new Color(1f, 0.38f, 0.35f, 1f);
+                GUILayout.Label("⚠️ SLOTLAR KİLİTLENDİ - HAMLE YOK!", failStyle);
+
+                GUILayout.BeginHorizontal();
+                GUI.backgroundColor = new Color(0.95f, 0.40f, 0.35f, 1f);
+                if (GUILayout.Button("🔄 Tekrar Dene", GUILayout.Height(26)))
+                {
+                    RestartCurrentPattern();
+                }
+                if (slotSystem != null && slotSystem.slotCount < 5)
+                {
+                    GUI.backgroundColor = new Color(0.25f, 0.82f, 0.50f, 1f);
+                    if (GUILayout.Button("🔓 +1 Ek Slot Aç", GUILayout.Height(26)))
+                    {
+                        UnlockOneExtraSlotAndContinue();
+                    }
+                }
+                GUILayout.EndHorizontal();
             }
 
             GUILayout.Space(4);
@@ -718,8 +1186,29 @@ namespace PuzzleGlass
                 fontStyle = FontStyle.Bold
             };
 
+            // Quick Procedural Level Generator Bar (Easy / Medium / Hard / Boss)
+            GUILayout.Label("🎲 Anında Yeni Level Üret (Zorluk Seç):", subStyle);
+            GUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.22f, 0.82f, 0.46f, 1f);
+            if (GUILayout.Button("Kolay", btnStyle, GUILayout.Height(24)))
+                GenerateAndLoadProceduralLevel(lvlNum + 1, LevelDifficulty.Easy);
+
+            GUI.backgroundColor = new Color(0.28f, 0.68f, 0.98f, 1f);
+            if (GUILayout.Button("Orta", btnStyle, GUILayout.Height(24)))
+                GenerateAndLoadProceduralLevel(lvlNum + 1, LevelDifficulty.Medium);
+
+            GUI.backgroundColor = new Color(0.95f, 0.62f, 0.22f, 1f);
+            if (GUILayout.Button("Zor", btnStyle, GUILayout.Height(24)))
+                GenerateAndLoadProceduralLevel(lvlNum + 1, LevelDifficulty.Hard);
+
+            GUI.backgroundColor = new Color(0.92f, 0.32f, 0.45f, 1f);
+            if (GUILayout.Button("Boss", btnStyle, GUILayout.Height(24)))
+                GenerateAndLoadProceduralLevel(lvlNum + 1, LevelDifficulty.Boss);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(3);
             GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f, 1f);
-            if (GUILayout.Button(_showPatternSelector ? "▲ Hide Patterns" : "▼ Choose Pattern (" + activePatternType + ")", btnStyle, GUILayout.Height(26)))
+            if (GUILayout.Button(_showPatternSelector ? "▲ Desenleri Gizle" : "▼ Özel Desen Testi (" + activePatternType + ")", btnStyle, GUILayout.Height(24)))
             {
                 _showPatternSelector = !_showPatternSelector;
             }
@@ -731,7 +1220,7 @@ namespace PuzzleGlass
                 GUI.backgroundColor = new Color(0.1f, 0.85f, 0.4f, 1f);
                 if (GUILayout.Button("★ 4 Quadrants (Image 1)", btnStyle, GUILayout.Height(24))) SetupShapePatternScenario(ShapePatternType.FourQuadrants);
                 GUI.backgroundColor = new Color(0.9f, 0.5f, 0.2f, 1f);
-                if (GUILayout.Button("★ Gumballs (Image 2)", btnStyle, GUILayout.Height(24))) SetupShapePatternScenario(ShapePatternType.GumballMix);
+                if (GUILayout.Button("★ Sıralı Havuz", btnStyle, GUILayout.Height(24))) SetupShapePatternScenario(ShapePatternType.GumballMix);
                 GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f, 1f);
                 GUILayout.EndHorizontal();
 
@@ -775,15 +1264,16 @@ namespace PuzzleGlass
 
             GUILayout.Space(4);
             GUI.backgroundColor = new Color(0.3f, 0.7f, 0.4f, 1f);
-            if (GUILayout.Button("Restart Pattern (R)", btnStyle, GUILayout.Height(26)))
+            if (GUILayout.Button("🔄 Levelı Yeniden Başlat (R)", btnStyle, GUILayout.Height(25)))
             {
                 RestartCurrentPattern();
             }
 
             GUILayout.BeginHorizontal();
             GUI.backgroundColor = new Color(0.5f, 0.5f, 0.6f, 1f);
-            if (GUILayout.Button("◄ Prev", btnStyle, GUILayout.Height(24))) LoadPreviousLevel();
-            if (GUILayout.Button("Next (N) ►", btnStyle, GUILayout.Height(24))) LoadNextLevel();
+            if (GUILayout.Button("◄ Önceki Level", btnStyle, GUILayout.Height(24))) LoadPreviousLevel();
+            GUI.backgroundColor = new Color(0.28f, 0.78f, 0.52f, 1f);
+            if (GUILayout.Button("Sonraki Level (N) ►", btnStyle, GUILayout.Height(24))) LoadNextLevel();
             GUILayout.EndHorizontal();
 
             GUILayout.EndArea();

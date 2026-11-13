@@ -120,10 +120,10 @@ namespace PuzzleGlass
             if (m.HasProperty("_Color")) m.SetColor("_Color", baseCol);
             if (m.HasProperty("_ShadowColor")) m.SetColor("_ShadowColor", shadowCol);
             if (m.HasProperty("_HighlightColor")) m.SetColor("_HighlightColor", highCol);
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.74f);
-            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.74f);
-            if (m.HasProperty("_BevelHighlight")) m.SetFloat("_BevelHighlight", 0.56f);
-            if (m.HasProperty("_RimSeparation")) m.SetFloat("_RimSeparation", 0.38f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.56f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.56f);
+            if (m.HasProperty("_BevelHighlight")) m.SetFloat("_BevelHighlight", 0.24f);
+            if (m.HasProperty("_RimSeparation")) m.SetFloat("_RimSeparation", 0.42f);
             if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15;
             return m;

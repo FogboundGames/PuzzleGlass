@@ -303,10 +303,11 @@ namespace PuzzleGlass
             float elapsed = 0f;
             float duration = ballisticFlightDuration;
             bool anticipationTriggered = false;
+            int socketIndex = (target != null) ? target.ClaimNextSocketIndex() : 0;
 
-            Vector3 endPos = (target.mouthTargetPoint != null)
-                ? target.mouthTargetPoint.position
-                : target.transform.position + Vector3.up * 0.25f;
+            Vector3 endPos = (target != null)
+                ? target.GetSocketWorldPosition(socketIndex)
+                : startPos + Vector3.down * 1.2f;
 
             // Rastgele hafif dönüş torku
             Vector3 randomTorque = new Vector3(
@@ -319,9 +320,9 @@ namespace PuzzleGlass
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
 
-                if (target != null && target.mouthTargetPoint != null)
+                if (target != null)
                 {
-                    endPos = target.mouthTargetPoint.position;
+                    endPos = target.GetSocketWorldPosition(socketIndex);
                 }
 
                 // Parabolik balistik kavis (Z=-0.40f düzleminde önde kalır)

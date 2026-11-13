@@ -347,7 +347,7 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Smooth ballistic flight from the container exit directly into the target monster's open mouth!
+        /// Smooth ballistic flight from the container exit directly into the target carrier box's gray socket recess!
         /// </summary>
         public void LaunchToMonsterMouth(
             Vector3 spoutExitPos,
@@ -371,32 +371,40 @@ namespace PuzzleGlass
             transform.DOKill();
 
             Vector3 startPos = transform.position;
-            startPos.z = -0.18f;
+            startPos.z = -0.22f;
             transform.position = startPos;
 
-            Vector3 mouthPos = (targetMonster != null && targetMonster.mouthTargetPoint != null)
-                ? targetMonster.mouthTargetPoint.position
-                : (targetMonster != null ? targetMonster.transform.position + new Vector3(0f, 0.04f, -0.15f) : spoutExitPos);
+            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex() : 0;
+            Vector3 socketPos = (targetMonster != null)
+                ? targetMonster.GetSocketWorldPosition(socketIndex)
+                : spoutExitPos;
+            Vector3 settledScale = (targetMonster != null)
+                ? targetMonster.GetSocketBallWorldScale()
+                : _originalScale * 0.58f;
 
             if (targetMonster != null)
             {
                 targetMonster.OnBallIncoming(this);
             }
 
-            float duration = Mathf.Clamp(Vector3.Distance(startPos, mouthPos) * 0.19f, 0.28f, 0.42f);
+            float duration = Mathf.Clamp(Vector3.Distance(startPos, socketPos) * 0.19f, 0.26f, 0.40f);
+            if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive)
+            {
+                duration *= 0.52f; // 2x Vacuum speed in Fever Mode!
+            }
 
-            // Tactile pop-scale + parabolic jump arc with lively 3D rolling into the monster's mouth!
+            // Tactile pop-scale + parabolic jump arc directly into the gray circular socket (without shrinking to zero!)
             Sequence flightSeq = DOTween.Sequence();
-            flightSeq.Join(transform.DOJump(mouthPos, jumpPower: 0.34f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
-            flightSeq.Join(transform.DORotate(new Vector3(220f, 0f, 120f), duration, RotateMode.FastBeyond360));
-            flightSeq.Insert(0f, transform.DOScale(_originalScale * 1.12f, duration * 0.35f).SetEase(Ease.OutQuad));
-            flightSeq.Insert(duration * 0.70f, transform.DOScale(Vector3.zero, duration * 0.30f).SetEase(Ease.InBack));
+            flightSeq.Join(transform.DOJump(socketPos, jumpPower: 0.32f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
+            flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
+            flightSeq.Insert(0f, transform.DOScale(_originalScale * 1.10f, duration * 0.35f).SetEase(Ease.OutQuad));
+            flightSeq.Insert(duration * 0.35f, transform.DOScale(settledScale, duration * 0.65f).SetEase(Ease.InOutQuad));
 
             flightSeq.OnComplete(() =>
             {
                 if (_targetMonster != null)
                 {
-                    _targetMonster.FeedBall(this);
+                    _targetMonster.FeedBallIntoSocket(this, socketIndex);
                 }
                 _onEatenCallback?.Invoke(this);
                 RecycleSelf();

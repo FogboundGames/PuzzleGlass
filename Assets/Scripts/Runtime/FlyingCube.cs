@@ -30,6 +30,7 @@ namespace PuzzleGlass
         private float _airElapsed;
         private float _airDuration;
         private int _particlesPerCount = 1;
+        private int _socketIndex = 0;
         private bool _inSpoutChannel;
         private bool _isFlying;
         private bool _hasFedMonster;
@@ -47,6 +48,7 @@ namespace PuzzleGlass
             targetMonster = target;
             colorType = color;
             _particlesPerCount = Mathf.Max(1, particlesPerCount);
+            _socketIndex = (target != null) ? target.ClaimNextSocketIndex() : 0;
 
             var mf = GetComponent<MeshFilter>();
             if (mf == null) mf = gameObject.AddComponent<MeshFilter>();
@@ -116,15 +118,10 @@ namespace PuzzleGlass
 
         private Vector3 GetTargetMouthWorldPos()
         {
-            if (targetMonster != null && targetMonster.mouthTargetPoint != null)
-            {
-                Vector3 mp = targetMonster.mouthTargetPoint.position;
-                return new Vector3(mp.x, mp.y, FrontFlightZ);
-            }
             if (targetMonster != null)
             {
-                Vector3 tp = targetMonster.transform.position;
-                return new Vector3(tp.x, tp.y + 0.03f, FrontFlightZ);
+                Vector3 sp = targetMonster.GetSocketWorldPosition(_socketIndex);
+                return new Vector3(sp.x, sp.y, FrontFlightZ);
             }
             return _spoutExitPos + new Vector3(0f, -1.2f, 0f);
         }

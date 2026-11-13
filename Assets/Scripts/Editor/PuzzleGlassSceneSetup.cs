@@ -40,44 +40,63 @@ namespace PuzzleGlass.Editor
                     glass.shapePreset = GlassShapePreset.RectangleBox;
                     glass.transform.localPosition = new Vector3(0f, 1.35f, 0f);
                     glass.particleMode = ParticleArrangementMode.PhysicsBalls;
-                    glass.particleSize = 0.24f;
+                    glass.particleSize = 0.265f;
                     glass.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
                     glass.RebuildContainer();
                     SceneView.RepaintAll();
                 }
             }
+
+            var gm = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
+            if (gm != null)
+            {
+                gm.EnsureGameplayControllers();
+            }
         }
 
-        [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Canavarları Senkronize Et", false, 1)]
+        [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Kutuları Senkronize Et", false, 1)]
         public static void CleanAndSyncActiveScene()
         {
             var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
             var gm = Object.FindFirstObjectByType<PuzzleGlassGameManager>();
 
-            if (glass != null)
+            if (gm != null && gm.currentLevel != null)
             {
-                glass.shapePreset = GlassShapePreset.RectangleBox;
-                glass.particleMode = ParticleArrangementMode.PhysicsBalls;
-                glass.particleSize = 0.24f;
-                glass.CleanOrphanedChildren();
-                glass.freezePatternInPlace = false;
-                glass.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
-                glass.RebuildContainer();
-
-                var bcm = glass.GetComponent<BallContainerManager>().OrNull() ?? glass.gameObject.AddComponent<BallContainerManager>();
-                bcm.glassContainer = glass;
-                bcm.RebuildColliders();
+                gm.LoadLevel(gm.currentLevel);
+                EditorUtility.SetDirty(gm);
             }
-
-            if (gm != null)
+            else if (gm != null && gm.levels != null && gm.levels.Count > 0 && gm.levels[0] != null)
             {
-                gm.activePatternType = ShapePatternType.GumballMix;
-                gm.ClearMonsters();
+                gm.LoadLevel(gm.levels[0]);
+                EditorUtility.SetDirty(gm);
+            }
+            else
+            {
                 if (glass != null)
                 {
-                    glass.PopulateBottlePhysics();
+                    glass.shapePreset = GlassShapePreset.RectangleBox;
+                    glass.particleMode = ParticleArrangementMode.PhysicsBalls;
+                    glass.particleSize = 0.265f;
+                    glass.CleanOrphanedChildren();
+                    glass.freezePatternInPlace = false;
+                    glass.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
+                    glass.RebuildContainer();
+
+                    var bcm = glass.GetComponent<BallContainerManager>().OrNull() ?? glass.gameObject.AddComponent<BallContainerManager>();
+                    bcm.glassContainer = glass;
+                    bcm.RebuildColliders();
                 }
-                EditorUtility.SetDirty(gm);
+
+                if (gm != null)
+                {
+                    gm.activePatternType = ShapePatternType.GumballMix;
+                    gm.ClearMonsters();
+                    if (glass != null)
+                    {
+                        glass.PopulateBottlePhysics();
+                    }
+                    EditorUtility.SetDirty(gm);
+                }
             }
 
             if (glass != null) EditorUtility.SetDirty(glass);
@@ -164,23 +183,24 @@ namespace PuzzleGlass.Editor
             glass.glassHighlightMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Mat_GlassHighlight.mat");
             manager.glassContainer = glass;
 
-            // 5. 4 Slot Bases
+            // 5. Disable legacy 4 Slot Bases & configure framed bottom StagingGridBoard directly under the glass
             GameObject slotsObj = GameObject.Find("SlotSystem");
-            if (slotsObj == null)
+            if (slotsObj != null)
             {
-                slotsObj = new GameObject("SlotSystem");
-                slotsObj.transform.SetParent(root.transform, false);
-                Undo.RegisterCreatedObjectUndo(slotsObj, "Create SlotSystem");
+                slotsObj.SetActive(false);
+                manager.slotSystem = slotsObj.GetComponent<SlotSystem>();
             }
-            slotsObj.transform.localPosition = new Vector3(0, -0.35f, 0);
 
-            SlotSystem slots = slotsObj.GetComponent<SlotSystem>();
-            if (slots == null) slots = slotsObj.AddComponent<SlotSystem>();
-            slots.frameMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Mat_SlotFrame.mat");
-            slots.cavityMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Mat_SlotCavity.mat");
-            slots.slotSpacing = 0.84f;
-            slots.RebuildSlots();
-            manager.slotSystem = slots;
+            GameObject gridObj = GameObject.Find("StagingGridBoard");
+            if (gridObj == null)
+            {
+                gridObj = new GameObject("StagingGridBoard");
+                gridObj.transform.SetParent(root.transform, false);
+                Undo.RegisterCreatedObjectUndo(gridObj, "Create StagingGridBoard");
+            }
+            StagingGridBoard gridBoard = gridObj.GetComponent<StagingGridBoard>();
+            if (gridBoard == null) gridBoard = gridObj.AddComponent<StagingGridBoard>();
+            manager.stagingGridBoard = gridBoard;
 
             // 6. Cube Dispenser
             CubeDispenser dispenser = root.GetComponent<CubeDispenser>();
@@ -188,13 +208,14 @@ namespace PuzzleGlass.Editor
             dispenser.glassContainer = glass;
             manager.cubeDispenser = dispenser;
 
-            // 7. Rebuild Rounded-Rectangle Glass Ball Pool & Synchronize Monsters
+            // 7. Rebuild Rounded-Rectangle Glass Ball Pool & align StagingGridBoard snugly below it
             manager.activePatternType = ShapePatternType.GumballMix;
             glass.transform.localPosition = new Vector3(0f, 1.35f, 0f);
             glass.curveSubdivisions = 14;
             glass.particleSize = 0.24f;
             glass.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
             glass.ApplyColorTheme(GlassColorTheme.SkyBlueGlossy, true);
+            gridBoard.Configure(5, 4, glass);
 
             Undo.CollapseUndoOperations(undoGroup);
             EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());

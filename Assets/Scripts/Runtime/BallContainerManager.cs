@@ -250,14 +250,21 @@ namespace PuzzleGlass
             BuildDividerColliders();
         }
 
+        private readonly List<BoxCollider> _dividerColliders = new List<BoxCollider>();
+
         private void BuildDividerColliders()
         {
+            _dividerColliders.Clear();
             if (glassContainer == null || glassContainer.dividers == null || _collidersRoot == null) return;
 
             for (int i = 0; i < glassContainer.dividers.Count; i++)
             {
                 var div = glassContainer.dividers[i];
-                if (div == null || !div.enabled) continue;
+                if (div == null || !div.enabled || div.runtimeIsOpened || div.mechanicType != DividerMechanicType.StaticGlass)
+                {
+                    _dividerColliders.Add(null);
+                    continue;
+                }
 
                 GameObject divColObj = new GameObject($"DividerCollider_{i + 1}_{div.name}");
                 divColObj.transform.SetParent(_collidersRoot.transform, false);
@@ -267,6 +274,29 @@ namespace PuzzleGlass
                 var box = divColObj.AddComponent<BoxCollider>();
                 box.size = new Vector3(Mathf.Max(0.08f, div.length), Mathf.Max(0.03f, div.thickness), wallDepth);
                 box.sharedMaterial = _glassPhysMaterial;
+                _dividerColliders.Add(box);
+            }
+        }
+
+        public void WakeAllContainerBalls(Vector2 extraImpulse = default)
+        {
+            if (BallObjectPool.Instance == null || BallObjectPool.Instance.ActiveBalls == null) return;
+            var balls = BallObjectPool.Instance.ActiveBalls;
+            for (int i = 0; i < balls.Count; i++)
+            {
+                var b = balls[i];
+                if (b != null && b.state == BallState.InContainer && b.rb != null && !b.rb.isKinematic)
+                {
+                    b.rb.WakeUp();
+                    if (extraImpulse.sqrMagnitude > 0.0001f)
+                    {
+                        b.rb.linearVelocity += new Vector3(extraImpulse.x, extraImpulse.y, 0f);
+                    }
+                    else
+                    {
+                        b.rb.linearVelocity += new Vector3(UnityEngine.Random.Range(-0.15f, 0.15f), -0.45f, 0f);
+                    }
+                }
             }
         }
 
