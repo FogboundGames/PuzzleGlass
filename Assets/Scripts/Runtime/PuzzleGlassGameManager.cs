@@ -39,6 +39,8 @@ namespace PuzzleGlass
         [Tooltip("Açık olduğunda Play moduna geçerken Level asset'i sahnedeki tepsi (StagingGridBoard) boyutunu ezmez.")]
         public bool preserveSceneTrayInPlayMode = false;
         public float nextLevelDelay = 1.2f;
+        [Tooltip("Açıkken level bitince ekrana top dökülerek sonraki levele geçilir (LevelTransitionController).")]
+        public bool useBallPourTransition = true;
         public PuzzleGlassLevelData currentLevel;
 
         [Header("Active Monsters & Gameplay State")]
@@ -81,6 +83,9 @@ namespace PuzzleGlass
             EnsureGameplayControllers();
             if (Application.isPlaying)
             {
+                // Level geçişinin ağır hazırlığını oyun başında karelere yayarak yap (level sonunda donmasın)
+                if (useBallPourTransition) LevelTransitionController.GetOrCreate().BeginWarmUp();
+
                 if (currentLevel != null)
                 {
                     LoadLevel(currentLevel);
@@ -514,6 +519,13 @@ namespace PuzzleGlass
             isLevelCompleted = false;
             isLevelFailed = false;
             _deadlockTimer = 0f;
+
+            // Sonraki leveli (geçiş renkleri için) oyun başladıktan biraz sonra hazırla; level sonunda üretip takılmasın
+            if (Application.isPlaying && useBallPourTransition)
+            {
+                CancelInvoke(nameof(PrepareNextLevel));
+                Invoke(nameof(PrepareNextLevel), 0.5f);
+            }
             comboStreak = 0;
             feverRemainingTime = 0f;
             remainingShakes = Mathf.Max(1, maxShakesPerLevel);
@@ -632,6 +644,8 @@ namespace PuzzleGlass
                     {
                         glassContainer.ApplyShapePreset(glassContainer.shapePreset, false);
                     }
+                    // Havuz camlarında şişe kulpları çizilmez
+                    if (glassContainer.IsPoolShape) glassContainer.showShoulderHandles = false;
                 }
                 glassContainer.RebuildContainer();
 
@@ -861,8 +875,44 @@ namespace PuzzleGlass
 
             // Generate endless progressive levels automatically when reaching the end of saved levels!
             int nextNum = (currentLevel != null) ? currentLevel.levelNumber + 1 : 1;
+
+            // Geçiş sırasında önceden üretildiyse (renkleri için) aynı leveli yükle
+            if (_preparedProceduralNext != null && _preparedProceduralNext.levelNumber == nextNum)
+            {
+                var prepared = _preparedProceduralNext;
+                _preparedProceduralNext = null;
+                LoadLevel(prepared);
+                return;
+            }
+
             LevelDifficulty nextDiff = PuzzleLevelGenerator.GetProgressiveDifficulty(nextNum);
             GenerateAndLoadProceduralLevel(nextNum, nextDiff);
+        }
+
+        private PuzzleGlassLevelData _preparedProceduralNext;
+
+        private void PrepareNextLevel() => PeekNextLevel();
+
+        /// <summary>
+        /// Sonraki level (yüklemeden): kayıtlı level varsa o, yoksa prosedürel level şimdiden üretilip saklanır
+        /// ve LoadNextLevel aynısını yükler.
+        /// </summary>
+        public PuzzleGlassLevelData PeekNextLevel()
+        {
+            if (levels != null && levels.Count > 0 && currentLevelIndex + 1 < levels.Count)
+                return levels[currentLevelIndex + 1];
+
+            int nextNum = (currentLevel != null) ? currentLevel.levelNumber + 1 : 1;
+            if (_preparedProceduralNext == null || _preparedProceduralNext.levelNumber != nextNum)
+            {
+                var lvl = ScriptableObject.CreateInstance<PuzzleGlassLevelData>();
+                lvl.levelNumber = Mathf.Max(1, nextNum);
+                lvl.difficulty = PuzzleLevelGenerator.GetProgressiveDifficulty(nextNum);
+                lvl.useStagingColumnQueue = true;
+                PuzzleLevelGenerator.GenerateForLevelData(lvl);
+                _preparedProceduralNext = lvl;
+            }
+            return _preparedProceduralNext;
         }
 
         public void LoadPreviousLevel()
@@ -1118,8 +1168,50 @@ namespace PuzzleGlass
 
             if (Application.isPlaying)
             {
-                Invoke(nameof(LoadNextLevel), nextLevelDelay);
+                // Top dökülmeli geçiş: ekran toplarla kapanınca sonraki level yüklenir.
+                if (useBallPourTransition)
+                {
+                    LevelTransitionController.GetOrCreate().PlayNextLevelTransition(GetNextLevelColors());
+                }
+                else
+                {
+                    Invoke(nameof(LoadNextLevel), nextLevelDelay);
+                }
             }
+        }
+
+        /// <summary>Geçiş toplarının renkleri: bitirilen levelin kutu renkleri.</summary>
+        /// <summary>
+        /// Geçiş toplarının renkleri: SONRAKİ levelin topları (ekran yeni levelin renkleriyle doluyormuş gibi).
+        /// Her renk o leveldeki top sayısı kadar tekrarlanır; dağılım levelle aynı olur.
+        /// </summary>
+        public List<PuzzleColor> GetNextLevelColors()
+        {
+            var colors = new List<PuzzleColor>();
+            var next = PeekNextLevel();
+            if (next != null && next.monsters != null)
+            {
+                foreach (var m in next.monsters)
+                {
+                    if (m == null) continue;
+                    for (int k = 0; k < Mathf.Max(1, m.count); k++) colors.Add(m.color);
+                }
+            }
+            return colors.Count > 0 ? colors : GetCurrentLevelColors();
+        }
+
+        public List<PuzzleColor> GetCurrentLevelColors()
+        {
+            var colors = new List<PuzzleColor>();
+            if (currentLevel != null && currentLevel.monsters != null)
+            {
+                for (int i = 0; i < currentLevel.monsters.Count; i++)
+                {
+                    var m = currentLevel.monsters[i];
+                    if (m != null && !colors.Contains(m.color)) colors.Add(m.color);
+                }
+            }
+            return colors;
         }
 
         // ==================== ON-SCREEN TESTING HUD ====================

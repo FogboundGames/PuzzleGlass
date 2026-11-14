@@ -220,7 +220,9 @@ namespace PuzzleGlass
             topCol.sharedMaterial = _glassPhysMaterial;
 
             // 6. Bottom Spout Stopper Gate (Holds balls inside funnel/chamber until collection)
-            bool isFlatBox = glassContainer.shapePreset == GlassShapePreset.SquareBox || glassContainer.shapePreset == GlassShapePreset.RectangleBox;
+            // Havuz şekillerinde (düz tabanlı özel şekil dahil) zemin camın tabanında ve tüm genişlikte olmalı;
+            // yoksa zemin şişe boğazı yüksekliğine/genişliğine kurulup toplar camdan akıyordu.
+            bool isFlatBox = glassContainer.IsPoolShape;
             float throatY = isFlatBox ? (glassContainer.contourPoints[0].y * glassContainer.heightScale) : glassContainer.GetSpoutThroatY();
             float stopperW = isFlatBox ? (glassContainer.chamberWidth + 0.40f) : (glassContainer.spoutWidth + 0.18f);
 

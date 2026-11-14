@@ -488,6 +488,16 @@ namespace PuzzleGlass
                 }
             }
 
+            // Düz tabanlı özel şekil (yamuk, altıgen, kapsül...): her satırda camın o yükseklikteki genişliğine göre dizilim
+            if (glassContainer != null && glassContainer.IsCustomPool)
+            {
+                var shaped = OrderedPoolLayout.BuildShaped(groups, glassContainer.contourPoints, glassContainer.widthScale, glassContainer.heightScale);
+                this.ballDiameter = shaped.diameter;
+                glassContainer.particleSize = shaped.diameter;
+                foreach (var b in shaped.balls) list.Add((b.localPos, b.color));
+                return;
+            }
+
             // Expand bottom-to-top groups into 3 vertical lanes
             List<LevelMonsterEntry>[] laneGroups = PuzzleLevelGenerator.DistributeGroupsIntoThreeLanes(groups);
             List<PuzzleColor>[] laneBalls = new List<PuzzleColor>[3];
@@ -511,27 +521,10 @@ namespace PuzzleGlass
                 ? glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y * glassContainer.heightScale
                 : 0.62f;
 
-            float safeWidth = Mathf.Max(0.8f, innerHalfW * 2f - 0.22f);
-            float availHeight = Mathf.Max(0.45f, ceilY - floorY - 0.008f - Mathf.Max(0f, patternVerticalOffset));
-
-            // Pick laneWidth (3..8 columns per lane) that yields the largest ball diameter <= 0.265f fitting inside the chamber
-            int bestLaneWidth = 3;
-            float bestDiam = 0.095f;
-            float bestScore = -1f;
-            for (int lw = 3; lw <= 8; lw++)
-            {
-                int cols = lw * 3;
-                int laneRows = Mathf.CeilToInt(maxBallsInLane / (float)lw);
-                float maxDiamX = safeWidth / cols;
-                float maxDiamY = availHeight / (1f + Mathf.Max(0, laneRows - 1) * 0.855f);
-                float candDiam = Mathf.Min(0.265f, Mathf.Min(maxDiamX, maxDiamY));
-                if (candDiam > bestScore + 0.0005f)
-                {
-                    bestScore = candDiam;
-                    bestDiam = candDiam;
-                    bestLaneWidth = lw;
-                }
-            }
+            // Dizilim hesabı OrderedPoolLayout ile ortak: Level Stüdyosu önizlemesi oyundakiyle aynı olsun.
+            OrderedPoolLayout.GetUsableArea(innerHalfW, floorY, ceilY, patternVerticalOffset, out float safeWidth, out float availHeight);
+            OrderedPoolLayout.ChooseLaneWidth(maxBallsInLane, safeWidth, availHeight, out int bestLaneWidth, out float bestDiam);
+            float rowFactor = OrderedPoolLayout.RowFactor;
 
             float effectiveBallDiam = Mathf.Clamp(bestDiam, 0.095f, 0.265f);
             this.ballDiameter = effectiveBallDiam;
@@ -541,7 +534,7 @@ namespace PuzzleGlass
             }
 
             float colSpacing = effectiveBallDiam;
-            float rowSpacing = colSpacing * 0.855f;
+            float rowSpacing = colSpacing * rowFactor;
             float ballR = colSpacing * 0.5f;
             float startY = floorY + ballR + patternVerticalOffset;
 
@@ -555,7 +548,7 @@ namespace PuzzleGlass
             for (int r = 0; r < totalRows; r++)
             {
                 float y = startY + r * rowSpacing;
-                float stagger = ((r % 2 == 1) ? 0.045f : -0.045f) * staggerScale;
+                float stagger = ((r % 2 == 1) ? 0.25f : -0.25f) * colSpacing;
                 float firstX = -(colsPerRow - 1) * 0.5f * colSpacing + stagger;
 
                 for (int lane = 0; lane < 3; lane++)

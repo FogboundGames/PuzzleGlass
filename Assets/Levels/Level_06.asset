@@ -1,0 +1,161 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 85a325236feaeb241833408923acac61, type: 3}
+  m_Name: Level_06
+  m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
+  levelNumber: 6
+  levelName: "Level 6 - Geni\u015F Panorama"
+  difficulty: 0
+  slotCount: 4
+  slotSpacing: 0.8
+  useCustomGlassShape: 1
+  glassPreset: 14
+  colorTheme: 2
+  layerPattern: 0
+  symmetricMode: 1
+  curveSubdivisions: 12
+  widthScale: 1
+  heightScale: 1
+  glassBodyColor: {r: 0.22, g: 0.82, b: 0.64, a: 0.72}
+  glassCenterGlowColor: {r: 0.52, g: 0.95, b: 0.8, a: 0.4}
+  glassOuterRimColor: {r: 0.2, g: 0.76, b: 0.58, a: 1}
+  glassInnerRimColor: {r: 0.72, g: 0.98, b: 0.88, a: 0.88}
+  glassFrontLensColor: {r: 0.82, g: 1, b: 0.92, a: 0.12}
+  earHandleColor: {r: 0.9, g: 0.99, b: 0.95, a: 1}
+  glassRimRadius: 0.042
+  innerRimInset: 0.064
+  glassShellDepth: 0.08
+  showShoulderHandles: 0
+  showSpecularReflections: 1
+  boxCornerRadius: 0.2
+  boxFrameThickness: 0.105
+  boxFrameColor: {r: 0.3, g: 0.76, b: 0.62, a: 1}
+  boxFrameHighlightColor: {r: 0.76, g: 0.96, b: 0.88, a: 1}
+  boxFrameEdgeShadeColor: {r: 0.18, g: 0.56, b: 0.46, a: 1}
+  dropShadowColor: {r: 0.72, g: 0.6, b: 0.48, a: 0.3}
+  particleSize: 0.255
+  particlesPerMonsterCount: 1
+  particleMode: 2
+  patternShape: 1
+  pixelArtPreset: 0
+  customPattern:
+    patternName: Frog
+    width: 11
+    height: 8
+    rawAscii: []
+  initialSimulationMode: 0
+  freezePatternInPlace: 0
+  gridCellSpacing: 0.24
+  patternVerticalOffset: 0
+  fillEmptyWithColor: 0
+  emptyCellColor: 0
+  lockedSectionRatio: 0.3
+  contourPoints:
+  - y: -0.56
+    halfWidth: 1.46
+    centerX: 0
+    cornerTension: 1
+  - y: -0.52
+    halfWidth: 1.46
+    centerX: 0
+    cornerTension: 1
+  - y: 0.44999996
+    halfWidth: 1.46
+    centerX: 0
+    cornerTension: 1
+  - y: 0.48999995
+    halfWidth: 1.46
+    centerX: 0
+    cornerTension: 1
+  compartmentPreset: 7
+  dividers: []
+  compartmentZones: []
+  stagingGridCols: 4
+  stagingGridRows: 4
+  useCustomTraySettings: 0
+  trayMatchGlassWidth: 1
+  trayMaxBoardWidth: 2.822
+  trayMaxBoardHeight: 3.2
+  trayFramePadding: 0.115
+  trayInnerMargin: 0.06
+  trayFrameCornerRadius: 0.18
+  trayGapBelowGlass: 0.11
+  trayUseManualCellSize: 0
+  trayManualCellSize: 0.506
+  ballsPerBox: 3
+  carrierBoxFormatVersion: 3
+  puzzleLayerStyle: 0
+  stagingColumns: 3
+  useStagingColumnQueue: 0
+  bottomToTopTriplets: 050000000500000005000000000000000000000000000000
+  bottomToTopGroups:
+  - color: 5
+    count: 4
+    blockShape: 2
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+  - color: 5
+    count: 5
+    blockShape: 3
+    gridAnchor: {x: 0, y: 2}
+    hasGridAnchor: 1
+  - color: 5
+    count: 4
+    blockShape: 2
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1
+  - color: 0
+    count: 5
+    blockShape: 4
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 3, y: 0}
+    hasGridAnchor: 1
+  - color: 0
+    count: 1
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 1
+  monsters:
+  - color: 5
+    count: 4
+    blockShape: 2
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+  - color: 0
+    count: 5
+    blockShape: 4
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+  - color: 5
+    count: 5
+    blockShape: 3
+    gridAnchor: {x: 0, y: 2}
+    hasGridAnchor: 1
+  - color: 5
+    count: 4
+    blockShape: 2
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 3, y: 0}
+    hasGridAnchor: 1
+  - color: 0
+    count: 1
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 1

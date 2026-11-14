@@ -105,9 +105,8 @@ namespace PuzzleGlass.Editor
             "🟠 Kehribar Sarısı"
         };
 
-        [MenuItem("Tools/PuzzleGlass/✨ Cam Şekil & Tasarım Aracı (Glass Customizer)", false, 1)]
-        [MenuItem("Window/PuzzleGlass/✨ Glass Shape Editor", false, 1)]
-        public static void OpenWindow()
+        [MenuItem("Tools/PuzzleGlass/Eski/Cam Şekil Aracı (Eski)", false, 101)]
+                public static void OpenWindow()
         {
             var win = GetWindow<GlassShapeDesignerWindow>("✨ Cam Özelleştirici");
             win.minSize = new Vector2(520f, 700f);

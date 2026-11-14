@@ -58,7 +58,7 @@ namespace PuzzleGlass.Editor
             "📐 Çapraz Renk Kuşakları"
         };
 
-        [MenuItem("Tools/PuzzleGlass/🎮 Level Design Studio (Bölüm Tasarım Aracı)", false, 0)]
+        [MenuItem("Tools/PuzzleGlass/Eski/Level Design Studio (Eski Bölüm Aracı)", false, 100)]
         public static void OpenWindow()
         {
             var win = GetWindow<LevelDesignerWindow>("Level Design Studio");

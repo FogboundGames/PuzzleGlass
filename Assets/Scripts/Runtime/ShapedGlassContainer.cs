@@ -81,6 +81,18 @@ namespace PuzzleGlass
         [Header("Shape Preset & Symmetry")]
         public GlassShapePreset shapePreset = GlassShapePreset.RectangleBox;
         public bool IsFlatBottomBox => shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox;
+
+        /// <summary>
+        /// Düz tabanlı özel şekil (Cam Stüdyosu'nda çizilen yamuk, altıgen, kapsül vb.): tabanı geniş olan
+        /// serbest kontur. Oyunda havuz gibi davranır: düz zemin, toplar deliğin üstünden dümdüz iner.
+        /// (Tabanı dar olan eski huni ağızlı şişeler bu kapsamda değildir.)
+        /// </summary>
+        public bool IsCustomPool => shapePreset == GlassShapePreset.CustomFreeform
+                                    && contourPoints != null && contourPoints.Count >= 2
+                                    && contourPoints[0].halfWidth >= 0.30f;
+
+        /// <summary>Havuz mantığıyla oynanan cam: dikdörtgen/kare kutu ya da düz tabanlı özel şekil.</summary>
+        public bool IsPoolShape => IsFlatBottomBox || IsCustomPool;
         public bool symmetricMode = true;
         [Range(4, 24)]
         public int curveSubdivisions = 14;
@@ -1020,7 +1032,8 @@ namespace PuzzleGlass
         private void ApplyRoundedBoxShaderProperties(Material mat, float boxAspect)
         {
             if (mat == null) return;
-            mat.SetFloat("_IsRoundedBoxPool", IsFlatBottomBox ? 1.0f : 0.0f);
+            mat.SetFloat("_IsRoundedBoxPool", IsPoolShape ? 1.0f : 0.0f);
+            ApplyCustomPoolPolygon(mat);
             mat.SetFloat("_BoxAspect", boxAspect);
             if (mat.HasProperty("_BoxCornerRadius")) mat.SetFloat("_BoxCornerRadius", Mathf.Clamp(boxCornerRadius, 0.04f, 0.65f));
             if (mat.HasProperty("_FrameThickness")) mat.SetFloat("_FrameThickness", Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f));
@@ -1028,6 +1041,99 @@ namespace PuzzleGlass
             if (mat.HasProperty("_FrameHighlight")) mat.SetColor("_FrameHighlight", boxFrameHighlightColor);
             if (mat.HasProperty("_FrameEdgeShade")) mat.SetColor("_FrameEdgeShade", boxFrameEdgeShadeColor);
             if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
+        }
+
+        private static readonly Vector4[] _polyBuffer = new Vector4[48];
+
+        /// <summary>
+        /// Özel şekilli havuz: camın iç hattını (fizik duvarlarıyla aynı yol) çokgen olarak shader'a verir.
+        /// Shader kutudaki kalın çerçeve, yuvarlak köşe, gölge ve parlamaları bu çokgen üzerinde çizer.
+        /// Koordinatlar kutu ile aynı uzayda: p = (yerel - merkez) / quadHalfH.
+        /// </summary>
+        private void ApplyCustomPoolPolygon(Material mat)
+        {
+            if (!mat.HasProperty("_PolyCount")) return;
+            if (!IsCustomPool || contourPoints == null || contourPoints.Count < 2)
+            {
+                mat.SetFloat("_PolyCount", 0f);
+                return;
+            }
+
+            GetRoundedBoxPoolExtents(out float centerY, out _, out float qh, out _, out _);
+            qh = Mathf.Max(0.01f, qh);
+
+            // Kontur noktalarından düz kenarlı çokgen (saat yönünün tersine): sağ duvar alttan üste, sol duvar üstten alta.
+            // (Yumuşatılmış eğri en geniş köşede dışarı taşıyıp çerçevede "kulak" yapıyordu.)
+            var raw = new List<Vector2>();
+            for (int i = 0; i < contourPoints.Count; i++)
+            {
+                var cp = contourPoints[i];
+                AddPolyPoint(raw, new Vector2((cp.centerX * (symmetricMode ? 0f : 1f) + cp.halfWidth) * widthScale, cp.y * heightScale));
+            }
+            for (int i = contourPoints.Count - 1; i >= 0; i--)
+            {
+                var cp = contourPoints[i];
+                AddPolyPoint(raw, new Vector2((cp.centerX * (symmetricMode ? 0f : 1f) - cp.halfWidth) * widthScale, cp.y * heightScale));
+            }
+            if (raw.Count > 1 && (raw[0] - raw[raw.Count - 1]).sqrMagnitude < 0.00002f) raw.RemoveAt(raw.Count - 1);
+            int n = raw.Count;
+            if (n < 3 || n > 96) { mat.SetFloat("_PolyCount", 0f); return; }
+
+            // Her kenar içeri kaydırılır: yan duvarlar fizik duvarı kadar (innerRimInset), taban ve tavan hiç
+            // (taban fizikteki zeminle aynı yükseklikte kalsın). Üstüne köşe yuvarlaklığı payı (r) eklenir;
+            // shader r'yi geri ekleyince köşeler yuvarlanır.
+            float ft = Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f);
+            float rP = Mathf.Clamp(boxCornerRadius - ft * 0.65f, 0.03f, 0.35f);   // p uzayında
+            float rWorld = rP * qh;
+            var lineP = new Vector2[n];
+            var lineD = new Vector2[n];
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = raw[i], b = raw[(i + 1) % n];
+                Vector2 d = (b - a).normalized;
+                Vector2 inward = new Vector2(-d.y, d.x);
+                bool horizontal = Mathf.Abs(d.y) < 0.02f;
+                float off = (horizontal ? 0f : Mathf.Min(innerRimInset, 0.12f)) + rWorld;
+                lineP[i] = a + inward * off;
+                lineD[i] = d;
+            }
+
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue), max = new Vector2(float.MinValue, float.MinValue);
+            for (int i = 0; i < n; i++)
+            {
+                // Köşe i: önceki kenar (i-1) ile sonraki kenarın (i) kaydırılmış doğrularının kesişimi
+                int prev = (i - 1 + n) % n;
+                Vector2 v = raw[i];
+                float den = lineD[prev].x * lineD[i].y - lineD[prev].y * lineD[i].x;
+                if (Mathf.Abs(den) > 1e-4f)
+                {
+                    Vector2 diff = lineP[i] - lineP[prev];
+                    float t = (diff.x * lineD[i].y - diff.y * lineD[i].x) / den;
+                    v = lineP[prev] + lineD[prev] * t;
+                }
+                else
+                {
+                    v = lineP[i];
+                }
+                Vector2 pv = new Vector2(v.x / qh, (v.y - centerY) / qh);
+                _polyBuffer[i >> 1] = (i & 1) == 0
+                    ? new Vector4(pv.x, pv.y, _polyBuffer[i >> 1].z, _polyBuffer[i >> 1].w)
+                    : new Vector4(_polyBuffer[i >> 1].x, _polyBuffer[i >> 1].y, pv.x, pv.y);
+
+                Vector2 rp = new Vector2(raw[i].x / qh, (raw[i].y - centerY) / qh);
+                min = Vector2.Min(min, rp);
+                max = Vector2.Max(max, rp);
+            }
+
+            mat.SetVectorArray("_PolyPoints", _polyBuffer);
+            mat.SetFloat("_PolyCount", n);
+            mat.SetFloat("_PolyRadius", rP);
+            mat.SetVector("_PolyBounds", new Vector4(min.x, min.y, max.x, max.y));
+        }
+
+        private static void AddPolyPoint(List<Vector2> pts, Vector2 v)
+        {
+            if (pts.Count == 0 || (pts[pts.Count - 1] - v).sqrMagnitude > 0.00002f) pts.Add(v);
         }
 
         private void EnsureMaterials()
@@ -1294,8 +1400,9 @@ namespace PuzzleGlass
             cachedLeftInnerPath = leftInnerPath;
             cachedRightInnerPath = rightInnerPath;
 
-            if (IsFlatBottomBox)
+            if (IsPoolShape)
             {
+                // Kutu ve düz tabanlı özel şekiller aynı shader çerçevesiyle çizilir (kalın çerçeve, yuvarlak köşe, gölge)
                 GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out _, out _);
                 float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
 
@@ -2236,7 +2343,7 @@ namespace PuzzleGlass
 
         public float GetSpoutThroatY()
         {
-            if (IsFlatBottomBox)
+            if (IsPoolShape)
             {
                 return GetChamberFloorY();
             }
@@ -2249,7 +2356,7 @@ namespace PuzzleGlass
 
         public float GetChamberFloorY()
         {
-            if (IsFlatBottomBox)
+            if (IsPoolShape)
             {
                 if (contourPoints != null && contourPoints.Count > 0)
                 {
@@ -2288,6 +2395,13 @@ namespace PuzzleGlass
             float innerHalfW = (contourPoints != null && contourPoints.Count > 0)
                 ? contourPoints[0].halfWidth * widthScale
                 : 1.32f * widthScale;
+            if (IsCustomPool)
+            {
+                // Özel şekil: en geniş yer
+                float maxHw = 0f;
+                foreach (var cp in contourPoints) maxHw = Mathf.Max(maxHw, cp.halfWidth);
+                innerHalfW = maxHw * widthScale;
+            }
 
             // Exact alignment with EvaluateRoundedBoxPool SDF
             float ft = Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f);
@@ -2304,7 +2418,7 @@ namespace PuzzleGlass
         {
             EnsureContourInitialized();
 
-            if (IsFlatBottomBox)
+            if (IsPoolShape)
             {
                 GetRoundedBoxPoolExtents(out float centerY, out _, out _, out float visibleHalfW, out float visibleHalfH);
                 Vector3 worldMin = transform.TransformPoint(new Vector3(-visibleHalfW, centerY - visibleHalfH, 0f));

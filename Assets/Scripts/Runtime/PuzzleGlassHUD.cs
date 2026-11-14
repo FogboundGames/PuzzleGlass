@@ -438,7 +438,9 @@ namespace PuzzleGlass
 
                 if (_resultOverlay != null)
                 {
-                    bool show = completed || failed;
+                    // Top dökülmeli geçiş açıkken "Tebrikler" paneli gösterilmez; geçişin kendisi kutlama
+                    bool pourTransition = gm != null && gm.useBallPourTransition;
+                    bool show = (completed && !pourTransition) || failed;
                     _resultOverlay.SetActive(show);
 
                     if (completed && gm != null)
@@ -448,10 +450,14 @@ namespace PuzzleGlass
                         _resultActionLabel.text = "SONRAKİ LEVEL";
                         if (_resultActionButton != null)
                         {
+                            // Top dökülmeli geçiş açıksa sonraki level otomatik yükleniyor; buton gereksiz
+                            _resultActionButton.gameObject.SetActive(!gm.useBallPourTransition);
                             _resultActionButton.onClick.RemoveAllListeners();
                             _resultActionButton.onClick.AddListener(() =>
                             {
                                 PuzzleSoundManager.GetOrCreate().PlayUiClick();
+                                // Geçiş zaten oynuyorsa o leveli yükleyecek; butona basmak ikinci kez atlatmasın
+                                if (LevelTransitionController.IsTransitioning) return;
                                 gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
                                 gm.LoadNextLevel();
                             });
@@ -464,6 +470,7 @@ namespace PuzzleGlass
                         _resultActionLabel.text = "TEKRAR DENE";
                         if (_resultActionButton != null)
                         {
+                            _resultActionButton.gameObject.SetActive(true);
                             _resultActionButton.onClick.RemoveAllListeners();
                             _resultActionButton.onClick.AddListener(() =>
                             {

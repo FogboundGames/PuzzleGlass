@@ -13,11 +13,12 @@ MonoBehaviour:
   m_Name: Level_01
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 1
-  levelName: "G\xF6k Mavisi Flask (Referans)"
+  levelName: "Level 1 - Kolay (4x4 Izgara, 5 K\xFCp, 19 Top)"
   difficulty: 0
   slotCount: 4
-  slotSpacing: 0.84
-  glassPreset: 0
+  slotSpacing: 0.8
+  useCustomGlassShape: 0
+  glassPreset: 14
   colorTheme: 0
   layerPattern: 0
   symmetricMode: 1
@@ -33,13 +34,102 @@ MonoBehaviour:
   glassRimRadius: 0.042
   innerRimInset: 0.064
   glassShellDepth: 0.08
-  showShoulderHandles: 1
+  showShoulderHandles: 0
   showSpecularReflections: 1
-  particleSize: 0.155
+  boxCornerRadius: 0.22
+  boxFrameThickness: 0.115
+  boxFrameColor: {r: 0.5, g: 0.5, b: 0.9, a: 1}
+  boxFrameHighlightColor: {r: 0.84, g: 0.84, b: 0.98, a: 1}
+  boxFrameEdgeShadeColor: {r: 0.38, g: 0.36, b: 0.8, a: 1}
+  dropShadowColor: {r: 0.72, g: 0.6, b: 0.48, a: 0.3}
+  particleSize: 0.255
   particlesPerMonsterCount: 1
+  particleMode: 2
+  patternShape: 1
+  pixelArtPreset: 0
+  customPattern:
+    patternName: Frog
+    width: 11
+    height: 8
+    rawAscii: []
+  initialSimulationMode: 0
+  freezePatternInPlace: 0
+  gridCellSpacing: 0.24
+  patternVerticalOffset: 0
+  fillEmptyWithColor: 0
+  emptyCellColor: 0
+  lockedSectionRatio: 0.3
   contourPoints: []
+  compartmentPreset: 7
+  dividers: []
+  compartmentZones: []
+  stagingGridCols: 4
+  stagingGridRows: 4
+  useCustomTraySettings: 0
+  trayMatchGlassWidth: 1
+  trayMaxBoardWidth: 2.822
+  trayMaxBoardHeight: 3.2
+  trayFramePadding: 0.115
+  trayInnerMargin: 0.06
+  trayFrameCornerRadius: 0.18
+  trayGapBelowGlass: 0.11
+  trayUseManualCellSize: 0
+  trayManualCellSize: 0.506
+  ballsPerBox: 3
+  carrierBoxFormatVersion: 3
+  puzzleLayerStyle: 0
+  stagingColumns: 3
+  useStagingColumnQueue: 0
+  bottomToTopTriplets: 0000000000000000000000000100000001000000
+  bottomToTopGroups:
+  - color: 0
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+  - color: 0
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+  - color: 1
+    count: 3
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+  - color: 1
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
   monsters:
   - color: 0
-    count: 10
+    count: 5
+    blockShape: 5
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+  - color: 0
+    count: 4
+    blockShape: 1
+    gridAnchor: {x: 1, y: 3}
+    hasGridAnchor: 1
   - color: 1
-    count: 20
+    count: 3
+    blockShape: 1
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+  - color: 1
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1

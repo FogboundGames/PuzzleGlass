@@ -29,6 +29,8 @@ namespace PuzzleGlass
         public float defaultAngularDrag = 0.65f;
         [Tooltip("Top havuzu toplarının tok ve hızlı düşmesi için ek yerçekimi ivmesi")]
         public float extraGravity = 14.0f;
+        [Tooltip("Sadece tünelleme/patlama koruması. Normal harekete karışmaz.")]
+        public float maxSafetySpeed = 12.0f;
 
         [Header("Ordered Ball Pool Layer Info")]
         [Tooltip("0 = Bottom-most layer, 1 = Second layer from bottom, 2 = Third layer, etc.")]
@@ -101,32 +103,20 @@ namespace PuzzleGlass
                 rb.AddForce(Vector3.down * extraGravity, ForceMode.Acceleration);
             }
 
+            // Gerçek fizik: hız artık elle kırpılmıyor ve sıfırlanmıyor (sekme, yuvarlanma, çökme serbest).
+            // Sadece tünelleme/patlama koruması için yüksek bir üst sınır var; yatışma Unity'nin sleep sistemine bırakıldı.
             Vector3 vel = rb.linearVelocity;
-
-            // Clamp excessive upward pop so balls settle cleanly into pockets without jittering
-            if (vel.y > 0.65f)
-            {
-                vel.y = 0.65f;
-            }
-            vel.x = Mathf.Clamp(vel.x, -4.2f, 4.2f);
-            vel.y = Mathf.Clamp(vel.y, -6.5f, 0.65f);
             vel.z = 0f;
-
-            // Settle micro-jitter when resting nearly stationary in a pocket
-            if (vel.sqrMagnitude < 0.0006f)
+            if (vel.sqrMagnitude > maxSafetySpeed * maxSafetySpeed)
             {
-                vel = Vector3.zero;
-                rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, Vector3.zero, 18f * Time.fixedDeltaTime);
+                vel = vel.normalized * maxSafetySpeed;
             }
-            else
-            {
-                // Authentic 3D rolling rotation proportional to horizontal & vertical movement
-                float r = Mathf.Max(0.05f, ballRadius);
-                Vector3 targetAngVel = new Vector3(-vel.y * 2.5f, 0f, -vel.x / r);
-                rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 16f * Time.fixedDeltaTime);
-            }
-
             rb.linearVelocity = vel;
+
+            // Görsel yuvarlanma: yatay harekete göre dönüş (düşük sürtünmede kaymak yerine yuvarlanıyormuş gibi görünsün)
+            float r = Mathf.Max(0.05f, ballRadius);
+            Vector3 targetAngVel = new Vector3(0f, 0f, -vel.x / r);
+            rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 10f * Time.fixedDeltaTime);
 
             if (Mathf.Abs(pos.z - (-0.10f)) > 0.001f)
             {
@@ -258,9 +248,10 @@ namespace PuzzleGlass
 
             Vector3 vacatedPos = transform.position;
 
+            // Çıkan top trigger olur: en alttan dümdüz aşağı indiği için diğer topları itmez, ama camın hemen
+            // altındaki kutunun collider'ına da takılmaz. (Katı yapınca kutuya takılıp ~1 sn gecikme oluyordu.)
             if (sphereCollider != null)
             {
-                // Become trigger so this ball glides smoothly out of the bottom rim
                 sphereCollider.isTrigger = true;
             }
 
@@ -294,6 +285,7 @@ namespace PuzzleGlass
                     var other = activeList[i];
                     if (other != null && other != this && other.state == BallState.InContainer && other.rb != null)
                     {
+                        if (other.rb.isKinematic) continue;
                         other.rb.WakeUp();
 
                         Vector3 op = other.transform.position;

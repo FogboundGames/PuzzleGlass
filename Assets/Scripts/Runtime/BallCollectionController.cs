@@ -32,6 +32,9 @@ namespace PuzzleGlass
         [Tooltip("Vertical tolerance for balls considered part of the bottom layer in container.")]
         public float bottomLayerTolerance = 0.14f;
 
+        [Tooltip("Açıkken tabandaki aynı renk toplar yatay kuvvetle kutuya doğru itilir (kayma). Kapalı: toplar sadece dümdüz aşağı çekilir.")]
+        public bool enableFloorDrift = false;
+
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
         private float _lastGlobalCollectionTime = -10f;
@@ -459,9 +462,9 @@ namespace PuzzleGlass
                     if (cand.colorType != monster.colorType) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
+                    // Deliğe (kutunun üstündeki çıkışa) en yakın top gelir
                     float distX = Mathf.Abs(cand.transform.position.x - monsterWorldX);
-                    // Prefer lower layerIndex first (strictly bottom-to-top), then closest horizontal distance to the carrier box's slot
-                    float score = cand.layerIndex * 0.50f + distX;
+                    float score = distX;
                     if (score < bestOverallScore)
                     {
                         bestOverallScore = score;
@@ -486,6 +489,7 @@ namespace PuzzleGlass
         /// </summary>
         private void ApplyFloorDriftTowardHungryMonsters()
         {
+            if (!enableFloorDrift) return;
             if (_activeStreams.Count == 0 || BallObjectPool.Instance == null) return;
 
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
@@ -555,7 +559,7 @@ namespace PuzzleGlass
 
         private Vector3 GetExitWorldPosForBall(ShapedGlassContainer container, BallPhysicsController ball)
         {
-            if (container != null && container.IsFlatBottomBox)
+            if (container != null && container.IsPoolShape)
             {
                 float floorLocalY = container.GetChamberFloorY() * container.heightScale;
                 float worldFloorY = container.transform.TransformPoint(new Vector3(0f, floorLocalY, 0f)).y;

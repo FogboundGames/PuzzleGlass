@@ -69,6 +69,13 @@ namespace PuzzleGlass
             }
             else if (_isDragging && pointerUp)
             {
+                // Hızlı hareketlerde son karedeki parmak hareketi kaybolmasın: bırakmadan önce
+                // son konumla bir kez daha kaydır, sonra yerleştir.
+                if (GetPointerPosition(out Vector2 releasePos))
+                {
+                    HandlePointerDrag(releasePos);
+                    pointerScreenPos = releasePos;
+                }
                 HandlePointerUp(pointerScreenPos);
             }
         }
@@ -81,6 +88,11 @@ namespace PuzzleGlass
             }
             if (PuzzleGlassGameManager.Instance != null &&
                 (PuzzleGlassGameManager.Instance.isLevelCompleted || PuzzleGlassGameManager.Instance.isLevelFailed))
+            {
+                return;
+            }
+            // Level geçişi sırasında (toplar ekranı kaplarken / düşerken) dokunma yok
+            if (LevelTransitionController.IsTransitioning)
             {
                 return;
             }
@@ -192,7 +204,25 @@ namespace PuzzleGlass
             if (grid != null)
             {
                 Vector3 pointerWorldGrid = ScreenToWorldOnPlane(screenPos, 0f);
-                bool exitClear = grid.IsBlockExitClearToSlots(_draggedMonster, allMonsters);
+
+                // Önce parçayı parmağa doğru kaydır (tepsi dışına taşan parmak konumu kenara sabitlenir).
+                // Eskiden parmak tepsinin üst kenarını aşınca parça hiç kaydırılmıyordu; hızlıca köşeye
+                // çekince parça olduğu yerde kalıyordu.
+                Vector3 desiredCenterEarly = pointerWorldGrid + _dragOffset;
+                desiredCenterEarly.z = 0f;
+                Vector2Int desiredAnchorEarly = grid.WorldCenterToNearestAnchor(desiredCenterEarly, _draggedMonster.blockShape);
+                Vector2Int steppedEarly = grid.SlideAnchorStepByStep(_draggedMonster, desiredAnchorEarly, allMonsters);
+                if (steppedEarly != _draggedMonster.gridAnchor)
+                {
+                    _draggedMonster.gridAnchor = steppedEarly;
+                    _draggedMonster.stagingColumn = steppedEarly.x;
+                    _draggedMonster.stagingRow = steppedEarly.y;
+                    grid.RefreshAllGridBlockHighlightStates(allMonsters);
+                    PuzzleSoundManager.Instance?.PlayGridSlide();
+                }
+
+                // Yukarı çekip toplamayı başlatma: sadece parça zaten en üst sıradaysa ve yolu açıksa
+                bool exitClear = grid.IsBlockAtTopExit(_draggedMonster) && grid.IsBlockExitClearToSlots(_draggedMonster, allMonsters);
                 bool wantsPullActivate = exitClear && pointerWorldGrid.y > grid.TopFrameInnerY + 0.04f;
 
                 if (wantsPullActivate)
@@ -500,6 +530,38 @@ namespace PuzzleGlass
                 screenPos = Input.GetTouch(0).position;
                 return true;
             }
+#endif
+            return false;
+        }
+
+        /// <summary>Basılı olsun olmasın, işaretçinin şu anki ekran konumu (bırakma karesi için).</summary>
+        private bool GetPointerPosition(out Vector2 screenPos)
+        {
+            screenPos = Vector2.zero;
+#if ENABLE_INPUT_SYSTEM
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasReleasedThisFrame)
+            {
+                screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
+                return true;
+            }
+            if (Mouse.current != null)
+            {
+                screenPos = Mouse.current.position.ReadValue();
+                return true;
+            }
+            if (Pointer.current != null)
+            {
+                screenPos = Pointer.current.position.ReadValue();
+                return true;
+            }
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.touchCount > 0)
+            {
+                screenPos = Input.GetTouch(0).position;
+                return true;
+            }
+            screenPos = Input.mousePosition;
+            return true;
 #endif
             return false;
         }

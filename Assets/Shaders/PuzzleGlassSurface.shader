@@ -18,6 +18,9 @@ Shader "PuzzleGlass/GlassChamberLit"
         _FrameHighlight ("Frame Top Highlight", Color) = (0.84, 0.84, 0.98, 1.0)
         _FrameEdgeShade ("Frame Outer Lip Shade", Color) = (0.38, 0.36, 0.80, 1.0)
         _FakeShadowColor ("Drop Shadow Color", Color) = (0.72, 0.60, 0.48, 0.30)
+        _PolyCount ("Custom Pool Polygon Vertex Count (0 = rounded box)", Float) = 0
+        _PolyRadius ("Custom Pool Inner Corner Radius", Float) = 0.1
+        _PolyBounds ("Custom Pool Inner Bounds (minX, minY, maxX, maxY)", Vector) = (-1, -1, 1, 1)
     }
 
     SubShader
@@ -61,7 +64,14 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float4 _FrameHighlight;
                 float4 _FrameEdgeShade;
                 float4 _FakeShadowColor;
+                float _PolyCount;
+                float _PolyRadius;
+                float4 _PolyBounds;
             CBUFFER_END
+
+            // Özel şekilli havuz: iç hattın köşeleri (yarıçap kadar içeri alınmış), iki köşe bir float4'te.
+            // Kutu modunda kullanılmaz (_PolyCount = 0).
+            float4 _PolyPoints[48];
 
             struct Attributes
             {
@@ -97,8 +107,52 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
             }
 
+            float2 PolyVertex(int i)
+            {
+                float4 v = _PolyPoints[i >> 1];
+                return (i & 1) == 0 ? v.xy : v.zw;
+            }
+
+            // İşaretli çokgen mesafesi (içeride negatif)
+            float sdPolygon(float2 p)
+            {
+                int n = (int)_PolyCount;
+                float2 v0 = PolyVertex(0);
+                float d = dot(p - v0, p - v0);
+                float s = 1.0;
+                [loop]
+                for (int i = 0; i < 96; i++)
+                {
+                    if (i >= n) break;
+                    int j = (i == 0) ? (n - 1) : (i - 1);
+                    float2 vi = PolyVertex(i);
+                    float2 vj = PolyVertex(j);
+                    float2 e = vj - vi;
+                    float2 w = p - vi;
+                    float2 b = w - e * clamp(dot(w, e) / max(dot(e, e), 1e-6), 0.0, 1.0);
+                    d = min(d, dot(b, b));
+                    bool3 c = bool3(p.y >= vi.y, p.y < vj.y, e.x * w.y > e.y * w.x);
+                    if (all(c) || all(!c)) s *= -1.0;
+                }
+                return s * sqrt(d);
+            }
+
+            // Havuzun iç (cam) ve dış (çerçeve) hatları: kutu ya da özel şekil
+            float ShapeInner(float2 p, float2 innerHalf, float innerRad)
+            {
+                if (_PolyCount > 2.5) return sdPolygon(p) - _PolyRadius;
+                return sdRoundBox2D(p, innerHalf, innerRad);
+            }
+
+            float ShapeOuter(float2 p, float2 outerHalf, float outerRad, float frameThick)
+            {
+                if (_PolyCount > 2.5) return sdPolygon(p) - _PolyRadius - frameThick;
+                return sdRoundBox2D(p, outerHalf, outerRad);
+            }
+
             half4 EvaluateRoundedBoxPool(Varyings IN)
             {
+                bool isPoly = _PolyCount > 2.5;
                 // Map UV [0..1] to aspect-corrected coordinates centered at (0,0)
                 // Extra margin is reserved around the quad so the soft drop shadow never clips
                 float aspect = max(_BoxAspect, 0.25);
@@ -115,8 +169,15 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float2 innerHalf = outerHalf - float2(frameThick, frameThick);
                 float innerRad   = clamp(outerRad - frameThick * 0.65, 0.03, min(innerHalf.x, innerHalf.y) * 0.92);
 
-                float dOuter = sdRoundBox2D(p, outerHalf, outerRad);
-                float dInner = sdRoundBox2D(p, innerHalf, innerRad);
+                if (isPoly)
+                {
+                    // Özel şekil: iç hattın sınırlarından vurgu bölgeleri için yarı ölçüler
+                    innerHalf = float2(max(abs(_PolyBounds.x), abs(_PolyBounds.z)), (_PolyBounds.w - _PolyBounds.y) * 0.5);
+                    outerHalf = innerHalf + frameThick;
+                }
+
+                float dOuter = ShapeOuter(p, outerHalf, outerRad, frameThick);
+                float dInner = ShapeInner(p, innerHalf, innerRad);
 
                 // 1. Soft Warm Drop Shadow behind the container (only rendered on Back layer)
                 float shadowAlpha = 0.0;
@@ -125,8 +186,8 @@ Shader "PuzzleGlass/GlassChamberLit"
                 {
                     float2 pShadFar  = p - float2(-0.045, -0.075);
                     float2 pShadNear = p - float2(-0.020, -0.035);
-                    float dShadFar   = sdRoundBox2D(pShadFar, outerHalf, outerRad + 0.02);
-                    float dShadNear  = sdRoundBox2D(pShadNear, outerHalf, outerRad);
+                    float dShadFar   = ShapeOuter(pShadFar, outerHalf, outerRad + 0.02, frameThick) - (isPoly ? 0.02 : 0.0);
+                    float dShadNear  = ShapeOuter(pShadNear, outerHalf, outerRad, frameThick);
                     float aFar  = (1.0 - smoothstep(-0.06, 0.16, dShadFar)) * _FakeShadowColor.a;
                     float aNear = (1.0 - smoothstep(-0.02, 0.07, dShadNear)) * (_FakeShadowColor.a * 0.65);
                     shadowAlpha = saturate(aFar + aNear);
@@ -139,8 +200,8 @@ Shader "PuzzleGlass/GlassChamberLit"
                 // 2. 3D Pillowy Periwinkle Outer Frame Shading (Image 2 signature border!)
                 float eps = 0.005;
                 float2 gradOuter = normalize(float2(
-                    sdRoundBox2D(p + float2(eps, 0.0), outerHalf, outerRad) - sdRoundBox2D(p - float2(eps, 0.0), outerHalf, outerRad),
-                    sdRoundBox2D(p + float2(0.0, eps), outerHalf, outerRad) - sdRoundBox2D(p - float2(0.0, eps), outerHalf, outerRad)
+                    ShapeOuter(p + float2(eps, 0.0), outerHalf, outerRad, frameThick) - ShapeOuter(p - float2(eps, 0.0), outerHalf, outerRad, frameThick),
+                    ShapeOuter(p + float2(0.0, eps), outerHalf, outerRad, frameThick) - ShapeOuter(p - float2(0.0, eps), outerHalf, outerRad, frameThick)
                 ) + 1e-5);
 
                 float ringT = saturate((-dOuter) / max(0.02, frameThick));
@@ -176,7 +237,8 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float innerRimBand = exp(-pow((dIn - 0.042) / 0.022, 2.0));
 
                 // Left & Right Vertical Glossy White Glass Reflection Pillars (Image 2 signature!)
-                float dSideWall = innerHalf.x - abs(p.x);
+                // Özel şekilde yan duvara uzaklık = cam hattına uzaklık (eğik duvarları takip eder)
+                float dSideWall = isPoly ? dIn : (innerHalf.x - abs(p.x));
                 float vMaskPillars = smoothstep(-innerHalf.y + 0.05, -innerHalf.y + 0.16, p.y)
                                    * (1.0 - smoothstep(innerHalf.y - 0.16, innerHalf.y - 0.03, p.y));
                 float sidePillarMain = exp(-pow((dSideWall - 0.055) / 0.032, 2.0)) * vMaskPillars;
@@ -189,7 +251,9 @@ Shader "PuzzleGlass/GlassChamberLit"
 
                 // Bottom Horizontal Icy-White Glass Floor Reflection Strip (where the bottom balls rest!)
                 float dBotFloor = p.y - (-innerHalf.y);
-                float hMaskFloor = 1.0 - smoothstep(innerHalf.x - 0.16, innerHalf.x - 0.02, abs(p.x));
+                float hMaskFloor = isPoly
+                    ? smoothstep(0.02, 0.16, -ShapeInner(p + float2(0.0, 0.14), innerHalf, innerRad))
+                    : 1.0 - smoothstep(innerHalf.x - 0.16, innerHalf.x - 0.02, abs(p.x));
                 float botFloorGlow = exp(-pow((dBotFloor - 0.038) / 0.024, 2.0)) * hMaskFloor * 0.90;
 
                 // Top Horizontal Soft Glass Ceiling Sheen
@@ -209,7 +273,7 @@ Shader "PuzzleGlass/GlassChamberLit"
                     float glassFrontAlpha = saturate(max(rimMask * 0.72, glassHighlights * 0.78));
 
                     // Keep the central area where balls sit super clear
-                    float centerClear = smoothstep(0.0, 0.12, dIn) * (1.0 - smoothstep(innerHalf.x - 0.14, innerHalf.x, abs(p.x)));
+                    float centerClear = smoothstep(0.0, 0.12, dIn) * (isPoly ? smoothstep(0.06, 0.14, dIn) : (1.0 - smoothstep(innerHalf.x - 0.14, innerHalf.x, abs(p.x))));
                     glassFrontAlpha *= lerp(1.0, 0.22, centerClear * (1.0 - botFloorGlow));
 
                     float3 finalFrontRgb = lerp(glassFrontRgb, frameCol, frameMask);
