@@ -13,10 +13,12 @@ MonoBehaviour:
   m_Name: Level_Rainbow
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 1
-  levelName: "Seviye 1 - Renkli G\xF6kku\u015Fa\u011F\u0131"
+  levelName: "Level 1 - Kolay (4x4 Izgara, 5 K\xFCp, 19 Top)"
   difficulty: 0
   slotCount: 4
-  slotSpacing: 0.84
+  slotSpacing: 0.8
+  useCustomGlassShape: 0
+  glassIsBottle: 0
   glassPreset: 14
   colorTheme: 0
   layerPattern: 0
@@ -35,9 +37,15 @@ MonoBehaviour:
   glassShellDepth: 0.08
   showShoulderHandles: 0
   showSpecularReflections: 1
-  particleSize: 0.24
+  boxCornerRadius: 0.22
+  boxFrameThickness: 0.115
+  boxFrameColor: {r: 0.5, g: 0.5, b: 0.9, a: 1}
+  boxFrameHighlightColor: {r: 0.84, g: 0.84, b: 0.98, a: 1}
+  boxFrameEdgeShadeColor: {r: 0.38, g: 0.36, b: 0.8, a: 1}
+  dropShadowColor: {r: 0.72, g: 0.6, b: 0.48, a: 0.3}
+  particleSize: 0.255
   particlesPerMonsterCount: 1
-  particleMode: 0
+  particleMode: 2
   patternShape: 1
   pixelArtPreset: 9
   customPattern:
@@ -58,14 +66,109 @@ MonoBehaviour:
   patternVerticalOffset: 0
   fillEmptyWithColor: 0
   emptyCellColor: 0
+  lockedSectionRatio: 0.3
   contourPoints: []
-  compartmentPreset: 0
+  compartmentPreset: 7
   dividers: []
   compartmentZones: []
+  stagingGridCols: 4
+  stagingGridRows: 4
+  useCustomTraySettings: 0
+  trayMatchGlassWidth: 1
+  trayMaxBoardWidth: 2.822
+  trayMaxBoardHeight: 3.2
+  trayFramePadding: 0.115
+  trayInnerMargin: 0.06
+  trayFrameCornerRadius: 0.18
+  trayGapBelowGlass: 0.11
+  trayUseManualCellSize: 0
+  trayManualCellSize: 0.506
+  ballsPerBox: 3
+  carrierBoxFormatVersion: 3
+  puzzleLayerStyle: 0
+  stagingColumns: 3
+  useStagingColumnQueue: 0
+  iceMeltMode: 0
+  bottomToTopTriplets: 0000000000000000000000000100000001000000
+  bottomToTopGroups:
+  - color: 0
+    count: 4
+    blockShape: 1
+    gridAnchor: {x: 1, y: 3}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 3, y: 3}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 5
+    blockShape: 5
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 5
+    blockShape: 3
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 3
+    blockShape: 1
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   monsters:
   - color: 0
-    count: 10
+    count: 5
+    blockShape: 5
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 4
+    blockShape: 1
+    gridAnchor: {x: 1, y: 3}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 2
+    blockShape: 0
+    gridAnchor: {x: 3, y: 3}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 1
-    count: 11
-  - color: 2
-    count: 10
+    count: 3
+    blockShape: 1
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 5
+    blockShape: 3
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0

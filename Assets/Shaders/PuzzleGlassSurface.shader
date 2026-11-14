@@ -22,7 +22,7 @@ Shader "PuzzleGlass/GlassChamberLit"
         _PolyRadius ("Custom Pool Inner Corner Radius", Float) = 0.1
         _PolyBounds ("Custom Pool Inner Bounds (minX, minY, maxX, maxY)", Vector) = (-1, -1, 1, 1)
         _JarNeckParams ("Optional Jar Neck (halfW, height, lipOverhang, lipHalfH)", Vector) = (0, 0, 0, 0)
-        _CenterGlassAlpha ("Back Chamber Center Alpha", Range(0.05, 1.0)) = 0.20
+        _CenterGlassAlpha ("Back Chamber Center Alpha", Range(0.0, 1.0)) = 0.20
         _IsCollar ("Periwinkle 3D Collar Mode", Float) = 0.0
     }
 
@@ -162,7 +162,9 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float2 q = p / ab;
                 float lq = length(q);
                 float g = max(length(q / ab), 1e-4);
-                return (lq - 1.0) / g;
+                // iq yaklaşımı: k0 * (k0 - 1) / k1. (k0 çarpanı eksikti: mesafe uzakta sabite takılıyor,
+                // ekranın her yeri kavanozun "içi" sayılıp beyaza boyanıyordu.)
+                return lq * (lq - 1.0) / g;
             }
 
             float ShapeInner(float2 p, float2 innerHalf, float innerRad, float2 bodyOffset)
@@ -182,7 +184,9 @@ Shader "PuzzleGlass/GlassChamberLit"
 
                 // Smooth oval jar top lip profile
                 float lipCenterY = bodyTopY + neckH - 0.015;
-                float dLip = sdEllipseApprox(p - float2(0.0, lipCenterY), float2(neckHalfW + lipOver, 0.036));
+                // Ağız: yuvarlak uçlu çubuk (tam mesafe). İnce elips yaklaşımı mesafeyi kısa hesaplayıp
+                // gölgede omuzlardan yanlara uzanan bulanık çizgiler bırakıyordu.
+                float dLip = sdRoundBox2D(p - float2(0.0, lipCenterY), float2(neckHalfW + lipOver, 0.036), 0.036);
                 return opSmoothUnion(dCombined, dLip, 0.035);
             }
 
@@ -421,7 +425,7 @@ Shader "PuzzleGlass/GlassChamberLit"
                     chamberRgb = lerp(chamberRgb, pureWhite, specularTotal * 0.72);
                     chamberRgb = lerp(chamberRgb, rimPeriwinkle, saturate(botBaseGlass * 0.45));
 
-                    float centerA = clamp(_CenterGlassAlpha, 0.08, 0.75);
+                    float centerA = clamp(_CenterGlassAlpha, 0.0, 0.75); // 0 = tamamen şeffaf iç (kavanoz)
                     float chamberAlpha = saturate(max(centerA + wallThicknessFade * 0.40, max(outerEdgeRim * 0.72, specularTotal * 0.58))) * outerMask;
 
                     if (hasNeck)

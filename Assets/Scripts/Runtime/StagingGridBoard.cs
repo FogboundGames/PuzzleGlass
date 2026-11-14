@@ -87,7 +87,8 @@ namespace PuzzleGlass
                 if (matchGlassWidth && glass != null && glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out _, out _))
                 {
                     float glassOuterW = gMaxX - gMinX;
-                    if (glassOuterW > 1.0f) targetBoardWidth = glassOuterW;
+                    // Tepsi camdan biraz geniş ama en fazla maxBoardWidth (dar ters şişede kavanoz ekranı kaplamasın)
+                    if (glassOuterW > 1.0f) targetBoardWidth = Mathf.Min(glassOuterW * 1.06f, maxBoardWidth);
                 }
 
                 float frameOverhead = innerMargin + framePadding * 2f;
@@ -170,7 +171,9 @@ namespace PuzzleGlass
                 botExtent = outerH * 0.5f;
             }
 
-            float targetCenterY = glassBottomY - Mathf.Max(0.14f, gapBelowGlass * 1.18f) - topExtent;
+            // Camın altında çıkış yakası varsa kavanoz ağzıyla arasında boşluk kalsın
+            float minGap = (glass.showBottomExitCollar && glass.IsPoolShape) ? 0.36f : 0.14f;
+            float targetCenterY = glassBottomY - Mathf.Max(minGap, gapBelowGlass * 1.18f) - topExtent;
 
             // Keep well inside the bottom edge of orthographic portrait view (above SALLA HUD pill)
             Camera cam = Camera.main;
@@ -282,8 +285,9 @@ namespace PuzzleGlass
             GetOuterJarExtents(outerW, outerH, out float quadHalfW, out float quadHalfH, out float quadCenterYOffset, out float boxAspect, out _);
 
             float innerNormHalfW = (outerW * 0.5f + JarPadX) / Mathf.Max(0.01f, quadHalfH);
-            float neckHalfW = Mathf.Clamp(innerNormHalfW * 0.43f, 0.24f, 0.44f);
-            Vector4 neckParams = new Vector4(neckHalfW, JarNeckNormH, 0.052f, 0.036f);
+            // Boyun gövdenin ~%60'ı (hedef görseldeki kavanoz), ağız taşması az
+            float neckHalfW = Mathf.Clamp(innerNormHalfW * 0.64f, 0.30f, 0.60f);
+            Vector4 neckParams = new Vector4(neckHalfW, JarNeckNormH, 0.03f, 0.036f);
 
             Material ConfigureJarMat(Material existing, string matName, bool frontLens)
             {

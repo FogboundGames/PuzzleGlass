@@ -369,6 +369,16 @@ namespace PuzzleGlass.Editor.Studio
             m_SelectedGroup = -1;
             m_DragBlock = -1;
             if (lvl != null) SessionState.SetString(SelectedKey, AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(lvl)));
+            // Eski formatta kaydedilmiş level (kutularda şekil/konum yok): oyun bunu yüklerken bellekte çeviriyor
+            // ama dosya eski kalıyor ve stüdyoda boş görünüyordu. Oyunla aynı dönüşümü yapıp kaydet.
+            if (lvl != null && lvl.monsters != null && lvl.monsters.Count > 0 && !lvl.HasValidGridLayout())
+            {
+                Undo.RecordObject(lvl, "Eski level formatını çevir");
+                lvl.EnsureCarrierBoxPuzzleFormat();
+                EditorUtility.SetDirty(lvl);
+                AssetDatabase.SaveAssetIfDirty(lvl);
+                ShowNotification(new GUIContent("Eski formattaki level yeni formata çevrildi"));
+            }
             m_Solve = null;
             ScheduleSolve();
             RefreshAll();
@@ -1124,7 +1134,11 @@ namespace PuzzleGlass.Editor.Studio
         {
             var layout = GlassShapeData.BuildLayout(lvl);
             float scale = width / Mathf.Max(0.01f, dims.innerHalfW * 2f);
-            float height = Mathf.Max(80f, (dims.ceilY - dims.floorY) * scale);
+            // Uzun camlarda (ör. varsayılan ters şişe) önizleme sadece topların olduğu kısmı gösterir
+            float ballsTop = dims.floorY + 0.6f;
+            foreach (var bb in layout.balls) ballsTop = Mathf.Max(ballsTop, bb.localPos.y + layout.diameter);
+            float shownTop = Mathf.Min(dims.ceilY, ballsTop + 0.35f);
+            float height = Mathf.Max(80f, (shownTop - dims.floorY) * scale);
 
             var glass = new VisualElement();
             glass.AddToClassList("glass");

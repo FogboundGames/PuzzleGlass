@@ -18,15 +18,29 @@ namespace PuzzleGlass.Editor.Studio
         public static bool IsBoxPreset(GlassShapePreset p) => p == GlassShapePreset.SquareBox || p == GlassShapePreset.RectangleBox;
 
         /// <summary>Level oyunda havuz kutusu olarak mı yüklenecek? (özel cam yoksa varsayılan kutu)</summary>
-        public static bool IsBox(PuzzleGlassLevelData lvl) => lvl == null || !lvl.useCustomGlassShape || IsBoxPreset(lvl.glassPreset);
+        public static bool IsBox(PuzzleGlassLevelData lvl) => lvl != null && lvl.useCustomGlassShape && IsBoxPreset(lvl.glassPreset);
+
+        /// <summary>Şişe tabanlı cam mı? (varsayılan cam da şişedir)</summary>
+        public static bool IsBottle(PuzzleGlassLevelData lvl) => lvl == null || !lvl.useCustomGlassShape || lvl.glassIsBottle;
+
+        /// <summary>Şişenin genişliği ve yüksekliği (konturdan).</summary>
+        public static void GetBottle(PuzzleGlassLevelData lvl, out float width, out float height)
+        {
+            var c = GetContour(lvl);
+            width = c[c.Count - 1].halfWidth * 2f;
+            height = c[c.Count - 1].y - c[0].y;
+        }
 
         /// <summary>
         /// Düz tabanlı özel şekil mi? (ShapedGlassContainer.IsCustomPool ile aynı kural: serbest kontur, taban yarı genişliği ≥ 0.30)
         /// Oyunda havuz gibi oynanır; top dizilimi her satırda camın genişliğine göre yapılır.
         /// </summary>
-        public static bool IsShapedPool(PuzzleGlassLevelData lvl) =>
-            lvl != null && lvl.useCustomGlassShape && lvl.glassPreset == GlassShapePreset.CustomFreeform
-            && lvl.contourPoints != null && lvl.contourPoints.Count >= 2 && lvl.contourPoints[0].halfWidth >= 0.30f;
+        public static bool IsShapedPool(PuzzleGlassLevelData lvl)
+        {
+            if (lvl == null || !lvl.useCustomGlassShape) return true; // varsayılan şişe
+            return lvl.glassPreset == GlassShapePreset.CustomFreeform
+                && lvl.contourPoints != null && lvl.contourPoints.Count >= 2 && lvl.contourPoints[0].halfWidth >= 0.30f;
+        }
 
         /// <summary>Oyunda havuz mantığıyla oynanır mı? (kutu ya da düz tabanlı özel şekil)</summary>
         public static bool IsPlayablePool(PuzzleGlassLevelData lvl) => IsBox(lvl) || IsShapedPool(lvl);
@@ -35,7 +49,11 @@ namespace PuzzleGlass.Editor.Studio
         public static OrderedPoolLayout.Result BuildLayout(PuzzleGlassLevelData lvl)
         {
             if (IsShapedPool(lvl))
-                return OrderedPoolLayout.BuildShaped(lvl.bottomToTopGroups, lvl.contourPoints, Mathf.Max(0.5f, lvl.widthScale), Mathf.Max(0.5f, lvl.heightScale));
+            {
+                bool custom = lvl != null && lvl.useCustomGlassShape;
+                return OrderedPoolLayout.BuildShaped(lvl?.bottomToTopGroups, GetContour(lvl),
+                    custom ? Mathf.Max(0.5f, lvl.widthScale) : 1f, custom ? Mathf.Max(0.5f, lvl.heightScale) : 1f);
+            }
             var d = GetDims(lvl);
             return OrderedPoolLayout.Build(lvl?.bottomToTopGroups, d.innerHalfW, d.floorY, d.ceilY);
         }
@@ -45,7 +63,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (lvl != null && lvl.useCustomGlassShape && lvl.contourPoints != null && lvl.contourPoints.Count >= 3)
                 return lvl.contourPoints;
-            return BuildBoxContour(DefaultWidth, DefaultHeight, DefaultBottomY);
+            return ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
         }
 
         /// <summary>ShapedGlassContainer.ConfigureRoundedBoxPool ile aynı kutu konturu.</summary>

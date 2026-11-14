@@ -245,6 +245,8 @@ namespace PuzzleGlass
         [Header("Glass Shape & Aesthetics")]
         [Tooltip("True ise bölüm yüklendiğinde bu level asset'indeki cam şekli ve kontur noktaları uygulanır.")]
         public bool useCustomGlassShape = false;
+        [Tooltip("True ise özel cam 'şişe' türündedir: taban sabit şişe omuzları, genişlik ve yükseklik ayarlı (Cam Stüdyosu).")]
+        public bool glassIsBottle = false;
         public GlassShapePreset glassPreset = GlassShapePreset.RectangleBox;
         public GlassColorTheme colorTheme = GlassColorTheme.SkyBlueGlossy;
         public BottleLayerPattern layerPattern = BottleLayerPattern.VFunnelBands;
@@ -276,7 +278,7 @@ namespace PuzzleGlass
         [Range(0.04f, 0.65f)]
         public float boxCornerRadius = 0.22f;
         [Range(0.04f, 0.24f)]
-        public float boxFrameThickness = 0.115f;
+        public float boxFrameThickness = 0.055f; // ince kristal cam duvarı
         public Color boxFrameColor = new Color(0.50f, 0.50f, 0.90f, 1.0f);
         public Color boxFrameHighlightColor = new Color(0.84f, 0.84f, 0.98f, 1.0f);
         public Color boxFrameEdgeShadeColor = new Color(0.38f, 0.36f, 0.80f, 1.0f);

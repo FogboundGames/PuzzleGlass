@@ -12,9 +12,9 @@ namespace PuzzleGlass
         public static PuzzleGlassBackdrop Instance { get; private set; }
 
         [Header("Palette")]
-        public Color topColor  = new Color(0.745f, 0.775f, 0.996f, 1f); // Soft pastel periwinkle-lavender sky
-        public Color midColor  = new Color(0.935f, 0.922f, 0.988f, 1f); // Luminous lilac-ivory mist
-        public Color botColor  = new Color(0.996f, 0.902f, 0.825f, 1f); // Warm pastel peach-cream floor
+        public Color topColor  = new Color(0.700f, 0.710f, 0.980f, 1f); // Soft pastel periwinkle-lavender sky
+        public Color midColor  = new Color(0.860f, 0.840f, 0.990f, 1f); // Luminous lilac-ivory mist
+        public Color botColor  = new Color(0.980f, 0.880f, 0.860f, 1f); // Warm pastel peach-cream floor
         public Color glowColor = new Color(0.985f, 0.980f, 1.000f, 1f);
         public Color dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
         [Range(0f, 0.20f)]
@@ -48,15 +48,16 @@ namespace PuzzleGlass
 
         private void MigrateThemeIfNeeded()
         {
-            if (visualThemeVersion >= 3) return;
-            visualThemeVersion = 3;
-            topColor  = new Color(0.745f, 0.775f, 0.996f, 1f);
-            midColor  = new Color(0.935f, 0.922f, 0.988f, 1f);
-            botColor  = new Color(0.996f, 0.902f, 0.825f, 1f);
-            glowColor = new Color(0.985f, 0.980f, 1.000f, 1f);
+            // v4: hedef görseldeki belirgin lavanta (sahnede eski açık krem renkler kalmıştı)
+            if (visualThemeVersion >= 4) return;
+            visualThemeVersion = 4;
+            topColor  = new Color(0.700f, 0.710f, 0.980f, 1f);
+            midColor  = new Color(0.860f, 0.840f, 0.990f, 1f);
+            botColor  = new Color(0.980f, 0.880f, 0.860f, 1f);
+            glowColor = new Color(0.970f, 0.960f, 1.000f, 1f);
             dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
             dotStrength = 0.0f;
-            floatingStrength = 0.72f;
+            floatingStrength = 0.90f;
         }
 
         private void LateUpdate()

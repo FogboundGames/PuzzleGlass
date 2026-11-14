@@ -204,18 +204,32 @@ namespace PuzzleGlass
                 float stagger = ((r % 2 == 1) ? 0.25f : -0.25f) * d;
                 float firstX = -(colsPerRow - 1) * 0.5f * d + stagger;
 
-                for (int lane = 0; lane < 3; lane++)
+                // Bu satırda sığan tüm yerler, ortadan kenara doğru (son satır yarım kalırsa ortada toplansın)
+                var slots = new List<int>();
+                for (int col = 0; col < colsPerRow; col++)
+                    if (Mathf.Abs(firstX + col * d) <= limit) slots.Add(col);
+                slots.Sort((a, b) => Mathf.Abs(firstX + a * d).CompareTo(Mathf.Abs(firstX + b * d)));
+
+                // Her yer önce kendi şeridinden doldurulur; şerit bittiyse en çok topu kalan şeritten alınır.
+                // Böylece toplar düz bir seviye oluşturur (dar tabanda yan şeritler yukarı taşıp U şekli olmaz).
+                foreach (int col in slots)
                 {
-                    for (int lc = 0; lc < lw; lc++)
+                    if (remaining <= 0) break;
+                    int lane = Mathf.Clamp(col / lw, 0, 2);
+                    if (next[lane] >= laneBalls[lane].Count)
                     {
-                        if (next[lane] >= laneBalls[lane].Count) continue;
-                        int col = lane * lw + lc;
-                        float x = firstX + col * d;
-                        if (Mathf.Abs(x) > limit) continue;
-                        res.balls.Add(new PoolBall { color = laneBalls[lane][next[lane]], ballColumn = col, row = r, localPos = new Vector2(x, y) });
-                        next[lane]++;
-                        remaining--;
+                        int bestLane = -1, bestLeft = 0;
+                        for (int l = 0; l < 3; l++)
+                        {
+                            int left = laneBalls[l].Count - next[l];
+                            if (left > bestLeft) { bestLeft = left; bestLane = l; }
+                        }
+                        if (bestLane < 0) break;
+                        lane = bestLane;
                     }
+                    res.balls.Add(new PoolBall { color = laneBalls[lane][next[lane]], ballColumn = col, row = r, localPos = new Vector2(firstX + col * d, y) });
+                    next[lane]++;
+                    remaining--;
                 }
             }
 

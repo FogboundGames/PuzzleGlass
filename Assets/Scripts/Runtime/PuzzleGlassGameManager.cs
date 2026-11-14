@@ -578,7 +578,10 @@ namespace PuzzleGlass
                     glassContainer.showSpecularReflections = levelData.showSpecularReflections;
 
                     glassContainer.boxCornerRadius = levelData.boxCornerRadius > 0.01f ? levelData.boxCornerRadius : 0.22f;
-                    glassContainer.boxFrameThickness = levelData.boxFrameThickness > 0.01f ? levelData.boxFrameThickness : 0.115f;
+                    // İnce kristal cam duvarı (0.055). Eski varsayılan 0.115'te kalmış levellerde kalın çerçeve camın görünen
+                    // tabanını zeminin altına itiyor, toplarla taban arasında boşluk varmış gibi görünüyordu.
+                    float lvlFrame = levelData.boxFrameThickness;
+                    glassContainer.boxFrameThickness = (lvlFrame <= 0.01f || Mathf.Abs(lvlFrame - 0.115f) < 0.0005f) ? 0.055f : lvlFrame;
                     if (levelData.boxFrameColor.a > 0.01f) glassContainer.boxFrameColor = levelData.boxFrameColor;
                     if (levelData.boxFrameHighlightColor.a > 0.01f) glassContainer.boxFrameHighlightColor = levelData.boxFrameHighlightColor;
                     if (levelData.boxFrameEdgeShadeColor.a > 0.01f) glassContainer.boxFrameEdgeShadeColor = levelData.boxFrameEdgeShadeColor;
@@ -595,7 +598,8 @@ namespace PuzzleGlass
                     }
                     else
                     {
-                        glassContainer.shapePreset = GlassShapePreset.RectangleBox;
+                        // Varsayılan üst cam: şişe tabanlı (düz tabanlı özel şekil olarak oynanır)
+                        glassContainer.shapePreset = GlassShapePreset.CustomFreeform;
                         glassContainer.symmetricMode = true;
                         glassContainer.curveSubdivisions = 14;
                         glassContainer.widthScale = 1.0f;
@@ -651,6 +655,11 @@ namespace PuzzleGlass
                     if (levelData.useCustomGlassShape && levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
                     {
                         glassContainer.contourPoints = new List<GlassContourPoint>(levelData.contourPoints);
+                        glassContainer.SyncBoundsFromContour();
+                    }
+                    else if (!levelData.useCustomGlassShape)
+                    {
+                        glassContainer.contourPoints = ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
                         glassContainer.SyncBoundsFromContour();
                     }
                     else

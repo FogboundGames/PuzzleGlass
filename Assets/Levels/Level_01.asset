@@ -80,6 +80,7 @@ MonoBehaviour:
   puzzleLayerStyle: 0
   stagingColumns: 3
   useStagingColumnQueue: 0
+  iceMeltMode: 0
   bottomToTopTriplets: 0000000000000000000000000100000001000000
   bottomToTopGroups:
   - color: 0
@@ -87,49 +88,79 @@ MonoBehaviour:
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 0
     count: 4
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 0
     count: 2
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 1
     count: 3
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 1
     count: 5
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   monsters:
   - color: 0
     count: 5
     blockShape: 5
     gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 0
     count: 4
     blockShape: 1
     gridAnchor: {x: 1, y: 3}
     hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 1
     count: 3
     blockShape: 1
     gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 1
     count: 5
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 0
     count: 2
     blockShape: 0
     gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0

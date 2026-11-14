@@ -333,14 +333,33 @@ namespace PuzzleGlass.Editor.Studio
         private void EnsureCustom()
         {
             if (m_Level.useCustomGlassShape && m_Level.contourPoints != null && m_Level.contourPoints.Count >= 3) return;
+            // Varsayılan cam şişe tabanlıdır: ilk düzenlemede aynı şişeden başla
             m_Level.useCustomGlassShape = true;
-            m_Level.glassPreset = GlassShapePreset.RectangleBox;
+            m_Level.glassIsBottle = true;
+            m_Level.glassPreset = GlassShapePreset.CustomFreeform;
             m_Level.symmetricMode = true;
             m_Level.widthScale = 1f;
             m_Level.heightScale = 1f;
             m_Level.showShoulderHandles = false;
-            m_Level.contourPoints = GlassShapeData.BuildBoxContour(GlassShapeData.DefaultWidth, GlassShapeData.DefaultHeight, GlassShapeData.DefaultBottomY);
+            m_Level.contourPoints = ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
         }
+
+        /// <summary>Şişe: taban sabit şişe omuzları; genişlik (yanlar) ve yükseklik (üst) ayarlı.</summary>
+        private void SetBottle(float width, float height, string undo = "Şişe ölçüsü", bool syncScene = true)
+        {
+            Record(undo);
+            m_Level.useCustomGlassShape = true;
+            m_Level.glassIsBottle = true;
+            m_Level.glassPreset = GlassShapePreset.CustomFreeform;
+            m_Level.symmetricMode = true;
+            m_Level.widthScale = 1f;
+            m_Level.heightScale = 1f;
+            m_Level.showShoulderHandles = false;
+            m_Level.contourPoints = ShapedGlassContainer.BuildBottleContour(width, height);
+            OnEdited(syncScene);
+        }
+
+        private const float BottleMinW = 1.20f, BottleMaxW = 3.40f, BottleMinH = 0.90f, BottleMaxH = 2.80f;
 
         private void SetBox(float width, float height, float? corner = null, float? frame = null, string undo = "Cam ölçüsü", bool syncScene = true)
         {
@@ -351,6 +370,7 @@ namespace PuzzleGlass.Editor.Studio
             width = Mathf.Clamp(width, GlassShapeData.MinWidth, GlassShapeData.MaxWidth);
             height = Mathf.Clamp(height, GlassShapeData.MinHeight, GlassShapeData.MaxHeight);
             m_Level.glassPreset = Mathf.Abs(width - height) < 0.12f ? GlassShapePreset.SquareBox : GlassShapePreset.RectangleBox;
+            m_Level.glassIsBottle = false;
             m_Level.contourPoints = GlassShapeData.BuildBoxContour(width, height, bottom);
             m_Level.widthScale = 1f;
             m_Level.heightScale = 1f;
@@ -366,6 +386,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             Record(undo);
             m_Level.useCustomGlassShape = true;
+            m_Level.glassIsBottle = false;
             m_Level.glassPreset = GlassShapePreset.CustomFreeform;
             m_Level.symmetricMode = true;
             m_Level.widthScale = 1f;
@@ -379,10 +400,11 @@ namespace PuzzleGlass.Editor.Studio
         {
             Record("Varsayılan cam");
             m_Level.useCustomGlassShape = false;
+            m_Level.glassIsBottle = false;
             m_Level.glassPreset = GlassShapePreset.RectangleBox;
             m_Level.contourPoints = new List<GlassContourPoint>();
             m_Level.boxCornerRadius = 0.28f;
-            m_Level.boxFrameThickness = 0.095f;
+            m_Level.boxFrameThickness = 0.055f;
             OnEdited();
             ShowNotification(new GUIContent("Level varsayılan kristal camına döndü"));
         }
@@ -479,7 +501,12 @@ namespace PuzzleGlass.Editor.Studio
 
             var dims = GlassShapeData.GetDims(m_Level);
             var layout = GlassShapeData.BuildLayout(m_Level);
-            if (GlassShapeData.IsBox(m_Level))
+            if (GlassShapeData.IsBottle(m_Level))
+            {
+                GlassShapeData.GetBottle(m_Level, out float bw, out float bh);
+                m_Readout.text = $"Şişe  {bw:0.00} × {bh:0.00}   ·   köşe {m_Level.boxCornerRadius:0.00}   ·   {layout.balls.Count} top, çap {layout.diameter:0.000}" + (m_Level.useCustomGlassShape ? "" : "   ·   varsayılan");
+            }
+            else if (GlassShapeData.IsBox(m_Level))
             {
                 GlassShapeData.GetBox(m_Level, out float w, out float h, out _);
                 m_Readout.text = $"Havuz  {w:0.00} × {h:0.00}   ·   köşe {m_Level.boxCornerRadius:0.00}   ·   çerçeve {m_Level.boxFrameThickness:0.000}   ·   {layout.balls.Count} top, çap {layout.diameter:0.000}";
@@ -496,23 +523,39 @@ namespace PuzzleGlass.Editor.Studio
         {
             m_Inspector.Clear();
             if (m_Level == null) return;
-            bool box = GlassShapeData.IsBox(m_Level);
+            bool bottle = GlassShapeData.IsBottle(m_Level);
+            bool box = !bottle && GlassShapeData.IsBox(m_Level);
 
             Section("Cam türü");
             var kinds = new VisualElement();
             kinds.AddToClassList("segmented");
-            var boxBtn = new Button(() => { if (!GlassShapeData.IsBox(m_Level)) { GlassShapeData.GetBox(null, out float w, out float h, out _); SetBox(w, h, undo: "Havuza geç"); } }) { text = "Havuz (önerilen)" };
+            var bottleBtn = new Button(() =>
+            {
+                if (GlassShapeData.IsBottle(m_Level)) return;
+                float w = ShapedGlassContainer.DefaultBottleWidth, h = ShapedGlassContainer.DefaultBottleHeight;
+                if (GlassShapeData.IsBox(m_Level)) GlassShapeData.GetBox(m_Level, out w, out h, out _);
+                SetBottle(Mathf.Clamp(w, BottleMinW, BottleMaxW), Mathf.Clamp(h, BottleMinH, BottleMaxH), "Şişeye geç");
+            }) { text = "Şişe (önerilen)", tooltip = "Taban şişe gibi yuvarlak omuzlarla yakaya iner; yanları ve üstü ayarlanır." };
+            bottleBtn.AddToClassList("segmented__item");
+            bottleBtn.EnableInClassList("segmented__item--active", bottle);
+            kinds.Add(bottleBtn);
+            var boxBtn = new Button(() => { if (!GlassShapeData.IsBox(m_Level) || bottle) { SetBox(2.64f, 1.18f, undo: "Havuza geç"); } }) { text = "Havuz" };
             boxBtn.AddToClassList("segmented__item");
             boxBtn.EnableInClassList("segmented__item--active", box);
             kinds.Add(boxBtn);
-            var freeBtn = new Button(() => { if (GlassShapeData.IsBox(m_Level)) ConvertBoxToContour(); }) { text = "Özel şekil" };
+            var freeBtn = new Button(() =>
+            {
+                if (GlassShapeData.IsBox(m_Level) && !bottle) ConvertBoxToContour();
+                else if (bottle) SetContour(new List<GlassContourPoint>(GlassShapeData.GetContour(m_Level)), "Özel şekle geç");
+            }) { text = "Özel şekil" };
             freeBtn.tooltip = "Yamuk, altıgen, kapsül gibi şekiller. Taban düz ve geniş olduğu sürece oyunda havuz gibi oynanır.";
             freeBtn.AddToClassList("segmented__item");
-            freeBtn.EnableInClassList("segmented__item--active", !box);
+            freeBtn.EnableInClassList("segmented__item--active", !box && !bottle);
             kinds.Add(freeBtn);
             m_Inspector.Add(kinds);
 
-            if (box) BuildBoxInspector();
+            if (bottle) BuildBottleInspector();
+            else if (box) BuildBoxInspector();
             else BuildContourInspector();
 
             Section("Renk teması (cam)");
@@ -587,6 +630,41 @@ namespace PuzzleGlass.Editor.Studio
             var reset = new Button(ResetToDefault) { text = "Varsayılan cama dön", tooltip = "Level özel cam kullanmaz; oyunun varsayılan kristal havuzu (2.64 × 1.18) yüklenir." };
             reset.AddToClassList("inspector__action");
             m_Inspector.Add(reset);
+        }
+
+        private void BuildBottleInspector()
+        {
+            GlassShapeData.GetBottle(m_Level, out float w, out float h);
+
+            Section("Hazır boyutlar");
+            var presets = new VisualElement();
+            presets.AddToClassList("chip-grid");
+            var list = new (string name, float w, float h)[]
+            {
+                ("Varsayılan", ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight),
+                ("Geniş", 3.00f, 1.00f), ("Yüksek", 2.20f, 1.80f), ("Dar", 1.80f, 1.50f), ("Büyük", 3.00f, 1.60f)
+            };
+            foreach (var pr in list)
+            {
+                var pp = pr;
+                var chip = new Button(() => SetBottle(pp.w, pp.h, "Hazır şişe"));
+                chip.AddToClassList("chip");
+                chip.EnableInClassList("chip--active", Mathf.Abs(w - pr.w) < 0.01f && Mathf.Abs(h - pr.h) < 0.01f);
+                chip.Add(new Label(pr.name));
+                chip.tooltip = $"{pr.w:0.00} × {pr.h:0.00}";
+                presets.Add(chip);
+            }
+            m_Inspector.Add(presets);
+
+            Section("Ölçüler");
+            AddSlider("Genişlik", w, BottleMinW, BottleMaxW, v => { GlassShapeData.GetBottle(m_Level, out _, out float hh); SetBottle(v, hh); });
+            AddSlider("Yükseklik", h, BottleMinH, BottleMaxH, v => { GlassShapeData.GetBottle(m_Level, out float ww, out _); SetBottle(ww, v); });
+            AddSlider("Köşe", m_Level.boxCornerRadius, 0.04f, 0.40f, v => { Record("Köşe"); EnsureCustom(); m_Level.boxCornerRadius = v; OnEdited(); });
+            AddSlider("Cam duvarı", m_Level.boxFrameThickness, 0.04f, 0.24f, v => { Record("Cam duvarı"); EnsureCustom(); m_Level.boxFrameThickness = v; OnEdited(); });
+
+            var hint = new Label("Taban şekli sabit: yuvarlak omuzlarla alttaki çıkış yakasına iner. Tutamaçlar: sağ kenar = genişlik, üst kenar = yükseklik.");
+            hint.AddToClassList("inspector__hint");
+            m_Inspector.Add(hint);
         }
 
         private void BuildBoxInspector()
@@ -971,7 +1049,12 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             // Tutamaçlar
-            if (box)
+            if (GlassShapeData.IsBottle(lvl))
+            {
+                DrawHandle(p, HandlePos(Handle.Width, -1), Handle.Width, -1);
+                DrawHandle(p, HandlePos(Handle.Height, -1), Handle.Height, -1);
+            }
+            else if (box)
             {
                 float hw = contour[0].halfWidth, bottom = contour[0].y;
                 DrawHandle(p, HandlePos(Handle.Width, -1), Handle.Width, -1);
@@ -1058,6 +1141,14 @@ namespace PuzzleGlass.Editor.Studio
         {
             var contour = GlassShapeData.GetContour(m_Level);
             float hw = contour[0].halfWidth, bottom = contour[0].y, top = contour[contour.Count - 1].y;
+            if (GlassShapeData.IsBottle(m_Level))
+            {
+                // Şişe: genişlik tutamacı düz yan duvarın ortasında (taban daha dar)
+                float topHw = contour[contour.Count - 1].halfWidth;
+                float straightBottom = contour[contour.Count - 2].y;
+                if (h == Handle.Width) return ToPx(topHw, (straightBottom + top) * 0.5f);
+                if (h == Handle.Height) return ToPx(0f, top);
+            }
             switch (h)
             {
                 case Handle.Width: return ToPx(hw, (bottom + top) * 0.5f);
@@ -1077,7 +1168,15 @@ namespace PuzzleGlass.Editor.Studio
             if (m_Level == null) return (Handle.None, -1);
             float best = HandleRadius + 6f;
             var result = (Handle.None, -1);
-            if (GlassShapeData.IsBox(m_Level))
+            if (GlassShapeData.IsBottle(m_Level))
+            {
+                foreach (var h in new[] { Handle.Height, Handle.Width })
+                {
+                    float d = Vector2.Distance(local, HandlePos(h, -1));
+                    if (d < best) { best = d; result = (h, -1); }
+                }
+            }
+            else if (GlassShapeData.IsBox(m_Level))
             {
                 foreach (var h in new[] { Handle.Corner, Handle.Height, Handle.Width })
                 {
@@ -1116,7 +1215,7 @@ namespace PuzzleGlass.Editor.Studio
             if (h == Handle.None)
             {
                 // Özel şekilde çift tık: o yüksekliğe nokta ekle
-                if (e.clickCount == 2 && !GlassShapeData.IsBox(m_Level)) AddPointAt(ToWorld(local));
+                if (e.clickCount == 2 && !GlassShapeData.IsBox(m_Level) && !GlassShapeData.IsBottle(m_Level)) AddPointAt(ToWorld(local));
                 return;
             }
             m_Drag = h;
@@ -1158,6 +1257,18 @@ namespace PuzzleGlass.Editor.Studio
                 pts[m_DragPoint] = p;
                 m_Level.contourPoints = pts;
                 m_Level.glassPreset = GlassShapePreset.CustomFreeform;
+            }
+            else if (GlassShapeData.IsBottle(m_Level))
+            {
+                GlassShapeData.GetBottle(m_Level, out float bw, out float bh);
+                float bottomY = GlassShapeData.GetContour(m_Level)[0].y;
+                if (m_Drag == Handle.Width) bw = Snap(Mathf.Abs(w.x) * 2f, e.shiftKey);
+                if (m_Drag == Handle.Height) bh = Snap(w.y - bottomY, e.shiftKey);
+                bw = Mathf.Clamp(bw, BottleMinW, BottleMaxW);
+                bh = Mathf.Clamp(bh, BottleMinH, BottleMaxH);
+                m_Level.glassIsBottle = true;
+                m_Level.glassPreset = GlassShapePreset.CustomFreeform;
+                m_Level.contourPoints = ShapedGlassContainer.BuildBottleContour(bw, bh, bottomY);
             }
             else
             {

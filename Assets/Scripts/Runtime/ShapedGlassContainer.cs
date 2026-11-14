@@ -82,6 +82,33 @@ namespace PuzzleGlass
         public GlassShapePreset shapePreset = GlassShapePreset.RectangleBox;
         public bool IsFlatBottomBox => shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox;
 
+        public const float DefaultBottleWidth = 2.64f;
+        public const float DefaultBottleHeight = 1.18f;
+        public const float BottleBottomY = -0.56f;
+
+        /// <summary>
+        /// Şişe tabanlı cam: alttaki çıkış yakasına doğru yuvarlak omuzlarla daralan sabit taban, düz yan duvarlar,
+        /// düz üst. Genişlik (yanlar) ve yükseklik (üst) ayarlanır; taban şekli genişliğe oranla aynı kalır.
+        /// Düz tabanlı özel şekil (IsCustomPool) olarak oynanır.
+        /// </summary>
+        public static List<GlassContourPoint> BuildBottleContour(float width, float height, float bottomY = BottleBottomY)
+        {
+            float hw = Mathf.Clamp(width, 1.20f, 3.40f) * 0.5f;
+            float h = Mathf.Clamp(height, 0.90f, 4.60f);
+            // Omuz yüksekliği: genişlikle orantılı ama camın yarısını geçmez
+            float sh = Mathf.Min(hw * 0.50f, h * 0.50f);
+            float top = bottomY + h;
+            return new List<GlassContourPoint>
+            {
+                new GlassContourPoint(bottomY,              hw * 0.56f, 0f, 0f),
+                new GlassContourPoint(bottomY + sh * 0.13f, hw * 0.78f, 0f, 0f),
+                new GlassContourPoint(bottomY + sh * 0.36f, hw * 0.91f, 0f, 0f),
+                new GlassContourPoint(bottomY + sh * 0.65f, hw * 0.98f, 0f, 0f),
+                new GlassContourPoint(bottomY + sh,         hw,         0f, 0f),
+                new GlassContourPoint(top,                  hw,         0f, 0f)
+            };
+        }
+
         /// <summary>
         /// Düz tabanlı özel şekil (Cam Stüdyosu'nda çizilen yamuk, altıgen, kapsül vb.): tabanı geniş olan
         /// serbest kontur. Oyunda havuz gibi davranır: düz zemin, toplar deliğin üstünden dümdüz iner.
@@ -1120,6 +1147,14 @@ namespace PuzzleGlass
             // shader r'yi geri ekleyince köşeler yuvarlanır.
             float ft = Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f);
             float rP = Mathf.Clamp(boxCornerRadius - ft * 0.65f, 0.03f, 0.35f);   // p uzayında
+            // Yuvarlaklık şeklin boyutunu aşmasın: çok büyük yarıçapta içeri alınan çokgen kendi üstüne katlanıp
+            // köşelerde "boynuz" bırakıyordu. Şeklin en kısa yarı ölçüsünün ~%22'si ile sınırla.
+            {
+                float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+                foreach (var v in raw) { minX = Mathf.Min(minX, v.x); maxX = Mathf.Max(maxX, v.x); minY = Mathf.Min(minY, v.y); maxY = Mathf.Max(maxY, v.y); }
+                float shortHalf = Mathf.Min(maxX - minX, maxY - minY) * 0.5f / qh;
+                rP = Mathf.Min(rP, Mathf.Max(0.03f, shortHalf * 0.22f));
+            }
             float rWorld = rP * qh;
             var lineP = new Vector2[n];
             var lineD = new Vector2[n];
@@ -1161,7 +1196,10 @@ namespace PuzzleGlass
                 max = Vector2.Max(max, rp);
             }
 
+            // Köşeler global olarak da verilir: malzeme kopyalanınca diziler aktarılmıyor ve shader köşeleri
+            // sıfır görüp camı merkezde küçük bir halka olarak çiziyordu. (Kutu ve kavanoz diziyi kullanmaz: _PolyCount = 0)
             mat.SetVectorArray("_PolyPoints", _polyBuffer);
+            Shader.SetGlobalVectorArray("_PolyPoints", _polyBuffer);
             mat.SetFloat("_PolyCount", n);
             mat.SetFloat("_PolyRadius", rP);
             mat.SetVector("_PolyBounds", new Vector4(min.x, min.y, max.x, max.y));
@@ -1601,7 +1639,8 @@ namespace PuzzleGlass
 
             var collarRoot = new GameObject("BottomExitCollar");
             collarRoot.transform.SetParent(_glassWallsObj.transform, false);
-            collarRoot.transform.localPosition = new Vector3(collarX, collarCenterY, -0.08f);
+            // Yaka, camdan çıkan toplardan (z -0.16 / -0.22) kameraya daha yakın: toplar yakanın arkasından geçer
+            collarRoot.transform.localPosition = new Vector3(collarX, collarCenterY, -0.40f);
 
             Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
             if (chamberShader != null)
