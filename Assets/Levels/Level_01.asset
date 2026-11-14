@@ -17,8 +17,9 @@ MonoBehaviour:
   difficulty: 0
   slotCount: 4
   slotSpacing: 0.8
-  useCustomGlassShape: 0
-  glassPreset: 14
+  useCustomGlassShape: 1
+  glassIsBottle: 1
+  glassPreset: 9
   colorTheme: 0
   layerPattern: 0
   symmetricMode: 1
@@ -59,7 +60,31 @@ MonoBehaviour:
   fillEmptyWithColor: 0
   emptyCellColor: 0
   lockedSectionRatio: 0.3
-  contourPoints: []
+  contourPoints:
+  - y: -0.56
+    halfWidth: 0.6908594
+    centerX: 0
+    cornerTension: 0
+  - y: -0.47981095
+    halfWidth: 0.9622684
+    centerX: 0
+    cornerTension: 0
+  - y: -0.33793804
+    halfWidth: 1.1226466
+    centerX: 0
+    cornerTension: 0
+  - y: -0.15905483
+    halfWidth: 1.2090039
+    centerX: 0
+    cornerTension: 0
+  - y: 0.05683875
+    halfWidth: 1.2336775
+    centerX: 0
+    cornerTension: 0
+  - y: 1.0560539
+    halfWidth: 1.2336775
+    centerX: 0
+    cornerTension: 0
   compartmentPreset: 7
   dividers: []
   compartmentZones: []
