@@ -12,10 +12,12 @@ Shader "PuzzleGlass/GlassChamberLit"
         _IsFrontLens ("Front Glass Specular Lens Mode", Float) = 0.0
         _IsRoundedBoxPool ("Image 2 Rounded Box Pool Mode", Float) = 1.0
         _BoxAspect ("Box Width/Height Aspect", Float) = 1.88
-        _FrameColor ("Outer Frame Periwinkle", Color) = (0.53, 0.50, 0.96, 1.0)
-        _FrameHighlight ("Frame Top Highlight", Color) = (0.85, 0.84, 1.00, 1.0)
-        _FrameEdgeShade ("Frame Outer Lip Shade", Color) = (0.40, 0.37, 0.88, 1.0)
-        _FakeShadowColor ("Drop Shadow Color", Color) = (0.76, 0.62, 0.48, 0.32)
+        _BoxCornerRadius ("Rounded Box Corner Radius", Range(0.04, 0.65)) = 0.22
+        _FrameThickness ("Rounded Box Frame Thickness", Range(0.04, 0.24)) = 0.115
+        _FrameColor ("Outer Frame Periwinkle", Color) = (0.50, 0.50, 0.90, 1.0)
+        _FrameHighlight ("Frame Top Highlight", Color) = (0.84, 0.84, 0.98, 1.0)
+        _FrameEdgeShade ("Frame Outer Lip Shade", Color) = (0.38, 0.36, 0.80, 1.0)
+        _FakeShadowColor ("Drop Shadow Color", Color) = (0.72, 0.60, 0.48, 0.30)
     }
 
     SubShader
@@ -53,6 +55,8 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _IsFrontLens;
                 float _IsRoundedBoxPool;
                 float _BoxAspect;
+                float _BoxCornerRadius;
+                float _FrameThickness;
                 float4 _FrameColor;
                 float4 _FrameHighlight;
                 float4 _FrameEdgeShade;
@@ -97,18 +101,19 @@ Shader "PuzzleGlass/GlassChamberLit"
             {
                 // Map UV [0..1] to aspect-corrected coordinates centered at (0,0)
                 // Extra margin is reserved around the quad so the soft drop shadow never clips
-                float aspect = max(_BoxAspect, 1.0);
+                float aspect = max(_BoxAspect, 0.25);
                 float2 p = (IN.uv - 0.5) * 2.0;
                 p.x *= aspect;
 
-                // Outer Periwinkle Frame half-extents & corner radius (matching Image 2 proportions)
+                // Outer frame half-extents & parametric corner radius / thickness
                 float2 outerHalf = float2(aspect * 0.90, 0.86);
-                float outerRad   = 0.22;
+                float maxSafeRad = min(outerHalf.x, outerHalf.y) * 0.95;
+                float outerRad   = clamp(_BoxCornerRadius, 0.04, maxSafeRad);
 
-                // Inner Sky-Blue Glass Chamber half-extents & corner radius
-                float frameThick = 0.115;
+                // Inner glass chamber half-extents & corner radius
+                float frameThick = clamp(_FrameThickness, 0.04, min(outerHalf.x, outerHalf.y) * 0.45);
                 float2 innerHalf = outerHalf - float2(frameThick, frameThick);
-                float innerRad   = max(0.09, outerRad - frameThick * 0.65);
+                float innerRad   = clamp(outerRad - frameThick * 0.65, 0.03, min(innerHalf.x, innerHalf.y) * 0.92);
 
                 float dOuter = sdRoundBox2D(p, outerHalf, outerRad);
                 float dInner = sdRoundBox2D(p, innerHalf, innerRad);
@@ -218,9 +223,9 @@ Shader "PuzzleGlass/GlassChamberLit"
                     // Renders the warm drop shadow, the periwinkle frame, and the rich Sky-Blue glass interior!
                     // Vertical gradient matching Image 2: richer sky-blue at the top, luminous icy sky-blue toward center/bottom
                     float vGrad = saturate(normIn.y * 0.5 + 0.5);
-                    float3 topGlassCol = float3(0.47, 0.68, 0.98);
-                    float3 midGlassCol = float3(0.68, 0.84, 1.00);
-                    float3 botGlassCol = float3(0.56, 0.78, 0.99);
+                    float3 topGlassCol = lerp(_EdgeColor.rgb, _CenterColor.rgb, 0.18);
+                    float3 midGlassCol = _CenterColor.rgb;
+                    float3 botGlassCol = lerp(_EdgeColor.rgb, _CenterColor.rgb, 0.45);
 
                     float3 chamberRgb = lerp(midGlassCol, topGlassCol, smoothstep(0.35, 0.98, vGrad));
                     chamberRgb = lerp(botGlassCol, chamberRgb, smoothstep(0.0, 0.30, vGrad));

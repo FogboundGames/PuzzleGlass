@@ -83,7 +83,7 @@ namespace PuzzleGlass
         [Range(1, 4)]
         public int grainsPerPixel = 3;
         public bool fillBackground = true;
-        public Color backgroundSandColor = new Color(0.96f, 0.83f, 0.52f, 1f);
+        public Color backgroundSandColor = new Color(0.90f, 0.78f, 0.50f, 1f);
         public float settleStepInterval = 0.03f;
         public float settleGrainSpeed = 3.5f;
         public float flowGrainSpeed = 6f;
@@ -92,7 +92,7 @@ namespace PuzzleGlass
         [Tooltip("Görselin bariyer arkasında kilitli duran üst oranı (0 = kilit yok)")]
         [Range(0f, 0.6f)]
         public float lockedSectionRatio = 0.3f;
-        public Color lockBarrierColor = new Color(0.36f, 0.69f, 0.97f, 1f);
+        public Color lockBarrierColor = new Color(0.38f, 0.66f, 0.90f, 1f);
 
         public bool HasLockedSection => _lockRow >= 0;
 
@@ -188,18 +188,18 @@ namespace PuzzleGlass
 
             if (_lockBarrierMaterial == null)
             {
-                _lockBarrierMaterial = PuzzleColorPalette.CreateCandyCubeMaterial(PuzzleColor.Blue, "Mat_SandLockBarrier");
+                _lockBarrierMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(lockBarrierColor, PuzzleColorPalette.GetTcp2ShadowTint(PuzzleColor.Blue), "Mat_SandLockBarrier", glossyCandy: true, indirectIntensity: 0.18f);
                 _lockBarrierMaterial.color = lockBarrierColor;
                 if (_lockBarrierMaterial.HasProperty("_BaseColor")) _lockBarrierMaterial.SetColor("_BaseColor", lockBarrierColor);
             }
 
             if (_backgroundMaterial == null)
             {
-                _backgroundMaterial = PuzzleColorPalette.CreateCandyCubeMaterial(PuzzleColor.Yellow, "Mat_SandBackground");
+                _backgroundMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(backgroundSandColor, PuzzleColorPalette.GetTcp2ShadowTint(PuzzleColor.Yellow), "Mat_SandBackground", glossyCandy: false, indirectIntensity: 0.18f);
                 _backgroundMaterial.color = backgroundSandColor;
                 if (_backgroundMaterial.HasProperty("_BaseColor")) _backgroundMaterial.SetColor("_BaseColor", backgroundSandColor);
                 if (_backgroundMaterial.HasProperty("_ShadowColor")) _backgroundMaterial.SetColor("_ShadowColor", backgroundSandColor * 0.82f);
-                if (_backgroundMaterial.HasProperty("_HighlightColor")) _backgroundMaterial.SetColor("_HighlightColor", Color.Lerp(backgroundSandColor, Color.white, 0.45f));
+                if (_backgroundMaterial.HasProperty("_HighlightColor")) _backgroundMaterial.SetColor("_HighlightColor", Color.Lerp(backgroundSandColor, Color.white, 0.35f));
             }
         }
 

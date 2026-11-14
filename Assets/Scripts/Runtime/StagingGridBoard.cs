@@ -14,8 +14,8 @@ namespace PuzzleGlass
         public static StagingGridBoard Instance { get; private set; }
 
         [Header("Grid Dimensions")]
-        [Range(3, 6)] public int cols = 5;
-        [Range(3, 5)] public int rows = 4;
+        [Range(2, 7)] public int cols = 5;
+        [Range(2, 6)] public int rows = 4;
 
         [Header("World Layout")]
         public Vector3 boardCenter = new Vector3(0f, -0.82f, 0.30f);
@@ -23,8 +23,20 @@ namespace PuzzleGlass
         public float maxBoardHeight = 3.20f;
         public float framePadding = 0.115f;
         public float innerMargin = 0.06f;
+        public float frameCornerRadius = 0.18f;
         public float gapBelowGlass = 0.11f;
         public bool matchGlassWidth = true;
+        public bool autoAlignBelowGlass = true;
+        public bool useManualCellSize = false;
+        [Range(0.30f, 0.82f)] public float manualCellSize = 0.506f;
+
+        [Header("Tray Colors")]
+        public Color frameDarkColor = new Color(0.32f, 0.34f, 0.66f, 1f);
+        public Color frameFrontColor = new Color(0.47f, 0.50f, 0.84f, 1f);
+        public Color trayFloorColor = new Color(0.16f, 0.15f, 0.32f, 1f);
+        public Color tileBevelColor = new Color(0.30f, 0.28f, 0.56f, 1f);
+        public Color tileBodyColor = new Color(0.22f, 0.21f, 0.44f, 1f);
+        public Color exitRimColor = new Color(0.64f, 0.74f, 0.90f, 1f);
 
         [HideInInspector] public float cellSize = 0.506f;
 
@@ -46,29 +58,54 @@ namespace PuzzleGlass
 
         public void Configure(int gridCols, int gridRows, ShapedGlassContainer alignGlass = null)
         {
-            cols = Mathf.Clamp(gridCols, 3, 6);
-            rows = Mathf.Clamp(gridRows, 3, 5);
+            cols = Mathf.Clamp(gridCols, 2, 7);
+            rows = Mathf.Clamp(gridRows, 2, 6);
 
             ShapedGlassContainer glass = alignGlass ?? FindFirstObjectByType<ShapedGlassContainer>();
 
-            float targetBoardWidth = maxBoardWidth;
-            if (matchGlassWidth && glass != null && glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out _, out _))
+            if (useManualCellSize)
             {
-                float glassOuterW = gMaxX - gMinX;
-                if (glassOuterW > 1.0f) targetBoardWidth = glassOuterW;
+                cellSize = Mathf.Clamp(manualCellSize, 0.30f, 0.82f);
+            }
+            else
+            {
+                float targetBoardWidth = maxBoardWidth;
+                if (matchGlassWidth && glass != null && glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out _, out _))
+                {
+                    float glassOuterW = gMaxX - gMinX;
+                    if (glassOuterW > 1.0f) targetBoardWidth = glassOuterW;
+                }
+
+                float frameOverhead = innerMargin + framePadding * 2f;
+                float usableW = Mathf.Max(0.8f, targetBoardWidth - frameOverhead);
+                float usableH = Mathf.Max(0.8f, maxBoardHeight - frameOverhead);
+                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.32f, 0.78f);
             }
 
-            float frameOverhead = innerMargin + framePadding * 2f;
-            float usableW = Mathf.Max(1.2f, targetBoardWidth - frameOverhead);
-            float usableH = Mathf.Max(1.0f, maxBoardHeight - frameOverhead);
-            cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.42f, 0.66f);
-
-            if (glass != null)
+            if (autoAlignBelowGlass && glass != null)
             {
                 AlignBelowGlass(glass);
             }
 
             BuildBoardVisuals();
+        }
+
+        public void GetOuterWorldDimensions(out float outerW, out float outerH)
+        {
+            float innerW = cols * cellSize + innerMargin;
+            float innerH = rows * cellSize + innerMargin;
+            outerW = innerW + framePadding * 2f;
+            outerH = innerH + framePadding * 2f;
+        }
+
+        public void ResetDefaultColors()
+        {
+            frameDarkColor = new Color(0.32f, 0.34f, 0.66f, 1f);
+            frameFrontColor = new Color(0.47f, 0.50f, 0.84f, 1f);
+            trayFloorColor = new Color(0.16f, 0.15f, 0.32f, 1f);
+            tileBevelColor = new Color(0.30f, 0.28f, 0.56f, 1f);
+            tileBodyColor = new Color(0.22f, 0.21f, 0.44f, 1f);
+            exitRimColor = new Color(0.64f, 0.74f, 0.90f, 1f);
         }
 
         /// <summary>
@@ -129,8 +166,6 @@ namespace PuzzleGlass
             float outerW = innerW + framePadding * 2f;
             float outerH = innerH + framePadding * 2f;
 
-            Shader unlit = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default");
-
             // 1. Soft Caramel Warm Drop Shadow behind tray
             Shader shadowShader = Shader.Find("PuzzleGlass/FakeDropShadow");
             if (shadowShader != null)
@@ -142,7 +177,7 @@ namespace PuzzleGlass
                 shObj.transform.localScale = new Vector3(outerW * 1.12f, outerH * 1.12f, 1f);
                 DestroyCollider(shObj);
                 Material shMat = new Material(shadowShader) { name = "Mat_GridBoardShadow" };
-                shMat.SetColor("_ShadowColor", new Color(0.68f, 0.56f, 0.44f, 0.34f));
+                shMat.SetColor("_ShadowColor", new Color(0.64f, 0.54f, 0.46f, 0.30f));
                 shMat.SetFloat("_FeatherWidth", 0.35f);
                 shMat.SetFloat("_IsRadial", 0f);
                 var shMr = shObj.GetComponent<MeshRenderer>();
@@ -151,17 +186,20 @@ namespace PuzzleGlass
                 shMr.receiveShadows = false;
             }
 
-            // 2. Outer 3D Lower Lip & Glossy Periwinkle-Purple Frame (matches Image 1 + Image 2 palette)
-            Material frameDarkMat = CreateUnlitMat(unlit, "Mat_GridFrameDark", new Color(0.30f, 0.31f, 0.72f, 1f));
-            Material frameFrontMat = CreateUnlitMat(unlit, "Mat_GridFrameFront", new Color(0.49f, 0.52f, 0.94f, 1f));
-            Material trayFloorMat = CreateUnlitMat(unlit, "Mat_GridTrayFloor", new Color(0.11f, 0.09f, 0.29f, 1f));
-            Material tileBevelMat = CreateUnlitMat(unlit, "Mat_GridTileBevel", new Color(0.28f, 0.25f, 0.58f, 1f));
-            Material tileBodyMat = CreateUnlitMat(unlit, "Mat_GridTileBody", new Color(0.19f, 0.17f, 0.44f, 1f));
-            Material exitRimMat = CreateUnlitMat(unlit, "Mat_GridTopExitRim", new Color(0.68f, 0.80f, 1.00f, 0.90f));
+            // 2. Outer 3D Lower Lip & Satin Periwinkle-Slate Frame (Toony Colors Pro 2 Hypercasual)
+            Color coolShadow = new Color(0.60f, 0.62f, 0.78f, 1f);
+            Material frameDarkMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameDarkColor, coolShadow, "Mat_GridFrameDark", glossyCandy: false, indirectIntensity: 0.16f);
+            Material frameFrontMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameFrontColor, coolShadow, "Mat_GridFrameFront", glossyCandy: false, indirectIntensity: 0.18f);
+            Material trayFloorMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(trayFloorColor, new Color(0.54f, 0.56f, 0.72f, 1f), "Mat_GridTrayFloor", glossyCandy: false, indirectIntensity: 0.14f);
+            Material tileBevelMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBevelColor, coolShadow, "Mat_GridTileBevel", glossyCandy: false, indirectIntensity: 0.16f);
+            Material tileBodyMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBodyColor, new Color(0.56f, 0.58f, 0.74f, 1f), "Mat_GridTileBody", glossyCandy: false, indirectIntensity: 0.15f);
+            Material exitRimMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(exitRimColor, new Color(0.66f, 0.70f, 0.84f, 1f), "Mat_GridTopExitRim", glossyCandy: false, indirectIntensity: 0.18f);
 
-            CreateRoundedPart("FrameLowerBevel", _visualRoot.transform, new Vector3(0f, -0.045f, 0.08f), outerW, outerH, 0.06f, 0.18f, frameDarkMat);
-            CreateRoundedPart("FrameMain", _visualRoot.transform, new Vector3(0f, 0f, 0.05f), outerW, outerH, 0.06f, 0.18f, frameFrontMat);
-            CreateRoundedPart("TrayRecessedBed", _visualRoot.transform, new Vector3(0f, 0f, 0.02f), innerW, innerH, 0.04f, 0.11f, trayFloorMat);
+            float cornerR = Mathf.Clamp(frameCornerRadius, 0.04f, 0.40f);
+            float innerCornerR = Mathf.Max(0.03f, cornerR - framePadding * 0.60f);
+            CreateRoundedPart("FrameLowerBevel", _visualRoot.transform, new Vector3(0f, -0.045f, 0.08f), outerW, outerH, 0.06f, cornerR, frameDarkMat);
+            CreateRoundedPart("FrameMain", _visualRoot.transform, new Vector3(0f, 0f, 0.05f), outerW, outerH, 0.06f, cornerR, frameFrontMat);
+            CreateRoundedPart("TrayRecessedBed", _visualRoot.transform, new Vector3(0f, 0f, 0.02f), innerW, innerH, 0.04f, innerCornerR, trayFloorMat);
 
             // Top exit rail accent showing blocks pull UP toward the upper glass container
             CreateRoundedPart("TopExitHighlightBar", _visualRoot.transform, new Vector3(0f, innerH * 0.5f + framePadding * 0.50f, 0.00f), innerW * 0.90f, 0.038f, 0.02f, 0.018f, exitRimMat);
@@ -182,13 +220,6 @@ namespace PuzzleGlass
                     CreateRoundedPart($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.9f, tileBodyMat);
                 }
             }
-        }
-
-        private static Material CreateUnlitMat(Shader shader, string matName, Color col)
-        {
-            Material m = new Material(shader) { name = matName, color = col };
-            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", col);
-            return m;
         }
 
         private static void CreateRoundedPart(string partName, Transform parent, Vector3 localPos, float w, float h, float depth, float radius, Material mat)

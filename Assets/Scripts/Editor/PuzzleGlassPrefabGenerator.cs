@@ -7,7 +7,6 @@ namespace PuzzleGlass.Editor
 {
     public static class PuzzleGlassPrefabGenerator
     {
-        [MenuItem("Tools/PuzzleGlass/Generate Prefab & Material Assets", false, 20)]
         public static void GenerateAllAssets()
         {
             EnsureDirectories();
@@ -26,17 +25,16 @@ namespace PuzzleGlass.Editor
                 AssetDatabase.CreateFolder("Assets", "Prefabs");
         }
 
-        private static void GenerateMaterials()
+        public static void GenerateMaterials()
         {
             Shader litShader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            Shader toonyShader = PuzzleColorPalette.FindToonyHybridShader();
 
             // Rim
-            SaveOrUpdateMaterial("Assets/Materials/Mat_GlassRim.mat", litShader, mat =>
+            SaveOrUpdateMaterial("Assets/Materials/Mat_GlassRim.mat", toonyShader, mat =>
             {
-                Color col = new Color(0.38f, 0.74f, 0.98f, 1f);
-                mat.color = col;
-                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", col);
-                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.94f);
+                Color col = new Color(0.42f, 0.72f, 0.92f, 1f);
+                PuzzleColorPalette.ConfigureToonyMaterial(mat, col, new Color(0.56f, 0.62f, 0.82f, 1f), glossyCandy: true, indirectIntensity: 0.18f);
             });
 
             // Glass Highlights
@@ -49,65 +47,47 @@ namespace PuzzleGlass.Editor
             });
 
             // Slots
-            SaveOrUpdateMaterial("Assets/Materials/Mat_SlotFrame.mat", litShader, mat =>
+            SaveOrUpdateMaterial("Assets/Materials/Mat_SlotFrame.mat", toonyShader, mat =>
             {
-                Color col = new Color(0.75f, 0.84f, 0.96f, 1f);
-                mat.color = col;
-                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", col);
-                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.75f);
+                Color col = new Color(0.72f, 0.80f, 0.91f, 1f);
+                PuzzleColorPalette.ConfigureToonyMaterial(mat, col, new Color(0.66f, 0.70f, 0.84f, 1f), glossyCandy: false, indirectIntensity: 0.16f);
             });
 
-            SaveOrUpdateMaterial("Assets/Materials/Mat_SlotCavity.mat", litShader, mat =>
+            SaveOrUpdateMaterial("Assets/Materials/Mat_SlotCavity.mat", toonyShader, mat =>
             {
-                Color col = new Color(0.48f, 0.65f, 0.88f, 1f);
-                mat.color = col;
-                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", col);
-                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.60f);
+                Color col = new Color(0.48f, 0.62f, 0.82f, 1f);
+                PuzzleColorPalette.ConfigureToonyMaterial(mat, col, new Color(0.58f, 0.62f, 0.78f, 1f), glossyCandy: false, indirectIntensity: 0.16f);
             });
 
             // Badge
-            SaveOrUpdateMaterial("Assets/Materials/Mat_BellyBadge.mat", litShader, mat =>
+            SaveOrUpdateMaterial("Assets/Materials/Mat_BellyBadge.mat", toonyShader, mat =>
             {
-                mat.color = Color.white;
-                if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
-                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.92f);
+                Color col = new Color(0.92f, 0.93f, 0.96f, 1f);
+                PuzzleColorPalette.ConfigureToonyMaterial(mat, col, new Color(0.74f, 0.77f, 0.86f, 1f), glossyCandy: false, indirectIntensity: 0.16f);
             });
 
-            // Monsters
+            // Monsters & Cubes
             foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
             {
                 Color bodyCol = PuzzleColorPalette.GetBodyColor(col);
                 Color mouthCol = PuzzleColorPalette.GetDarkMouthColor(col);
+                Color shadowTint = PuzzleColorPalette.GetTcp2ShadowTint(col);
 
-                SaveOrUpdateMaterial($"Assets/Materials/Mat_Monster_{col}.mat", litShader, mat =>
+                SaveOrUpdateMaterial($"Assets/Materials/Mat_Monster_{col}.mat", toonyShader, mat =>
                 {
-                    mat.color = bodyCol;
-                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", bodyCol);
-                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.88f);
+                    PuzzleColorPalette.ConfigureToonyMaterial(mat, bodyCol, shadowTint, glossyCandy: true, indirectIntensity: 0.18f);
                 });
 
-                SaveOrUpdateMaterial($"Assets/Materials/Mat_Mouth_{col}.mat", litShader, mat =>
+                SaveOrUpdateMaterial($"Assets/Materials/Mat_Mouth_{col}.mat", toonyShader, mat =>
                 {
-                    mat.color = mouthCol;
-                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", mouthCol);
-                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.50f);
+                    PuzzleColorPalette.ConfigureToonyMaterial(mat, mouthCol, shadowTint, glossyCandy: false, indirectIntensity: 0.15f);
                 });
 
-                Shader candyShader = Shader.Find("PuzzleGlass/CandyCubeLit") ?? litShader;
-                SaveOrUpdateMaterial($"Assets/Materials/Mat_Cube_{col}.mat", candyShader, mat =>
+                SaveOrUpdateMaterial($"Assets/Materials/Mat_Cube_{col}.mat", toonyShader, mat =>
                 {
-                    mat.shader = candyShader;
-                    Color baseCol = PuzzleColorPalette.GetCubeColor(col);
-                    Color shadowCol = PuzzleColorPalette.GetCubeShadowColor(col);
-                    Color highCol = PuzzleColorPalette.GetCubeHighlightColor(col);
-                    mat.color = baseCol;
-                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", baseCol);
-                    if (mat.HasProperty("_Color")) mat.SetColor("_Color", baseCol);
-                    if (mat.HasProperty("_ShadowColor")) mat.SetColor("_ShadowColor", shadowCol);
-                    if (mat.HasProperty("_HighlightColor")) mat.SetColor("_HighlightColor", highCol);
-                    if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.74f);
-                    if (mat.HasProperty("_BevelHighlight")) mat.SetFloat("_BevelHighlight", 0.56f);
-                    if (mat.HasProperty("_RimSeparation")) mat.SetFloat("_RimSeparation", 0.38f);
+                    PuzzleColorPalette.ConfigureToonyMaterial(mat, bodyCol, shadowTint, glossyCandy: true, indirectIntensity: 0.18f);
+                    if (mat.HasProperty("_ShadowColor")) mat.SetColor("_ShadowColor", PuzzleColorPalette.GetCubeShadowColor(col));
+                    if (mat.HasProperty("_HighlightColor")) mat.SetColor("_HighlightColor", PuzzleColorPalette.GetCubeHighlightColor(col));
                 });
             }
         }
@@ -123,6 +103,8 @@ namespace PuzzleGlass.Editor
             }
             else
             {
+                if (shader != null && mat.shader != shader)
+                    mat.shader = shader;
                 configure(mat);
                 EditorUtility.SetDirty(mat);
             }

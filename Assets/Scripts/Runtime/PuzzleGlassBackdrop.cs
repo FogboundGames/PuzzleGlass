@@ -12,11 +12,11 @@ namespace PuzzleGlass
         public static PuzzleGlassBackdrop Instance { get; private set; }
 
         [Header("Palette")]
-        public Color topColor  = new Color(0.925f, 0.930f, 0.985f, 1f); // Soft pastel lavender mist
-        public Color midColor  = new Color(0.976f, 0.949f, 0.910f, 1f); // Warm ivory cream
-        public Color botColor  = new Color(0.949f, 0.886f, 0.816f, 1f); // Warm pastel peach-cream
-        public Color glowColor = new Color(1.000f, 0.988f, 0.968f, 1f);
-        public Color dotColor  = new Color(0.840f, 0.815f, 0.860f, 1f);
+        public Color topColor  = new Color(0.905f, 0.910f, 0.965f, 1f); // Soft pastel lavender mist
+        public Color midColor  = new Color(0.950f, 0.922f, 0.885f, 1f); // Warm ivory cream
+        public Color botColor  = new Color(0.920f, 0.862f, 0.798f, 1f); // Warm pastel peach-cream
+        public Color glowColor = new Color(0.975f, 0.960f, 0.938f, 1f);
+        public Color dotColor  = new Color(0.810f, 0.790f, 0.840f, 1f);
         [Range(0f, 0.20f)]
         public float dotStrength = 0.055f;
 

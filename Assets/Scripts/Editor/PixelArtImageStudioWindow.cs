@@ -8,8 +8,6 @@ namespace PuzzleGlass.Editor
 {
     public class PixelArtImageStudioWindow : EditorWindow, ISerializationCallbackReceiver
     {
-        [MenuItem("Tools/PuzzleGlass/🎨 Pixel Art Görsel Stüdyosu", false, 1)]
-        [MenuItem("Window/PuzzleGlass/🎨 Pixel Art Görsel Stüdyosu", false, 1)]
         public static void OpenWindow()
         {
             var win = GetWindow<PixelArtImageStudioWindow>("Pixel Art Stüdyosu");

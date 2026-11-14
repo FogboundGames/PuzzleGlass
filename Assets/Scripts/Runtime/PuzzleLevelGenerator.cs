@@ -308,20 +308,20 @@ namespace PuzzleGlass
             int maxSockets;
             switch (cellArea)
             {
-                case 1:
-                    minSockets = Mathf.Max(1, baseBalls - 1);
-                    maxSockets = Mathf.Max(minSockets, baseBalls);
+                case 1: // 1x1 küçük blok -> az gri nokta (ör. 1..2)
+                    minSockets = Mathf.Clamp(baseBalls - 2, 1, 8);
+                    maxSockets = Mathf.Clamp(baseBalls - 1, minSockets, 8);
                     break;
-                case 2:
-                    minSockets = Mathf.Clamp(baseBalls, 2, 12);
-                    maxSockets = Mathf.Clamp(baseBalls + 2, minSockets, 14);
+                case 2: // 2x1 / 1x2 -> orta (ör. 3..4)
+                    minSockets = Mathf.Clamp(baseBalls, 2, 10);
+                    maxSockets = Mathf.Clamp(baseBalls + 1, minSockets, 10);
                     break;
-                case 3:
-                    minSockets = Mathf.Clamp(baseBalls + 1, 3, 14);
-                    maxSockets = Mathf.Clamp(baseBalls + 3, minSockets, 16);
+                case 3: // 3x1 / L / J -> büyük (ör. 5..6)
+                    minSockets = Mathf.Clamp(baseBalls + 2, 3, 12);
+                    maxSockets = Mathf.Clamp(baseBalls + 3, minSockets, 12);
                     break;
-                default: // 4-cell T or 2x2 shapes
-                    minSockets = Mathf.Clamp(baseBalls + 2, 4, 14);
+                default: // 4 hücreli T veya 2x2 -> en fazla gri nokta (ör. 7..8)
+                    minSockets = Mathf.Clamp(baseBalls + 4, 4, 16);
                     maxSockets = Mathf.Clamp(baseBalls + 5, minSockets, 16);
                     break;
             }

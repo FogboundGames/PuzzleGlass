@@ -54,7 +54,7 @@ namespace PuzzleGlass.Editor
             }
         }
 
-        [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Kutuları Senkronize Et", false, 1)]
+        [MenuItem("Tools/PuzzleGlass/🧹 Sahneyi Temizle ve Kutuları Senkronize Et", false, 20)]
         public static void CleanAndSyncActiveScene()
         {
             var glass = Object.FindFirstObjectByType<ShapedGlassContainer>();
@@ -107,7 +107,6 @@ namespace PuzzleGlass.Editor
             Debug.Log("<color=#00FF88><b>[PuzzleGlass]</b></color> Sahne başarıyla temizlendi ve sıralı top havuzu ile senkronize edildi!");
         }
 
-        [MenuItem("Tools/PuzzleGlass/Build Reference Scene", false, 10)]
         [MenuItem("GameObject/PuzzleGlass/Create Complete Scene", false, 10)]
         public static void BuildCompleteScene()
         {

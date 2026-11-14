@@ -34,6 +34,10 @@ namespace PuzzleGlass
         [Tooltip("Cam şekli bu kadar levelde bir değişir; her grubun şeklini ilk level belirler. 1 = her level kendi şekli.")]
         [Min(1)]
         public int levelsPerGlassShape = 10;
+        [Tooltip("Açık olduğunda Play moduna geçerken Level asset'i sahnedeki özel cam şeklini ezmez.")]
+        public bool preserveSceneGlassInPlayMode = false;
+        [Tooltip("Açık olduğunda Play moduna geçerken Level asset'i sahnedeki tepsi (StagingGridBoard) boyutunu ezmez.")]
+        public bool preserveSceneTrayInPlayMode = false;
         public float nextLevelDelay = 1.2f;
         public PuzzleGlassLevelData currentLevel;
 
@@ -531,26 +535,49 @@ namespace PuzzleGlass
 
             if (glassContainer != null)
             {
-                glassContainer.shapePreset = GlassShapePreset.RectangleBox;
-                glassContainer.colorTheme = levelData.colorTheme;
-                glassContainer.layerPattern = levelData.layerPattern;
-                glassContainer.symmetricMode = true;
-                glassContainer.curveSubdivisions = 14;
-                glassContainer.widthScale = 1.0f;
-                glassContainer.heightScale = 1.0f;
+                if (!preserveSceneGlassInPlayMode)
+                {
+                    glassContainer.colorTheme = levelData.colorTheme;
+                    glassContainer.layerPattern = levelData.layerPattern;
 
-                glassContainer.glassBodyColor = levelData.glassBodyColor;
-                glassContainer.glassCenterGlowColor = levelData.glassCenterGlowColor;
-                glassContainer.glassOuterRimColor = levelData.glassOuterRimColor;
-                glassContainer.glassInnerRimColor = levelData.glassInnerRimColor;
-                glassContainer.glassFrontLensColor = levelData.glassFrontLensColor;
-                glassContainer.earHandleColor = levelData.earHandleColor;
+                    glassContainer.glassBodyColor = levelData.glassBodyColor;
+                    glassContainer.glassCenterGlowColor = levelData.glassCenterGlowColor;
+                    glassContainer.glassOuterRimColor = levelData.glassOuterRimColor;
+                    glassContainer.glassInnerRimColor = levelData.glassInnerRimColor;
+                    glassContainer.glassFrontLensColor = levelData.glassFrontLensColor;
+                    glassContainer.earHandleColor = levelData.earHandleColor;
 
-                glassContainer.glassRimRadius = levelData.glassRimRadius;
-                glassContainer.innerRimInset = levelData.innerRimInset;
-                glassContainer.glassShellDepth = levelData.glassShellDepth;
-                glassContainer.showShoulderHandles = false;
-                glassContainer.showSpecularReflections = levelData.showSpecularReflections;
+                    glassContainer.glassRimRadius = levelData.glassRimRadius;
+                    glassContainer.innerRimInset = levelData.innerRimInset;
+                    glassContainer.glassShellDepth = levelData.glassShellDepth;
+                    glassContainer.showSpecularReflections = levelData.showSpecularReflections;
+
+                    glassContainer.boxCornerRadius = levelData.boxCornerRadius > 0.01f ? levelData.boxCornerRadius : 0.22f;
+                    glassContainer.boxFrameThickness = levelData.boxFrameThickness > 0.01f ? levelData.boxFrameThickness : 0.115f;
+                    if (levelData.boxFrameColor.a > 0.01f) glassContainer.boxFrameColor = levelData.boxFrameColor;
+                    if (levelData.boxFrameHighlightColor.a > 0.01f) glassContainer.boxFrameHighlightColor = levelData.boxFrameHighlightColor;
+                    if (levelData.boxFrameEdgeShadeColor.a > 0.01f) glassContainer.boxFrameEdgeShadeColor = levelData.boxFrameEdgeShadeColor;
+                    if (levelData.dropShadowColor.a > 0.01f) glassContainer.dropShadowColor = levelData.dropShadowColor;
+
+                    if (levelData.useCustomGlassShape)
+                    {
+                        glassContainer.shapePreset = levelData.glassPreset;
+                        glassContainer.symmetricMode = levelData.symmetricMode;
+                        glassContainer.curveSubdivisions = Mathf.Clamp(levelData.curveSubdivisions, 4, 24);
+                        glassContainer.widthScale = Mathf.Clamp(levelData.widthScale, 0.5f, 1.8f);
+                        glassContainer.heightScale = Mathf.Clamp(levelData.heightScale, 0.6f, 1.6f);
+                        glassContainer.showShoulderHandles = levelData.showShoulderHandles;
+                    }
+                    else
+                    {
+                        glassContainer.shapePreset = GlassShapePreset.RectangleBox;
+                        glassContainer.symmetricMode = true;
+                        glassContainer.curveSubdivisions = 14;
+                        glassContainer.widthScale = 1.0f;
+                        glassContainer.heightScale = 1.0f;
+                        glassContainer.showShoulderHandles = false;
+                    }
+                }
 
                 glassContainer.particleSize = 0.265f;
                 glassContainer.particlesPerMonsterCount = 1;
@@ -594,7 +621,18 @@ namespace PuzzleGlass
                         glassContainer.compartmentZones);
                 }
 
-                glassContainer.ApplyShapePreset(GlassShapePreset.RectangleBox, false);
+                if (!preserveSceneGlassInPlayMode)
+                {
+                    if (levelData.useCustomGlassShape && levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
+                    {
+                        glassContainer.contourPoints = new List<GlassContourPoint>(levelData.contourPoints);
+                        glassContainer.SyncBoundsFromContour();
+                    }
+                    else
+                    {
+                        glassContainer.ApplyShapePreset(glassContainer.shapePreset, false);
+                    }
+                }
                 glassContainer.RebuildContainer();
 
                 // 3. Rebuild Airtight Physics Colliders around container
@@ -607,7 +645,26 @@ namespace PuzzleGlass
             // 4. Configure framed bottom StagingGridBoard right beneath ShapedGlassContainer & spawn blocks inside it
             if (stagingGridBoard != null)
             {
-                stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer);
+                if (!preserveSceneTrayInPlayMode)
+                {
+                    if (levelData.useCustomTraySettings)
+                    {
+                        stagingGridBoard.matchGlassWidth = levelData.trayMatchGlassWidth;
+                        stagingGridBoard.maxBoardWidth = Mathf.Max(1.0f, levelData.trayMaxBoardWidth);
+                        stagingGridBoard.maxBoardHeight = Mathf.Max(1.0f, levelData.trayMaxBoardHeight);
+                        stagingGridBoard.framePadding = Mathf.Clamp(levelData.trayFramePadding, 0.03f, 0.30f);
+                        stagingGridBoard.innerMargin = Mathf.Clamp(levelData.trayInnerMargin, 0.01f, 0.25f);
+                        stagingGridBoard.frameCornerRadius = Mathf.Clamp(levelData.trayFrameCornerRadius, 0.04f, 0.40f);
+                        stagingGridBoard.gapBelowGlass = Mathf.Clamp(levelData.trayGapBelowGlass, 0.02f, 0.80f);
+                        stagingGridBoard.useManualCellSize = levelData.trayUseManualCellSize;
+                        stagingGridBoard.manualCellSize = Mathf.Clamp(levelData.trayManualCellSize, 0.30f, 0.82f);
+                    }
+                    stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer);
+                }
+                else
+                {
+                    stagingGridBoard.Configure(stagingGridBoard.cols, stagingGridBoard.rows, glassContainer);
+                }
             }
             SpawnMonsterStagingArea(levelData.monsters);
 

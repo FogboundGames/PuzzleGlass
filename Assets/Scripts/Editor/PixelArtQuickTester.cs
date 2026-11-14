@@ -5,7 +5,6 @@ namespace PuzzleGlass.Editor
 {
     public static class PixelArtQuickTester
     {
-        [MenuItem("Tools/PuzzleGlass/🐸 Apply Square Glass + Frog Visual (Kare Cam + Kurbağa Görseli)", false, 20)]
         public static void ApplySquareGlassAndFrog()
         {
             var container = Object.FindFirstObjectByType<ShapedGlassContainer>();
@@ -26,7 +25,6 @@ namespace PuzzleGlass.Editor
             }
         }
 
-        [MenuItem("Tools/PuzzleGlass/❤️ Apply Square Glass + Heart Visual (Kare Cam + Kalp Görseli)", false, 21)]
         public static void ApplySquareGlassAndHeart()
         {
             var container = Object.FindFirstObjectByType<ShapedGlassContainer>();
@@ -47,7 +45,6 @@ namespace PuzzleGlass.Editor
             }
         }
 
-        [MenuItem("Tools/PuzzleGlass/🍄 Apply Square Glass + Mushroom Visual (Kare Cam + Mantar Görseli)", false, 22)]
         public static void ApplySquareGlassAndMushroom()
         {
             var container = Object.FindFirstObjectByType<ShapedGlassContainer>();

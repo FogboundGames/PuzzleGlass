@@ -7,7 +7,6 @@ namespace PuzzleGlass.Editor
 {
     public static class StarterLevelsSetup
     {
-        [MenuItem("Tools/PuzzleGlass/🚀 Hazır Seviyeleri Kur (Rainbow, Cat, Frog)", false, 10)]
         public static void EnsureStarterLevels()
         {
             const string levelsFolder = "Assets/Levels";

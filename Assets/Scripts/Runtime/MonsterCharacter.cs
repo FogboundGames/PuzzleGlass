@@ -465,7 +465,7 @@ namespace PuzzleGlass
             Color baseCol = GetCarrierFrameColor(colorType);
             Color darkCol = GetCarrierDarkColor(colorType);
             Color outlineCol = GetCarrierOutlineColor(colorType);
-            Color highlightCol = Color.Lerp(baseCol, Color.white, 0.28f);
+            Color highlightCol = Color.Lerp(baseCol, new Color(0.96f, 0.96f, 0.98f, 1f), 0.20f);
 
             bodyMaterial = new Material(boxShader) { name = $"Mat_CarrierBox_{colorType}" };
             bodyMaterial.color = Color.white;
@@ -473,46 +473,38 @@ namespace PuzzleGlass
             if (bodyMaterial.HasProperty("_BodyDarkColor")) bodyMaterial.SetColor("_BodyDarkColor", darkCol);
             if (bodyMaterial.HasProperty("_OutlineColor")) bodyMaterial.SetColor("_OutlineColor", outlineCol);
             if (bodyMaterial.HasProperty("_HighlightColor")) bodyMaterial.SetColor("_HighlightColor", highlightCol);
-            if (bodyMaterial.HasProperty("_PlateColor")) bodyMaterial.SetColor("_PlateColor", new Color(0.97f, 0.97f, 0.98f, 1.0f));
-            if (bodyMaterial.HasProperty("_PlateShadowColor")) bodyMaterial.SetColor("_PlateShadowColor", new Color(0.84f, 0.86f, 0.90f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketColor")) bodyMaterial.SetColor("_SocketColor", new Color(0.60f, 0.61f, 0.65f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketShadowColor")) bodyMaterial.SetColor("_SocketShadowColor", new Color(0.46f, 0.47f, 0.52f, 1.0f));
+            if (bodyMaterial.HasProperty("_PlateColor")) bodyMaterial.SetColor("_PlateColor", new Color(0.94f, 0.94f, 0.96f, 1.0f));
+            if (bodyMaterial.HasProperty("_PlateShadowColor")) bodyMaterial.SetColor("_PlateShadowColor", new Color(0.81f, 0.83f, 0.88f, 1.0f));
+            if (bodyMaterial.HasProperty("_SocketColor")) bodyMaterial.SetColor("_SocketColor", new Color(0.58f, 0.59f, 0.64f, 1.0f));
+            if (bodyMaterial.HasProperty("_SocketShadowColor")) bodyMaterial.SetColor("_SocketShadowColor", new Color(0.44f, 0.45f, 0.51f, 1.0f));
             ApplySocketLayoutToMaterial();
 
             socketBallMaterial = PuzzleColorPalette.CreateCandyCubeMaterial(colorType, $"Mat_SocketBall_{colorType}");
 
-            Shader litShader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            badgeMaterial = new Material(litShader) { name = "Mat_BellyBadge" };
-            badgeMaterial.color = Color.white;
-            if (badgeMaterial.HasProperty("_BaseColor")) badgeMaterial.SetColor("_BaseColor", Color.white);
+            badgeMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(
+                new Color(0.92f, 0.93f, 0.96f, 1f),
+                new Color(0.74f, 0.77f, 0.86f, 1f),
+                "Mat_BellyBadge",
+                glossyCandy: false,
+                indirectIntensity: 0.16f);
         }
 
         private static Color GetCarrierFrameColor(PuzzleColor color)
         {
-            switch (color)
-            {
-                case PuzzleColor.Blue:   return new Color(0.06f, 0.56f, 0.94f, 1f); // Reference image vibrant sky-azure blue
-                case PuzzleColor.Yellow: return new Color(0.98f, 0.78f, 0.12f, 1f); // Sunny gold yellow
-                case PuzzleColor.Red:    return new Color(0.96f, 0.31f, 0.28f, 1f); // Vibrant coral-crimson red
-                case PuzzleColor.Green:  return new Color(0.28f, 0.80f, 0.26f, 1f); // Fresh apple green
-                case PuzzleColor.Purple: return new Color(0.58f, 0.36f, 0.94f, 1f); // Rich violet
-                case PuzzleColor.Orange: return new Color(0.98f, 0.54f, 0.14f, 1f); // Bright tangerine
-                case PuzzleColor.Pink:   return new Color(0.96f, 0.34f, 0.66f, 1f); // Bubblegum pink
-                case PuzzleColor.Cyan:   return new Color(0.14f, 0.82f, 0.82f, 1f); // Turquoise cyan
-                default: return PuzzleColorPalette.GetBodyColor(color);
-            }
+            return PuzzleColorPalette.GetBodyColor(color);
         }
 
         private static Color GetCarrierDarkColor(PuzzleColor color)
         {
             Color c = GetCarrierFrameColor(color);
-            return new Color(c.r * 0.74f, c.g * 0.76f, c.b * 0.82f, 1f);
+            Color tint = PuzzleColorPalette.GetTcp2ShadowTint(color);
+            return new Color(c.r * Mathf.Lerp(tint.r, 0.78f, 0.35f), c.g * Mathf.Lerp(tint.g, 0.78f, 0.35f), c.b * Mathf.Lerp(tint.b, 0.84f, 0.35f), 1f);
         }
 
         private static Color GetCarrierOutlineColor(PuzzleColor color)
         {
             Color c = GetCarrierFrameColor(color);
-            return new Color(c.r * 0.50f, c.g * 0.54f, c.b * 0.62f, 1f);
+            return new Color(c.r * 0.54f, c.g * 0.56f, c.b * 0.64f, 1f);
         }
 
         private static Mesh GetSharedSphereMesh()

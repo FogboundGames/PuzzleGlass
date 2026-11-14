@@ -15,8 +15,6 @@ namespace PuzzleGlass.Editor
     {
         private static readonly PuzzleColor[] AllColors = (PuzzleColor[])Enum.GetValues(typeof(PuzzleColor));
 
-        [MenuItem("Tools/PuzzleGlass/🎨 Sand Image Generator (Görseli Kuma Dönüştürme)", false, 0)]
-        [MenuItem("Window/PuzzleGlass/🎨 Sand Image Generator", false, 0)]
         public static void OpenWindow()
         {
             var win = GetWindow<SandImageGeneratorWindow>("Sand Image Generator");

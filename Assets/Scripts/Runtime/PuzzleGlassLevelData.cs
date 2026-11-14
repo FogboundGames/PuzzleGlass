@@ -227,6 +227,8 @@ namespace PuzzleGlass
         public float slotSpacing = 0.84f;
 
         [Header("Glass Shape & Aesthetics")]
+        [Tooltip("True ise bölüm yüklendiğinde bu level asset'indeki cam şekli ve kontur noktaları uygulanır.")]
+        public bool useCustomGlassShape = false;
         public GlassShapePreset glassPreset = GlassShapePreset.RectangleBox;
         public GlassColorTheme colorTheme = GlassColorTheme.SkyBlueGlossy;
         public BottleLayerPattern layerPattern = BottleLayerPattern.VFunnelBands;
@@ -253,6 +255,16 @@ namespace PuzzleGlass
         public float glassShellDepth = 0.08f;
         public bool showShoulderHandles = false;
         public bool showSpecularReflections = true;
+
+        [Header("Rounded Box Pool Frame Settings")]
+        [Range(0.04f, 0.65f)]
+        public float boxCornerRadius = 0.22f;
+        [Range(0.04f, 0.24f)]
+        public float boxFrameThickness = 0.115f;
+        public Color boxFrameColor = new Color(0.50f, 0.50f, 0.90f, 1.0f);
+        public Color boxFrameHighlightColor = new Color(0.84f, 0.84f, 0.98f, 1.0f);
+        public Color boxFrameEdgeShadeColor = new Color(0.38f, 0.36f, 0.80f, 1.0f);
+        public Color dropShadowColor = new Color(0.72f, 0.60f, 0.48f, 0.30f);
 
         [Header("Particle Settings")]
         [Range(0.08f, 0.30f)]
@@ -285,10 +297,23 @@ namespace PuzzleGlass
         public List<CompartmentColorZone> compartmentZones = new List<CompartmentColorZone>();
 
         [Header("Bottom Grid Tray (Sliding Block Puzzle Area)")]
-        [Range(3, 6)]
+        [Range(2, 7)]
         public int stagingGridCols = 5;
-        [Range(3, 5)]
+        [Range(2, 6)]
         public int stagingGridRows = 4;
+
+        [Tooltip("True ise bu level kendi özel tepsi boyutlarını/boşluklarını uygular.")]
+        public bool useCustomTraySettings = false;
+        public bool trayMatchGlassWidth = true;
+        public float trayMaxBoardWidth = 2.822f;
+        public float trayMaxBoardHeight = 3.20f;
+        public float trayFramePadding = 0.115f;
+        public float trayInnerMargin = 0.06f;
+        public float trayFrameCornerRadius = 0.18f;
+        public float trayGapBelowGlass = 0.11f;
+        public bool trayUseManualCellSize = false;
+        [Range(0.30f, 0.82f)]
+        public float trayManualCellSize = 0.506f;
 
         [Header("Carrier Box Puzzle Settings (Variable-Socket Boxes & Bottom-to-Top Layers)")]
         [Tooltip("Her kutunun içindeki varsayılan gri yuva/boşluk sayısı (1 - 16 arası)")]
@@ -390,8 +415,8 @@ namespace PuzzleGlass
         {
             ballsPerBox = Mathf.Clamp(ballsPerBox, 1, 16);
             if (stagingColumns < 2 || stagingColumns > 4) stagingColumns = 3;
-            stagingGridCols = Mathf.Clamp(stagingGridCols <= 0 ? 5 : stagingGridCols, 3, 6);
-            stagingGridRows = Mathf.Clamp(stagingGridRows <= 0 ? 4 : stagingGridRows, 3, 5);
+            stagingGridCols = Mathf.Clamp(stagingGridCols <= 0 ? 5 : stagingGridCols, 2, 7);
+            stagingGridRows = Mathf.Clamp(stagingGridRows <= 0 ? 4 : stagingGridRows, 2, 6);
 
             if (monsters == null || monsters.Count == 0)
             {
