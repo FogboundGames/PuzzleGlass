@@ -110,23 +110,26 @@ namespace PuzzleGlass
         public List<CompartmentColorZone> compartmentZones = new List<CompartmentColorZone>();
 
         [Header("Glass Color & Material Aesthetics")]
+        public bool enforceUnifiedCrystalTheme = true;
+        [SerializeField, HideInInspector] private int visualThemeVersion = 0;
         public GlassColorTheme colorTheme = GlassColorTheme.SkyBlueGlossy;
-        public Color glassBodyColor = new Color(0.36f, 0.71f, 0.98f, 0.78f);
-        public Color glassCenterGlowColor = new Color(0.76f, 0.91f, 1.00f, 0.20f);
-        public Color glassOuterRimColor = new Color(0.17f, 0.49f, 0.85f, 0.92f);
-        public Color glassInnerRimColor = new Color(0.96f, 0.99f, 1.00f, 0.95f);
+        public Color glassBodyColor = new Color(0.64f, 0.72f, 0.99f, 0.62f);
+        public Color glassCenterGlowColor = new Color(0.90f, 0.92f, 1.00f, 0.28f);
+        public Color glassOuterRimColor = new Color(0.45f, 0.44f, 0.88f, 0.92f);
+        public Color glassInnerRimColor = new Color(0.98f, 0.99f, 1.00f, 0.96f);
         public Color glassFrontLensColor = new Color(0.95f, 0.99f, 1.00f, 0.00f);
         public Color earHandleColor = new Color(0.92f, 0.96f, 1.00f, 1.00f);
 
         [Header("Rounded Box Pool Frame Settings")]
         [Range(0.04f, 0.65f)]
-        public float boxCornerRadius = 0.22f;
+        public float boxCornerRadius = 0.28f;
         [Range(0.04f, 0.24f)]
-        public float boxFrameThickness = 0.115f;
-        public Color boxFrameColor = new Color(0.50f, 0.50f, 0.90f, 1.0f);
-        public Color boxFrameHighlightColor = new Color(0.84f, 0.84f, 0.98f, 1.0f);
-        public Color boxFrameEdgeShadeColor = new Color(0.38f, 0.36f, 0.80f, 1.0f);
-        public Color dropShadowColor = new Color(0.72f, 0.60f, 0.48f, 0.30f);
+        public float boxFrameThickness = 0.095f;
+        public Color boxFrameColor = new Color(0.49f, 0.44f, 0.90f, 1.0f);
+        public Color boxFrameHighlightColor = new Color(0.94f, 0.94f, 1.00f, 1.0f);
+        public Color boxFrameEdgeShadeColor = new Color(0.35f, 0.32f, 0.78f, 1.0f);
+        public Color dropShadowColor = new Color(0.64f, 0.56f, 0.78f, 0.28f);
+        public bool showBottomExitCollar = true;
 
         [Header("Glass 3D Rim & Shell Settings")]
         [Range(0.015f, 0.090f)]
@@ -408,6 +411,7 @@ namespace PuzzleGlass
             if (IsFlatBottomBox) particleSize = 0.24f;
             else if (particleSize < 0.145f) particleSize = 0.155f;
             patternVerticalOffset = 0f;
+            MigrateThemeIfNeeded();
             EnsureContourInitialized();
             CleanOrphanedChildren();
             RebuildContainer();
@@ -419,9 +423,34 @@ namespace PuzzleGlass
             if (IsFlatBottomBox) particleSize = 0.24f;
             else if (particleSize < 0.145f) particleSize = 0.155f;
             patternVerticalOffset = 0f;
+            MigrateThemeIfNeeded();
             EnsureContourInitialized();
             CleanOrphanedChildren();
             RebuildContainer();
+        }
+
+        private void MigrateThemeIfNeeded()
+        {
+            if (visualThemeVersion >= 3) return;
+            visualThemeVersion = 3;
+            enforceUnifiedCrystalTheme = true;
+            boxFrameThickness = 0.055f;
+            ApplyCrystalLavenderThemeColors();
+        }
+
+        private void ApplyCrystalLavenderThemeColors()
+        {
+            colorTheme = GlassColorTheme.SkyBlueGlossy;
+            glassBodyColor = new Color(0.66f, 0.72f, 0.99f, 0.56f);
+            glassCenterGlowColor = new Color(0.92f, 0.94f, 1.00f, 0.18f);
+            glassOuterRimColor = new Color(0.46f, 0.45f, 0.92f, 0.92f);
+            glassInnerRimColor = new Color(0.99f, 0.99f, 1.00f, 0.96f);
+            glassFrontLensColor = new Color(0.96f, 0.99f, 1.00f, 0.00f);
+            earHandleColor = new Color(0.96f, 0.98f, 1.00f, 1.00f);
+            boxFrameColor = new Color(0.49f, 0.44f, 0.90f, 1.0f);
+            boxFrameHighlightColor = new Color(0.96f, 0.97f, 1.00f, 1.0f);
+            boxFrameEdgeShadeColor = new Color(0.36f, 0.34f, 0.84f, 1.0f);
+            dropShadowColor = new Color(0.62f, 0.54f, 0.84f, 0.30f);
         }
 
         public void CleanOrphanedChildren()
@@ -861,10 +890,10 @@ namespace PuzzleGlass
             {
                 case GlassColorTheme.SkyBlueGlossy:
                 default:
-                    glassBodyColor = new Color(0.36f, 0.71f, 0.98f, 0.78f);
-                    glassCenterGlowColor = new Color(0.76f, 0.91f, 1.00f, 0.20f);
-                    glassOuterRimColor = new Color(0.17f, 0.49f, 0.85f, 0.92f);
-                    glassInnerRimColor = new Color(0.96f, 0.99f, 1.00f, 0.95f);
+                    glassBodyColor = new Color(0.64f, 0.72f, 0.99f, 0.62f);
+                    glassCenterGlowColor = new Color(0.90f, 0.92f, 1.00f, 0.28f);
+                    glassOuterRimColor = new Color(0.45f, 0.44f, 0.88f, 0.92f);
+                    glassInnerRimColor = new Color(0.98f, 0.99f, 1.00f, 0.96f);
                     glassFrontLensColor = new Color(0.95f, 0.99f, 1.00f, 0.00f);
                     earHandleColor = new Color(0.96f, 0.98f, 1.00f, 1.00f);
                     break;
@@ -1032,15 +1061,22 @@ namespace PuzzleGlass
         private void ApplyRoundedBoxShaderProperties(Material mat, float boxAspect)
         {
             if (mat == null) return;
+            if (enforceUnifiedCrystalTheme)
+            {
+                ApplyCrystalLavenderThemeColors();
+            }
             mat.SetFloat("_IsRoundedBoxPool", IsPoolShape ? 1.0f : 0.0f);
             ApplyCustomPoolPolygon(mat);
             mat.SetFloat("_BoxAspect", boxAspect);
             if (mat.HasProperty("_BoxCornerRadius")) mat.SetFloat("_BoxCornerRadius", Mathf.Clamp(boxCornerRadius, 0.04f, 0.65f));
-            if (mat.HasProperty("_FrameThickness")) mat.SetFloat("_FrameThickness", Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f));
+            if (mat.HasProperty("_FrameThickness")) mat.SetFloat("_FrameThickness", Mathf.Clamp(boxFrameThickness, 0.035f, 0.24f));
             if (mat.HasProperty("_FrameColor")) mat.SetColor("_FrameColor", boxFrameColor);
             if (mat.HasProperty("_FrameHighlight")) mat.SetColor("_FrameHighlight", boxFrameHighlightColor);
             if (mat.HasProperty("_FrameEdgeShade")) mat.SetColor("_FrameEdgeShade", boxFrameEdgeShadeColor);
             if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
+            if (mat.HasProperty("_JarNeckParams")) mat.SetVector("_JarNeckParams", Vector4.zero);
+            if (mat.HasProperty("_CenterGlassAlpha")) mat.SetFloat("_CenterGlassAlpha", 0.18f);
+            if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
         }
 
         private static readonly Vector4[] _polyBuffer = new Vector4[48];
@@ -1138,6 +1174,10 @@ namespace PuzzleGlass
 
         private void EnsureMaterials()
         {
+            if (enforceUnifiedCrystalTheme)
+            {
+                ApplyCrystalLavenderThemeColors();
+            }
 #if UNITY_EDITOR
             if (glassMaterial == null)
                 glassMaterial = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Mat_GlassPane.mat");
@@ -1402,8 +1442,8 @@ namespace PuzzleGlass
 
             if (IsPoolShape)
             {
-                // Kutu ve düz tabanlı özel şekiller aynı shader çerçevesiyle çizilir (kalın çerçeve, yuvarlak köşe, gölge)
-                GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out _, out _);
+                // Kutu ve düz tabanlı özel şekiller aynı shader çerçevesiyle çizilir (parlak kristal cam duvarlar, yuvarlak köşe, gölge)
+                GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out float visibleHalfW, out float visibleHalfH);
                 float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
 
                 if (_chamberInnerGlowMat != null)
@@ -1434,6 +1474,11 @@ namespace PuzzleGlass
                 poolFrontMr.sharedMaterial = _frontGlassLensMat;
                 poolFrontMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 poolFrontMr.receiveShadows = false;
+
+                if (showBottomExitCollar)
+                {
+                    BuildBottomExitCollar(centerY - visibleHalfH);
+                }
 
                 BuildGlassDividersGeometry();
                 return;
@@ -1535,6 +1580,51 @@ namespace PuzzleGlass
 
             // 6. Internal Glass Compartment Dividers
             BuildGlassDividersGeometry();
+        }
+
+        private void BuildBottomExitCollar(float bottomEdgeY)
+        {
+            if (_glassWallsObj == null) return;
+
+            float bottomW = (contourPoints != null && contourPoints.Count > 0)
+                ? contourPoints[0].halfWidth * 2f * widthScale
+                : 2.2f;
+            float collarX = (contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
+                ? contourPoints[0].centerX * widthScale
+                : 0f;
+
+            float visibleCollarW = Mathf.Clamp(bottomW * 0.48f, 0.84f, 1.22f);
+            float visibleCollarH = 0.25f;
+            float quadW = visibleCollarW / 0.78f;
+            float quadH = visibleCollarH / 0.56f;
+            float collarCenterY = bottomEdgeY - visibleCollarH * 0.28f;
+
+            var collarRoot = new GameObject("BottomExitCollar");
+            collarRoot.transform.SetParent(_glassWallsObj.transform, false);
+            collarRoot.transform.localPosition = new Vector3(collarX, collarCenterY, -0.08f);
+
+            Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamberShader != null)
+            {
+                var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                quad.name = "Collar3DMesh";
+                quad.transform.SetParent(collarRoot.transform, false);
+                quad.transform.localPosition = Vector3.zero;
+                quad.transform.localScale = new Vector3(quadW, quadH, 1f);
+                var col = quad.GetComponent<Collider>();
+                if (col != null) { if (Application.isPlaying) Destroy(col); else DestroyImmediate(col); }
+
+                var collarMat = new Material(chamberShader) { name = "Mat_PeriwinkleCollar3D" };
+                collarMat.SetFloat("_IsCollar", 1f);
+                collarMat.SetFloat("_IsRoundedBoxPool", 0f);
+                collarMat.SetFloat("_BoxAspect", quadW / Mathf.Max(0.01f, quadH));
+                collarMat.renderQueue = 3018;
+
+                var mr = quad.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = collarMat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+            }
         }
 
         private readonly List<Transform> _dividerVisualRoots = new List<Transform>();
@@ -2403,12 +2493,12 @@ namespace PuzzleGlass
                 innerHalfW = maxHw * widthScale;
             }
 
-            // Exact alignment with EvaluateRoundedBoxPool SDF
-            float ft = Mathf.Clamp(boxFrameThickness, 0.04f, 0.24f);
-            quadHalfH = innerHalfH / Mathf.Max(0.30f, 0.86f - ft);
-            quadHalfW = (innerHalfW + ft * quadHalfH) / 0.90f;
-            visibleHalfW = 0.90f * quadHalfW;
-            visibleHalfH = 0.86f * quadHalfH;
+            // Exact alignment with EvaluateRoundedBoxPool SDF (0.80 / 0.76 margins keep drop shadow unclipped)
+            float ft = Mathf.Clamp(boxFrameThickness, 0.035f, 0.24f);
+            quadHalfH = innerHalfH / Mathf.Max(0.28f, 0.76f - ft);
+            quadHalfW = (innerHalfW + ft * quadHalfH) / 0.80f;
+            visibleHalfW = 0.80f * quadHalfW;
+            visibleHalfH = 0.76f * quadHalfH;
         }
 
         /// <summary>
@@ -2421,7 +2511,8 @@ namespace PuzzleGlass
             if (IsPoolShape)
             {
                 GetRoundedBoxPoolExtents(out float centerY, out _, out _, out float visibleHalfW, out float visibleHalfH);
-                Vector3 worldMin = transform.TransformPoint(new Vector3(-visibleHalfW, centerY - visibleHalfH, 0f));
+                float collarPad = showBottomExitCollar ? 0.15f : 0f;
+                Vector3 worldMin = transform.TransformPoint(new Vector3(-visibleHalfW, centerY - visibleHalfH - collarPad, 0f));
                 Vector3 worldMax = transform.TransformPoint(new Vector3( visibleHalfW, centerY + visibleHalfH, 0f));
                 minX = Mathf.Min(worldMin.x, worldMax.x);
                 maxX = Mathf.Max(worldMin.x, worldMax.x);

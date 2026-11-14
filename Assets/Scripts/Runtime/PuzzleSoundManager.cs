@@ -28,6 +28,8 @@ namespace PuzzleGlass
         private AudioClip _clipUiClick;
         private AudioClip _clipLevelClear;
         private AudioClip _clipLevelFail;
+        private AudioClip _clipUnlock;
+        private AudioClip _clipIceBreak;
 
         private float _lastPopTime = -10f;
         private float _lastSlideTime = -10f;
@@ -168,6 +170,18 @@ namespace PuzzleGlass
             PlayClipWithPitch(_clipLevelFail, 0.52f, 1.0f);
         }
 
+        public void PlayUnlock()
+        {
+            if (isMuted || !Application.isPlaying) return;
+            PlayClipWithPitch(_clipUnlock, 0.62f, Random.Range(0.98f, 1.04f));
+        }
+
+        public void PlayIceBreak()
+        {
+            if (isMuted || !Application.isPlaying) return;
+            PlayClipWithPitch(_clipIceBreak, 0.60f, Random.Range(0.96f, 1.06f));
+        }
+
         private void PlayClipWithPitch(AudioClip clip, float volumeScale, float pitch)
         {
             if (clip == null) return;
@@ -190,6 +204,8 @@ namespace PuzzleGlass
             _clipUiClick     = CreateBubblePopClip("SFX_UiClick", 0.046f, 620f, 890f);
             _clipLevelClear  = CreateChimeChordClip("SFX_LevelClear", 0.62f, new[] { 523.25f, 659.25f, 783.99f, 1046.50f }, 0.078f);
             _clipLevelFail   = CreateChimeChordClip("SFX_LevelFail", 0.36f, new[] { 329.63f, 261.63f }, 0.130f);
+            _clipUnlock      = CreateChimeChordClip("SFX_Unlock", 0.28f, new[] { 659.25f, 987.77f, 1318.51f }, 0.035f);
+            _clipIceBreak    = CreateChimeChordClip("SFX_IceBreak", 0.22f, new[] { 1046.50f, 1396.91f, 1760.00f }, 0.022f);
         }
 
         private static AudioClip CreateBubblePopClip(string name, float duration, float fStart, float fEnd)

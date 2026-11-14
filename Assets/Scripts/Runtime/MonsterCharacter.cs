@@ -23,6 +23,7 @@ namespace PuzzleGlass
         private static readonly int OutlineThicknessPropId = Shader.PropertyToID("_OutlineThickness");
         private static readonly int LipOffsetPropId = Shader.PropertyToID("_LipOffset");
         private static readonly int ExitHighlightPropId = Shader.PropertyToID("_ExitHighlight");
+        private static readonly int IceAmountPropId = Shader.PropertyToID("_IceAmount");
         private static readonly int SocketCountPropId = Shader.PropertyToID("_SocketCount");
         private static readonly int SocketRadiusPropId = Shader.PropertyToID("_SocketRadius");
         private static readonly int[] SockPairPropIds = new int[]
@@ -179,7 +180,18 @@ namespace PuzzleGlass
         public bool armedAtTopEdge = false;
         private CarrierBlockShape _builtShape = (CarrierBlockShape)(-1);
 
-        public bool IsActivelyCollecting => (isCollectingInGrid || assignedSlot != null) && !_isCompleted && remainingCount > 0 && gameObject.activeInHierarchy;
+        [Header("Special Mechanics (Key / Lock / Ice)")]
+        public bool hasKey = false;
+        public int lockKeyCount = 0;
+        public int remainingLockKeys = 0;
+        public int iceCount = 0;
+        public int remainingIceCount = 0;
+
+        public bool IsLockedByKey => remainingLockKeys > 0;
+        public bool IsFrozenByIce => remainingIceCount > 0;
+        public bool IsMovementOrCollectionBlocked => IsLockedByKey || IsFrozenByIce;
+
+        public bool IsActivelyCollecting => (isCollectingInGrid || assignedSlot != null) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
 
         [Header("Visual Parts")]
         public Transform bodyPivot;
@@ -214,6 +226,13 @@ namespace PuzzleGlass
         private int _nextIncomingSocketCounter = 0;
         private int _settledSocketCount = 0;
         private float _lastGulpTime = -10f;
+
+        private GameObject _keyOverlayRoot;
+        private GameObject _lockOverlayRoot;
+        private TextMeshPro _lockCountText;
+        private GameObject _iceOverlayRoot;
+        private TextMeshPro _iceCountText;
+        private bool _keyConsumedVisually = false;
 
         public event Action<MonsterCharacter> OnEatenCube;
         public event Action<MonsterCharacter> OnTargetReached;
@@ -259,6 +278,8 @@ namespace PuzzleGlass
             UnityEditor.EditorApplication.delayCall += () =>
             {
                 if (this == null || Application.isPlaying) return;
+                remainingLockKeys = Mathf.Max(0, lockKeyCount);
+                remainingIceCount = Mathf.Max(0, iceCount);
                 if (NeedsVisualRebuild())
                 {
                     RebuildMonsterVisuals();
@@ -267,6 +288,7 @@ namespace PuzzleGlass
                 {
                     ApplySocketLayoutToMaterial();
                     UpdateBadgeText();
+                    RefreshSpecialMechanicVisuals();
                 }
             };
         }
@@ -351,11 +373,12 @@ namespace PuzzleGlass
 
         public void SetExitClearHighlight(bool exitClear)
         {
-            isExitClearInGrid = exitClear;
-            isUnlockedInStaging = exitClear;
+            bool effectiveClear = exitClear && !IsMovementOrCollectionBlocked;
+            isExitClearInGrid = effectiveClear;
+            isUnlockedInStaging = effectiveClear;
             if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
             {
-                bodyMaterial.SetFloat(ExitHighlightPropId, exitClear ? 1.0f : 0.0f);
+                bodyMaterial.SetFloat(ExitHighlightPropId, effectiveClear ? 1.0f : 0.0f);
             }
         }
 
@@ -408,6 +431,9 @@ namespace PuzzleGlass
             if (bodyPivot != null) bodyPivot.DOKill();
             if (badgeTransform != null) badgeTransform.DOKill();
             if (counterText != null) counterText.transform.DOKill();
+            if (_keyOverlayRoot != null) _keyOverlayRoot.transform.DOKill();
+            if (_lockOverlayRoot != null) _lockOverlayRoot.transform.DOKill();
+            if (_iceOverlayRoot != null) _iceOverlayRoot.transform.DOKill();
             if (socketBalls != null)
             {
                 for (int i = 0; i < socketBalls.Length; i++)
@@ -421,10 +447,28 @@ namespace PuzzleGlass
 
         public void Initialize(PuzzleColor color, int count, string id = null, CarrierBlockShape shape = CarrierBlockShape.Rect1x1)
         {
+            Initialize(color, count, id, shape, hasKey: false, lockKeyCount: 0, iceCount: 0);
+        }
+
+        public void Initialize(
+            PuzzleColor color,
+            int count,
+            string id,
+            CarrierBlockShape shape,
+            bool hasKey,
+            int lockKeyCount,
+            int iceCount)
+        {
             colorType = color;
             blockShape = shape;
             initialCount = Mathf.Clamp(count, 1, MaxVisualSockets);
             remainingCount = initialCount;
+            this.hasKey = hasKey;
+            this.lockKeyCount = Mathf.Max(0, lockKeyCount);
+            this.remainingLockKeys = this.lockKeyCount;
+            this.iceCount = Mathf.Max(0, iceCount);
+            this.remainingIceCount = this.iceCount;
+            _keyConsumedVisually = false;
             _subParticleCounter = 0;
             _nextIncomingSocketCounter = 0;
             _settledSocketCount = 0;
@@ -447,6 +491,11 @@ namespace PuzzleGlass
                     DestroyImmediate(transform.GetChild(i).gameObject);
             }
 
+            _keyOverlayRoot = null;
+            _lockOverlayRoot = null;
+            _lockCountText = null;
+            _iceOverlayRoot = null;
+            _iceCountText = null;
             _nextIncomingSocketCounter = 0;
             _settledSocketCount = 0;
             _builtShape = blockShape;
@@ -597,6 +646,9 @@ namespace PuzzleGlass
 
             // Soft Warm Fake Contact Drop Shadow underneath the carrier box
             BuildFakeDropShadow();
+
+            // Key / Lock / Ice overlays (built on demand)
+            RefreshSpecialMechanicVisuals();
 
             _originalBodyScale = bodyPivot.localScale;
             if (badgeTransform != null) _originalBadgeScale = badgeTransform.localScale;
@@ -751,7 +803,7 @@ namespace PuzzleGlass
             if (badgeTransform != null)
             {
                 // Up to MaxVisualSockets (16), the gray sockets inside the Carrier Box display exact capacity.
-                bool showBadge = (initialCount > MaxVisualSockets) && (remainingCount > 0);
+                bool showBadge = !IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0);
                 badgeTransform.gameObject.SetActive(showBadge);
             }
         }
@@ -784,7 +836,8 @@ namespace PuzzleGlass
             if (bodyMaterial.HasProperty(InnerRadPropId)) bodyMaterial.SetFloat(InnerRadPropId, CarrierBlockShapeUtility.InnerCornerRadius);
             if (bodyMaterial.HasProperty(OutlineThicknessPropId)) bodyMaterial.SetFloat(OutlineThicknessPropId, CarrierBlockShapeUtility.OutlineThickness);
             if (bodyMaterial.HasProperty(LipOffsetPropId)) bodyMaterial.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
-            if (bodyMaterial.HasProperty(ExitHighlightPropId)) bodyMaterial.SetFloat(ExitHighlightPropId, isExitClearInGrid ? 1f : 0f);
+            if (bodyMaterial.HasProperty(ExitHighlightPropId)) bodyMaterial.SetFloat(ExitHighlightPropId, (isExitClearInGrid && !IsMovementOrCollectionBlocked) ? 1f : 0f);
+            if (bodyMaterial.HasProperty(IceAmountPropId)) bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1f : 0f);
         }
 
         private void ApplySocketLayoutToMaterial()
@@ -969,6 +1022,10 @@ namespace PuzzleGlass
             UpdateBadgeText();
 
             OnEatenCube?.Invoke(this);
+            if (PuzzleGlassGameManager.Instance != null)
+            {
+                PuzzleGlassGameManager.Instance.OnCarrierBoxBallConsumed(this);
+            }
 
             if (remainingCount <= 0)
             {
@@ -1073,6 +1130,11 @@ namespace PuzzleGlass
         public bool TryStartInGridCollection(bool playDenialFeedback = true)
         {
             if (_isMovingToSlot || _isCompleted || remainingCount <= 0 || !gameObject.activeInHierarchy) return false;
+            if (IsMovementOrCollectionBlocked)
+            {
+                if (playDenialFeedback) PlayBlockedMechanicFeedback();
+                return false;
+            }
 
             if (isCollectingInGrid)
             {
@@ -1252,6 +1314,380 @@ namespace PuzzleGlass
 
             transform.localScale = targetScale;
             _isMovingToSlot = false;
+        }
+
+        // ==================== SPECIAL MECHANICS (KEY / LOCK / ICE) ====================
+
+        private Vector2 GetMechanicAnchorLocal()
+        {
+            CarrierBlockShapeUtility.GetRectParts(blockShape, out Vector4 r0, out _, out _, out _, out _);
+            return new Vector2(r0.x, r0.y);
+        }
+
+        public Vector3 GetKeyWorldPosition()
+        {
+            if (_keyOverlayRoot != null) return _keyOverlayRoot.transform.position;
+            Vector2 c = GetMechanicAnchorLocal();
+            return transform.TransformPoint(new Vector3(c.x, c.y, -0.28f));
+        }
+
+        public Vector3 GetLockWorldPosition()
+        {
+            if (_lockOverlayRoot != null) return _lockOverlayRoot.transform.position;
+            Vector2 c = GetMechanicAnchorLocal();
+            return transform.TransformPoint(new Vector3(c.x, c.y, -0.30f));
+        }
+
+        public void HideKeyForFlight()
+        {
+            _keyConsumedVisually = true;
+            if (_keyOverlayRoot != null) _keyOverlayRoot.SetActive(false);
+        }
+
+        public void RefreshSpecialMechanicVisuals()
+        {
+            if (bodyMaterial != null && bodyMaterial.HasProperty(IceAmountPropId))
+            {
+                bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1.0f : 0.0f);
+            }
+            if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
+            {
+                bool effectiveExit = isExitClearInGrid && !IsMovementOrCollectionBlocked;
+                bodyMaterial.SetFloat(ExitHighlightPropId, effectiveExit ? 1.0f : 0.0f);
+            }
+
+            if (bodyPivot == null) return;
+
+            bool showKey = hasKey && !_keyConsumedVisually;
+            bool showLock = remainingLockKeys > 0;
+            bool showIce = remainingIceCount > 0;
+
+            Vector2 center = GetMechanicAnchorLocal();
+
+            if (showKey)
+            {
+                if (_keyOverlayRoot == null) _keyOverlayRoot = BuildKeyOverlay(bodyPivot);
+                Vector2 keyOffset = (showLock || showIce) ? new Vector2(-0.24f, 0.22f) : Vector2.zero;
+                float keyScale = (showLock || showIce) ? 0.62f : 1.0f;
+                _keyOverlayRoot.transform.localPosition = new Vector3(center.x + keyOffset.x, center.y + keyOffset.y, -0.28f);
+                _keyOverlayRoot.transform.localScale = Vector3.one * keyScale;
+                _keyOverlayRoot.SetActive(true);
+            }
+            else if (_keyOverlayRoot != null)
+            {
+                _keyOverlayRoot.SetActive(false);
+            }
+
+            if (showLock)
+            {
+                if (_lockOverlayRoot == null) _lockOverlayRoot = BuildLockOverlay(bodyPivot, out _lockCountText);
+                Vector2 lockOffset = showIce ? new Vector2(0.18f, 0.16f) : Vector2.zero;
+                float lockScale = showIce ? 0.72f : 1.0f;
+                _lockOverlayRoot.transform.localPosition = new Vector3(center.x + lockOffset.x, center.y + lockOffset.y, -0.31f);
+                _lockOverlayRoot.transform.localScale = Vector3.one * lockScale;
+                _lockOverlayRoot.SetActive(true);
+                if (_lockCountText != null) _lockCountText.text = remainingLockKeys.ToString();
+            }
+            else if (_lockOverlayRoot != null)
+            {
+                _lockOverlayRoot.SetActive(false);
+            }
+
+            if (showIce)
+            {
+                if (_iceOverlayRoot == null) _iceOverlayRoot = BuildIceOverlay(bodyPivot, out _iceCountText);
+                Vector2 iceOffset = showLock ? new Vector2(-0.14f, -0.10f) : Vector2.zero;
+                _iceOverlayRoot.transform.localPosition = new Vector3(center.x + iceOffset.x, center.y + iceOffset.y, -0.33f);
+                _iceOverlayRoot.SetActive(true);
+                if (_iceCountText != null) _iceCountText.text = remainingIceCount.ToString();
+            }
+            else if (_iceOverlayRoot != null)
+            {
+                _iceOverlayRoot.SetActive(false);
+            }
+
+            UpdateBadgeText();
+        }
+
+        /// <summary>
+        /// Reduces the remaining key lock counter. Returns true if the block just became unlocked by keys.
+        /// </summary>
+        public bool DecrementLockKey(int amount = 1)
+        {
+            if (remainingLockKeys <= 0) return false;
+            remainingLockKeys = Mathf.Max(0, remainingLockKeys - Mathf.Max(1, amount));
+
+            if (remainingLockKeys > 0)
+            {
+                if (_lockCountText != null) _lockCountText.text = remainingLockKeys.ToString();
+                if (_lockOverlayRoot != null && Application.isPlaying)
+                {
+                    _lockOverlayRoot.transform.DOKill(true);
+                    _lockOverlayRoot.transform.DOPunchScale(Vector3.one * 0.22f, 0.22f, 6, 0.5f);
+                }
+                return false;
+            }
+
+            // Unlocked! Pop open animation
+            if (_lockOverlayRoot != null && Application.isPlaying)
+            {
+                GameObject overlay = _lockOverlayRoot;
+                overlay.transform.DOKill();
+                Sequence seq = DOTween.Sequence();
+                seq.Append(overlay.transform.DOScale(Vector3.one * 1.32f, 0.10f).SetEase(Ease.OutQuad));
+                seq.Append(overlay.transform.DOScale(Vector3.zero, 0.14f).SetEase(Ease.InBack));
+                seq.OnComplete(() =>
+                {
+                    if (overlay != null) overlay.SetActive(false);
+                });
+            }
+            else if (_lockOverlayRoot != null)
+            {
+                _lockOverlayRoot.SetActive(false);
+            }
+
+            if (bodyPivot != null && Application.isPlaying)
+            {
+                bodyPivot.DOKill(true);
+                bodyPivot.DOPunchScale(Vector3.one * 0.08f, 0.22f, 4, 0.6f);
+            }
+
+            RefreshSpecialMechanicVisuals();
+            return !IsMovementOrCollectionBlocked;
+        }
+
+        /// <summary>
+        /// Reduces the remaining ice melt counter. Returns true if the ice just melted completely.
+        /// </summary>
+        public bool DecrementIce(int amount = 1)
+        {
+            if (remainingIceCount <= 0) return false;
+            remainingIceCount = Mathf.Max(0, remainingIceCount - Mathf.Max(1, amount));
+
+            if (remainingIceCount > 0)
+            {
+                if (_iceCountText != null) _iceCountText.text = remainingIceCount.ToString();
+                if (_iceOverlayRoot != null && Application.isPlaying)
+                {
+                    _iceOverlayRoot.transform.DOKill(true);
+                    _iceOverlayRoot.transform.DOPunchScale(Vector3.one * 0.14f, 0.16f, 4, 0.5f);
+                }
+                return false;
+            }
+
+            // Ice melted! Smooth ice shatter & reveal underlying color
+            if (bodyMaterial != null && bodyMaterial.HasProperty(IceAmountPropId))
+            {
+                if (Application.isPlaying)
+                {
+                    DOTween.To(
+                        () => bodyMaterial != null ? bodyMaterial.GetFloat(IceAmountPropId) : 0f,
+                        v => { if (bodyMaterial != null) bodyMaterial.SetFloat(IceAmountPropId, v); },
+                        0f,
+                        0.18f);
+                }
+                else
+                {
+                    bodyMaterial.SetFloat(IceAmountPropId, 0f);
+                }
+            }
+
+            if (_iceOverlayRoot != null && Application.isPlaying)
+            {
+                GameObject iceObj = _iceOverlayRoot;
+                iceObj.transform.DOKill();
+                Sequence seq = DOTween.Sequence();
+                seq.Append(iceObj.transform.DOScale(Vector3.one * 1.25f, 0.08f).SetEase(Ease.OutQuad));
+                seq.Append(iceObj.transform.DOScale(Vector3.zero, 0.14f).SetEase(Ease.InBack));
+                seq.OnComplete(() =>
+                {
+                    if (iceObj != null) iceObj.SetActive(false);
+                });
+            }
+            else if (_iceOverlayRoot != null)
+            {
+                _iceOverlayRoot.SetActive(false);
+            }
+
+            if (bodyPivot != null && Application.isPlaying)
+            {
+                bodyPivot.DOKill(true);
+                bodyPivot.DOPunchScale(Vector3.one * 0.09f, 0.24f, 5, 0.6f);
+            }
+
+            UpdateBadgeText();
+            return !IsMovementOrCollectionBlocked;
+        }
+
+        public void PlayBlockedMechanicFeedback()
+        {
+            if (_isCompleted) return;
+            PuzzleSoundManager.Instance?.PlayBlocked();
+
+            transform.DOKill(true);
+            transform.DOShakePosition(0.24f, strength: new Vector3(0.065f, 0f, 0f), vibrato: 14, randomness: 70f, snapping: false, fadeOut: true);
+
+            if (IsLockedByKey && _lockOverlayRoot != null)
+            {
+                _lockOverlayRoot.transform.DOKill(true);
+                _lockOverlayRoot.transform.DOPunchScale(Vector3.one * 0.20f, 0.22f, 5, 0.6f);
+            }
+            else if (IsFrozenByIce && _iceOverlayRoot != null)
+            {
+                _iceOverlayRoot.transform.DOKill(true);
+                _iceOverlayRoot.transform.DOPunchScale(Vector3.one * 0.18f, 0.20f, 5, 0.6f);
+            }
+        }
+
+        private static Material CreateMechanicMaterial(Color color, string matName, bool glossy = true)
+        {
+            return PuzzleColorPalette.CreateToonyHypercasualMaterial(
+                color,
+                Color.Lerp(color, new Color(0.22f, 0.16f, 0.10f, 1f), 0.35f),
+                matName,
+                glossyCandy: glossy,
+                indirectIntensity: 0.20f);
+        }
+
+        private static void ApplyTmpOutline(TextMeshPro tmp, Color outlineColor, float outlineWidth)
+        {
+            if (tmp == null) return;
+            if (tmp.fontSharedMaterial != null)
+            {
+                Material inst = new Material(tmp.fontSharedMaterial)
+                {
+                    name = $"{tmp.fontSharedMaterial.name}_MechanicInst"
+                };
+                if (inst.HasProperty("_OutlineColor")) inst.SetColor("_OutlineColor", outlineColor);
+                if (inst.HasProperty("_OutlineWidth")) inst.SetFloat("_OutlineWidth", outlineWidth);
+                tmp.fontSharedMaterial = inst;
+            }
+        }
+
+        public static GameObject CreateGoldKeyVisual(Transform parent, string objName = "KeyIcon")
+        {
+            GameObject root = new GameObject(objName);
+            if (parent != null) root.transform.SetParent(parent, false);
+            root.transform.localRotation = Quaternion.Euler(0f, 0f, -32f);
+
+            Material goldMat = CreateMechanicMaterial(new Color(1.00f, 0.80f, 0.16f, 1f), "Mat_GoldKey", glossy: true);
+            Material outlineMat = CreateMechanicMaterial(new Color(0.22f, 0.12f, 0.03f, 1f), "Mat_GoldKeyOutline", glossy: false);
+
+            // Bow (ring)
+            const int segs = 16;
+            Vector3[] ringPts = new Vector3[segs];
+            for (int i = 0; i < segs; i++)
+            {
+                float a = (float)i / segs * Mathf.PI * 2f;
+                ringPts[i] = new Vector3(-0.12f + Mathf.Cos(a) * 0.10f, Mathf.Sin(a) * 0.10f, 0f);
+            }
+            AddMeshPart("Bow", root.transform, Vector3.zero, ProceduralMeshUtils.CreatePipeMesh(ringPts, 0.028f, 8, true), goldMat);
+            AddMeshPart("BowOutline", root.transform, new Vector3(0f, 0f, 0.016f), ProceduralMeshUtils.CreatePipeMesh(ringPts, 0.042f, 8, true), outlineMat);
+
+            // Shaft
+            AddMeshPart("Shaft", root.transform, new Vector3(0.11f, 0f, 0f), ProceduralMeshUtils.CreatePillBadge(0.27f, 0.052f, 0.028f, 0.024f), goldMat);
+            AddMeshPart("ShaftOutline", root.transform, new Vector3(0.11f, 0f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.30f, 0.080f, 0.026f, 0.036f), outlineMat);
+
+            // Teeth
+            AddMeshPart("Tooth1", root.transform, new Vector3(0.15f, -0.055f, 0f), ProceduralMeshUtils.CreatePillBadge(0.048f, 0.082f, 0.026f, 0.016f), goldMat);
+            AddMeshPart("Tooth1Outline", root.transform, new Vector3(0.15f, -0.055f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.074f, 0.108f, 0.024f, 0.024f), outlineMat);
+
+            AddMeshPart("Tooth2", root.transform, new Vector3(0.22f, -0.045f, 0f), ProceduralMeshUtils.CreatePillBadge(0.046f, 0.068f, 0.026f, 0.016f), goldMat);
+            AddMeshPart("Tooth2Outline", root.transform, new Vector3(0.22f, -0.045f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.072f, 0.094f, 0.024f, 0.024f), outlineMat);
+
+            return root;
+        }
+
+        private GameObject BuildKeyOverlay(Transform parent)
+        {
+            GameObject root = CreateGoldKeyVisual(parent, "KeyOverlay");
+            root.transform.localScale = Vector3.one;
+            return root;
+        }
+
+        private GameObject BuildLockOverlay(Transform parent, out TextMeshPro countLabel)
+        {
+            GameObject root = new GameObject("LockOverlay");
+            root.transform.SetParent(parent, false);
+
+            Material goldMat = CreateMechanicMaterial(new Color(1.00f, 0.78f, 0.16f, 1f), "Mat_PadlockGold", glossy: true);
+            Material outlineMat = CreateMechanicMaterial(new Color(0.22f, 0.12f, 0.03f, 1f), "Mat_PadlockOutline", glossy: false);
+            Material shackleMat = CreateMechanicMaterial(new Color(0.92f, 0.94f, 0.98f, 1f), "Mat_PadlockShackle", glossy: true);
+
+            // U-shackle arch
+            const int arcPts = 11;
+            Vector3[] arch = new Vector3[arcPts];
+            for (int i = 0; i < arcPts; i++)
+            {
+                float t = (float)i / (arcPts - 1);
+                float a = Mathf.Lerp(Mathf.PI, 0f, t);
+                arch[i] = new Vector3(Mathf.Cos(a) * 0.088f, 0.10f + Mathf.Sin(a) * 0.105f, 0f);
+            }
+            AddMeshPart("Shackle", root.transform, Vector3.zero, ProceduralMeshUtils.CreatePipeMesh(arch, 0.026f, 8, false), shackleMat);
+            AddMeshPart("ShackleOutline", root.transform, new Vector3(0f, 0f, 0.016f), ProceduralMeshUtils.CreatePipeMesh(arch, 0.040f, 8, false), outlineMat);
+
+            // Padlock body
+            AddMeshPart("Body", root.transform, new Vector3(0f, -0.02f, 0f), ProceduralMeshUtils.CreatePillBadge(0.30f, 0.24f, 0.055f, 0.065f), goldMat);
+            AddMeshPart("BodyOutline", root.transform, new Vector3(0f, -0.02f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.335f, 0.275f, 0.050f, 0.078f), outlineMat);
+
+            // Keyhole silhouette
+            AddMeshPart("KeyholeTop", root.transform, new Vector3(0f, 0.005f, -0.032f), ProceduralMeshUtils.CreatePillBadge(0.056f, 0.056f, 0.02f, 0.028f), outlineMat);
+            AddMeshPart("KeyholeSlot", root.transform, new Vector3(0f, -0.038f, -0.032f), ProceduralMeshUtils.CreatePillBadge(0.032f, 0.072f, 0.02f, 0.012f), outlineMat);
+
+            // Required key count text at bottom-right of padlock (matching reference "🔒 2")
+            GameObject textObj = new GameObject("LockCountText");
+            textObj.transform.SetParent(root.transform, false);
+            textObj.transform.localPosition = new Vector3(0.165f, -0.095f, -0.05f);
+
+            countLabel = textObj.AddComponent<TextMeshPro>();
+            countLabel.alignment = TextAlignmentOptions.Center;
+            countLabel.fontSize = 2.6f;
+            countLabel.fontStyle = FontStyles.Bold;
+            countLabel.color = Color.white;
+            countLabel.text = remainingLockKeys.ToString();
+            countLabel.rectTransform.sizeDelta = new Vector2(0.5f, 0.5f);
+            countLabel.sortingOrder = 12;
+            ApplyTmpOutline(countLabel, new Color(0.14f, 0.08f, 0.02f, 1f), 0.30f);
+
+            return root;
+        }
+
+        private GameObject BuildIceOverlay(Transform parent, out TextMeshPro countLabel)
+        {
+            GameObject root = new GameObject("IceOverlay");
+            root.transform.SetParent(parent, false);
+
+            Material frostMat = CreateMechanicMaterial(new Color(0.88f, 0.98f, 1.00f, 1f), "Mat_IceFrostCrest", glossy: true);
+            AddMeshPart("FrostGlintLeft", root.transform, new Vector3(-0.22f, 0.20f, 0f), ProceduralMeshUtils.CreatePillBadge(0.18f, 0.048f, 0.02f, 0.022f), frostMat);
+            AddMeshPart("FrostGlintRight", root.transform, new Vector3(0.20f, 0.18f, 0f), ProceduralMeshUtils.CreatePillBadge(0.12f, 0.042f, 0.02f, 0.020f), frostMat);
+
+            GameObject textObj = new GameObject("IceCountText");
+            textObj.transform.SetParent(root.transform, false);
+            textObj.transform.localPosition = new Vector3(0f, -0.02f, -0.04f);
+
+            countLabel = textObj.AddComponent<TextMeshPro>();
+            countLabel.alignment = TextAlignmentOptions.Center;
+            countLabel.fontSize = 3.8f;
+            countLabel.fontStyle = FontStyles.Bold;
+            countLabel.color = Color.white;
+            countLabel.text = remainingIceCount.ToString();
+            countLabel.rectTransform.sizeDelta = new Vector2(1.2f, 0.8f);
+            countLabel.sortingOrder = 14;
+            ApplyTmpOutline(countLabel, new Color(0.07f, 0.31f, 0.52f, 1f), 0.30f);
+
+            return root;
+        }
+
+        private static void AddMeshPart(string name, Transform parent, Vector3 localPos, Mesh mesh, Material mat)
+        {
+            GameObject obj = new GameObject(name);
+            obj.transform.SetParent(parent, false);
+            obj.transform.localPosition = localPos;
+            obj.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = obj.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
         }
     }
 }

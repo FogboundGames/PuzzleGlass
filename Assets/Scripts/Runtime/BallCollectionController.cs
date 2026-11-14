@@ -94,7 +94,7 @@ namespace PuzzleGlass
             for (int i = 0; i < gm.activeMonsters.Count; i++)
             {
                 var m = gm.activeMonsters[i];
-                if (m == null || m.IsCompleted || m.remainingCount <= 0 || !m.gameObject.activeInHierarchy || m.isCollectingInGrid || !m.armedAtTopEdge)
+                if (m == null || m.IsCompleted || m.remainingCount <= 0 || !m.gameObject.activeInHierarchy || m.isCollectingInGrid || !m.armedAtTopEdge || m.IsMovementOrCollectionBlocked)
                     continue;
                 if (drag != null && drag.IsBlockCurrentlyDragged(m))
                     continue;

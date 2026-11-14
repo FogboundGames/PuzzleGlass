@@ -130,18 +130,18 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float3 L_catch = normalize(float3(0.36, 0.50, -0.79));
                 float3 H_catch = normalize(L_catch + V);
                 float catchDot = saturate(dot(N, H_catch));
-                float catchSpot = smoothstep(0.955, 0.992, catchDot) * 0.24 + pow(catchDot, 28.0) * 0.07;
+                float catchSpot = smoothstep(0.945, 0.990, catchDot) * 0.30 + pow(catchDot, 24.0) * 0.08;
 
-                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.98), 0.42);
+                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.98), 0.45);
                 col += specColor * (specBroad + specGloss + catchSpot);
 
-                // 5. 3D Silhouette & Lower Bevel Cushion AO (keeps adjacent same-color cubes distinctly separated!)
+                // 5. 3D Silhouette & Lower Bevel Cushion AO (keeps adjacent same-color cubes/balls distinctly separated!)
                 float ndv = saturate(dot(N, V));
                 float grazing = 1.0 - ndv;
-                float rimBorder = smoothstep(0.36, 0.95, grazing);
+                float rimBorder = smoothstep(0.32, 0.92, grazing);
                 float lowerBias = saturate(-N.y * 0.55 + 0.45);
-                float borderShade = rimBorder * (0.38 + 0.62 * lowerBias) * _RimSeparation;
-                col = lerp(col, shadowTone * 0.80, borderShade);
+                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * _RimSeparation;
+                col = lerp(col, shadowTone * 0.66, borderShade);
 
                 return half4(saturate(col), 1.0);
             }

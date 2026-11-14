@@ -22,6 +22,7 @@ Shader "PuzzleGlass/CarrierBox"
         _OutlineThickness ("Outer Outline Thickness", Float) = 0.022
         _LipOffset ("3D Lower Lip Offset", Float) = 0.088
         _ExitHighlight ("Exit-Ready Rim Highlight", Float) = 0.0
+        _IceAmount ("Ice Freeze Overlay", Float) = 0.0
         _SocketCount ("Socket Count", Float) = 3.0
         _SocketRadius ("Socket Radius", Float) = 0.108
         _SockPair0 ("Socket Pair 0-1", Vector) = (-0.158, -0.081, 0.158, -0.081)
@@ -79,6 +80,7 @@ Shader "PuzzleGlass/CarrierBox"
                 float _OutlineThickness;
                 float _LipOffset;
                 float _ExitHighlight;
+                float _IceAmount;
                 float _SocketCount;
                 float _SocketRadius;
                 float4 _SockPair0;
@@ -212,6 +214,32 @@ Shader "PuzzleGlass/CarrierBox"
 
                 float3 sockRGB = lerp(_SocketColor.rgb, _SocketShadowColor.rgb, sockShadowMask);
                 col = lerp(col, sockRGB, sockMask * plateMask);
+
+                // 5. Optional Stylized Frozen Ice Cap Overlay (_IceAmount = 0..1)
+                if (_IceAmount > 0.001)
+                {
+                    float iceAmt = saturate(_IceAmount);
+                    float3 iceOutline = float3(0.14, 0.46, 0.78);
+                    float3 iceBaseDark = float3(0.18, 0.56, 0.88);
+                    float3 iceBody = float3(0.32, 0.78, 0.98);
+                    float3 iceFrost = float3(0.84, 0.97, 1.00);
+                    float3 icePlate = float3(0.45, 0.85, 0.99);
+                    float3 icePlateShade = float3(0.30, 0.72, 0.94);
+
+                    // Subtle diagonal ice crystal facets & snowy top frost highlight
+                    float sheen = smoothstep(0.65, 0.95, sin((q.x * 2.4 + q.y * 2.4) * 3.14159));
+                    float snowBand = smoothstep(0.08, 0.36, q.y + 0.06 * sin(q.x * 9.0));
+
+                    float3 iceCol = lerp(iceOutline, iceBaseDark, innerSilhouetteMask);
+                    iceCol = lerp(iceCol, iceBody, frontOuterMask);
+                    iceCol = lerp(iceCol, iceFrost, saturate(frontRimMask) * (0.45 + 0.45 * snowBand));
+
+                    float3 iceInner = lerp(icePlate, icePlateShade, plateShadowMask * 0.65);
+                    iceInner = lerp(iceInner, iceFrost, sheen * 0.24 + snowBand * 0.14);
+                    iceCol = lerp(iceCol, iceInner, plateMask);
+
+                    col = lerp(col, iceCol, iceAmt);
+                }
 
                 return half4(col * IN.color.rgb, totalAlpha * IN.color.a);
             }

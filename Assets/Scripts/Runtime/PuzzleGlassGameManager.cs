@@ -60,6 +60,7 @@ namespace PuzzleGlass
         public bool showDebugGui = false;
         private bool _showPatternSelector = false;
         private float _deadlockTimer = 0f;
+        private readonly List<GameObject> _activeMechanicVfx = new List<GameObject>();
 
         private void Awake()
         {
@@ -351,7 +352,7 @@ namespace PuzzleGlass
             if (mainCamera != null)
             {
                 mainCamera.clearFlags = CameraClearFlags.SolidColor;
-                mainCamera.backgroundColor = new Color(0.965f, 0.933f, 0.882f, 1f); // #F6EEE1 warm cream
+                mainCamera.backgroundColor = new Color(0.925f, 0.918f, 0.978f, 1f); // Soft pastel lavender fallback
 
                 // Orthographic framing proportioned cleanly for vertical mobile screen
                 mainCamera.transform.position = new Vector3(0, 0.30f, -10f);
@@ -417,6 +418,18 @@ namespace PuzzleGlass
 
         public void ClearMonsters()
         {
+            for (int i = _activeMechanicVfx.Count - 1; i >= 0; i--)
+            {
+                GameObject vfx = _activeMechanicVfx[i];
+                if (vfx != null)
+                {
+                    vfx.transform.DOKill();
+                    if (Application.isPlaying) Destroy(vfx);
+                    else DestroyImmediate(vfx);
+                }
+            }
+            _activeMechanicVfx.Clear();
+
             for (int i = 0; i < activeMonsters.Count; i++)
             {
                 if (activeMonsters[i] != null)
@@ -736,7 +749,14 @@ namespace PuzzleGlass
                 monObj.transform.localScale = gridScale;
 
                 MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
-                mon.Initialize(entry.color, entry.count, $"{entry.color}_{entry.count}_{i + 1}", shape);
+                mon.Initialize(
+                    entry.color,
+                    entry.count,
+                    $"{entry.color}_{entry.count}_{i + 1}",
+                    shape,
+                    entry.hasKey,
+                    entry.lockKeyCount,
+                    entry.iceCount);
                 mon.SetGridState(anchor, pos, gridScale, slotFitScale, exitClear: true, animateMove: false);
                 activeMonsters.Add(mon);
             }
@@ -802,6 +822,18 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Called every time a Carrier Box consumes 1 ball/unit toward completion.
+        /// Advances frozen ice counters when iceMeltMode is PerBallCollected.
+        /// </summary>
+        public void OnCarrierBoxBallConsumed(MonsterCharacter sourceBox)
+        {
+            if (currentLevel == null || currentLevel.iceMeltMode == IceMeltMode.PerBallCollected)
+            {
+                AdvanceAllFrozenBlocks(1, excludeBox: sourceBox);
+            }
+        }
+
+        /// <summary>
         /// Called when a Carrier Box seals its 3 balls with the transparent lid and completes!
         /// Increments Combo Streak and triggers Fever Mode (2x Vacuum) at 3+ consecutive completions.
         /// </summary>
@@ -818,6 +850,100 @@ namespace PuzzleGlass
                 {
                     glassContainer.SetFeverVisualGlow(true);
                 }
+            }
+
+            if (currentLevel != null && currentLevel.iceMeltMode == IceMeltMode.PerBoxCompleted)
+            {
+                AdvanceAllFrozenBlocks(1, excludeBox: completedBox);
+            }
+
+            if (completedBox.hasKey)
+            {
+                DeliverKeyFromCompletedBox(completedBox);
+            }
+        }
+
+        private void AdvanceAllFrozenBlocks(int step, MonsterCharacter excludeBox)
+        {
+            if (activeMonsters == null || step <= 0) return;
+            bool anyThawed = false;
+            for (int i = 0; i < activeMonsters.Count; i++)
+            {
+                var m = activeMonsters[i];
+                if (m == null || m == excludeBox || m.IsCompleted || m.remainingCount <= 0 || m.remainingIceCount <= 0)
+                    continue;
+
+                if (m.DecrementIce(step))
+                {
+                    anyThawed = true;
+                }
+            }
+
+            if (anyThawed)
+            {
+                PuzzleSoundManager.Instance?.PlayIceBreak();
+                if (stagingGridBoard != null)
+                {
+                    stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+                }
+            }
+        }
+
+        private void DeliverKeyFromCompletedBox(MonsterCharacter keyBox)
+        {
+            if (keyBox == null || activeMonsters == null) return;
+
+            List<MonsterCharacter> lockedTargets = new List<MonsterCharacter>();
+            for (int i = 0; i < activeMonsters.Count; i++)
+            {
+                var m = activeMonsters[i];
+                if (m == null || m == keyBox || m.IsCompleted || m.remainingCount <= 0 || m.remainingLockKeys <= 0)
+                    continue;
+                lockedTargets.Add(m);
+            }
+
+            if (lockedTargets.Count == 0) return;
+
+            Vector3 startPos = keyBox.GetKeyWorldPosition();
+            startPos.z = -0.55f;
+            Vector3 keyScale = keyBox.transform.localScale * 0.92f;
+            keyBox.HideKeyForFlight();
+
+            for (int i = 0; i < lockedTargets.Count; i++)
+            {
+                MonsterCharacter target = lockedTargets[i];
+                if (!Application.isPlaying)
+                {
+                    target.DecrementLockKey(1);
+                    continue;
+                }
+
+                GameObject flyingKey = MonsterCharacter.CreateGoldKeyVisual(transform, $"FlyingKey_{i}");
+                flyingKey.transform.position = startPos;
+                flyingKey.transform.localScale = keyScale;
+                _activeMechanicVfx.Add(flyingKey);
+
+                Vector3 endPos = target.GetLockWorldPosition();
+                endPos.z = -0.55f;
+
+                Sequence seq = DOTween.Sequence();
+                seq.Join(flyingKey.transform.DOJump(endPos, jumpPower: 0.42f, numJumps: 1, duration: 0.28f).SetEase(Ease.InOutQuad));
+                seq.Join(flyingKey.transform.DORotate(new Vector3(0f, 0f, 360f), 0.28f, RotateMode.FastBeyond360).SetEase(Ease.OutCubic));
+                seq.OnComplete(() =>
+                {
+                    _activeMechanicVfx.Remove(flyingKey);
+                    if (flyingKey != null) Destroy(flyingKey);
+
+                    if (target != null && !target.IsCompleted && target.remainingCount > 0)
+                    {
+                        bool unlocked = target.DecrementLockKey(1);
+                        PuzzleSoundManager.Instance?.PlayUnlock();
+                        if (unlocked && stagingGridBoard != null)
+                        {
+                            stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+                        }
+                    }
+                });
             }
         }
 

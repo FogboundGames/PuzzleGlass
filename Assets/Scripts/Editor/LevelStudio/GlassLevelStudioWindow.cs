@@ -45,11 +45,14 @@ namespace PuzzleGlass.Editor.Studio
         private LevelDifficulty m_PendingDifficulty;
         private string m_Search = "";
 
+        private enum MechanicBrush { None, Key, Lock, Ice }
+
         // Etkileşim durumu
         private int m_SelectedBlock = -1;
         private int m_SelectedGroup = -1;
         private PuzzleColor? m_BrushColor;
         private CarrierBlockShape? m_BrushShape;
+        private MechanicBrush m_BrushMechanic;
         private bool m_Eraser;
         private int m_DragBlock = -1;
         private Vector2Int m_DragOffset;
@@ -507,13 +510,67 @@ namespace PuzzleGlass.Editor.Studio
         {
             Record("Blok ekle");
             int count = Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, MonsterCharacter.MaxVisualSockets);
-            m_Level.monsters.Add(new LevelMonsterEntry(color, count, shape, anchor) { hasGridAnchor = true });
+            var entry = new LevelMonsterEntry(color, count, shape, anchor) { hasGridAnchor = true };
+            if (m_BrushMechanic == MechanicBrush.Key) entry.hasKey = true;
+            else if (m_BrushMechanic == MechanicBrush.Lock) entry.lockKeyCount = 1;
+            else if (m_BrushMechanic == MechanicBrush.Ice) entry.iceCount = 10;
+            m_Level.monsters.Add(entry);
             if (m_Level.bottomToTopGroups == null) m_Level.bottomToTopGroups = new List<LevelMonsterEntry>();
             m_Level.bottomToTopGroups.Add(new LevelMonsterEntry(color, count));
             m_Level.carrierBoxFormatVersion = 3;
             m_Level.SyncTripletsFromGroups();
             m_SelectedBlock = m_Level.monsters.Count - 1;
             OnEdited(syncScene: true);
+        }
+
+        private void SetBlockHasKey(int i, bool hasKey)
+        {
+            if (!ValidBlock(i)) return;
+            var m = m_Level.monsters[i];
+            if (m.hasKey == hasKey) return;
+            Record("Anahtarlı blok");
+            m.hasKey = hasKey;
+            OnEdited(syncScene: true);
+        }
+
+        private void SetBlockLockKeys(int i, int lockKeys)
+        {
+            if (!ValidBlock(i)) return;
+            lockKeys = Mathf.Max(0, lockKeys);
+            var m = m_Level.monsters[i];
+            if (m.lockKeyCount == lockKeys) return;
+            Record("Kilit anahtar sayısı");
+            m.lockKeyCount = lockKeys;
+            OnEdited(syncScene: true);
+        }
+
+        private void SetBlockIceCount(int i, int iceCount)
+        {
+            if (!ValidBlock(i)) return;
+            iceCount = Mathf.Max(0, iceCount);
+            var m = m_Level.monsters[i];
+            if (m.iceCount == iceCount) return;
+            Record("Buz sayacı");
+            m.iceCount = iceCount;
+            OnEdited(syncScene: true);
+        }
+
+        private void ToggleMechanicBrushOnBlock(int i, MechanicBrush brush)
+        {
+            if (!ValidBlock(i)) return;
+            var m = m_Level.monsters[i];
+            switch (brush)
+            {
+                case MechanicBrush.Key:
+                    SetBlockHasKey(i, !m.hasKey);
+                    break;
+                case MechanicBrush.Lock:
+                    SetBlockLockKeys(i, m.lockKeyCount > 0 ? 0 : 1);
+                    break;
+                case MechanicBrush.Ice:
+                    SetBlockIceCount(i, m.iceCount > 0 ? 0 : 10);
+                    break;
+            }
         }
 
         private void RemoveBlock(int i)
@@ -858,6 +915,14 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             AddSep();
+            var mechLabel = new Label("Mekanik");
+            mechLabel.AddToClassList("palette__label");
+            m_Palette.Add(mechLabel);
+            AddMechanicChip("🔑 Anahtar", MechanicBrush.Key, "Bloğa tıkla = anahtar ekle/kaldır (tamamlanınca 1 kilit açar).");
+            AddMechanicChip("🔒 Kilit", MechanicBrush.Lock, "Bloğa tıkla = kilit ekle/kaldır (kaç anahtar gerektiği sağdan ayarlanır).");
+            AddMechanicChip("❄ Buz", MechanicBrush.Ice, "Bloğa tıkla = buz ekle/kaldır (sayaç sağdan ayarlanır).");
+
+            AddSep();
             var eraser = Chip(() =>
             {
                 m_Eraser = !m_Eraser;
@@ -867,12 +932,25 @@ namespace PuzzleGlass.Editor.Studio
             eraser.tooltip = "Tıklanan blok silinir (Ctrl+Z geri alır).";
             m_Palette.Add(eraser);
 
-            if (m_BrushColor != null || m_BrushShape != null || m_Eraser)
+            if (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None || m_Eraser)
             {
                 var clear = Chip(() => { ClearBrush(); RefreshAll(); }, false);
                 clear.Add(new Label("Fırçayı bırak (Esc)"));
                 m_Palette.Add(clear);
             }
+        }
+
+        private void AddMechanicChip(string text, MechanicBrush brush, string tooltip)
+        {
+            var chip = Chip(() =>
+            {
+                m_BrushMechanic = m_BrushMechanic == brush ? MechanicBrush.None : brush;
+                m_Eraser = false;
+                RefreshAll();
+            }, m_BrushMechanic == brush);
+            chip.Add(new Label(text));
+            chip.tooltip = tooltip;
+            m_Palette.Add(chip);
         }
 
         private void AddSep()
@@ -910,6 +988,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             m_BrushColor = null;
             m_BrushShape = null;
+            m_BrushMechanic = MechanicBrush.None;
             m_Eraser = false;
         }
 
@@ -1015,8 +1094,8 @@ namespace PuzzleGlass.Editor.Studio
                 DrawBlock(m_Tray, m, i, anchor, rows, i == m_SelectedBlock, critical.Contains(i), dragging, invalid);
             }
 
-            // Fırça hayaleti: boş hücrede yeni blok, blok üstünde yeni şekil
-            if (m_HoverCell.HasValue && m_Pending == null && (m_BrushColor != null || m_BrushShape != null) && !m_Eraser)
+            // Fırça hayaleti: boş hücrede yeni blok, blok üstünde yeni şekil/mekanik
+            if (m_HoverCell.HasValue && m_Pending == null && (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None) && !m_Eraser)
             {
                 var cell = m_HoverCell.Value;
                 int hit = BlockAt(lvl, cell);
@@ -1026,7 +1105,17 @@ namespace PuzzleGlass.Editor.Studio
                     ? FindPlacement(lvl, shape, cell, hit, lvl.monsters[hit].gridAnchor)
                     : FindPlacement(lvl, shape, cell, -1);
                 var ghost = new LevelMonsterEntry(color, Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, 16), shape, at ?? cell);
-                if (hit >= 0) ghost.count = lvl.monsters[hit].count;
+                if (hit >= 0)
+                {
+                    var hm = lvl.monsters[hit];
+                    ghost.count = hm.count;
+                    ghost.hasKey = hm.hasKey;
+                    ghost.lockKeyCount = hm.lockKeyCount;
+                    ghost.iceCount = hm.iceCount;
+                }
+                if (m_BrushMechanic == MechanicBrush.Key) ghost.hasKey = hit < 0 || !ghost.hasKey;
+                else if (m_BrushMechanic == MechanicBrush.Lock) ghost.lockKeyCount = hit >= 0 && ghost.lockKeyCount > 0 ? 0 : 1;
+                else if (m_BrushMechanic == MechanicBrush.Ice) ghost.iceCount = hit >= 0 && ghost.iceCount > 0 ? 0 : 10;
                 DrawBlock(m_Tray, ghost, -1, at ?? cell - CarrierBlockShapeUtility.GetCells(shape)[0], rows, false, false, true, !at.HasValue);
             }
         }
@@ -1131,6 +1220,9 @@ namespace PuzzleGlass.Editor.Studio
         {
             var cells = CarrierBlockShapeUtility.GetCells(m.blockShape);
             Color body = PuzzleColorPalette.GetBodyColor(m.color);
+            bool frozen = m.iceCount > 0;
+            bool locked = m.lockKeyCount > 0;
+            Color cellColor = frozen ? new Color(0.337f, 0.761f, 0.965f) : body;
             var own = new HashSet<Vector2Int>(cells);
 
             // Blok tek parça çizilir: kendi hücreleri arasında boşluk/çizgi yok; sadece dış kenarlarda
@@ -1139,7 +1231,9 @@ namespace PuzzleGlass.Editor.Studio
             // Çerçeve rengi: USS'teki yarı saydam siyahın gövde üstündeki etkisi; seçili = beyaz, hatalı = kırmızı
             Color frame = selected ? Color.white
                 : (critical ? new Color(0.898f, 0.325f, 0.294f)
-                : Color.Lerp(body, Color.black, 0.25f));
+                : (frozen ? new Color(0.76f, 0.94f, 1f)
+                : (locked ? new Color(1f, 0.82f, 0.28f)
+                : Color.Lerp(body, Color.black, 0.25f))));
             if (invalid) frame = new Color(0.898f, 0.325f, 0.294f);
             Color gapColor = new Color(0.361f, 0.361f, 0.682f); // tepsi zemini (#5c5cae)
             for (int k = 0; k < cells.Length; k++)
@@ -1152,11 +1246,13 @@ namespace PuzzleGlass.Editor.Studio
 
                 var el = new VisualElement();
                 el.AddToClassList("block-cell");
+                el.EnableInClassList("block-cell--ice", frozen);
+                el.EnableInClassList("block-cell--locked", locked && !frozen && !selected);
                 el.EnableInClassList("block-cell--selected", selected);
                 el.EnableInClassList("block-cell--critical", critical && !selected);
                 el.EnableInClassList("block-cell--ghost", ghost);
                 el.EnableInClassList("block-cell--invalid", invalid);
-                el.style.backgroundColor = body;
+                el.style.backgroundColor = cellColor;
                 el.pickingMode = PickingMode.Ignore;
 
                 int gx = anchor.x + c.x, gy = anchor.y + c.y;
@@ -1176,9 +1272,10 @@ namespace PuzzleGlass.Editor.Studio
                 el.style.borderBottomLeftRadius = (down && left) ? radius : 0f;
                 el.style.borderBottomRightRadius = (down && right) ? radius : 0f;
 
-                // Beyaz iç plaka da birleşik: iç kenarlarda hücre sınırına kadar uzanır
+                // Beyaz/buz iç plaka da birleşik: iç kenarlarda hücre sınırına kadar uzanır
                 var inner = new VisualElement();
                 inner.AddToClassList("block-cell__inner");
+                inner.EnableInClassList("block-cell__inner--ice", frozen);
                 inner.pickingMode = PickingMode.Ignore;
                 inner.style.left = left ? plate : 0f;
                 inner.style.right = right ? plate : 0f;
@@ -1200,7 +1297,7 @@ namespace PuzzleGlass.Editor.Studio
                         if (!own.Contains(c + new Vector2Int(dx, 0)) || !own.Contains(c + new Vector2Int(0, dy))) continue;
                         if (own.Contains(c + new Vector2Int(dx, dy))) continue;
                         // Komşuların beyaz plakası dış hattan gap + border + plate içeride başlıyor
-                        el.Add(CornerPatch(dx, dy, gap + border + plate, body));
+                        el.Add(CornerPatch(dx, dy, gap + border + plate, cellColor));
                         el.Add(CornerPatch(dx, dy, gap + border, frame));
                         el.Add(CornerPatch(dx, dy, gap, gapColor));
                     }
@@ -1208,19 +1305,64 @@ namespace PuzzleGlass.Editor.Studio
                 tray.Add(el);
             }
 
-            // Yuva sayısı ve blok numarası: şeklin ilk hücresine
+            // Yuva/buz sayısı ve blok numarası: şeklin ilk hücresine
             var first = cells[0];
-            var label = new Label(m.count.ToString());
+            int firstGx = anchor.x + first.x;
+            int firstGy = anchor.y + first.y;
+            float firstLeft = firstGx * CellPx;
+            float firstTop = (rows - 1 - firstGy) * CellPx;
+
+            var label = new Label(frozen ? m.iceCount.ToString() : m.count.ToString());
             label.AddToClassList("block-label");
+            label.EnableInClassList("block-label--ice", frozen);
             label.pickingMode = PickingMode.Ignore;
-            PlaceCell(label, anchor.x + first.x, anchor.y + first.y, rows, 2f);
+            PlaceCell(label, firstGx, firstGy, rows, frozen ? 0f : 2f);
             tray.Add(label);
+
+            if (frozen)
+            {
+                var dot = new VisualElement();
+                dot.AddToClassList("block-colordot");
+                dot.pickingMode = PickingMode.Ignore;
+                dot.style.backgroundColor = body;
+                dot.style.left = firstLeft + CellPx - 19f;
+                dot.style.top = firstTop + 9f;
+                tray.Add(dot);
+            }
+
+            if (m.hasKey || locked)
+            {
+                var badgeRow = new VisualElement();
+                badgeRow.AddToClassList("block-badge-row");
+                badgeRow.pickingMode = PickingMode.Ignore;
+                badgeRow.style.left = firstLeft + 8f;
+                badgeRow.style.top = firstTop + CellPx - 22f;
+                if (m.hasKey)
+                {
+                    var keyBadge = new Label("🔑");
+                    keyBadge.AddToClassList("block-badge");
+                    keyBadge.AddToClassList("block-badge--key");
+                    keyBadge.pickingMode = PickingMode.Ignore;
+                    badgeRow.Add(keyBadge);
+                }
+                if (locked)
+                {
+                    var lockBadge = new Label($"🔒{m.lockKeyCount}");
+                    lockBadge.AddToClassList("block-badge");
+                    lockBadge.AddToClassList("block-badge--lock");
+                    lockBadge.pickingMode = PickingMode.Ignore;
+                    badgeRow.Add(lockBadge);
+                }
+                tray.Add(badgeRow);
+            }
+
             if (index < 0) return; // hayalet: numara yok
-            var number = new Label($"#{index + 1}");
+            var number = new Label(frozen ? $"#{index + 1}·{m.count}t" : $"#{index + 1}");
             number.AddToClassList("block-number");
             number.pickingMode = PickingMode.Ignore;
-            number.style.left = (anchor.x + first.x) * CellPx + 10f;
-            number.style.top = (rows - 1 - (anchor.y + first.y)) * CellPx + 8f;
+            if (frozen) number.style.color = new Color(0.04f, 0.21f, 0.37f);
+            number.style.left = firstLeft + 10f;
+            number.style.top = firstTop + 8f;
             tray.Add(number);
         }
 
@@ -1294,13 +1436,14 @@ namespace PuzzleGlass.Editor.Studio
                 return;
             }
 
-            if (m_BrushColor != null || m_BrushShape != null)
+            if (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None)
             {
                 if (hit >= 0)
                 {
                     if (m_BrushShape != null && !SetBlockShape(hit, m_BrushShape.Value, cell))
                         ShowNotification(new GUIContent($"#{hit + 1} bu şekle dönüşemiyor: {WhyNotFits(lvl, m_BrushShape.Value, cell, hit)}"));
                     if (m_BrushColor != null) SetBlockColor(hit, m_BrushColor.Value);
+                    if (m_BrushMechanic != MechanicBrush.None) ToggleMechanicBrushOnBlock(hit, m_BrushMechanic);
                     m_SelectedBlock = hit;
                     RefreshAll();
                 }
@@ -1339,7 +1482,7 @@ namespace PuzzleGlass.Editor.Studio
             if (m_DragBlock < 0)
             {
                 // Fırça seçiliyken hayalet önizleme: blok tıklamadan önce nereye geleceği görünür
-                bool brush = (m_BrushColor != null || m_BrushShape != null) && !m_Eraser && m_Pending == null;
+                bool brush = (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None) && !m_Eraser && m_Pending == null;
                 Vector2Int? hover = null;
                 if (brush)
                 {
@@ -1560,6 +1703,67 @@ namespace PuzzleGlass.Editor.Studio
             });
             m_Inspector.Add(row);
 
+            var mechTitle = new Label("Özel Mekanikler");
+            mechTitle.AddToClassList("inspector__sub");
+            mechTitle.style.marginTop = 8;
+            mechTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            m_Inspector.Add(mechTitle);
+
+            var keyToggle = new Toggle("🔑 Anahtarlı kutu") { value = m.hasKey };
+            keyToggle.tooltip = "Tamamlandığında kilitli bloklara 1 altın anahtar gönderir.";
+            keyToggle.RegisterValueChangedCallback(e => SetBlockHasKey(i, e.newValue));
+            m_Inspector.Add(keyToggle);
+
+            var lockRow = new VisualElement();
+            lockRow.AddToClassList("inspector__row");
+            var lockLbl = new Label("🔒 Kilit (anahtar)");
+            lockLbl.AddToClassList("inspector__row-label");
+            lockRow.Add(lockLbl);
+            lockRow.Add(new Button(() => SetBlockLockKeys(i, m.lockKeyCount - 1)) { text = "−" });
+            var lockCount = new Label(m.lockKeyCount > 0 ? m.lockKeyCount.ToString() : "Yok");
+            lockCount.AddToClassList("inspector__count");
+            lockRow.Add(lockCount);
+            lockRow.Add(new Button(() => SetBlockLockKeys(i, m.lockKeyCount + 1)) { text = "+" });
+            if (m.lockKeyCount > 0)
+                lockRow.Add(new Button(() => SetBlockLockKeys(i, 0)) { text = "Aç", tooltip = "Kilidi kaldır (0)." });
+            m_Inspector.Add(lockRow);
+
+            var iceRow = new VisualElement();
+            iceRow.AddToClassList("inspector__row");
+            var iceLbl = new Label("❄ Buz (sayaç)");
+            iceLbl.AddToClassList("inspector__row-label");
+            iceRow.Add(iceLbl);
+            iceRow.Add(new Button(() => SetBlockIceCount(i, m.iceCount - 1)) { text = "−" });
+            var iceField = new IntegerField { value = m.iceCount, isDelayed = true };
+            iceField.style.width = 44;
+            iceField.RegisterValueChangedCallback(e => SetBlockIceCount(i, e.newValue));
+            iceRow.Add(iceField);
+            iceRow.Add(new Button(() => SetBlockIceCount(i, m.iceCount + 1)) { text = "+" });
+            m_Inspector.Add(iceRow);
+
+            var icePresets = new VisualElement();
+            icePresets.AddToClassList("inspector__row");
+            var icePresetLbl = new Label("Buz hızlı");
+            icePresetLbl.AddToClassList("inspector__row-label");
+            icePresets.Add(icePresetLbl);
+            icePresets.Add(new Button(() => SetBlockIceCount(i, 0)) { text = "0" });
+            icePresets.Add(new Button(() => SetBlockIceCount(i, 5)) { text = "5" });
+            icePresets.Add(new Button(() => SetBlockIceCount(i, 10)) { text = "10" });
+            icePresets.Add(new Button(() => SetBlockIceCount(i, 15)) { text = "15" });
+            m_Inspector.Add(icePresets);
+
+            if (m.hasKey || m.lockKeyCount > 0 || m.iceCount > 0)
+            {
+                string unit = m_Level.iceMeltMode == IceMeltMode.PerBallCollected ? "top toplandığında" : "kutu tamamlandığında";
+                string mechSummary = "";
+                if (m.hasKey) mechSummary += "• Anahtarlı: tamamlanınca tüm kilitleri 1 azaltır.\n";
+                if (m.lockKeyCount > 0) mechSummary += $"• Kilitli ({m.lockKeyCount}): {m.lockKeyCount} anahtar gelene kadar kaymaz ve top toplamaz.\n";
+                if (m.iceCount > 0) mechSummary += $"• Buzlu ({m.iceCount}): {m.iceCount} {unit} eriyene kadar donuk kalır.";
+                var mechHint = new Label(mechSummary.TrimEnd());
+                mechHint.AddToClassList("inspector__hint");
+                m_Inspector.Add(mechHint);
+            }
+
             int g = FindGroup(m.color, m.count, fromTop: false);
             var order = new Label(g >= 0
                 ? $"Bu bloğun topları cam sırasında {g + 1}. sırada (alttan). Sırayı aşağıdaki şeritten değiştir."
@@ -1613,14 +1817,20 @@ namespace PuzzleGlass.Editor.Studio
             rows.RegisterValueChangedCallback(e => { Record("Tepsi satır"); lvl.stagingGridRows = e.newValue; OnEdited(syncScene: true); });
             m_Inspector.Add(rows);
 
+            var iceMelt = new EnumField("Buz erimesi", lvl.iceMeltMode);
+            iceMelt.tooltip = "PerBallCollected: herhangi bir kutuya her top indiğinde buz sayacı 1 düşer.\nPerBoxCompleted: her kutu tamamlandığında buz sayacı 1 düşer.";
+            iceMelt.RegisterValueChangedCallback(e => { Record("Buz erime modu"); lvl.iceMeltMode = (IceMeltMode)e.newValue; OnEdited(syncScene: true); });
+            m_Inspector.Add(iceMelt);
+
             var glassBtn = new Button(() => GlassStudioWindow.OpenFor(m_Level)) { text = "✨ Bu levelin camını düzenle" };
             glassBtn.AddToClassList("inspector__action");
             m_Inspector.Add(glassBtn);
 
             var hint = new Label(
                 "Nasıl kullanılır:\n" +
-                "• Üstten renk ve/veya şekil fırçası seç, tepside boş hücreye tıkla: blok eklenir.\n" +
-                "• Fırça seçiliyken bloğa tıkla: rengi/şekli değişir. Silgi: blok silinir.\n" +
+                "• Üstten renk, şekil ve/veya mekanik fırçası seç, tepside boş hücreye tıkla: blok eklenir.\n" +
+                "• Fırça seçiliyken bloğa tıkla: rengi/şekli/mekaniği değişir. Silgi: blok silinir.\n" +
+                "• Mekanik sayaçlarını (kilit anahtar sayısı / buz sayacı) bloğu seçip buradan ayarla.\n" +
                 "• Fırça yokken bloğu sürükle: taşınır.\n" +
                 "• Cam sırasında iki çipe sırayla tıkla: yerleri değişir.\n" +
                 "• Esc fırçayı bırakır, Delete seçili bloğu siler, Ctrl+Z geri alır.");

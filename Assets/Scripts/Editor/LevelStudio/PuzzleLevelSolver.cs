@@ -52,6 +52,9 @@ namespace PuzzleGlass.Editor.Studio
             public PuzzleColor color;
             public int count;
             public Vector2Int[] cells;
+            public bool hasKey;
+            public int lockKeyCount;
+            public int iceCount;
         }
 
         // ==================== Kural kontrolleri ====================
@@ -115,6 +118,39 @@ namespace PuzzleGlass.Editor.Studio
             if (occupied >= cols * rows)
                 list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = "Tepside boş hücre yok: hiçbir blok kaydırılamaz.", why = "Oyuncu sadece en üst sıradaki bloklarla başlayabilir." });
 
+            // Anahtar / kilit / buz tutarlılığı
+            int totalKeyBlocks = 0;
+            int totalBoxSockets = 0;
+            for (int i = 0; i < lvl.monsters.Count; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null) continue;
+                if (m.hasKey) totalKeyBlocks++;
+                totalBoxSockets += Mathf.Max(1, m.count);
+            }
+            for (int i = 0; i < lvl.monsters.Count; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null) continue;
+                if (m.lockKeyCount > 0)
+                {
+                    int availableKeys = totalKeyBlocks - (m.hasKey ? 1 : 0);
+                    if (m.lockKeyCount > availableKeys)
+                        list.Add(new LevelFinding { severity = FindingSeverity.Critical, text = $"{i + 1}. blok ({ColorName(m.color)}) {m.lockKeyCount} anahtar istiyor ama onu açabilecek {availableKeys} anahtarlı blok var.", why = "Kilit sayısı kadar ayrı anahtarlı kutu ekle veya kilit sayısını düşür." });
+                }
+                if (m.iceCount > 0)
+                {
+                    int maxProgress = lvl.iceMeltMode == IceMeltMode.PerBallCollected
+                        ? Mathf.Max(0, totalBoxSockets - Mathf.Max(1, m.count))
+                        : Mathf.Max(0, lvl.monsters.Count - 1);
+                    if (m.iceCount > maxProgress)
+                    {
+                        string unit = lvl.iceMeltMode == IceMeltMode.PerBallCollected ? "top" : "kutu";
+                        list.Add(new LevelFinding { severity = FindingSeverity.Critical, text = $"{i + 1}. blok ({ColorName(m.color)}) {m.iceCount} buz istiyor ama kendisi donukken en fazla {maxProgress} {unit} tamamlanabilir.", why = "Buz sayacını düşür veya başka kutu/yuva ekle." });
+                    }
+                }
+            }
+
             if (solve != null)
             {
                 switch (solve.status)
@@ -158,6 +194,7 @@ namespace PuzzleGlass.Editor.Studio
             public bool Done { get; private set; }
 
             private readonly int m_Limit, m_Cols, m_Rows, m_N;
+            private readonly IceMeltMode m_IceMeltMode;
             private readonly Block[] m_Blocks;
             private readonly List<PuzzleColor>[] m_Stacks;
             private readonly int[] m_StackGridCol;
@@ -173,6 +210,7 @@ namespace PuzzleGlass.Editor.Studio
 
                 m_Cols = lvl.stagingGridCols;
                 m_Rows = lvl.stagingGridRows;
+                m_IceMeltMode = lvl.iceMeltMode;
                 m_N = lvl.monsters.Count;
                 m_Blocks = new Block[m_N];
                 var anchors = new Vector2Int[m_N];
@@ -180,7 +218,15 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     var m = lvl.monsters[i];
                     if (m == null) { Done = true; return; }
-                    m_Blocks[i] = new Block { color = m.color, count = Mathf.Max(1, m.count), cells = CarrierBlockShapeUtility.GetCells(m.blockShape) };
+                    m_Blocks[i] = new Block
+                    {
+                        color = m.color,
+                        count = Mathf.Max(1, m.count),
+                        cells = CarrierBlockShapeUtility.GetCells(m.blockShape),
+                        hasKey = m.hasKey,
+                        lockKeyCount = Mathf.Max(0, m.lockKeyCount),
+                        iceCount = Mathf.Max(0, m.iceCount)
+                    };
                     anchors[i] = m.gridAnchor;
                 }
                 if (!IsValidPlacement(m_Blocks, anchors, new bool[m_N], m_Cols, m_Rows)) { Done = true; return; }
@@ -202,7 +248,7 @@ namespace PuzzleGlass.Editor.Studio
                 }
 
                 var start = new State { anchors = anchors, removed = new bool[m_N], fill = new int[m_N], taken = new int[bc] };
-                CollectClosure(start, m_Blocks, m_Stacks, m_StackGridCol, m_Rows);
+                CollectClosure(start, m_Blocks, m_Stacks, m_StackGridCol, m_Rows, m_IceMeltMode);
                 Result.openingCollectors = CountFilledAny(start);
                 Result.status = SolveStatus.LimitReached; // bitene kadar
                 m_Visited.Add(Key(start));
@@ -234,13 +280,13 @@ namespace PuzzleGlass.Editor.Studio
 
                     for (int i = 0; i < m_N; i++)
                     {
-                        if (s.removed[i]) continue;
+                        if (s.removed[i] || IsBlockBlocked(i, s, m_Blocks, m_IceMeltMode)) continue;
                         foreach (var d in Dirs)
                         {
                             var next = s.Clone();
                             next.anchors[i] = s.anchors[i] + d;
                             if (!IsValidPlacement(m_Blocks, next.anchors, next.removed, m_Cols, m_Rows)) continue;
-                            CollectClosure(next, m_Blocks, m_Stacks, m_StackGridCol, m_Rows);
+                            CollectClosure(next, m_Blocks, m_Stacks, m_StackGridCol, m_Rows, m_IceMeltMode);
                             if (m_Visited.Add(Key(next))) m_Queue.Enqueue((next, depth + 1));
                         }
                     }
@@ -313,11 +359,38 @@ namespace PuzzleGlass.Editor.Studio
             return true;
         }
 
+        private static bool IsBlockBlocked(int i, State s, Block[] blocks, IceMeltMode iceMeltMode)
+        {
+            var b = blocks[i];
+            if (b.lockKeyCount > 0)
+            {
+                int keysCollected = 0;
+                for (int j = 0; j < blocks.Length; j++)
+                    if (s.removed[j] && blocks[j].hasKey) keysCollected++;
+                if (keysCollected < b.lockKeyCount) return true;
+            }
+            if (b.iceCount > 0)
+            {
+                int progress = 0;
+                if (iceMeltMode == IceMeltMode.PerBallCollected)
+                {
+                    for (int c = 0; c < s.taken.Length; c++) progress += s.taken[c];
+                }
+                else
+                {
+                    for (int j = 0; j < blocks.Length; j++)
+                        if (s.removed[j]) progress++;
+                }
+                if (progress < b.iceCount) return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// Oyundaki kendiliğinden toplama: en üst sıradaki bloklar kendi açık sütunlarının hizasındaki
         /// en alt topları alır; dolan blok çıkar. Değişiklik kalmayana kadar tekrarlar.
         /// </summary>
-        private static void CollectClosure(State s, Block[] blocks, List<PuzzleColor>[] stacks, int[] stackGridCol, int rows)
+        private static void CollectClosure(State s, Block[] blocks, List<PuzzleColor>[] stacks, int[] stackGridCol, int rows, IceMeltMode iceMeltMode)
         {
             bool changed = true;
             while (changed)
@@ -325,7 +398,7 @@ namespace PuzzleGlass.Editor.Studio
                 changed = false;
                 for (int i = 0; i < blocks.Length; i++)
                 {
-                    if (s.removed[i]) continue;
+                    if (s.removed[i] || IsBlockBlocked(i, s, blocks, iceMeltMode)) continue;
                     var open = OpenColumns(i, s, blocks, rows);
                     if (open == null) continue;
 

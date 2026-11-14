@@ -53,21 +53,22 @@ namespace PuzzleGlass.Editor.Studio
 
         private static readonly (string name, float w, float h, float corner, float frame)[] BoxPresets =
         {
-            ("Varsayılan", 2.64f, 1.18f, 0.22f, 0.115f),
-            ("Geniş", 2.92f, 0.96f, 0.20f, 0.105f),
-            ("Kare", 1.60f, 1.60f, 0.26f, 0.115f),
-            ("Yüksek", 1.50f, 1.95f, 0.24f, 0.115f),
-            ("Dar uzun", 1.20f, 2.30f, 0.30f, 0.115f),
-            ("Kapsül", 2.40f, 1.20f, 0.60f, 0.115f)
+            ("Varsayılan", 2.64f, 1.18f, 0.28f, 0.095f),
+            ("Kavanoz", 2.40f, 1.38f, 0.36f, 0.095f),
+            ("Geniş", 2.92f, 0.96f, 0.24f, 0.090f),
+            ("Kare", 1.60f, 1.60f, 0.28f, 0.095f),
+            ("Yüksek", 1.50f, 1.95f, 0.28f, 0.095f),
+            ("Dar uzun", 1.20f, 2.30f, 0.32f, 0.095f),
+            ("Kapsül", 2.40f, 1.24f, 0.60f, 0.095f)
         };
 
         private static readonly (string name, Color main, Color high, Color edge)[] FramePalettes =
         {
-            ("Lavanta", new Color(0.50f, 0.50f, 0.90f), new Color(0.84f, 0.84f, 0.98f), new Color(0.38f, 0.36f, 0.80f)),
-            ("Gök mavi", new Color(0.28f, 0.62f, 0.92f), new Color(0.76f, 0.90f, 0.99f), new Color(0.18f, 0.44f, 0.76f)),
-            ("Nane", new Color(0.30f, 0.76f, 0.62f), new Color(0.76f, 0.96f, 0.88f), new Color(0.18f, 0.56f, 0.46f)),
-            ("Mercan", new Color(0.90f, 0.48f, 0.52f), new Color(0.98f, 0.82f, 0.84f), new Color(0.70f, 0.32f, 0.38f)),
-            ("Arduvaz", new Color(0.32f, 0.36f, 0.48f), new Color(0.68f, 0.72f, 0.84f), new Color(0.20f, 0.22f, 0.32f))
+            ("Lavanta", new Color(0.49f, 0.44f, 0.90f), new Color(0.94f, 0.94f, 1.00f), new Color(0.35f, 0.32f, 0.78f)),
+            ("Gök mavi", new Color(0.28f, 0.62f, 0.92f), new Color(0.86f, 0.94f, 1.00f), new Color(0.18f, 0.44f, 0.76f)),
+            ("Nane", new Color(0.30f, 0.76f, 0.62f), new Color(0.86f, 0.98f, 0.92f), new Color(0.18f, 0.56f, 0.46f)),
+            ("Mercan", new Color(0.90f, 0.48f, 0.52f), new Color(0.99f, 0.88f, 0.90f), new Color(0.70f, 0.32f, 0.38f)),
+            ("Arduvaz", new Color(0.32f, 0.36f, 0.48f), new Color(0.82f, 0.86f, 0.94f), new Color(0.20f, 0.22f, 0.32f))
         };
 
         private static readonly (string name, GlassColorTheme theme)[] Themes =
@@ -380,10 +381,10 @@ namespace PuzzleGlass.Editor.Studio
             m_Level.useCustomGlassShape = false;
             m_Level.glassPreset = GlassShapePreset.RectangleBox;
             m_Level.contourPoints = new List<GlassContourPoint>();
-            m_Level.boxCornerRadius = 0.22f;
-            m_Level.boxFrameThickness = 0.115f;
+            m_Level.boxCornerRadius = 0.28f;
+            m_Level.boxFrameThickness = 0.095f;
             OnEdited();
-            ShowNotification(new GUIContent("Level varsayılan havuz camına döndü"));
+            ShowNotification(new GUIContent("Level varsayılan kristal camına döndü"));
         }
 
         private void ConvertBoxToContour()
@@ -537,7 +538,7 @@ namespace PuzzleGlass.Editor.Studio
             }
             m_Inspector.Add(themes);
 
-            Section("Çerçeve rengi");
+            Section("Cam vurgu / Yaka rengi");
             var frames = new VisualElement();
             frames.AddToClassList("chip-grid");
             foreach (var (name, main, high, edge) in FramePalettes)
@@ -545,7 +546,7 @@ namespace PuzzleGlass.Editor.Studio
                 Color mc = main, hc = high, ec = edge;
                 var chip = new Button(() =>
                 {
-                    Record("Çerçeve rengi");
+                    Record("Cam vurgu ve yaka rengi");
                     m_Level.boxFrameColor = mc;
                     m_Level.boxFrameHighlightColor = hc;
                     m_Level.boxFrameEdgeShadeColor = ec;
@@ -562,17 +563,17 @@ namespace PuzzleGlass.Editor.Studio
             }
             m_Inspector.Add(frames);
 
-            var frameColor = new ColorField("Çerçeve") { value = m_Level.boxFrameColor, showAlpha = false };
+            var frameColor = new ColorField("Yaka / Vurgu") { value = m_Level.boxFrameColor, showAlpha = false };
             frameColor.RegisterValueChangedCallback(e =>
             {
-                Record("Çerçeve rengi");
+                Record("Cam vurgu rengi");
                 m_Level.boxFrameColor = e.newValue;
-                m_Level.boxFrameHighlightColor = Color.Lerp(e.newValue, Color.white, 0.68f);
+                m_Level.boxFrameHighlightColor = Color.Lerp(e.newValue, Color.white, 0.78f);
                 m_Level.boxFrameEdgeShadeColor = Color.Lerp(e.newValue, Color.black, 0.24f);
                 OnEdited();
             });
             m_Inspector.Add(frameColor);
-            var bodyColor = new ColorField("Cam") { value = m_Level.glassBodyColor, showAlpha = true };
+            var bodyColor = new ColorField("Cam tonu") { value = m_Level.glassBodyColor, showAlpha = true };
             bodyColor.RegisterValueChangedCallback(e =>
             {
                 Record("Cam rengi");
@@ -583,7 +584,7 @@ namespace PuzzleGlass.Editor.Studio
             m_Inspector.Add(bodyColor);
 
             Section("");
-            var reset = new Button(ResetToDefault) { text = "Varsayılan cama dön", tooltip = "Level özel cam kullanmaz; oyunun varsayılan havuzu (2.64 × 1.18) yüklenir." };
+            var reset = new Button(ResetToDefault) { text = "Varsayılan cama dön", tooltip = "Level özel cam kullanmaz; oyunun varsayılan kristal havuzu (2.64 × 1.18) yüklenir." };
             reset.AddToClassList("inspector__action");
             m_Inspector.Add(reset);
         }
@@ -613,9 +614,9 @@ namespace PuzzleGlass.Editor.Studio
             AddSlider("Genişlik", w, GlassShapeData.MinWidth, GlassShapeData.MaxWidth, v => { GlassShapeData.GetBox(m_Level, out _, out float hh, out _); SetBox(v, hh); });
             AddSlider("Yükseklik", h, GlassShapeData.MinHeight, GlassShapeData.MaxHeight, v => { GlassShapeData.GetBox(m_Level, out float ww, out _, out _); SetBox(ww, v); });
             AddSlider("Köşe", m_Level.boxCornerRadius, 0.04f, 0.65f, v => { GlassShapeData.GetBox(m_Level, out float ww, out float hh, out _); SetBox(ww, hh, corner: v, undo: "Köşe"); });
-            AddSlider("Çerçeve", m_Level.boxFrameThickness, 0.04f, 0.24f, v => { GlassShapeData.GetBox(m_Level, out float ww, out float hh, out _); SetBox(ww, hh, frame: v, undo: "Çerçeve kalınlığı"); });
+            AddSlider("Cam duvarı", m_Level.boxFrameThickness, 0.04f, 0.24f, v => { GlassShapeData.GetBox(m_Level, out float ww, out float hh, out _); SetBox(ww, hh, frame: v, undo: "Cam duvar kalınlığı"); });
 
-            var hint = new Label("Tepsi camın genişliğine göre hizalanır. Cam daralınca tepsi hücreleri de küçülür.");
+            var hint = new Label("Tepsi alttaki cam kavanozun içinde, üst camın genişliğine göre hizalanır.");
             hint.AddToClassList("inspector__hint");
             m_Inspector.Add(hint);
         }
@@ -630,14 +631,19 @@ namespace PuzzleGlass.Editor.Studio
             }
             else
             {
-                var ok = new Label("Taban düz ve geniş: oyunda havuz gibi oynanır. Toplar her satırda camın genişliğine göre dizilir.");
+                var ok = new Label("Taban düz ve geniş: yeni parlak kristal cam temasıyla ve alt çıkış yakasıyla havuz gibi oynanır.");
                 ok.AddToClassList("inspector__hint");
                 m_Inspector.Add(ok);
             }
 
-            Section("Başlangıç şekilleri");
+            Section("Cam Şekilleri");
             var presets = new VisualElement();
             presets.AddToClassList("chip-grid");
+            presets.Add(ContourChip("Şişe / Kavanoz", BottleJar()));
+            presets.Add(ContourChip("Huni Şişe", FunnelJar()));
+            presets.Add(ContourChip("Yuvarlak", OvalFlask()));
+            presets.Add(ContourChip("Kum Saati", HourglassJar()));
+            presets.Add(ContourChip("Geniş Kase", WideBowl()));
             presets.Add(ContourChip("Yamuk", Trapezoid()));
             presets.Add(ContourChip("Altıgen", Hexagon()));
             presets.Add(ContourChip("Dar tüp", SlimTube()));
@@ -781,7 +787,7 @@ namespace PuzzleGlass.Editor.Studio
         private Vector2 ToPx(float x, float y) => new Vector2(m_Origin.x + x * m_Scale, m_Origin.y - y * m_Scale);
         private Vector2 ToWorld(Vector2 px) => new Vector2((px.x - m_Origin.x) / m_Scale, (m_Origin.y - px.y) / m_Scale);
 
-        /// <summary>Görünümü camın ve tepsinin tamamı sığacak şekilde ayarlar (sürüklerken sabit kalır).</summary>
+        /// <summary>Görünümü üst kristal cam + alt kavanoz tepsinin tamamı sığacak şekilde ayarlar.</summary>
         private void FitView(Rect rect, PuzzleGlassLevelData lvl)
         {
             if (m_ViewFrozen) return;
@@ -790,14 +796,14 @@ namespace PuzzleGlass.Editor.Studio
             foreach (var p in contour) maxHw = Mathf.Max(maxHw, p.halfWidth);
             float frame = lvl.boxFrameThickness;
             float top = contour[contour.Count - 1].y + frame;
-            float bottom = contour[0].y - frame;
+            float bottom = contour[0].y - frame - 0.14f;
             float trayH = TrayHeight(lvl, maxHw);
-            float viewBottom = bottom - 0.11f - trayH - 0.15f;
+            float viewBottom = bottom - 0.36f - trayH - 0.22f;
             float viewTop = top + 0.25f;
-            float viewHalfW = Mathf.Max(maxHw + frame + 0.3f, 1.2f);
+            float viewHalfW = Mathf.Max(maxHw + frame + 0.42f, 1.30f);
             float sx = rect.width / (viewHalfW * 2f);
             float sy = rect.height / (viewTop - viewBottom);
-            m_Scale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.92f);
+            m_Scale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.90f);
             m_Origin = new Vector2(rect.width * 0.5f, rect.height * 0.5f + (viewTop + viewBottom) * 0.5f * m_Scale);
         }
 
@@ -816,13 +822,34 @@ namespace PuzzleGlass.Editor.Studio
             var p = ctx.painter2D;
             bool box = GlassShapeData.IsBox(lvl);
             var contour = GlassShapeData.GetContour(lvl);
-            float frame = lvl.boxFrameThickness;
-            Color frameColor = lvl.boxFrameColor.a > 0.01f ? lvl.boxFrameColor : new Color(0.5f, 0.5f, 0.9f);
-            Color body = lvl.glassBodyColor;
-            body.a = Mathf.Max(0.35f, body.a * 0.6f);
+            float frame = Mathf.Clamp(lvl.boxFrameThickness, 0.035f, 0.24f);
+            Color collarColor = new Color(0.49f, 0.43f, 0.90f, 1f);
+            Color glassOuterRim = new Color(0.46f, 0.45f, 0.92f, 0.92f);
+            Color glassWallFill = new Color(0.74f, 0.79f, 1.00f, 0.46f);
+            Color crystalFill = new Color(0.95f, 0.96f, 1.00f, 0.42f);
 
-            // Hafif ızgara
-            p.strokeColor = new Color(1f, 1f, 1f, 0.04f);
+            // Soft pastel lavender -> cream -> peach stüdyo zemini + dış kenarda yüzen pastel küpler
+            p.fillColor = new Color(0.91f, 0.90f, 0.98f, 1f);
+            p.BeginPath(); p.MoveTo(Vector2.zero); p.LineTo(new Vector2(rect.width, 0)); p.LineTo(new Vector2(rect.width, rect.height)); p.LineTo(new Vector2(0, rect.height)); p.ClosePath(); p.Fill();
+            p.fillColor = new Color(0.76f, 0.79f, 0.99f, 0.52f);
+            p.BeginPath(); p.MoveTo(Vector2.zero); p.LineTo(new Vector2(rect.width, 0)); p.LineTo(new Vector2(rect.width, rect.height * 0.42f)); p.LineTo(new Vector2(0, rect.height * 0.42f)); p.ClosePath(); p.Fill();
+            p.fillColor = new Color(0.995f, 0.90f, 0.83f, 0.58f);
+            p.BeginPath(); p.MoveTo(new Vector2(0, rect.height * 0.58f)); p.LineTo(new Vector2(rect.width, rect.height * 0.58f)); p.LineTo(new Vector2(rect.width, rect.height)); p.LineTo(new Vector2(0, rect.height)); p.ClosePath(); p.Fill();
+
+            // Dış kenarlarda odak dışı yüzen pastel küpler (Referans teması)
+            void DrawBokehSquare(float wx, float wy, float sizeW, Color col)
+            {
+                RoundedRect(p, wx - sizeW * 0.5f, wy - sizeW * 0.5f, wx + sizeW * 0.5f, wy + sizeW * 0.5f, sizeW * 0.28f, col);
+            }
+            DrawBokehSquare(-1.85f,  0.45f, 0.46f, new Color(0.70f, 0.68f, 0.98f, 0.36f));
+            DrawBokehSquare( 1.90f,  0.38f, 0.34f, new Color(0.99f, 0.76f, 0.28f, 0.48f));
+            DrawBokehSquare(-1.95f, -0.80f, 0.26f, new Color(0.99f, 0.82f, 0.42f, 0.44f));
+            DrawBokehSquare( 1.85f, -1.05f, 0.44f, new Color(0.74f, 0.72f, 0.98f, 0.38f));
+            DrawBokehSquare(-1.85f, -2.55f, 0.44f, new Color(0.56f, 0.52f, 0.96f, 0.44f));
+            DrawBokehSquare( 1.92f, -2.25f, 0.26f, new Color(0.99f, 0.78f, 0.32f, 0.42f));
+
+            // Hafif ölçü ızgarası
+            p.strokeColor = new Color(0.45f, 0.42f, 0.78f, 0.06f);
             p.lineWidth = 1f;
             for (float gx = -3f; gx <= 3f; gx += 0.5f)
             {
@@ -838,84 +865,161 @@ namespace PuzzleGlass.Editor.Studio
             float maxHw = 0f;
             foreach (var c in contour) maxHw = Mathf.Max(maxHw, c.halfWidth);
 
+            // Üst kristal cam çizimi (İnce parlak 3D şişe camı duvar + yumuşak saydamlık)
             if (box)
             {
                 float hw = contour[0].halfWidth;
                 float bottom = contour[0].y, top = contour[contour.Count - 1].y;
                 float r = Mathf.Min(lvl.boxCornerRadius, Mathf.Min(hw, (top - bottom) * 0.5f));
-                // Gölge, çerçeve, cam
-                RoundedRect(p, -hw - frame + 0.04f, bottom - frame - 0.06f, hw + frame + 0.04f, top + frame - 0.06f, r + frame, new Color(0f, 0f, 0f, 0.25f));
-                RoundedRect(p, -hw - frame, bottom - frame, hw + frame, top + frame, r + frame, frameColor);
-                RoundedRect(p, -hw, bottom, hw, top, r, Color.Lerp(new Color(0.12f, 0.14f, 0.18f), body, body.a));
+                RoundedRect(p, -hw - frame, bottom - frame - 0.08f, hw + frame, top + frame - 0.08f, r + frame, new Color(0.58f, 0.50f, 0.82f, 0.22f));
+                RoundedRect(p, -hw - frame, bottom - frame, hw + frame, top + frame, r + frame, glassWallFill);
+                RoundedRect(p, -hw, bottom, hw, top, r, crystalFill);
+                RoundedRectStroke(p, -hw - frame, bottom - frame, hw + frame, top + frame, r + frame, 1.8f, glassOuterRim);
+                RoundedRectStroke(p, -hw - frame * 0.45f, bottom - frame * 0.45f, hw + frame * 0.45f, top + frame * 0.45f, r + frame * 0.45f, 2.6f, new Color(1f, 1f, 1f, 0.90f));
+                // Sol/sağ dikey cam parlamaları
+                RoundedRect(p, -hw + 0.04f, bottom + r * 0.45f, -hw + 0.11f, top - r * 0.45f, 0.03f, new Color(1f, 1f, 1f, 0.48f));
+                RoundedRect(p, hw - 0.12f, bottom + r * 0.65f, hw - 0.04f, top - r * 0.35f, 0.035f, new Color(1f, 1f, 1f, 0.68f));
             }
             else
             {
-                // Kontur: sağ taraf alttan üste, sol taraf üstten alta
-                p.fillColor = Color.Lerp(new Color(0.12f, 0.14f, 0.18f), body, body.a);
-                p.strokeColor = frameColor;
-                p.lineWidth = Mathf.Max(2f, frame * m_Scale);
-                p.BeginPath();
-                for (int i = 0; i < contour.Count; i++)
-                {
-                    var pt = ToPx(contour[i].centerX + contour[i].halfWidth, contour[i].y);
-                    if (i == 0) p.MoveTo(pt); else p.LineTo(pt);
-                }
-                for (int i = contour.Count - 1; i >= 0; i--)
-                    p.LineTo(ToPx(contour[i].centerX - contour[i].halfWidth, contour[i].y));
-                p.ClosePath();
+                float strokePx = Mathf.Max(2.5f, frame * m_Scale);
+                TraceContourPath(p, contour);
+                p.fillColor = crystalFill;
+                p.strokeColor = glassWallFill;
+                p.lineWidth = strokePx;
                 p.Fill();
                 p.Stroke();
+
+                TraceContourPath(p, contour);
+                p.strokeColor = glassOuterRim;
+                p.lineWidth = Mathf.Max(1.8f, strokePx * 0.32f);
+                p.Stroke();
+
+                TraceContourPath(p, contour);
+                p.strokeColor = new Color(1f, 1f, 1f, 0.88f);
+                p.lineWidth = Mathf.Max(1.6f, strokePx * 0.42f);
+                p.Stroke();
+
+                TraceContourPath(p, contour);
+                p.fillColor = crystalFill;
+                p.Fill();
             }
 
-            // Toplar (oyundaki dizilim)
-            var dims = GlassShapeData.GetDims(lvl);
+            // Toplar (oyundaki dizilim — yüksek kontrast ve parlak belirginlik)
             var layout = GlassShapeData.BuildLayout(lvl);
             float rad = layout.diameter * 0.5f * m_Scale;
             foreach (var b in layout.balls)
             {
                 var c = ToPx(b.localPos.x, b.localPos.y);
-                p.fillColor = PuzzleColorPalette.GetBodyColor(b.color);
+                Color bc = PuzzleColorPalette.GetBodyColor(b.color);
+                p.fillColor = bc;
+                p.strokeColor = Color.Lerp(bc, Color.black, 0.36f);
+                p.lineWidth = Mathf.Max(1.1f, rad * 0.15f);
                 p.BeginPath();
                 p.Arc(c, rad * 0.94f, 0f, 360f);
                 p.Fill();
-                p.fillColor = new Color(1f, 1f, 1f, 0.35f);
+                p.Stroke();
+                p.fillColor = new Color(1f, 1f, 1f, 0.60f);
                 p.BeginPath();
-                p.Arc(c + new Vector2(-rad * 0.3f, -rad * 0.3f), rad * 0.28f, 0f, 360f);
+                p.Arc(c + new Vector2(-rad * 0.30f, -rad * 0.30f), rad * 0.28f, 0f, 360f);
                 p.Fill();
             }
 
-            // Tepsi (hizalama için silik)
+            // Üst camın altındaki 3D mor çıkış yakası + alt açık ağızlı cam kavanoz + mor tepsi
             {
+                float glassBottomY = contour[0].y - frame;
+                float collarW = Mathf.Clamp(contour[0].halfWidth * 0.94f, 0.72f, 1.14f);
+                float collarH = 0.23f;
+                float collarTop = glassBottomY + 0.03f;
+                float collarBottom = collarTop - collarH;
+                RoundedRect(p, -collarW * 0.5f, collarBottom - 0.04f, collarW * 0.5f, collarTop - 0.02f, 0.09f, new Color(0.46f, 0.40f, 0.78f, 0.26f));
+                RoundedRect(p, -collarW * 0.5f, collarBottom, collarW * 0.5f, collarTop, 0.09f, new Color(0.47f, 0.41f, 0.88f, 1f));
+                RoundedRect(p, -collarW * 0.40f, collarBottom + 0.02f, -collarW * 0.12f, collarTop - 0.02f, 0.04f, new Color(0.76f, 0.74f, 0.99f, 0.42f));
+                RoundedRect(p, -collarW * 0.44f, collarTop - 0.055f, collarW * 0.44f, collarTop - 0.01f, 0.025f, new Color(0.86f, 0.84f, 1.00f, 0.82f));
+                RoundedRect(p, -collarW * 0.48f, collarBottom, collarW * 0.48f, collarBottom + 0.05f, 0.03f, new Color(0.28f, 0.22f, 0.64f, 0.72f));
+
                 float trayW = maxHw * 2f;
                 float cell = trayW / Mathf.Max(1, lvl.stagingGridCols);
-                float trayTop = contour[0].y - frame - 0.11f;
+                float trayTop = collarBottom - 0.34f;
                 float trayBottom = trayTop - cell * lvl.stagingGridRows;
-                RoundedRect(p, -maxHw - 0.06f, trayBottom - 0.06f, maxHw + 0.06f, trayTop + 0.06f, 0.18f, new Color(0.36f, 0.36f, 0.68f, 0.55f));
+                float jarPad = 0.11f;
+                float neckW = Mathf.Clamp(maxHw * 0.43f, 0.38f, 0.64f);
+                float neckTop = collarBottom - 0.14f;
+
+                // Alt kavanoz gövde + açık ağızlı 3D boyun + alt yumuşak mor zemin gölgesi
+                RoundedRect(p, -maxHw - jarPad, trayBottom - jarPad - 0.08f, maxHw + jarPad, trayTop + jarPad - 0.06f, 0.24f, new Color(0.58f, 0.50f, 0.82f, 0.24f));
+                RoundedRect(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, glassWallFill);
+                RoundedRectStroke(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, 1.6f, glassOuterRim);
+                RoundedRect(p, -maxHw - jarPad, trayBottom - jarPad, maxHw + jarPad, trayTop + jarPad, 0.24f, glassWallFill);
+                RoundedRectStroke(p, -maxHw - jarPad, trayBottom - jarPad, maxHw + jarPad, trayTop + jarPad, 0.24f, 1.8f, glassOuterRim);
+                RoundedRectStroke(p, -maxHw - jarPad * 0.55f, trayBottom - jarPad * 0.55f, maxHw + jarPad * 0.55f, trayTop + jarPad * 0.55f, 0.21f, 2.2f, new Color(1f, 1f, 1f, 0.86f));
+                // Kavanoz gövde içi parlama şeritleri & üst oval ağız dudağı
+                RoundedRect(p, -maxHw - jarPad * 0.3f, trayBottom + 0.16f, -maxHw - jarPad * 0.02f, trayTop - 0.12f, 0.025f, new Color(1f, 1f, 1f, 0.45f));
+                RoundedRect(p, maxHw + jarPad * 0.02f, trayBottom + 0.22f, maxHw + jarPad * 0.34f, trayTop - 0.04f, 0.03f, new Color(1f, 1f, 1f, 0.70f));
+                RoundedRect(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, new Color(0.90f, 0.92f, 1.00f, 0.85f));
+                RoundedRectStroke(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, 1.6f, glassOuterRim);
+                RoundedRect(p, -neckW * 0.82f, neckTop - 0.032f, neckW * 0.82f, neckTop + 0.006f, 0.02f, new Color(0.66f, 0.64f, 0.96f, 0.52f));
+
+                // Mor yumuşak tepsi ve yuvalar
+                RoundedRect(p, -maxHw - 0.05f, trayBottom - 0.05f, maxHw + 0.05f, trayTop + 0.05f, 0.14f, new Color(0.32f, 0.27f, 0.62f, 0.94f));
                 for (int x = 0; x < lvl.stagingGridCols; x++)
                     for (int y = 0; y < lvl.stagingGridRows; y++)
                     {
                         float x0 = -maxHw + x * cell + 0.03f, y0 = trayBottom + y * cell + 0.03f;
-                        RoundedRect(p, x0, y0, x0 + cell - 0.06f, y0 + cell - 0.06f, 0.05f, new Color(0.23f, 0.23f, 0.40f, 0.8f));
+                        RoundedRect(p, x0, y0, x0 + cell - 0.06f, y0 + cell - 0.06f, 0.05f, new Color(0.42f, 0.37f, 0.74f, 0.96f));
                     }
             }
 
             // Tutamaçlar
             if (box)
             {
-                float hw = contour[0].halfWidth, bottom = contour[0].y, top = contour[contour.Count - 1].y;
+                float hw = contour[0].halfWidth, bottom = contour[0].y;
                 DrawHandle(p, HandlePos(Handle.Width, -1), Handle.Width, -1);
                 DrawHandle(p, HandlePos(Handle.Height, -1), Handle.Height, -1);
                 DrawHandle(p, HandlePos(Handle.Corner, -1), Handle.Corner, -1);
-                // Ölçü çizgileri
-                p.strokeColor = new Color(1f, 1f, 1f, 0.25f);
+                // Ölçü çizgisi
+                p.strokeColor = new Color(0.32f, 0.30f, 0.68f, 0.42f);
                 p.lineWidth = 1f;
-                var a = ToPx(-hw, bottom - frame - 0.05f); var bb = ToPx(hw, bottom - frame - 0.05f);
+                var a = ToPx(-hw, bottom - frame - 0.20f); var bb = ToPx(hw, bottom - frame - 0.20f);
                 p.BeginPath(); p.MoveTo(a); p.LineTo(bb); p.Stroke();
             }
             else
             {
                 for (int i = 0; i < contour.Count; i++) DrawHandle(p, HandlePos(Handle.Point, i), Handle.Point, i);
             }
+        }
+
+        private void TraceContourPath(Painter2D p, List<GlassContourPoint> contour)
+        {
+            p.BeginPath();
+            for (int i = 0; i < contour.Count; i++)
+            {
+                var pt = ToPx(contour[i].centerX + contour[i].halfWidth, contour[i].y);
+                if (i == 0) p.MoveTo(pt); else p.LineTo(pt);
+            }
+            for (int i = contour.Count - 1; i >= 0; i--)
+                p.LineTo(ToPx(contour[i].centerX - contour[i].halfWidth, contour[i].y));
+            p.ClosePath();
+        }
+
+        private void RoundedRectStroke(Painter2D p, float x0, float y0, float x1, float y1, float r, float lineWidth, Color stroke)
+        {
+            var tl = ToPx(x0, y1); var br = ToPx(x1, y0);
+            float rp = Mathf.Max(0f, Mathf.Min(r * m_Scale, Mathf.Min(br.x - tl.x, br.y - tl.y) * 0.5f));
+            p.strokeColor = stroke;
+            p.lineWidth = lineWidth;
+            p.BeginPath();
+            p.MoveTo(new Vector2(tl.x + rp, tl.y));
+            p.LineTo(new Vector2(br.x - rp, tl.y));
+            p.ArcTo(new Vector2(br.x, tl.y), new Vector2(br.x, tl.y + rp), rp);
+            p.LineTo(new Vector2(br.x, br.y - rp));
+            p.ArcTo(new Vector2(br.x, br.y), new Vector2(br.x - rp, br.y), rp);
+            p.LineTo(new Vector2(tl.x + rp, br.y));
+            p.ArcTo(new Vector2(tl.x, br.y), new Vector2(tl.x, br.y - rp), rp);
+            p.LineTo(new Vector2(tl.x, tl.y + rp));
+            p.ArcTo(new Vector2(tl.x, tl.y), new Vector2(tl.x + rp, tl.y), rp);
+            p.ClosePath();
+            p.Stroke();
         }
 
         private void RoundedRect(Painter2D p, float x0, float y0, float x1, float y1, float r, Color fill)
@@ -1101,6 +1205,48 @@ namespace PuzzleGlass.Editor.Studio
         }
 
         // ==================== Hazır konturlar ====================
+
+        private static List<GlassContourPoint> BottleJar() => new List<GlassContourPoint>
+        {
+            new GlassContourPoint(-0.56f, 0.96f, 0f, 0.35f),
+            new GlassContourPoint(-0.34f, 1.24f, 0f, 0.10f),
+            new GlassContourPoint( 0.28f, 1.24f, 0f, 0.15f),
+            new GlassContourPoint( 0.54f, 0.72f, 0f, 0.20f),
+            new GlassContourPoint( 0.86f, 0.72f, 0f, 0.35f)
+        };
+
+        private static List<GlassContourPoint> FunnelJar() => new List<GlassContourPoint>
+        {
+            new GlassContourPoint(-0.56f, 0.72f, 0f, 0.30f),
+            new GlassContourPoint(-0.18f, 0.92f, 0f, 0.10f),
+            new GlassContourPoint( 0.30f, 1.30f, 0f, 0.15f),
+            new GlassContourPoint( 0.78f, 1.32f, 0f, 0.30f)
+        };
+
+        private static List<GlassContourPoint> OvalFlask() => new List<GlassContourPoint>
+        {
+            new GlassContourPoint(-0.56f, 0.88f, 0f, 0.35f),
+            new GlassContourPoint(-0.22f, 1.30f, 0f, 0.15f),
+            new GlassContourPoint( 0.16f, 1.34f, 0f, 0.15f),
+            new GlassContourPoint( 0.50f, 1.22f, 0f, 0.20f),
+            new GlassContourPoint( 0.76f, 0.84f, 0f, 0.35f)
+        };
+
+        private static List<GlassContourPoint> HourglassJar() => new List<GlassContourPoint>
+        {
+            new GlassContourPoint(-0.56f, 1.24f, 0f, 0.30f),
+            new GlassContourPoint(-0.22f, 1.18f, 0f, 0.15f),
+            new GlassContourPoint( 0.12f, 0.82f, 0f, 0.10f),
+            new GlassContourPoint( 0.46f, 1.22f, 0f, 0.15f),
+            new GlassContourPoint( 0.80f, 1.26f, 0f, 0.30f)
+        };
+
+        private static List<GlassContourPoint> WideBowl() => new List<GlassContourPoint>
+        {
+            new GlassContourPoint(-0.56f, 0.86f, 0f, 0.35f),
+            new GlassContourPoint(-0.14f, 1.28f, 0f, 0.15f),
+            new GlassContourPoint( 0.56f, 1.46f, 0f, 0.30f)
+        };
 
         private static List<GlassContourPoint> Trapezoid() => new List<GlassContourPoint>
         {

@@ -68,23 +68,33 @@
 .board { flex-grow: 1; flex-shrink: 1; min-height: 0; }
 .board__content { align-items: center; padding: 18px 10px 24px 10px; }
 .board__caption { color: var(--muted); font-size: 11px; margin: 10px 0 4px 0; -unity-text-align: middle-center; }
-.glass { position: relative; background-color: #2b4b45; border-width: 3px; border-color: #8f8ce0; border-radius: 12px; overflow: hidden; }
-.glass__guide { position: absolute; top: 0; bottom: 0; width: 1px; background-color: rgba(255, 255, 255, 0.10); }
+.glass { position: relative; background-color: #dfe4fb; border-width: 4px; border-color: #9e96ee; border-radius: 16px; overflow: hidden; }
+.glass__guide { position: absolute; top: 0; bottom: 0; width: 1px; background-color: rgba(65, 62, 130, 0.14); }
 .glass__guide--open { background-color: rgba(90, 169, 240, 0.25); width: 0; }
-.glass__column { position: absolute; top: 0; bottom: 0; background-color: rgba(90, 169, 240, 0.16); }
-.ball { position: absolute; border-radius: 999px; border-width: 1px; border-color: rgba(0, 0, 0, 0.35); }
-.ball--dim { opacity: 0.28; }
-.tray { position: relative; margin-top: 10px; padding: 0; background-color: #5c5cae; border-radius: 12px; border-width: 3px; border-color: #7b7bd0; }
-.tray__cell { position: absolute; background-color: #3a3a66; border-radius: 6px; }
-.tray__cell--top { border-top-width: 2px; border-color: rgba(255, 255, 255, 0.25); }
+.glass__column { position: absolute; top: 0; bottom: 0; background-color: rgba(124, 108, 232, 0.22); }
+.ball { position: absolute; border-radius: 999px; border-width: 1.5px; border-color: rgba(14, 16, 40, 0.48); }
+.ball--dim { opacity: 0.25; }
+.tray { position: relative; margin-top: 12px; padding: 0; background-color: #5b4fa4; border-radius: 14px; border-width: 4px; border-color: #b4bcf9; }
+.tray__cell { position: absolute; background-color: #7064bc; border-radius: 6px; }
+.tray__cell--top { border-top-width: 2px; border-color: rgba(255, 255, 255, 0.35); }
 .block-cell { position: absolute; border-radius: 7px; border-width: 3px; border-color: rgba(0, 0, 0, 0.25); }
 .block-cell__inner { position: absolute; left: 6px; right: 6px; top: 6px; bottom: 6px; background-color: #eef0f4; border-radius: 4px; }
+.block-cell--ice { background-color: #56c2f6; border-color: #c2f0ff; }
+.block-cell__inner--ice { background-color: #8ee2ff; }
+.block-cell--locked { border-color: #ffd147; }
 .block-cell--selected { border-color: white; }
 .block-cell--critical { border-color: var(--critical); }
 .block-cell--ghost { opacity: 0.6; }
 .block-cell--invalid { border-color: var(--critical); opacity: 0.6; }
 .block-label { position: absolute; -unity-text-align: middle-center; font-size: 15px; -unity-font-style: bold; color: #2a2c33; }
+.block-label--ice { font-size: 17px; color: #ffffff; -unity-text-outline-width: 1.2px; -unity-text-outline-color: #0b3460; }
 .block-number { position: absolute; font-size: 10px; color: #6b6e78; }
+.block-badge-row { position: absolute; flex-direction: row; }
+.block-badge { padding: 1px 4px; margin-right: 2px; border-radius: 4px; font-size: 9px; -unity-font-style: bold; border-width: 1px; }
+.block-badge--key { background-color: #f5c231; border-color: #7c4d00; color: #2d1b00; }
+.block-badge--lock { background-color: #f4a922; border-color: #703900; color: #2d1400; }
+.block-badge--ice { background-color: #36b5f5; border-color: #d9f6ff; color: #ffffff; }
+.block-colordot { position: absolute; width: 10px; height: 10px; border-radius: 5px; border-width: 1.5px; border-color: rgba(255, 255, 255, 0.92); }
 
 /* Cam sırası şeridi */
 .order { flex-direction: row; flex-wrap: wrap; justify-content: center; max-width: 560px; }

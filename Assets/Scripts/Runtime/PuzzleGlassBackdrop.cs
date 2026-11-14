@@ -12,32 +12,51 @@ namespace PuzzleGlass
         public static PuzzleGlassBackdrop Instance { get; private set; }
 
         [Header("Palette")]
-        public Color topColor  = new Color(0.905f, 0.910f, 0.965f, 1f); // Soft pastel lavender mist
-        public Color midColor  = new Color(0.950f, 0.922f, 0.885f, 1f); // Warm ivory cream
-        public Color botColor  = new Color(0.920f, 0.862f, 0.798f, 1f); // Warm pastel peach-cream
-        public Color glowColor = new Color(0.975f, 0.960f, 0.938f, 1f);
-        public Color dotColor  = new Color(0.810f, 0.790f, 0.840f, 1f);
+        public Color topColor  = new Color(0.745f, 0.775f, 0.996f, 1f); // Soft pastel periwinkle-lavender sky
+        public Color midColor  = new Color(0.935f, 0.922f, 0.988f, 1f); // Luminous lilac-ivory mist
+        public Color botColor  = new Color(0.996f, 0.902f, 0.825f, 1f); // Warm pastel peach-cream floor
+        public Color glowColor = new Color(0.985f, 0.980f, 1.000f, 1f);
+        public Color dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
         [Range(0f, 0.20f)]
-        public float dotStrength = 0.055f;
+        public float dotStrength = 0.0f;
+        [Range(0f, 1.0f)]
+        public float floatingStrength = 0.72f;
+
+        [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
         private Transform _quadTransform;
         private Material _backdropMaterial;
         private float _lastOrthoSize = -1f;
         private float _lastAspect = -1f;
 
-        private static readonly int TopColorId    = Shader.PropertyToID("_TopColor");
-        private static readonly int MidColorId    = Shader.PropertyToID("_MidColor");
-        private static readonly int BotColorId    = Shader.PropertyToID("_BotColor");
-        private static readonly int GlowColorId   = Shader.PropertyToID("_GlowColor");
-        private static readonly int DotColorId    = Shader.PropertyToID("_DotColor");
-        private static readonly int DotStrengthId = Shader.PropertyToID("_DotStrength");
-        private static readonly int AspectId      = Shader.PropertyToID("_Aspect");
+        private static readonly int TopColorId         = Shader.PropertyToID("_TopColor");
+        private static readonly int MidColorId         = Shader.PropertyToID("_MidColor");
+        private static readonly int BotColorId         = Shader.PropertyToID("_BotColor");
+        private static readonly int GlowColorId        = Shader.PropertyToID("_GlowColor");
+        private static readonly int DotColorId         = Shader.PropertyToID("_DotColor");
+        private static readonly int DotStrengthId      = Shader.PropertyToID("_DotStrength");
+        private static readonly int FloatingStrengthId = Shader.PropertyToID("_FloatingStrength");
+        private static readonly int AspectId           = Shader.PropertyToID("_Aspect");
 
         private void OnEnable()
         {
             Instance = this;
+            MigrateThemeIfNeeded();
             EnsureBackdropQuad();
             SyncWithCamera(force: true);
+        }
+
+        private void MigrateThemeIfNeeded()
+        {
+            if (visualThemeVersion >= 3) return;
+            visualThemeVersion = 3;
+            topColor  = new Color(0.745f, 0.775f, 0.996f, 1f);
+            midColor  = new Color(0.935f, 0.922f, 0.988f, 1f);
+            botColor  = new Color(0.996f, 0.902f, 0.825f, 1f);
+            glowColor = new Color(0.985f, 0.980f, 1.000f, 1f);
+            dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
+            dotStrength = 0.0f;
+            floatingStrength = 0.72f;
         }
 
         private void LateUpdate()
@@ -136,6 +155,7 @@ namespace PuzzleGlass
             if (_backdropMaterial.HasProperty(GlowColorId)) _backdropMaterial.SetColor(GlowColorId, glowColor);
             if (_backdropMaterial.HasProperty(DotColorId)) _backdropMaterial.SetColor(DotColorId, dotColor);
             if (_backdropMaterial.HasProperty(DotStrengthId)) _backdropMaterial.SetFloat(DotStrengthId, dotStrength);
+            if (_backdropMaterial.HasProperty(FloatingStrengthId)) _backdropMaterial.SetFloat(FloatingStrengthId, floatingStrength);
             if (_backdropMaterial.HasProperty(AspectId)) _backdropMaterial.SetFloat(AspectId, aspect);
         }
     }

@@ -136,6 +136,12 @@ namespace PuzzleGlass
 
             if (selectedMonster == null || selectedMonster.IsCompleted || selectedMonster.remainingCount <= 0) return;
 
+            if (selectedMonster.IsMovementOrCollectionBlocked)
+            {
+                selectedMonster.PlayBlockedMechanicFeedback();
+                return;
+            }
+
             // Lock legacy slotted boxes, and lock in-grid boxes only while balls are actively flying into them
             if (selectedMonster.assignedSlot != null)
             {

@@ -31,16 +31,21 @@ namespace PuzzleGlass
         [Range(0.30f, 0.82f)] public float manualCellSize = 0.506f;
 
         [Header("Tray Colors")]
-        public Color frameDarkColor = new Color(0.32f, 0.34f, 0.66f, 1f);
-        public Color frameFrontColor = new Color(0.47f, 0.50f, 0.84f, 1f);
-        public Color trayFloorColor = new Color(0.16f, 0.15f, 0.32f, 1f);
-        public Color tileBevelColor = new Color(0.30f, 0.28f, 0.56f, 1f);
-        public Color tileBodyColor = new Color(0.22f, 0.21f, 0.44f, 1f);
-        public Color exitRimColor = new Color(0.64f, 0.74f, 0.90f, 1f);
+        public Color frameDarkColor = new Color(0.30f, 0.25f, 0.58f, 1f);
+        public Color frameFrontColor = new Color(0.41f, 0.36f, 0.72f, 1f);
+        public Color trayFloorColor = new Color(0.29f, 0.25f, 0.52f, 1f);
+        public Color tileBevelColor = new Color(0.54f, 0.49f, 0.86f, 1f);
+        public Color tileBodyColor = new Color(0.43f, 0.38f, 0.74f, 1f);
+        public Color exitRimColor = new Color(0.76f, 0.74f, 0.98f, 1f);
+        public bool showOuterGlassJar = true;
+
+        [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
         [HideInInspector] public float cellSize = 0.506f;
 
         private GameObject _visualRoot;
+        private Material _jarBackMat;
+        private Material _jarFrontMat;
 
         public float GridOriginX => boardCenter.x - cols * cellSize * 0.5f;
         public float GridOriginY => boardCenter.y - rows * cellSize * 0.5f;
@@ -49,11 +54,20 @@ namespace PuzzleGlass
         private void Awake()
         {
             Instance = this;
+            MigrateThemeIfNeeded();
         }
 
         private void OnEnable()
         {
             Instance = this;
+            MigrateThemeIfNeeded();
+        }
+
+        private void MigrateThemeIfNeeded()
+        {
+            if (visualThemeVersion >= 3) return;
+            visualThemeVersion = 3;
+            ResetDefaultColors();
         }
 
         public void Configure(int gridCols, int gridRows, ShapedGlassContainer alignGlass = null)
@@ -98,41 +112,72 @@ namespace PuzzleGlass
             outerH = innerH + framePadding * 2f;
         }
 
+        private const float JarPadX = 0.055f;
+        private const float JarPadY = 0.058f;
+        private const float JarNeckNormH = 0.16f;
+        private const float JarFrameNormThick = 0.055f;
+
+        private void GetOuterJarExtents(float outerW, float outerH, out float quadHalfW, out float quadHalfH, out float quadCenterYOffset, out float boxAspect, out float neckTopAboveCenter)
+        {
+            float innerWorldHalfW = outerW * 0.5f + JarPadX;
+            float innerWorldHalfH = outerH * 0.5f + JarPadY;
+            float innerNormHalfH = 0.76f - JarNeckNormH * 0.5f - JarFrameNormThick;
+            quadHalfH = innerWorldHalfH / innerNormHalfH;
+            float innerNormHalfW = innerWorldHalfW / quadHalfH;
+            boxAspect = Mathf.Max(0.30f, (innerNormHalfW + JarFrameNormThick) / 0.80f);
+            quadHalfW = boxAspect * quadHalfH;
+            quadCenterYOffset = JarNeckNormH * 0.5f * quadHalfH;
+            neckTopAboveCenter = (0.76f + JarNeckNormH * 0.5f) * quadHalfH;
+        }
+
         public void ResetDefaultColors()
         {
-            frameDarkColor = new Color(0.32f, 0.34f, 0.66f, 1f);
-            frameFrontColor = new Color(0.47f, 0.50f, 0.84f, 1f);
-            trayFloorColor = new Color(0.16f, 0.15f, 0.32f, 1f);
-            tileBevelColor = new Color(0.30f, 0.28f, 0.56f, 1f);
-            tileBodyColor = new Color(0.22f, 0.21f, 0.44f, 1f);
-            exitRimColor = new Color(0.64f, 0.74f, 0.90f, 1f);
+            frameDarkColor = new Color(0.26f, 0.22f, 0.54f, 1f);
+            frameFrontColor = new Color(0.36f, 0.31f, 0.68f, 1f);
+            trayFloorColor = new Color(0.25f, 0.21f, 0.49f, 1f);
+            tileBevelColor = new Color(0.49f, 0.44f, 0.84f, 1f);
+            tileBodyColor = new Color(0.40f, 0.35f, 0.73f, 1f);
+            exitRimColor = new Color(0.76f, 0.74f, 0.98f, 1f);
         }
 
         /// <summary>
-        /// Places the grid tray snugly beneath the upper glass container's visible frame bottom so there is no dead gap in the middle.
+        /// Places the grid tray + surrounding lower glass jar snugly beneath the upper glass container's exit collar.
         /// </summary>
         public void AlignBelowGlass(ShapedGlassContainer glass)
         {
             if (glass == null) return;
 
             float glassCenterX = 0f;
-            float glassBottomY = glass.transform.position.y - 0.68f;
+            float glassBottomY = glass.transform.position.y - 0.82f;
             if (glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out float gMinY, out _))
             {
                 glassCenterX = (gMinX + gMaxX) * 0.5f;
                 glassBottomY = gMinY;
             }
 
-            float innerH = rows * cellSize + innerMargin;
-            float outerH = innerH + framePadding * 2f;
-            float targetCenterY = glassBottomY - Mathf.Max(0.06f, gapBelowGlass) - outerH * 0.5f;
+            GetOuterWorldDimensions(out float outerW, out float outerH);
+            float topExtent;
+            float botExtent;
+            if (showOuterGlassJar)
+            {
+                GetOuterJarExtents(outerW, outerH, out _, out float qh, out _, out _, out float neckTop);
+                topExtent = neckTop;
+                botExtent = (0.76f - JarNeckNormH * 0.5f) * qh;
+            }
+            else
+            {
+                topExtent = outerH * 0.5f;
+                botExtent = outerH * 0.5f;
+            }
 
-            // Keep well inside the bottom edge of orthographic portrait view
+            float targetCenterY = glassBottomY - Mathf.Max(0.14f, gapBelowGlass * 1.18f) - topExtent;
+
+            // Keep well inside the bottom edge of orthographic portrait view (above SALLA HUD pill)
             Camera cam = Camera.main;
             if (cam != null && cam.orthographic)
             {
                 float camBottom = cam.transform.position.y - cam.orthographicSize;
-                float minCenterY = camBottom + outerH * 0.5f + 0.18f;
+                float minCenterY = camBottom + botExtent + 0.52f;
                 if (targetCenterY < minCenterY) targetCenterY = minCenterY;
             }
 
@@ -166,24 +211,31 @@ namespace PuzzleGlass
             float outerW = innerW + framePadding * 2f;
             float outerH = innerH + framePadding * 2f;
 
-            // 1. Soft Caramel Warm Drop Shadow behind tray
-            Shader shadowShader = Shader.Find("PuzzleGlass/FakeDropShadow");
-            if (shadowShader != null)
+            // 0. Surrounding Lower Glass Jar Envelope (matches upper glossy glass vessel theme!)
+            if (showOuterGlassJar)
             {
-                GameObject shObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                shObj.name = "BoardFakeShadow";
-                shObj.transform.SetParent(_visualRoot.transform, false);
-                shObj.transform.localPosition = new Vector3(-0.04f, -0.09f, 0.16f);
-                shObj.transform.localScale = new Vector3(outerW * 1.12f, outerH * 1.12f, 1f);
-                DestroyCollider(shObj);
-                Material shMat = new Material(shadowShader) { name = "Mat_GridBoardShadow" };
-                shMat.SetColor("_ShadowColor", new Color(0.64f, 0.54f, 0.46f, 0.30f));
-                shMat.SetFloat("_FeatherWidth", 0.35f);
-                shMat.SetFloat("_IsRadial", 0f);
-                var shMr = shObj.GetComponent<MeshRenderer>();
-                shMr.sharedMaterial = shMat;
-                shMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                shMr.receiveShadows = false;
+                BuildOuterGlassJar(outerW, outerH);
+            }
+            else
+            {
+                Shader shadowShader = Shader.Find("PuzzleGlass/FakeDropShadow");
+                if (shadowShader != null)
+                {
+                    GameObject shObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    shObj.name = "BoardFakeShadow";
+                    shObj.transform.SetParent(_visualRoot.transform, false);
+                    shObj.transform.localPosition = new Vector3(-0.04f, -0.09f, 0.16f);
+                    shObj.transform.localScale = new Vector3(outerW * 1.12f, outerH * 1.12f, 1f);
+                    DestroyCollider(shObj);
+                    Material shMat = new Material(shadowShader) { name = "Mat_GridBoardShadow" };
+                    shMat.SetColor("_ShadowColor", new Color(0.64f, 0.54f, 0.68f, 0.30f));
+                    shMat.SetFloat("_FeatherWidth", 0.35f);
+                    shMat.SetFloat("_IsRadial", 0f);
+                    var shMr = shObj.GetComponent<MeshRenderer>();
+                    shMr.sharedMaterial = shMat;
+                    shMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    shMr.receiveShadows = false;
+                }
             }
 
             // 2. Outer 3D Lower Lip & Satin Periwinkle-Slate Frame (Toony Colors Pro 2 Hypercasual)
@@ -220,6 +272,66 @@ namespace PuzzleGlass
                     CreateRoundedPart($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.9f, tileBodyMat);
                 }
             }
+        }
+
+        private void BuildOuterGlassJar(float outerW, float outerH)
+        {
+            Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamberShader == null) return;
+
+            GetOuterJarExtents(outerW, outerH, out float quadHalfW, out float quadHalfH, out float quadCenterYOffset, out float boxAspect, out _);
+
+            float innerNormHalfW = (outerW * 0.5f + JarPadX) / Mathf.Max(0.01f, quadHalfH);
+            float neckHalfW = Mathf.Clamp(innerNormHalfW * 0.43f, 0.24f, 0.44f);
+            Vector4 neckParams = new Vector4(neckHalfW, JarNeckNormH, 0.052f, 0.036f);
+
+            Material ConfigureJarMat(Material existing, string matName, bool frontLens)
+            {
+                Material m = (existing != null && existing.shader == chamberShader) ? existing : new Material(chamberShader);
+                m.name = matName;
+                m.SetColor("_CenterColor", frontLens ? new Color(0.95f, 0.98f, 1.00f, 0.0f) : new Color(0.90f, 0.92f, 1.00f, 0.16f));
+                m.SetColor("_EdgeColor", new Color(0.68f, 0.74f, 0.99f, 0.58f));
+                m.SetColor("_OuterRimColor", new Color(0.46f, 0.45f, 0.92f, 0.92f));
+                m.SetColor("_InnerGrooveColor", new Color(0.40f, 0.38f, 0.86f, 0.80f));
+                m.SetColor("_RimGlowColor", new Color(1.00f, 1.00f, 1.00f, 0.98f));
+                m.SetColor("_FrameColor", new Color(0.52f, 0.47f, 0.92f, 1f));
+                m.SetColor("_FrameHighlight", new Color(0.98f, 0.98f, 1.00f, 1f));
+                m.SetColor("_FrameEdgeShade", new Color(0.36f, 0.34f, 0.84f, 1f));
+                m.SetColor("_FakeShadowColor", new Color(0.58f, 0.50f, 0.82f, 0.30f));
+                m.SetFloat("_IsFrontLens", frontLens ? 1f : 0f);
+                m.SetFloat("_IsCollar", 0f);
+                m.SetFloat("_IsRoundedBoxPool", 1f);
+                m.SetFloat("_PolyCount", 0f);
+                m.SetFloat("_BoxAspect", boxAspect);
+                m.SetFloat("_BoxCornerRadius", 0.22f);
+                m.SetFloat("_FrameThickness", JarFrameNormThick);
+                m.SetFloat("_SheenIntensity", 1.00f);
+                m.SetFloat("_CenterGlassAlpha", 0.16f);
+                m.SetVector("_JarNeckParams", neckParams);
+                m.renderQueue = frontLens ? 3022 : 1998;
+                return m;
+            }
+
+            _jarBackMat = ConfigureJarMat(_jarBackMat, "Mat_LowerJarBack", false);
+            _jarFrontMat = ConfigureJarMat(_jarFrontMat, "Mat_LowerJarFront", true);
+
+            GameObject CreateJarQuad(string qName, float localZ, Material mat)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                go.name = qName;
+                go.transform.SetParent(_visualRoot.transform, false);
+                go.transform.localPosition = new Vector3(0f, quadCenterYOffset, localZ);
+                go.transform.localScale = new Vector3(quadHalfW * 2f, quadHalfH * 2f, 1f);
+                DestroyCollider(go);
+                var mr = go.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = mat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                return go;
+            }
+
+            CreateJarQuad("LowerJarGlassBack", 0.12f, _jarBackMat);
+            CreateJarQuad("LowerJarGlassFront", -0.56f, _jarFrontMat);
         }
 
         private static void CreateRoundedPart(string partName, Transform parent, Vector3 localPos, float w, float h, float depth, float radius, Material mat)
@@ -424,6 +536,8 @@ namespace PuzzleGlass
         public bool IsBlockAtTopExit(MonsterCharacter block)
         {
             if (block == null || block.assignedSlot != null || block.IsCompleted || block.remainingCount <= 0 || !block.gameObject.activeInHierarchy)
+                return false;
+            if (block.IsMovementOrCollectionBlocked)
                 return false;
 
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(block.blockShape);

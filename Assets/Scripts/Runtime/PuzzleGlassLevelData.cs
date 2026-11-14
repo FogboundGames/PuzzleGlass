@@ -184,6 +184,12 @@ namespace PuzzleGlass
         }
     }
 
+    public enum IceMeltMode
+    {
+        PerBallCollected = 0,   // Her top toplandığında buz sayacı 1 azalır
+        PerBoxCompleted = 1     // Her kutu tamamlandığında buz sayacı 1 azalır
+    }
+
     [Serializable]
     public class LevelMonsterEntry
     {
@@ -193,6 +199,16 @@ namespace PuzzleGlass
         public CarrierBlockShape blockShape = CarrierBlockShape.Rect1x1;
         public Vector2Int gridAnchor = Vector2Int.zero;
         public bool hasGridAnchor = false;
+
+        [Header("Special Mechanics (Key / Lock / Ice)")]
+        [Tooltip("True ise bu kutu tamamlandığında kilitli bloklara 1 anahtar gönderir.")]
+        public bool hasKey = false;
+        [Min(0)]
+        [Tooltip("0 = kilitsiz. >0 = açılması için gereken anahtar sayısı (ör. 1 veya 2).")]
+        public int lockKeyCount = 0;
+        [Min(0)]
+        [Tooltip("0 = buzsuz. >0 = buzun erimesi için gereken sayaç (ör. 15).")]
+        public int iceCount = 0;
 
         public LevelMonsterEntry() { }
 
@@ -333,6 +349,10 @@ namespace PuzzleGlass
         [Tooltip("Aktif olduğunda her sütunun sadece en üstteki (öndeki) kutusu seçilebilir; o slota gidince arkadaki kutu öne kayar")]
         public bool useStagingColumnQueue = true;
 
+        [Header("Special Block Mechanics")]
+        [Tooltip("Buzlu bloklardaki sayacın ne zaman 1 azalacağını belirler.")]
+        public IceMeltMode iceMeltMode = IceMeltMode.PerBallCollected;
+
         [Tooltip("Cam haznedeki top gruplarının En Alttan (0) En Üste doğru renk sırası (Eski/uyumluluk listesi)")]
         public List<PuzzleColor> bottomToTopTriplets = new List<PuzzleColor>()
         {
@@ -454,6 +474,8 @@ namespace PuzzleGlass
                 if (monsters[i] != null)
                 {
                     monsters[i].count = Mathf.Clamp(monsters[i].count, 1, 16);
+                    monsters[i].lockKeyCount = Mathf.Max(0, monsters[i].lockKeyCount);
+                    monsters[i].iceCount = Mathf.Max(0, monsters[i].iceCount);
                 }
             }
 
