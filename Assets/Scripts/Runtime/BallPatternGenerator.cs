@@ -291,6 +291,10 @@ namespace PuzzleGlass
             float worldRowStepY = ballDiameter * 0.855f * ((glassContainer != null) ? glassContainer.transform.lossyScale.y : 1f);
 
             List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
+            if (Application.isPlaying)
+            {
+                PuzzleSoundManager.Instance?.SuppressBallTaps(0.24f);
+            }
 
             for (int i = 0; i < ballSpawns.Count; i++)
             {

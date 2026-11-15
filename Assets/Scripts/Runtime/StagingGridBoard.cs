@@ -21,9 +21,9 @@ namespace PuzzleGlass
         public Vector3 boardCenter = new Vector3(0f, -0.82f, 0.30f);
         public float maxBoardWidth = 2.822f;
         public float maxBoardHeight = 3.20f;
-        public float framePadding = 0.115f;
-        public float innerMargin = 0.06f;
-        public float frameCornerRadius = 0.18f;
+        public float framePadding = 0.068f;
+        public float innerMargin = 0.048f;
+        public float frameCornerRadius = 0.135f;
         public float gapBelowGlass = 0.11f;
         public bool matchGlassWidth = true;
         public bool autoAlignBelowGlass = true;
@@ -31,12 +31,12 @@ namespace PuzzleGlass
         [Range(0.30f, 0.82f)] public float manualCellSize = 0.506f;
 
         [Header("Tray Colors")]
-        public Color frameDarkColor = new Color(0.30f, 0.25f, 0.58f, 1f);
-        public Color frameFrontColor = new Color(0.41f, 0.36f, 0.72f, 1f);
-        public Color trayFloorColor = new Color(0.29f, 0.25f, 0.52f, 1f);
-        public Color tileBevelColor = new Color(0.54f, 0.49f, 0.86f, 1f);
-        public Color tileBodyColor = new Color(0.43f, 0.38f, 0.74f, 1f);
-        public Color exitRimColor = new Color(0.76f, 0.74f, 0.98f, 1f);
+        public Color frameDarkColor = new Color(0.17f, 0.15f, 0.35f, 1f);
+        public Color frameFrontColor = new Color(0.26f, 0.23f, 0.48f, 1f);
+        public Color trayFloorColor = new Color(0.14f, 0.12f, 0.28f, 1f);
+        public Color tileBevelColor = new Color(0.30f, 0.27f, 0.54f, 1f);
+        public Color tileBodyColor = new Color(0.22f, 0.19f, 0.43f, 1f);
+        public Color exitRimColor = new Color(0.50f, 0.50f, 0.76f, 1f);
         public bool showOuterGlassJar = true;
 
         [SerializeField, HideInInspector] private int visualThemeVersion = 0;
@@ -65,8 +65,11 @@ namespace PuzzleGlass
 
         private void MigrateThemeIfNeeded()
         {
-            if (visualThemeVersion >= 3) return;
-            visualThemeVersion = 3;
+            if (visualThemeVersion >= 4) return;
+            visualThemeVersion = 4;
+            framePadding = 0.068f;
+            innerMargin = 0.048f;
+            frameCornerRadius = 0.135f;
             ResetDefaultColors();
         }
 
@@ -113,10 +116,10 @@ namespace PuzzleGlass
             outerH = innerH + framePadding * 2f;
         }
 
-        private const float JarPadX = 0.055f;
-        private const float JarPadY = 0.058f;
+        private const float JarPadX = 0.036f;
+        private const float JarPadY = 0.040f;
         private const float JarNeckNormH = 0.16f;
-        private const float JarFrameNormThick = 0.055f;
+        private const float JarFrameNormThick = 0.034f;
 
         private void GetOuterJarExtents(float outerW, float outerH, out float quadHalfW, out float quadHalfH, out float quadCenterYOffset, out float boxAspect, out float neckTopAboveCenter)
         {
@@ -133,12 +136,12 @@ namespace PuzzleGlass
 
         public void ResetDefaultColors()
         {
-            frameDarkColor = new Color(0.26f, 0.22f, 0.54f, 1f);
-            frameFrontColor = new Color(0.36f, 0.31f, 0.68f, 1f);
-            trayFloorColor = new Color(0.25f, 0.21f, 0.49f, 1f);
-            tileBevelColor = new Color(0.49f, 0.44f, 0.84f, 1f);
-            tileBodyColor = new Color(0.40f, 0.35f, 0.73f, 1f);
-            exitRimColor = new Color(0.76f, 0.74f, 0.98f, 1f);
+            frameDarkColor = new Color(0.17f, 0.15f, 0.35f, 1f);
+            frameFrontColor = new Color(0.26f, 0.23f, 0.48f, 1f);
+            trayFloorColor = new Color(0.14f, 0.12f, 0.28f, 1f);
+            tileBevelColor = new Color(0.30f, 0.27f, 0.54f, 1f);
+            tileBodyColor = new Color(0.22f, 0.19f, 0.43f, 1f);
+            exitRimColor = new Color(0.50f, 0.50f, 0.76f, 1f);
         }
 
         /// <summary>
@@ -214,7 +217,7 @@ namespace PuzzleGlass
             float outerW = innerW + framePadding * 2f;
             float outerH = innerH + framePadding * 2f;
 
-            // 0. Surrounding Lower Glass Jar Envelope (matches upper glossy glass vessel theme!)
+            // 0. Surrounding Lower Glass Jar Envelope (thin, understated rim)
             if (showOuterGlassJar)
             {
                 BuildOuterGlassJar(outerW, outerH);
@@ -241,28 +244,28 @@ namespace PuzzleGlass
                 }
             }
 
-            // 2. Outer 3D Lower Lip & Satin Periwinkle-Slate Frame (Toony Colors Pro 2 Hypercasual)
-            Color coolShadow = new Color(0.60f, 0.62f, 0.78f, 1f);
-            Material frameDarkMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameDarkColor, coolShadow, "Mat_GridFrameDark", glossyCandy: false, indirectIntensity: 0.16f);
-            Material frameFrontMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameFrontColor, coolShadow, "Mat_GridFrameFront", glossyCandy: false, indirectIntensity: 0.18f);
-            Material trayFloorMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(trayFloorColor, new Color(0.54f, 0.56f, 0.72f, 1f), "Mat_GridTrayFloor", glossyCandy: false, indirectIntensity: 0.14f);
-            Material tileBevelMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBevelColor, coolShadow, "Mat_GridTileBevel", glossyCandy: false, indirectIntensity: 0.16f);
-            Material tileBodyMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBodyColor, new Color(0.56f, 0.58f, 0.74f, 1f), "Mat_GridTileBody", glossyCandy: false, indirectIntensity: 0.15f);
-            Material exitRimMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(exitRimColor, new Color(0.66f, 0.70f, 0.84f, 1f), "Mat_GridTopExitRim", glossyCandy: false, indirectIntensity: 0.18f);
+            // 2. Slimmer, Muted Indigo Frame + Deep Recessed Tray Gutters + Darker Distinct Grid Tiles
+            Color coolShadow = new Color(0.46f, 0.48f, 0.66f, 1f);
+            Material frameDarkMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameDarkColor, coolShadow, "Mat_GridFrameDark", glossyCandy: false, indirectIntensity: 0.14f);
+            Material frameFrontMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(frameFrontColor, coolShadow, "Mat_GridFrameFront", glossyCandy: false, indirectIntensity: 0.14f);
+            Material trayFloorMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(trayFloorColor, new Color(0.40f, 0.42f, 0.60f, 1f), "Mat_GridTrayFloor", glossyCandy: false, indirectIntensity: 0.12f);
+            Material tileBevelMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBevelColor, coolShadow, "Mat_GridTileBevel", glossyCandy: false, indirectIntensity: 0.14f);
+            Material tileBodyMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(tileBodyColor, new Color(0.44f, 0.46f, 0.64f, 1f), "Mat_GridTileBody", glossyCandy: false, indirectIntensity: 0.12f);
+            Material exitRimMat = PuzzleColorPalette.CreateToonyHypercasualMaterial(exitRimColor, new Color(0.56f, 0.60f, 0.78f, 1f), "Mat_GridTopExitRim", glossyCandy: false, indirectIntensity: 0.15f);
 
             float cornerR = Mathf.Clamp(frameCornerRadius, 0.04f, 0.40f);
-            float innerCornerR = Mathf.Max(0.03f, cornerR - framePadding * 0.60f);
-            CreateRoundedPart("FrameLowerBevel", _visualRoot.transform, new Vector3(0f, -0.045f, 0.08f), outerW, outerH, 0.06f, cornerR, frameDarkMat);
-            CreateRoundedPart("FrameMain", _visualRoot.transform, new Vector3(0f, 0f, 0.05f), outerW, outerH, 0.06f, cornerR, frameFrontMat);
+            float innerCornerR = Mathf.Max(0.03f, cornerR - framePadding * 0.55f);
+            CreateRoundedPart("FrameLowerBevel", _visualRoot.transform, new Vector3(0f, -0.032f, 0.08f), outerW, outerH, 0.045f, cornerR, frameDarkMat);
+            CreateRoundedPart("FrameMain", _visualRoot.transform, new Vector3(0f, 0f, 0.05f), outerW, outerH, 0.048f, cornerR, frameFrontMat);
             CreateRoundedPart("TrayRecessedBed", _visualRoot.transform, new Vector3(0f, 0f, 0.02f), innerW, innerH, 0.04f, innerCornerR, trayFloorMat);
 
             // Top exit rail accent showing blocks pull UP toward the upper glass container
-            CreateRoundedPart("TopExitHighlightBar", _visualRoot.transform, new Vector3(0f, innerH * 0.5f + framePadding * 0.50f, 0.00f), innerW * 0.90f, 0.038f, 0.02f, 0.018f, exitRimMat);
+            CreateRoundedPart("TopExitHighlightBar", _visualRoot.transform, new Vector3(0f, innerH * 0.5f + framePadding * 0.50f, 0.00f), innerW * 0.88f, 0.028f, 0.02f, 0.014f, exitRimMat);
 
-            // 3. Individual Rounded Recessed Grid Tiles (cols x rows)
-            float tileOuter = cellSize * 0.89f;
-            float tileInner = cellSize * 0.85f;
-            float tileRad = cellSize * 0.14f;
+            // 3. Individual Rounded Recessed Grid Tiles (cols x rows) with wider gutter spacing
+            float tileOuter = cellSize * 0.81f;
+            float tileInner = cellSize * 0.76f;
+            float tileRad = cellSize * 0.15f;
 
             for (int r = 0; r < rows; r++)
             {
@@ -271,8 +274,8 @@ namespace PuzzleGlass
                     float lx = -gridW * 0.5f + (c + 0.5f) * cellSize;
                     float ly = -gridH * 0.5f + (r + 0.5f) * cellSize;
 
-                    CreateRoundedPart($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.008f, 0.005f), tileOuter, tileOuter, 0.02f, tileRad, tileBevelMat);
-                    CreateRoundedPart($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.9f, tileBodyMat);
+                    CreateRoundedPart($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.007f, 0.005f), tileOuter, tileOuter, 0.02f, tileRad, tileBevelMat);
+                    CreateRoundedPart($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.88f, tileBodyMat);
                 }
             }
         }
@@ -293,24 +296,24 @@ namespace PuzzleGlass
             {
                 Material m = (existing != null && existing.shader == chamberShader) ? existing : new Material(chamberShader);
                 m.name = matName;
-                m.SetColor("_CenterColor", frontLens ? new Color(0.95f, 0.98f, 1.00f, 0.0f) : new Color(0.90f, 0.92f, 1.00f, 0.16f));
-                m.SetColor("_EdgeColor", new Color(0.68f, 0.74f, 0.99f, 0.58f));
-                m.SetColor("_OuterRimColor", new Color(0.46f, 0.45f, 0.92f, 0.92f));
-                m.SetColor("_InnerGrooveColor", new Color(0.40f, 0.38f, 0.86f, 0.80f));
-                m.SetColor("_RimGlowColor", new Color(1.00f, 1.00f, 1.00f, 0.98f));
-                m.SetColor("_FrameColor", new Color(0.52f, 0.47f, 0.92f, 1f));
-                m.SetColor("_FrameHighlight", new Color(0.98f, 0.98f, 1.00f, 1f));
-                m.SetColor("_FrameEdgeShade", new Color(0.36f, 0.34f, 0.84f, 1f));
-                m.SetColor("_FakeShadowColor", new Color(0.58f, 0.50f, 0.82f, 0.30f));
+                m.SetColor("_CenterColor", frontLens ? new Color(0.95f, 0.98f, 1.00f, 0.0f) : new Color(0.84f, 0.87f, 0.98f, 0.12f));
+                m.SetColor("_EdgeColor", new Color(0.50f, 0.54f, 0.84f, 0.34f));
+                m.SetColor("_OuterRimColor", new Color(0.32f, 0.30f, 0.64f, 0.62f));
+                m.SetColor("_InnerGrooveColor", new Color(0.28f, 0.26f, 0.56f, 0.52f));
+                m.SetColor("_RimGlowColor", new Color(0.86f, 0.88f, 0.98f, 0.42f));
+                m.SetColor("_FrameColor", new Color(0.32f, 0.30f, 0.60f, 0.84f));
+                m.SetColor("_FrameHighlight", new Color(0.74f, 0.77f, 0.94f, 0.70f));
+                m.SetColor("_FrameEdgeShade", new Color(0.22f, 0.20f, 0.46f, 0.88f));
+                m.SetColor("_FakeShadowColor", new Color(0.46f, 0.40f, 0.68f, 0.24f));
                 m.SetFloat("_IsFrontLens", frontLens ? 1f : 0f);
                 m.SetFloat("_IsCollar", 0f);
                 m.SetFloat("_IsRoundedBoxPool", 1f);
                 m.SetFloat("_PolyCount", 0f);
                 m.SetFloat("_BoxAspect", boxAspect);
-                m.SetFloat("_BoxCornerRadius", 0.22f);
+                m.SetFloat("_BoxCornerRadius", 0.20f);
                 m.SetFloat("_FrameThickness", JarFrameNormThick);
-                m.SetFloat("_SheenIntensity", 1.00f);
-                m.SetFloat("_CenterGlassAlpha", 0.16f);
+                m.SetFloat("_SheenIntensity", 0.42f);
+                m.SetFloat("_CenterGlassAlpha", 0.12f);
                 m.SetVector("_JarNeckParams", neckParams);
                 m.renderQueue = frontLens ? 3022 : 1998;
                 return m;
@@ -627,6 +630,7 @@ namespace PuzzleGlass
                 if (m == null || m.assignedSlot != null || m.IsCompleted || m.remainingCount <= 0) continue;
                 bool atTopExit = IsBlockAtTopExit(m);
                 m.SetExitClearHighlight(atTopExit);
+                m.armedAtTopEdge = atTopExit;
             }
         }
 

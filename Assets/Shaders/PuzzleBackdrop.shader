@@ -2,15 +2,19 @@ Shader "PuzzleGlass/SoftBackdrop"
 {
     Properties
     {
-        _TopColor    ("Top Gradient Color", Color)    = (0.745, 0.775, 0.996, 1.0)
-        _MidColor    ("Middle Gradient Color", Color) = (0.935, 0.922, 0.988, 1.0)
-        _BotColor    ("Bottom Gradient Color", Color) = (0.996, 0.902, 0.825, 1.0)
-        _GlowColor   ("Center Soft Glow", Color)      = (0.985, 0.980, 1.000, 1.0)
-        _DotColor    ("Subtle Pattern Tint", Color)   = (0.820, 0.805, 0.910, 1.0)
-        _DotDensity  ("Pattern Density", Float)       = 14.0
+        _MainTex     ("Backdrop Texture", 2D)           = "white" {}
+        _TintColor   ("Texture Tint", Color)            = (1.0, 1.0, 1.0, 1.0)
+        _UseTexture  ("Use Texture Backdrop", Float)    = 0.0
+        _TexAspect   ("Texture Aspect", Float)          = 1.3333
+        _TopColor    ("Top Studio Wall", Color)         = (0.875, 0.878, 0.945, 1.0)
+        _MidColor    ("Mid Studio Wall", Color)         = (0.928, 0.930, 0.970, 1.0)
+        _BotColor    ("Tabletop Acrylic Stone", Color)  = (0.832, 0.838, 0.912, 1.0)
+        _GlowColor   ("Center Studio Glow", Color)      = (0.980, 0.982, 0.998, 1.0)
+        _DotColor    ("Subtle Pattern Tint", Color)     = (0.840, 0.845, 0.925, 1.0)
+        _DotDensity  ("Pattern Density", Float)         = 14.0
         _DotStrength ("Pattern Strength", Range(0, 0.25)) = 0.0
-        _FloatingStrength ("Floating Cubes Strength", Range(0, 1.0)) = 0.72
-        _Aspect      ("Viewport Aspect", Float)       = 0.5625
+        _FloatingStrength ("Floating Cubes Strength", Range(0, 1.0)) = 0.0
+        _Aspect      ("Viewport Aspect", Float)         = 0.5625
     }
 
     SubShader
@@ -36,7 +40,14 @@ Shader "PuzzleGlass/SoftBackdrop"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
+
             CBUFFER_START(UnityPerMaterial)
+                float4 _MainTex_ST;
+                float4 _TintColor;
+                float  _UseTexture;
+                float  _TexAspect;
                 float4 _TopColor;
                 float4 _MidColor;
                 float4 _BotColor;
@@ -85,18 +96,52 @@ Shader "PuzzleGlass/SoftBackdrop"
             {
                 float2 uv = IN.uv;
 
-                // Smooth 3-stop vertical gradient (soft lavender mist -> luminous center -> pastel peach floor)
-                float topBlend = smoothstep(0.38, 0.96, uv.y);
-                float botBlend = 1.0 - smoothstep(0.04, 0.52, uv.y);
-                float3 col = lerp(_MidColor.rgb, _TopColor.rgb, topBlend);
-                col = lerp(col, _BotColor.rgb, botBlend);
+                if (_UseTexture > 0.5)
+                {
+                    float viewAspect = max(0.25, _Aspect);
+                    float texAspect  = max(0.25, _TexAspect);
+                    float2 texUv = uv;
+                    if (viewAspect < texAspect)
+                    {
+                        texUv.x = (uv.x - 0.5) * (viewAspect / texAspect) + 0.5;
+                    }
+                    else
+                    {
+                        texUv.y = (uv.y - 0.5) * (texAspect / viewAspect) + 0.5;
+                    }
+                    half3 texCol = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, clamp(texUv, 0.002, 0.998)).rgb * _TintColor.rgb;
+                    return half4(texCol, 1.0);
+                }
 
-                // Soft central spotlight halo behind the glass containers
-                float2 centered = uv - float2(0.5, 0.50);
-                centered.x *= max(0.35, _Aspect);
+                // Clean, low-saturation pastel lavender studio wall (no murky patches or abrupt horizon bands)
+                float wallT = smoothstep(0.24, 0.94, uv.y);
+                float3 wallCol = lerp(_MidColor.rgb, _TopColor.rgb, wallT);
+
+                // Soft studio spotlight halo behind the glass container & grid tray
+                float aspect = max(0.35, _Aspect);
+                float2 centered = float2((uv.x - 0.5) * aspect, uv.y - 0.45);
                 float radialDist = length(centered);
-                float centerGlow = 1.0 - smoothstep(0.06, 0.54, radialDist);
-                col = lerp(col, _GlowColor.rgb, centerGlow * 0.52);
+                float centerGlow = 1.0 - smoothstep(0.05, 0.56, radialDist);
+                wallCol = lerp(wallCol, _GlowColor.rgb, centerGlow * 0.55);
+
+                // Cool acrylic/stone studio tabletop behind the lower half of the grid tray
+                float horizonY = 0.225;
+                float floorMask = 1.0 - smoothstep(horizonY - 0.025, horizonY + 0.028, uv.y);
+
+                // Subtle studio cove crease right above the horizon for grounded 3D depth
+                float crease = exp(-pow((uv.y - (horizonY + 0.014)) / 0.045, 2.0));
+                wallCol *= lerp(1.0, 0.962, crease * (1.0 - floorMask));
+
+                // Cool tabletop with gentle foreground brightening and wide soft tray contact shade
+                float tableDepthT = saturate((horizonY - uv.y) / max(0.05, horizonY));
+                float3 tableHighlight = lerp(_BotColor.rgb, _GlowColor.rgb, 0.34);
+                float3 tableCol = lerp(_BotColor.rgb, tableHighlight, smoothstep(0.10, 0.88, tableDepthT) * 0.45);
+
+                float2 tableShadowOffset = float2((uv.x - 0.5) * aspect * 0.72, (uv.y - 0.145) * 2.2);
+                float contactShadow = exp(-dot(tableShadowOffset, tableShadowOffset) * 14.0);
+                tableCol *= lerp(1.0, 0.925, contactShadow * floorMask);
+
+                float3 col = lerp(wallCol, tableCol, floorMask);
 
                 // Dreamy out-of-focus 3D pastel cubes clearly placed inside visible left/right outer margins
                 if (_FloatingStrength > 0.005)
@@ -142,10 +187,10 @@ Shader "PuzzleGlass/SoftBackdrop"
                 float dotMask = 1.0 - smoothstep(0.11, 0.22, dotDist);
                 col = lerp(col, _DotColor.rgb, dotMask * _DotStrength);
 
-                // Very soft warm edge vignette
+                // Very soft framing vignette (barely perceptible, keeps focus centered cleanly)
                 float2 edge = abs(uv - 0.5) * 2.0;
                 float vig = saturate(dot(edge, edge) * 0.5);
-                col *= lerp(1.0, 0.945, vig);
+                col *= lerp(1.0, 0.972, vig);
 
                 return half4(col, 1.0);
             }

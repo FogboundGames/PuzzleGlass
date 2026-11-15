@@ -37,9 +37,12 @@ namespace PuzzleGlass
         public float dynamicFriction = 0.06f;
         public float staticFriction = 0.08f;
 
+        private const int ColorVariantCount = 3;
+
         private readonly Queue<BallPhysicsController> _availableBalls = new Queue<BallPhysicsController>();
         private readonly List<BallPhysicsController> _activeBalls = new List<BallPhysicsController>();
         private readonly Dictionary<PuzzleColor, Material> _candyMaterials = new Dictionary<PuzzleColor, Material>();
+        private readonly Dictionary<PuzzleColor, Material[]> _candyMaterialVariants = new Dictionary<PuzzleColor, Material[]>();
 
         private PhysicsMaterial _sharedPhysMaterial;
         private Mesh _sharedSphereMesh;
@@ -161,16 +164,44 @@ namespace PuzzleGlass
                 DestroyImmediate(temp);
             }
 
-            // Ensure materials for all colors in PuzzleColor enum
+            // Ensure subtle material variants per color in PuzzleColor enum (satin / standard / pearlescent)
             var colors = (PuzzleColor[])System.Enum.GetValues(typeof(PuzzleColor));
             for (int i = 0; i < colors.Length; i++)
             {
                 var c = colors[i];
-                if (!_candyMaterials.ContainsKey(c) || _candyMaterials[c] == null)
+                if (!_candyMaterialVariants.TryGetValue(c, out var variants) || variants == null || variants.Length != ColorVariantCount || variants[0] == null)
                 {
-                    _candyMaterials[c] = PuzzleColorPalette.CreateCandyCubeMaterial(c, $"Mat_Ball_{c}");
+                    variants = new Material[ColorVariantCount];
+                    for (int v = 0; v < ColorVariantCount; v++)
+                    {
+                        variants[v] = CreateBallVariantMaterial(c, v);
+                    }
+                    _candyMaterialVariants[c] = variants;
+                    _candyMaterials[c] = variants[1];
                 }
             }
+        }
+
+        private static Material CreateBallVariantMaterial(PuzzleColor color, int variantIndex)
+        {
+            Material m = PuzzleColorPalette.CreateCandyBallMaterial(color, $"Mat_Ball_{color}_v{variantIndex}");
+            if (m == null || variantIndex == 1) return m;
+
+            Color baseColor = m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor") : m.color;
+            Color adjustedColor = (variantIndex == 0)
+                ? Color.Lerp(baseColor, Color.black, 0.03f)
+                : Color.Lerp(baseColor, Color.white, 0.025f);
+            adjustedColor.a = baseColor.a;
+
+            m.color = adjustedColor;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", adjustedColor);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", adjustedColor);
+
+            float smoothness = (variantIndex == 0) ? 0.44f : 0.60f;
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smoothness);
+
+            return m;
         }
 
         private BallPhysicsController CreateNewBallInstance()
@@ -178,10 +209,14 @@ namespace PuzzleGlass
             GameObject obj = new GameObject("PuzzleBall_Instance");
             obj.transform.SetParent(_poolContainer.transform, false);
 
-            var mf = obj.AddComponent<MeshFilter>();
+            // Decoupled visual child lets squash/stretch & micro size variation animate smoothly without disturbing physics contacts
+            GameObject visualObj = new GameObject("Visual");
+            visualObj.transform.SetParent(obj.transform, false);
+
+            var mf = visualObj.AddComponent<MeshFilter>();
             mf.sharedMesh = _sharedSphereMesh;
 
-            var mr = obj.AddComponent<MeshRenderer>();
+            var mr = visualObj.AddComponent<MeshRenderer>();
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
 
@@ -201,6 +236,7 @@ namespace PuzzleGlass
             controller.ballRadius = defaultBallRadius;
             controller.rb = rb;
             controller.sphereCollider = sc;
+            controller.visualTransform = visualObj.transform;
             controller.meshRenderer = mr;
             controller.meshFilter = mf;
 
@@ -229,11 +265,22 @@ namespace PuzzleGlass
             ball.transform.rotation = UnityEngine.Random.rotation;
             ball.gameObject.SetActive(true);
 
-            Material mat = _candyMaterials.ContainsKey(color) ? _candyMaterials[color] : null;
+            Material mat = GetBallMaterialVariant(color, UnityEngine.Random.Range(0, ColorVariantCount));
             ball.SetupBall(color, r, _sharedPhysMaterial, mat, _sharedSphereMesh);
 
             _activeBalls.Add(ball);
             return ball;
+        }
+
+        public Material GetBallMaterialVariant(PuzzleColor color, int variantIndex)
+        {
+            EnsureSharedResources();
+            if (_candyMaterialVariants.TryGetValue(color, out var variants) && variants != null && variants.Length > 0)
+            {
+                int idx = Mathf.Abs(variantIndex) % variants.Length;
+                return variants[idx] ?? variants[0];
+            }
+            return GetBallMaterial(color);
         }
 
         public void ReturnBall(BallPhysicsController ball)

@@ -13,13 +13,32 @@ namespace PuzzleGlass
 
         private const string MutePrefKey = "PuzzleGlass_AudioMuted";
         private const int SampleRate = 44100;
+        private const int PitchedVoiceCount = 5;
+
+        private static readonly float[] PentatonicPitchScale =
+        {
+            1.000f, // C5
+            1.125f, // D5
+            1.250f, // E5
+            1.500f, // G5
+            1.667f, // A5
+            2.000f, // C6
+            2.250f, // D6
+            2.500f  // E6
+        };
 
         [Header("Master Audio Settings")]
         [Range(0f, 1f)] public float masterVolume = 0.72f;
         [SerializeField] private bool isMuted = false;
 
         private AudioSource _sfxSource;
+        private AudioSource[] _pitchedVoices;
+        private int _nextVoiceIndex = 0;
+
         private AudioClip _clipBallPop;
+        private AudioClip _clipTransferBead;
+        private AudioClip _clipBallTap;
+        private AudioClip _clipLidLatch;
         private AudioClip _clipGridSlide;
         private AudioClip _clipBlockSnap;
         private AudioClip _clipBoxComplete;
@@ -32,6 +51,8 @@ namespace PuzzleGlass
         private AudioClip _clipIceBreak;
 
         private float _lastPopTime = -10f;
+        private float _lastTapTime = -10f;
+        private float _tapSuppressedUntil = -10f;
         private float _lastSlideTime = -10f;
         private int _popChainCount = 0;
 
@@ -73,15 +94,30 @@ namespace PuzzleGlass
 
         private void EnsureAudioSource()
         {
-            if (_sfxSource != null) return;
-            _sfxSource = GetComponent<AudioSource>();
             if (_sfxSource == null)
             {
-                _sfxSource = gameObject.AddComponent<AudioSource>();
+                _sfxSource = GetComponent<AudioSource>();
+                if (_sfxSource == null)
+                {
+                    _sfxSource = gameObject.AddComponent<AudioSource>();
+                }
+                _sfxSource.playOnAwake = false;
+                _sfxSource.loop = false;
+                _sfxSource.spatialBlend = 0f;
             }
-            _sfxSource.playOnAwake = false;
-            _sfxSource.loop = false;
-            _sfxSource.spatialBlend = 0f;
+
+            if (_pitchedVoices == null || _pitchedVoices.Length != PitchedVoiceCount)
+            {
+                _pitchedVoices = new AudioSource[PitchedVoiceCount];
+                for (int i = 0; i < PitchedVoiceCount; i++)
+                {
+                    AudioSource voice = gameObject.AddComponent<AudioSource>();
+                    voice.playOnAwake = false;
+                    voice.loop = false;
+                    voice.spatialBlend = 0f;
+                    _pitchedVoices[i] = voice;
+                }
+            }
         }
 
         public void SetMuted(bool muted)
@@ -101,23 +137,53 @@ namespace PuzzleGlass
             return isMuted;
         }
 
-        public void PlayBallPop()
+        public void SuppressBallTaps(float durationSeconds)
+        {
+            _tapSuppressedUntil = Mathf.Max(_tapSuppressedUntil, Time.unscaledTime + Mathf.Max(0f, durationSeconds));
+        }
+
+        public void PlayBallTap(float intensity01)
         {
             if (isMuted || !Application.isPlaying) return;
-            if (Time.unscaledTime - _lastPopTime < 0.032f) return;
+            if (Time.unscaledTime < _tapSuppressedUntil) return;
+            if (Time.unscaledTime - _lastTapTime < 0.060f) return;
 
-            if (Time.unscaledTime - _lastPopTime > 0.45f)
+            _lastTapTime = Time.unscaledTime;
+            float k = Mathf.Clamp01(intensity01);
+            float volume = Mathf.Lerp(0.08f, 0.21f, k);
+            float pitch = Mathf.Lerp(0.92f, 1.12f, Random.value);
+            PlayClipWithPitch(_clipBallTap, volume, pitch);
+        }
+
+        public void PlayBallPop()
+        {
+            PlayBallTransfer(isFinalBallInPiece: false);
+        }
+
+        /// <summary>
+        /// Layered ASMR ball transfer feedback: soft liquid bubble pop blended with a
+        /// harmonic pentatonic marimba/acrylic bead note that ascends cleanly over a chain.
+        /// </summary>
+        public void PlayBallTransfer(bool isFinalBallInPiece)
+        {
+            if (isMuted || !Application.isPlaying) return;
+            if (Time.unscaledTime - _lastPopTime < 0.036f) return;
+
+            if (Time.unscaledTime - _lastPopTime > 0.52f)
             {
                 _popChainCount = 0;
             }
             else
             {
-                _popChainCount = Mathf.Min(_popChainCount + 1, 10);
+                _popChainCount = Mathf.Min(_popChainCount + 1, PentatonicPitchScale.Length - 1);
             }
             _lastPopTime = Time.unscaledTime;
 
-            float pitch = 0.94f + _popChainCount * 0.042f;
-            PlayClipWithPitch(_clipBallPop, 0.56f, pitch);
+            float popPitch = 0.94f + _popChainCount * 0.038f;
+            float musicalRatio = PentatonicPitchScale[_popChainCount];
+
+            PlayClipWithPitch(_clipBallPop, 0.44f, popPitch);
+            PlayClipWithPitch(_clipTransferBead, isFinalBallInPiece ? 0.38f : 0.30f, isFinalBallInPiece ? musicalRatio * 1.125f : musicalRatio);
         }
 
         public void PlayGridSlide()
@@ -137,7 +203,9 @@ namespace PuzzleGlass
         public void PlayBoxComplete()
         {
             if (isMuted || !Application.isPlaying) return;
-            PlayClipWithPitch(_clipBoxComplete, 0.62f, 1.0f);
+            // Tactile acrylic latch click layered with a warm sparkling add9 chime chord
+            PlayClipWithPitch(_clipLidLatch, 0.42f, Random.Range(0.98f, 1.03f));
+            PlayClipWithPitch(_clipBoxComplete, 0.58f, 1.0f);
         }
 
         public void PlayShakeGlass()
@@ -186,26 +254,106 @@ namespace PuzzleGlass
         {
             if (clip == null) return;
             EnsureAudioSource();
-            if (_sfxSource == null) return;
-            _sfxSource.pitch = pitch;
-            _sfxSource.PlayOneShot(clip, Mathf.Clamp01(masterVolume * volumeScale));
+
+            AudioSource target = _sfxSource;
+            if (Mathf.Approximately(pitch, 1.0f) && _sfxSource != null)
+            {
+                target = _sfxSource;
+                target.pitch = 1.0f;
+            }
+            else if (_pitchedVoices != null && _pitchedVoices.Length > 0)
+            {
+                target = _pitchedVoices[_nextVoiceIndex % _pitchedVoices.Length];
+                _nextVoiceIndex++;
+                if (target != null)
+                {
+                    target.pitch = pitch;
+                }
+            }
+            else if (target != null)
+            {
+                target.pitch = pitch;
+            }
+
+            if (target == null) return;
+            target.PlayOneShot(clip, Mathf.Clamp01(masterVolume * volumeScale));
         }
 
         private void BuildProceduralClips()
         {
             if (_clipBallPop != null) return;
 
-            _clipBallPop     = CreateBubblePopClip("SFX_BallPop", 0.075f, 460f, 840f);
-            _clipGridSlide   = CreateWoodTickClip("SFX_GridSlide", 0.036f, 240f, 145f);
-            _clipBlockSnap   = CreateMarimbaSnapClip("SFX_BlockSnap", 0.065f, 320f, 470f);
-            _clipBoxComplete = CreateChimeChordClip("SFX_BoxComplete", 0.24f, new[] { 523.25f, 783.99f, 1046.50f }, 0.040f);
-            _clipShakeGlass  = CreateGlassClinkClip("SFX_ShakeGlass", 0.28f);
-            _clipBlocked     = CreateWoodTickClip("SFX_Blocked", 0.095f, 155f, 92f);
-            _clipUiClick     = CreateBubblePopClip("SFX_UiClick", 0.046f, 620f, 890f);
-            _clipLevelClear  = CreateChimeChordClip("SFX_LevelClear", 0.62f, new[] { 523.25f, 659.25f, 783.99f, 1046.50f }, 0.078f);
-            _clipLevelFail   = CreateChimeChordClip("SFX_LevelFail", 0.36f, new[] { 329.63f, 261.63f }, 0.130f);
-            _clipUnlock      = CreateChimeChordClip("SFX_Unlock", 0.28f, new[] { 659.25f, 987.77f, 1318.51f }, 0.035f);
-            _clipIceBreak    = CreateChimeChordClip("SFX_IceBreak", 0.22f, new[] { 1046.50f, 1396.91f, 1760.00f }, 0.022f);
+            _clipBallPop      = CreateBubblePopClip("SFX_BallPop", 0.072f, 440f, 820f);
+            _clipTransferBead = CreateTransferBeadClip("SFX_TransferBead", 0.095f, 523.25f);
+            _clipBallTap      = CreateBallTapClip("SFX_BallTap", 0.028f);
+            _clipLidLatch     = CreateLidLatchClip("SFX_LidLatch", 0.036f);
+            _clipGridSlide    = CreateWoodTickClip("SFX_GridSlide", 0.036f, 240f, 145f);
+            _clipBlockSnap    = CreateMarimbaSnapClip("SFX_BlockSnap", 0.065f, 320f, 470f);
+            _clipBoxComplete  = CreateChimeChordClip("SFX_BoxComplete", 0.30f, new[] { 523.25f, 659.25f, 783.99f, 987.77f, 1174.66f }, 0.034f);
+            _clipShakeGlass   = CreateGlassClinkClip("SFX_ShakeGlass", 0.28f);
+            _clipBlocked      = CreateWoodTickClip("SFX_Blocked", 0.095f, 155f, 92f);
+            _clipUiClick      = CreateBubblePopClip("SFX_UiClick", 0.046f, 620f, 890f);
+            _clipLevelClear   = CreateChimeChordClip("SFX_LevelClear", 0.62f, new[] { 523.25f, 659.25f, 783.99f, 1046.50f }, 0.078f);
+            _clipLevelFail    = CreateChimeChordClip("SFX_LevelFail", 0.36f, new[] { 329.63f, 261.63f }, 0.130f);
+            _clipUnlock       = CreateChimeChordClip("SFX_Unlock", 0.28f, new[] { 659.25f, 987.77f, 1318.51f }, 0.035f);
+            _clipIceBreak     = CreateChimeChordClip("SFX_IceBreak", 0.22f, new[] { 1046.50f, 1396.91f, 1760.00f }, 0.022f);
+        }
+
+        private static AudioClip CreateTransferBeadClip(string name, float duration, float baseFreq)
+        {
+            int count = Mathf.Max(128, Mathf.RoundToInt(duration * SampleRate));
+            float[] data = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                float sec = i / (float)SampleRate;
+                float t = i / (float)count;
+                float attack = Mathf.Min(1f, sec / 0.004f);
+                float decay = Mathf.Exp(-t * 6.2f);
+                float body = Mathf.Sin(2f * Mathf.PI * baseFreq * sec) * 0.72f
+                           + Mathf.Sin(2f * Mathf.PI * (baseFreq * 2.0f) * sec) * 0.20f * Mathf.Exp(-t * 9f)
+                           + Mathf.Sin(2f * Mathf.PI * (baseFreq * 3.0f) * sec) * 0.06f * Mathf.Exp(-t * 14f);
+                data[i] = body * attack * decay;
+            }
+            return FinishClip(name, data);
+        }
+
+        private static AudioClip CreateBallTapClip(string name, float duration)
+        {
+            int count = Mathf.Max(128, Mathf.RoundToInt(duration * SampleRate));
+            float[] data = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                float sec = i / (float)SampleRate;
+                float t = i / (float)count;
+                float attack = Mathf.Min(1f, sec / 0.0018f);
+                float decay = Mathf.Exp(-t * 10.5f);
+                // Soft rounded marble resonance without harsh high-frequency grit
+                float tone = Mathf.Sin(2f * Mathf.PI * 430f * sec) * 0.56f
+                           + Mathf.Sin(2f * Mathf.PI * 1160f * sec) * 0.34f * Mathf.Exp(-t * 12f)
+                           + Mathf.Sin(2f * Mathf.PI * 1840f * sec) * 0.10f * Mathf.Exp(-t * 18f);
+                data[i] = tone * attack * decay;
+            }
+            return FinishClip(name, data);
+        }
+
+        private static AudioClip CreateLidLatchClip(string name, float duration)
+        {
+            int count = Mathf.Max(128, Mathf.RoundToInt(duration * SampleRate));
+            float[] data = new float[count];
+            double phase = 0.0;
+            for (int i = 0; i < count; i++)
+            {
+                float sec = i / (float)SampleRate;
+                float t = i / (float)count;
+                float attack = Mathf.Min(1f, sec / 0.0015f);
+                float decay = Mathf.Exp(-t * 11.5f);
+                float freq = Mathf.Lerp(960f, 410f, Mathf.Pow(t, 0.45f));
+                phase += 2.0 * Mathf.PI * freq / SampleRate;
+                float click = Mathf.Sin((float)phase) * 0.68f
+                            + Mathf.Sin(2f * Mathf.PI * 1680f * sec) * 0.24f * Mathf.Exp(-t * 14f);
+                data[i] = click * attack * decay;
+            }
+            return FinishClip(name, data);
         }
 
         private static AudioClip CreateBubblePopClip(string name, float duration, float fStart, float fEnd)

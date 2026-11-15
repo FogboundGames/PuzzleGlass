@@ -11,16 +11,23 @@ namespace PuzzleGlass
     {
         public static PuzzleGlassBackdrop Instance { get; private set; }
 
-        [Header("Palette")]
-        public Color topColor  = new Color(0.700f, 0.710f, 0.980f, 1f); // Soft pastel periwinkle-lavender sky
-        public Color midColor  = new Color(0.860f, 0.840f, 0.990f, 1f); // Luminous lilac-ivory mist
-        public Color botColor  = new Color(0.980f, 0.880f, 0.860f, 1f); // Warm pastel peach-cream floor
-        public Color glowColor = new Color(0.985f, 0.980f, 1.000f, 1f);
-        public Color dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
+        private const string DefaultBackdropResourcePath = "Textures/StudioBackdrop";
+
+        [Header("Image Backdrop")]
+        public bool useTextureBackdrop = false;
+        public Texture2D backdropTexture;
+        public Color backdropTint = Color.white;
+
+        [Header("Pastel Lavender Studio Palette")]
+        public Color topColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
+        public Color midColor  = new Color(0.928f, 0.930f, 0.970f, 1f);
+        public Color botColor  = new Color(0.832f, 0.838f, 0.912f, 1f);
+        public Color glowColor = new Color(0.980f, 0.982f, 0.998f, 1f);
+        public Color dotColor  = new Color(0.840f, 0.845f, 0.925f, 1f);
         [Range(0f, 0.20f)]
         public float dotStrength = 0.0f;
         [Range(0f, 1.0f)]
-        public float floatingStrength = 0.72f;
+        public float floatingStrength = 0.0f;
 
         [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
@@ -29,6 +36,10 @@ namespace PuzzleGlass
         private float _lastOrthoSize = -1f;
         private float _lastAspect = -1f;
 
+        private static readonly int MainTexId          = Shader.PropertyToID("_MainTex");
+        private static readonly int TintColorId        = Shader.PropertyToID("_TintColor");
+        private static readonly int UseTextureId       = Shader.PropertyToID("_UseTexture");
+        private static readonly int TexAspectId        = Shader.PropertyToID("_TexAspect");
         private static readonly int TopColorId         = Shader.PropertyToID("_TopColor");
         private static readonly int MidColorId         = Shader.PropertyToID("_MidColor");
         private static readonly int BotColorId         = Shader.PropertyToID("_BotColor");
@@ -42,22 +53,49 @@ namespace PuzzleGlass
         {
             Instance = this;
             MigrateThemeIfNeeded();
+            EnsureBackdropTexture();
             EnsureBackdropQuad();
             SyncWithCamera(force: true);
         }
 
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (isActiveAndEnabled)
+            {
+                EnsureBackdropTexture();
+                ApplyMaterialProperties(_lastAspect > 0f ? _lastAspect : 0.5625f);
+            }
+        }
+#endif
+
+        private void EnsureBackdropTexture()
+        {
+            if (useTextureBackdrop && backdropTexture == null)
+            {
+                backdropTexture = Resources.Load<Texture2D>(DefaultBackdropResourcePath);
+            }
+        }
+
         private void MigrateThemeIfNeeded()
         {
-            // v4: hedef görseldeki belirgin lavanta (sahnede eski açık krem renkler kalmıştı)
-            if (visualThemeVersion >= 4) return;
-            visualThemeVersion = 4;
-            topColor  = new Color(0.700f, 0.710f, 0.980f, 1f);
-            midColor  = new Color(0.860f, 0.840f, 0.990f, 1f);
-            botColor  = new Color(0.980f, 0.880f, 0.860f, 1f);
-            glowColor = new Color(0.970f, 0.960f, 1.000f, 1f);
-            dotColor  = new Color(0.820f, 0.805f, 0.910f, 1f);
+            // v6: Seçenek 2 — Açık ve düşük doygunluklu Pastel Lila Cam Atölyesi
+            if (visualThemeVersion >= 6) return;
+            visualThemeVersion = 6;
+            ApplyPastelLavenderStudioPreset();
+        }
+
+        public void ApplyPastelLavenderStudioPreset()
+        {
+            useTextureBackdrop = false;
+            backdropTint = Color.white;
+            topColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
+            midColor  = new Color(0.928f, 0.930f, 0.970f, 1f);
+            botColor  = new Color(0.832f, 0.838f, 0.912f, 1f);
+            glowColor = new Color(0.980f, 0.982f, 0.998f, 1f);
+            dotColor  = new Color(0.840f, 0.845f, 0.925f, 1f);
             dotStrength = 0.0f;
-            floatingStrength = 0.90f;
+            floatingStrength = 0.0f;
         }
 
         private void LateUpdate()
@@ -93,6 +131,8 @@ namespace PuzzleGlass
                     _quadTransform = quad.transform;
                 }
             }
+
+            EnsureBackdropTexture();
 
             Shader shader = Shader.Find("PuzzleGlass/SoftBackdrop") ?? Shader.Find("Universal Render Pipeline/Unlit");
             if (shader != null && (_backdropMaterial == null || _backdropMaterial.shader != shader))
@@ -150,6 +190,14 @@ namespace PuzzleGlass
         private void ApplyMaterialProperties(float aspect)
         {
             if (_backdropMaterial == null) return;
+            bool hasTex = useTextureBackdrop && backdropTexture != null;
+            if (_backdropMaterial.HasProperty(MainTexId)) _backdropMaterial.SetTexture(MainTexId, backdropTexture);
+            if (_backdropMaterial.HasProperty(TintColorId)) _backdropMaterial.SetColor(TintColorId, backdropTint);
+            if (_backdropMaterial.HasProperty(UseTextureId)) _backdropMaterial.SetFloat(UseTextureId, hasTex ? 1f : 0f);
+            if (_backdropMaterial.HasProperty(TexAspectId) && backdropTexture != null && backdropTexture.height > 0)
+            {
+                _backdropMaterial.SetFloat(TexAspectId, (float)backdropTexture.width / backdropTexture.height);
+            }
             if (_backdropMaterial.HasProperty(TopColorId)) _backdropMaterial.SetColor(TopColorId, topColor);
             if (_backdropMaterial.HasProperty(MidColorId)) _backdropMaterial.SetColor(MidColorId, midColor);
             if (_backdropMaterial.HasProperty(BotColorId)) _backdropMaterial.SetColor(BotColorId, botColor);

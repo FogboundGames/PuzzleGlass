@@ -24,17 +24,17 @@ namespace PuzzleGlass
         {
             switch (color)
             {
-                case PuzzleColor.Blue:   return new Color(0.18f, 0.58f, 0.90f, 1f); // Balanced cerulean toy blue
-                case PuzzleColor.Yellow: return new Color(0.94f, 0.75f, 0.22f, 1f); // Warm butter-marigold yellow
-                case PuzzleColor.Red:    return new Color(0.90f, 0.32f, 0.30f, 1f); // Balanced coral-crimson red
-                case PuzzleColor.Green:  return new Color(0.32f, 0.76f, 0.38f, 1f); // Fresh meadow-apple green
-                case PuzzleColor.Purple: return new Color(0.58f, 0.39f, 0.86f, 1f); // Soft rich grape-violet
-                case PuzzleColor.Orange: return new Color(0.93f, 0.54f, 0.20f, 1f); // Warm apricot-tangerine
-                case PuzzleColor.Pink:   return new Color(0.89f, 0.37f, 0.62f, 1f); // Balanced berry-rose pink
-                case PuzzleColor.Black:  return new Color(0.19f, 0.20f, 0.25f, 1f); // Soft slate charcoal
-                case PuzzleColor.White:  return new Color(0.92f, 0.93f, 0.96f, 1f); // Porcelain pearl white
-                case PuzzleColor.Cyan:   return new Color(0.20f, 0.76f, 0.78f, 1f); // Balanced seafoam teal
-                case PuzzleColor.Brown:  return new Color(0.74f, 0.55f, 0.39f, 1f); // Warm caramel tan
+                case PuzzleColor.Blue:   return new Color(0.11f, 0.52f, 0.98f, 1f); // Vivid glossy cobalt-azure candy blue
+                case PuzzleColor.Yellow: return new Color(1.00f, 0.82f, 0.12f, 1f); // Luminous candy gold-yellow
+                case PuzzleColor.Red:    return new Color(0.96f, 0.21f, 0.22f, 1f); // Vivid cherry-crimson lacquer red
+                case PuzzleColor.Green:  return new Color(0.24f, 0.77f, 0.16f, 1f); // Crisp glossy leaf-apple green
+                case PuzzleColor.Purple: return new Color(0.58f, 0.28f, 0.94f, 1f); // Rich amethyst grape purple
+                case PuzzleColor.Orange: return new Color(1.00f, 0.52f, 0.08f, 1f); // Vivid tangerine-pumpkin orange
+                case PuzzleColor.Pink:   return new Color(0.97f, 0.30f, 0.62f, 1f); // Vibrant glossy berry pink
+                case PuzzleColor.Black:  return new Color(0.16f, 0.16f, 0.21f, 1f); // Deep glossy obsidian charcoal
+                case PuzzleColor.White:  return new Color(0.98f, 0.96f, 0.86f, 1f); // Warm glossy vanilla cream ivory
+                case PuzzleColor.Cyan:   return new Color(0.10f, 0.80f, 0.86f, 1f); // Vivid tropical turquoise cyan
+                case PuzzleColor.Brown:  return new Color(0.62f, 0.27f, 0.10f, 1f); // Rich roasted terracotta-chestnut brown
                 default: return Color.white;
             }
         }
@@ -62,18 +62,18 @@ namespace PuzzleGlass
         {
             switch (color)
             {
-                case PuzzleColor.Blue:   return new Color(0.54f, 0.60f, 0.82f, 1f);
-                case PuzzleColor.Yellow: return new Color(0.78f, 0.60f, 0.42f, 1f);
-                case PuzzleColor.Red:    return new Color(0.68f, 0.48f, 0.58f, 1f);
-                case PuzzleColor.Green:  return new Color(0.48f, 0.68f, 0.60f, 1f);
-                case PuzzleColor.Purple: return new Color(0.54f, 0.48f, 0.78f, 1f);
-                case PuzzleColor.Orange: return new Color(0.76f, 0.52f, 0.46f, 1f);
-                case PuzzleColor.Pink:   return new Color(0.68f, 0.48f, 0.66f, 1f);
-                case PuzzleColor.Black:  return new Color(0.55f, 0.58f, 0.68f, 1f);
-                case PuzzleColor.White:  return new Color(0.74f, 0.77f, 0.86f, 1f);
-                case PuzzleColor.Cyan:   return new Color(0.48f, 0.66f, 0.78f, 1f);
-                case PuzzleColor.Brown:  return new Color(0.66f, 0.52f, 0.46f, 1f);
-                default: return new Color(0.62f, 0.64f, 0.76f, 1f);
+                case PuzzleColor.Blue:   return new Color(0.42f, 0.46f, 0.84f, 1f);
+                case PuzzleColor.Yellow: return new Color(0.84f, 0.52f, 0.24f, 1f);
+                case PuzzleColor.Red:    return new Color(0.68f, 0.34f, 0.44f, 1f);
+                case PuzzleColor.Green:  return new Color(0.36f, 0.60f, 0.42f, 1f);
+                case PuzzleColor.Purple: return new Color(0.46f, 0.34f, 0.76f, 1f);
+                case PuzzleColor.Orange: return new Color(0.76f, 0.38f, 0.26f, 1f);
+                case PuzzleColor.Pink:   return new Color(0.68f, 0.36f, 0.58f, 1f);
+                case PuzzleColor.Black:  return new Color(0.46f, 0.48f, 0.60f, 1f);
+                case PuzzleColor.White:  return new Color(0.78f, 0.74f, 0.68f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.36f, 0.58f, 0.76f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.56f, 0.34f, 0.26f, 1f);
+                default: return new Color(0.60f, 0.62f, 0.74f, 1f);
             }
         }
 
@@ -84,39 +84,39 @@ namespace PuzzleGlass
         {
             switch (color)
             {
-                case PuzzleColor.Blue:   return new Color(0.09f, 0.36f, 0.68f, 1f);
-                case PuzzleColor.Yellow: return new Color(0.76f, 0.48f, 0.10f, 1f);
-                case PuzzleColor.Red:    return new Color(0.66f, 0.16f, 0.22f, 1f);
-                case PuzzleColor.Green:  return new Color(0.16f, 0.52f, 0.22f, 1f);
-                case PuzzleColor.Purple: return new Color(0.34f, 0.20f, 0.64f, 1f);
-                case PuzzleColor.Orange: return new Color(0.74f, 0.32f, 0.08f, 1f);
-                case PuzzleColor.Pink:   return new Color(0.64f, 0.18f, 0.44f, 1f);
-                case PuzzleColor.Black:  return new Color(0.08f, 0.09f, 0.13f, 1f);
-                case PuzzleColor.White:  return new Color(0.68f, 0.72f, 0.82f, 1f);
-                case PuzzleColor.Cyan:   return new Color(0.10f, 0.50f, 0.58f, 1f);
-                case PuzzleColor.Brown:  return new Color(0.50f, 0.34f, 0.22f, 1f);
-                default: return new Color(0.62f, 0.64f, 0.70f, 1f);
+                case PuzzleColor.Blue:   return new Color(0.05f, 0.27f, 0.68f, 1f);
+                case PuzzleColor.Yellow: return new Color(0.80f, 0.45f, 0.05f, 1f);
+                case PuzzleColor.Red:    return new Color(0.66f, 0.09f, 0.16f, 1f);
+                case PuzzleColor.Green:  return new Color(0.11f, 0.48f, 0.09f, 1f);
+                case PuzzleColor.Purple: return new Color(0.32f, 0.13f, 0.66f, 1f);
+                case PuzzleColor.Orange: return new Color(0.74f, 0.24f, 0.04f, 1f);
+                case PuzzleColor.Pink:   return new Color(0.66f, 0.12f, 0.42f, 1f);
+                case PuzzleColor.Black:  return new Color(0.07f, 0.08f, 0.12f, 1f);
+                case PuzzleColor.White:  return new Color(0.74f, 0.70f, 0.60f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.05f, 0.46f, 0.62f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.36f, 0.14f, 0.05f, 1f);
+                default: return new Color(0.60f, 0.62f, 0.68f, 1f);
             }
         }
 
         /// <summary>
-        /// Balanced top-bevel catchlight color for tactile candy/resin cubes.
+        /// Balanced top-bevel catchlight color for tactile candy/resin cubes and balls.
         /// </summary>
         public static Color GetCubeHighlightColor(PuzzleColor color)
         {
             switch (color)
             {
-                case PuzzleColor.Blue:   return new Color(0.56f, 0.84f, 0.96f, 1f);
-                case PuzzleColor.Yellow: return new Color(0.98f, 0.90f, 0.54f, 1f);
-                case PuzzleColor.Red:    return new Color(0.96f, 0.64f, 0.60f, 1f);
-                case PuzzleColor.Green:  return new Color(0.68f, 0.90f, 0.62f, 1f);
-                case PuzzleColor.Purple: return new Color(0.80f, 0.68f, 0.96f, 1f);
-                case PuzzleColor.Orange: return new Color(0.98f, 0.78f, 0.52f, 1f);
-                case PuzzleColor.Pink:   return new Color(0.96f, 0.68f, 0.84f, 1f);
-                case PuzzleColor.Black:  return new Color(0.42f, 0.44f, 0.50f, 1f);
-                case PuzzleColor.White:  return new Color(0.98f, 0.98f, 1.00f, 1f);
-                case PuzzleColor.Cyan:   return new Color(0.64f, 0.92f, 0.92f, 1f);
-                case PuzzleColor.Brown:  return new Color(0.88f, 0.74f, 0.62f, 1f);
+                case PuzzleColor.Blue:   return new Color(0.42f, 0.78f, 1.00f, 1f);
+                case PuzzleColor.Yellow: return new Color(1.00f, 0.93f, 0.42f, 1f);
+                case PuzzleColor.Red:    return new Color(1.00f, 0.48f, 0.44f, 1f);
+                case PuzzleColor.Green:  return new Color(0.50f, 0.93f, 0.38f, 1f);
+                case PuzzleColor.Purple: return new Color(0.76f, 0.54f, 1.00f, 1f);
+                case PuzzleColor.Orange: return new Color(1.00f, 0.74f, 0.34f, 1f);
+                case PuzzleColor.Pink:   return new Color(1.00f, 0.56f, 0.78f, 1f);
+                case PuzzleColor.Black:  return new Color(0.38f, 0.40f, 0.48f, 1f);
+                case PuzzleColor.White:  return new Color(1.00f, 0.98f, 0.92f, 1f);
+                case PuzzleColor.Cyan:   return new Color(0.42f, 0.94f, 0.96f, 1f);
+                case PuzzleColor.Brown:  return new Color(0.82f, 0.48f, 0.26f, 1f);
                 default: return Color.white;
             }
         }
@@ -186,7 +186,7 @@ namespace PuzzleGlass
             if (m.HasProperty("_Color")) m.SetColor("_Color", baseColor);
 
             // Toony Colors Pro 2 Hybrid Shader 2 parameters
-            if (m.HasProperty("_HColor")) m.SetColor("_HColor", new Color(0.95f, 0.94f, 0.92f, 1f));
+            if (m.HasProperty("_HColor")) m.SetColor("_HColor", new Color(0.98f, 0.97f, 0.95f, 1f));
             if (m.HasProperty("_SColor")) m.SetColor("_SColor", shadowTint);
             if (m.HasProperty("_ShadowColorLightAtten")) m.SetFloat("_ShadowColorLightAtten", 1f);
             m.EnableKeyword("TCP2_SHADOW_LIGHT_COLOR");
@@ -195,31 +195,31 @@ namespace PuzzleGlass
             if (m.HasProperty("_RampThreshold")) m.SetFloat("_RampThreshold", glossyCandy ? 0.48f : 0.50f);
             if (m.HasProperty("_RampSmoothing")) m.SetFloat("_RampSmoothing", glossyCandy ? 0.24f : 0.28f);
 
-            // Stylized soft specular (scaled directly by _SpecularColor.rgb in TCP2 Hybrid 2)
+            // Soft satin specular without harsh white dot glare
             if (m.HasProperty("_UseSpecular")) m.SetFloat("_UseSpecular", 1f);
             if (m.HasProperty("_SpecularType")) m.SetFloat("_SpecularType", 1f);
             if (m.HasProperty("_SpecularMapType")) m.SetFloat("_SpecularMapType", 0f);
             if (m.HasProperty("_SpecularColor"))
             {
                 m.SetColor("_SpecularColor", glossyCandy
-                    ? new Color(0.28f, 0.28f, 0.26f, 1f)
-                    : new Color(0.08f, 0.08f, 0.10f, 1f));
+                    ? new Color(0.16f, 0.16f, 0.15f, 1f)
+                    : new Color(0.06f, 0.06f, 0.08f, 1f));
             }
-            if (m.HasProperty("_SpecularToonSize")) m.SetFloat("_SpecularToonSize", glossyCandy ? 0.18f : 0.12f);
-            if (m.HasProperty("_SpecularToonSmoothness")) m.SetFloat("_SpecularToonSmoothness", glossyCandy ? 0.14f : 0.22f);
+            if (m.HasProperty("_SpecularToonSize")) m.SetFloat("_SpecularToonSize", glossyCandy ? 0.09f : 0.10f);
+            if (m.HasProperty("_SpecularToonSmoothness")) m.SetFloat("_SpecularToonSmoothness", glossyCandy ? 0.45f : 0.40f);
             m.EnableKeyword("TCP2_SPECULAR");
             m.EnableKeyword("TCP2_SPECULAR_STYLIZED");
 
-            // Subtle light-masked rim light (scaled directly by _RimColor.rgb in TCP2 Hybrid 2)
+            // Subtle light-masked rim light (keeps colors vivid instead of chalky white)
             if (m.HasProperty("_UseRim")) m.SetFloat("_UseRim", 1f);
             if (m.HasProperty("_UseRimLightMask")) m.SetFloat("_UseRimLightMask", 1f);
             if (m.HasProperty("_RimColor"))
             {
                 m.SetColor("_RimColor", glossyCandy
-                    ? new Color(0.16f, 0.17f, 0.20f, 1f)
-                    : new Color(0.09f, 0.10f, 0.13f, 1f));
+                    ? new Color(0.10f, 0.11f, 0.14f, 1f)
+                    : new Color(0.07f, 0.08f, 0.10f, 1f));
             }
-            if (m.HasProperty("_RimMin")) m.SetFloat("_RimMin", glossyCandy ? 0.58f : 0.64f);
+            if (m.HasProperty("_RimMin")) m.SetFloat("_RimMin", glossyCandy ? 0.62f : 0.64f);
             if (m.HasProperty("_RimMax")) m.SetFloat("_RimMax", 0.94f);
             m.EnableKeyword("TCP2_RIM_LIGHTING");
             m.EnableKeyword("TCP2_RIM_LIGHTING_LIGHTMASK");
@@ -231,15 +231,15 @@ namespace PuzzleGlass
             m.DisableKeyword("_RECEIVE_SHADOWS_OFF");
 
             // Standard URP/fallback properties (if TCP2 shader is unavailable)
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", glossyCandy ? 0.54f : 0.25f);
-            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", glossyCandy ? 0.54f : 0.25f);
-            if (m.HasProperty("_BevelHighlight")) m.SetFloat("_BevelHighlight", 0.20f);
-            if (m.HasProperty("_RimSeparation")) m.SetFloat("_RimSeparation", 0.36f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", glossyCandy ? 0.52f : 0.25f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", glossyCandy ? 0.52f : 0.25f);
+            if (m.HasProperty("_BevelHighlight")) m.SetFloat("_BevelHighlight", 0.18f);
+            if (m.HasProperty("_RimSeparation")) m.SetFloat("_RimSeparation", 0.46f);
             if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
         }
 
         /// <summary>
-        /// Creates a balanced hypercasual candy/toy material powered by Toony Colors Pro 2 Hybrid Shader 2.
+        /// Creates a vibrant glossy candy/lacquer material powered by Toony Colors Pro 2 Hybrid Shader 2.
         /// </summary>
         public static Material CreateCandyCubeMaterial(PuzzleColor color, string matName = null)
         {
@@ -247,7 +247,36 @@ namespace PuzzleGlass
                 color,
                 string.IsNullOrEmpty(matName) ? $"Mat_CandyCube_{color}" : matName,
                 glossyCandy: true,
-                indirectIntensity: 0.18f);
+                indirectIntensity: 0.14f);
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15;
+            return m;
+        }
+
+        /// <summary>
+        /// Creates a dedicated rich 3D satin-candy sphere material using PuzzleGlass/CandyCubeLit
+        /// so balls show deep saturated color gradients and crisp separation without white glare dots.
+        /// </summary>
+        public static Material CreateCandyBallMaterial(PuzzleColor color, string matName = null)
+        {
+            Shader ballShader = Shader.Find("PuzzleGlass/CandyCubeLit");
+            if (ballShader == null)
+            {
+                return CreateCandyCubeMaterial(color, matName);
+            }
+
+            Material m = new Material(ballShader);
+            m.name = string.IsNullOrEmpty(matName) ? $"Mat_CandyBall_{color}" : matName;
+            m.enableInstancing = true;
+
+            Color body = GetBodyColor(color);
+            m.color = body;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", body);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", body);
+            if (m.HasProperty("_ShadowColor")) m.SetColor("_ShadowColor", GetCubeShadowColor(color));
+            if (m.HasProperty("_HighlightColor")) m.SetColor("_HighlightColor", GetCubeHighlightColor(color));
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.52f);
+            if (m.HasProperty("_BevelHighlight")) m.SetFloat("_BevelHighlight", 0f);
+            if (m.HasProperty("_RimSeparation")) m.SetFloat("_RimSeparation", 0.46f);
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15;
             return m;
         }

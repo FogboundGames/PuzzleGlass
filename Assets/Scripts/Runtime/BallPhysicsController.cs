@@ -21,6 +21,7 @@ namespace PuzzleGlass
         public SphereCollider sphereCollider;
         public MeshRenderer meshRenderer;
         public MeshFilter meshFilter;
+        public Transform visualTransform;
 
         [Header("Physical Settings")]
         public float ballRadius = 0.12f;
@@ -43,9 +44,15 @@ namespace PuzzleGlass
         private MonsterCharacter _targetMonster;
         private Action<BallPhysicsController> _onEatenCallback;
         private Vector3 _originalScale = Vector3.one;
+        private Vector3 _visualBaseScale = Vector3.one;
         private Tweener _flightTween;
         private Sequence _scaleSeq;
+        private Sequence _visualSeq;
         private float _attractionStartTime = -1f;
+        private float _spawnTime = -10f;
+        private float _nextCollisionSquashTime = -10f;
+        private bool _hasPlayedArrivalSquash = false;
+        private TrailRenderer _flightTrail;
 
         public float AttractionTime => (_attractionStartTime > 0f) ? (Time.time - _attractionStartTime) : 0f;
         public MonsterCharacter TargetMonster => _targetMonster;
@@ -59,8 +66,30 @@ namespace PuzzleGlass
         {
             if (rb == null) rb = GetComponent<Rigidbody>();
             if (sphereCollider == null) sphereCollider = GetComponent<SphereCollider>();
-            if (meshRenderer == null) meshRenderer = GetComponent<MeshRenderer>();
-            if (meshFilter == null) meshFilter = GetComponent<MeshFilter>();
+
+            if (visualTransform == null)
+            {
+                Transform childVisual = transform.Find("Visual");
+                if (childVisual != null)
+                {
+                    visualTransform = childVisual;
+                }
+            }
+
+            if (meshRenderer == null)
+            {
+                meshRenderer = (visualTransform != null ? visualTransform.GetComponent<MeshRenderer>() : null)
+                    ?? GetComponentInChildren<MeshRenderer>();
+            }
+            if (meshFilter == null)
+            {
+                meshFilter = (visualTransform != null ? visualTransform.GetComponent<MeshFilter>() : null)
+                    ?? GetComponentInChildren<MeshFilter>();
+            }
+            if (visualTransform == null)
+            {
+                visualTransform = (meshRenderer != null) ? meshRenderer.transform : transform;
+            }
 
             if (rb != null)
             {
@@ -79,6 +108,67 @@ namespace PuzzleGlass
                 // 0.496f radius lets 11 balls sit wall-to-wall without horizontal jamming while rolling smoothly into pockets
                 sphereCollider.radius = 0.496f;
             }
+
+            EnsureFlightTrail();
+        }
+
+        private void EnsureFlightTrail()
+        {
+            if (!Application.isPlaying) return;
+            if (_flightTrail != null) return;
+            _flightTrail = GetComponent<TrailRenderer>();
+            if (_flightTrail == null)
+            {
+                _flightTrail = gameObject.AddComponent<TrailRenderer>();
+            }
+            _flightTrail.time = 0.13f;
+            _flightTrail.minVertexDistance = 0.025f;
+            _flightTrail.numCapVertices = 3;
+            _flightTrail.numCornerVertices = 2;
+            _flightTrail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _flightTrail.receiveShadows = false;
+            _flightTrail.alignment = LineAlignment.TransformZ;
+            _flightTrail.sortingOrder = 18;
+            if (BlockClearCelebration.SpriteMaterial != null)
+            {
+                _flightTrail.sharedMaterial = BlockClearCelebration.SpriteMaterial;
+            }
+            _flightTrail.widthCurve = new AnimationCurve(
+                new Keyframe(0f, 1f),
+                new Keyframe(0.55f, 0.42f),
+                new Keyframe(1f, 0f));
+            _flightTrail.emitting = false;
+        }
+
+        private void SetFlightTrailActive(bool active)
+        {
+            if (!Application.isPlaying) return;
+            EnsureFlightTrail();
+            if (_flightTrail == null) return;
+
+            if (!active)
+            {
+                _flightTrail.emitting = false;
+                _flightTrail.Clear();
+                return;
+            }
+
+            if (BlockClearCelebration.SpriteMaterial != null && _flightTrail.sharedMaterial == null)
+            {
+                _flightTrail.sharedMaterial = BlockClearCelebration.SpriteMaterial;
+            }
+            float headW = Mathf.Max(0.05f, ballRadius * 1.18f);
+            _flightTrail.widthMultiplier = headW;
+            _flightTrail.time = (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive) ? 0.10f : 0.135f;
+
+            Color c = Color.Lerp(PuzzleColorPalette.GetPrimaryColor(colorType), Color.white, 0.45f);
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(c, 0f), new GradientColorKey(Color.Lerp(c, Color.white, 0.35f), 1f) },
+                new[] { new GradientAlphaKey(0.46f, 0f), new GradientAlphaKey(0.16f, 0.55f), new GradientAlphaKey(0f, 1f) });
+            _flightTrail.colorGradient = grad;
+            _flightTrail.Clear();
+            _flightTrail.emitting = true;
         }
 
         public void ConfigurePoolLayer(int layerIdx, float worldX, float floorWorldY, float stepWorldY)
@@ -160,6 +250,35 @@ namespace PuzzleGlass
             _originalScale = new Vector3(diameter, diameter, diameter);
             transform.localScale = _originalScale;
 
+            _visualSeq?.Kill();
+            _visualSeq = null;
+            _spawnTime = Time.time;
+            _nextCollisionSquashTime = Time.time + 0.08f;
+            _hasPlayedArrivalSquash = false;
+
+            if (visualTransform != null && visualTransform != transform)
+            {
+                // Subtle tactile size variety (±4%) decoupled from collider bounds so rows never wedge
+                float sizeJitter = UnityEngine.Random.Range(0.958f, 1.038f);
+                _visualBaseScale = Vector3.one * sizeJitter;
+                visualTransform.localScale = _visualBaseScale * 0.86f;
+
+                if (Application.isPlaying)
+                {
+                    _visualSeq = DOTween.Sequence();
+                    _visualSeq.Append(visualTransform.DOScale(_visualBaseScale * 1.05f, 0.09f).SetEase(Ease.OutQuad));
+                    _visualSeq.Append(visualTransform.DOScale(_visualBaseScale, 0.08f).SetEase(Ease.OutSine));
+                }
+                else
+                {
+                    visualTransform.localScale = _visualBaseScale;
+                }
+            }
+            else
+            {
+                _visualBaseScale = Vector3.one;
+            }
+
             if (sphereCollider != null)
             {
                 sphereCollider.radius = 0.496f;
@@ -176,6 +295,8 @@ namespace PuzzleGlass
                 rb.angularVelocity = Vector3.zero;
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
             }
+
+            SetFlightTrailActive(false);
         }
 
         public void MakeKinematic()
@@ -211,6 +332,8 @@ namespace PuzzleGlass
             state = BallState.InContainer;
             _attractionStartTime = -1f;
             _targetMonster = null;
+
+            SetFlightTrailActive(false);
 
             Vector3 p = transform.position;
             p.z = -0.10f;
@@ -275,6 +398,8 @@ namespace PuzzleGlass
                 rb.WakeUp();
             }
 
+            SetFlightTrailActive(true);
+
             // Wake up remaining balls in container and nudge upper neighbors so they cascade into the vacated gap!
             if (BallObjectPool.Instance != null)
             {
@@ -291,10 +416,17 @@ namespace PuzzleGlass
                         Vector3 op = other.transform.position;
                         float dx = vacatedPos.x - op.x;
                         float dy = op.y - vacatedPos.y;
-                        if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.0f && Mathf.Abs(dx) <= wakeRangeX)
+                        if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
                         {
-                            float inwardVx = Mathf.Clamp(dx * 1.8f, -0.55f, 0.55f);
-                            other.rb.linearVelocity += new Vector3(inwardVx, -0.45f, 0f);
+                            float inwardVx = Mathf.Clamp(dx * 2.0f, -0.62f, 0.62f);
+                            other.rb.linearVelocity += new Vector3(inwardVx, -0.52f, 0f);
+
+                            if (dy <= ballRadius * 3.0f && Mathf.Abs(dx) <= ballRadius * 2.6f && Time.time >= other._nextCollisionSquashTime)
+                            {
+                                other._nextCollisionSquashTime = Time.time + 0.16f;
+                                Vector3 slideDir = new Vector3(inwardVx, -1f, 0f).normalized;
+                                other.PlayVisualSquashStretch(0.032f, slideDir, isArrival: false);
+                            }
                         }
                     }
                 }
@@ -312,6 +444,16 @@ namespace PuzzleGlass
             {
                 state = BallState.AttractingToExit;
                 _attractionStartTime = Time.time;
+
+                if (visualTransform != null && visualTransform != transform && Application.isPlaying)
+                {
+                    Vector3 pullDir = exitWorldPos - transform.position;
+                    pullDir.z = 0f;
+                    if (pullDir.sqrMagnitude > 0.0001f)
+                    {
+                        PlayVisualSquashStretch(-0.075f, pullDir.normalized, isArrival: false);
+                    }
+                }
             }
 
             if (_attractionStartTime <= 0f)
@@ -403,9 +545,87 @@ namespace PuzzleGlass
             });
         }
 
-        public void RecycleSelf()
+        private void OnCollisionEnter(Collision collision)
+        {
+            if (state != BallState.InContainer || !Application.isPlaying) return;
+            if (visualTransform == null || visualTransform == transform) return;
+            if (Time.time < _spawnTime + 0.045f) return;
+
+            float relSpeed = collision.relativeVelocity.magnitude;
+            Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
+
+            // Arrival squash & stretch on first settling impact inside the glass container
+            if (!_hasPlayedArrivalSquash && relSpeed >= 1.05f)
+            {
+                _hasPlayedArrivalSquash = true;
+                _nextCollisionSquashTime = Time.time + 0.14f;
+                float arrivalAmp = Mathf.Clamp(0.065f + relSpeed * 0.016f, 0.075f, 0.145f);
+                PlayVisualSquashStretch(arrivalAmp, normal, isArrival: true);
+                PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.9f) / 4.5f));
+                return;
+            }
+
+            if (relSpeed < 0.85f || Time.time < _nextCollisionSquashTime) return;
+            _nextCollisionSquashTime = Time.time + 0.13f;
+
+            float amp = Mathf.Clamp(0.032f + (relSpeed - 0.85f) * 0.016f, 0.032f, 0.095f);
+            PlayVisualSquashStretch(amp, normal, isArrival: false);
+
+            if (relSpeed >= 1.40f)
+            {
+                PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 1.35f) / 4.8f) * 0.75f);
+            }
+        }
+
+        private void PlayVisualSquashStretch(float amp, Vector3 worldAxis, bool isArrival)
+        {
+            if (visualTransform == null || visualTransform == transform) return;
+
+            Vector3 localAxis = transform.InverseTransformDirection(worldAxis);
+            if (localAxis.sqrMagnitude < 0.0001f) localAxis = Vector3.up;
+            localAxis.Normalize();
+
+            float ax = Mathf.Abs(localAxis.x);
+            float ay = Mathf.Abs(localAxis.y);
+            float az = Mathf.Abs(localAxis.z);
+
+            Vector3 squashScale = new Vector3(
+                _visualBaseScale.x * Mathf.Clamp(1f + amp * (0.45f - 1.45f * ax), 0.78f, 1.24f),
+                _visualBaseScale.y * Mathf.Clamp(1f + amp * (0.45f - 1.45f * ay), 0.78f, 1.24f),
+                _visualBaseScale.z * Mathf.Clamp(1f + amp * (0.45f - 1.45f * az), 0.78f, 1.24f));
+
+            float rebound = -amp * 0.34f;
+            Vector3 reboundScale = new Vector3(
+                _visualBaseScale.x * (1f + rebound * (0.45f - 1.45f * ax)),
+                _visualBaseScale.y * (1f + rebound * (0.45f - 1.45f * ay)),
+                _visualBaseScale.z * (1f + rebound * (0.45f - 1.45f * az)));
+
+            _visualSeq?.Kill();
+            _visualSeq = DOTween.Sequence();
+            _visualSeq.Append(visualTransform.DOScale(squashScale, isArrival ? 0.045f : 0.038f).SetEase(Ease.OutQuad));
+            _visualSeq.Append(visualTransform.DOScale(reboundScale, isArrival ? 0.068f : 0.055f).SetEase(Ease.OutSine));
+            _visualSeq.Append(visualTransform.DOScale(_visualBaseScale, isArrival ? 0.095f : 0.080f).SetEase(Ease.OutSine));
+        }
+
+        private void KillAllTweens()
         {
             transform.DOKill();
+            _flightTween?.Kill();
+            _flightTween = null;
+            _scaleSeq?.Kill();
+            _scaleSeq = null;
+            _visualSeq?.Kill();
+            _visualSeq = null;
+            if (visualTransform != null && visualTransform != transform)
+            {
+                visualTransform.localScale = Vector3.one;
+            }
+        }
+
+        public void RecycleSelf()
+        {
+            SetFlightTrailActive(false);
+            KillAllTweens();
             state = BallState.Pooled;
             StopAndMakeKinematic();
             if (sphereCollider != null)
@@ -432,12 +652,12 @@ namespace PuzzleGlass
 
         private void OnDisable()
         {
-            transform.DOKill();
+            KillAllTweens();
         }
 
         private void OnDestroy()
         {
-            transform.DOKill();
+            KillAllTweens();
         }
     }
 }

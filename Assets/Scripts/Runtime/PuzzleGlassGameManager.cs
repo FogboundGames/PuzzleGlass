@@ -355,7 +355,7 @@ namespace PuzzleGlass
             if (mainCamera != null)
             {
                 mainCamera.clearFlags = CameraClearFlags.SolidColor;
-                mainCamera.backgroundColor = new Color(0.925f, 0.918f, 0.978f, 1f); // Soft pastel lavender fallback
+                mainCamera.backgroundColor = new Color(0.945f, 0.875f, 0.770f, 1f); // Warm cream studio fallback
 
                 // Orthographic framing proportioned cleanly for vertical mobile screen
                 mainCamera.transform.position = new Vector3(0, 0.30f, -10f);

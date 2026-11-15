@@ -23,6 +23,7 @@ namespace PuzzleGlass
         private static readonly int OutlineThicknessPropId = Shader.PropertyToID("_OutlineThickness");
         private static readonly int LipOffsetPropId = Shader.PropertyToID("_LipOffset");
         private static readonly int ExitHighlightPropId = Shader.PropertyToID("_ExitHighlight");
+        private static readonly int DragHighlightPropId = Shader.PropertyToID("_DragHighlight");
         private static readonly int IceAmountPropId = Shader.PropertyToID("_IceAmount");
         private static readonly int LockAmountPropId = Shader.PropertyToID("_LockAmount");
         private static readonly int SocketCountPropId = Shader.PropertyToID("_SocketCount");
@@ -375,12 +376,20 @@ namespace PuzzleGlass
 
         public void SetExitClearHighlight(bool exitClear)
         {
-            bool effectiveClear = exitClear && !IsMovementOrCollectionBlocked;
+            bool effectiveClear = (exitClear || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
             isExitClearInGrid = effectiveClear;
             isUnlockedInStaging = effectiveClear;
             if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
             {
                 bodyMaterial.SetFloat(ExitHighlightPropId, effectiveClear ? 1.0f : 0.0f);
+            }
+        }
+
+        public void SetDragHighlight(bool isDragging)
+        {
+            if (bodyMaterial != null && bodyMaterial.HasProperty(DragHighlightPropId))
+            {
+                bodyMaterial.SetFloat(DragHighlightPropId, isDragging ? 1.0f : 0.0f);
             }
         }
 
@@ -517,7 +526,7 @@ namespace PuzzleGlass
             Color baseCol = GetCarrierFrameColor(colorType);
             Color darkCol = GetCarrierDarkColor(colorType);
             Color outlineCol = GetCarrierOutlineColor(colorType);
-            Color highlightCol = Color.Lerp(baseCol, new Color(0.96f, 0.96f, 0.98f, 1f), 0.20f);
+            Color highlightCol = Color.Lerp(baseCol, new Color(0.99f, 0.99f, 1.0f, 1f), 0.34f);
 
             bodyMaterial = new Material(boxShader) { name = $"Mat_CarrierBox_{colorType}" };
             bodyMaterial.color = Color.white;
@@ -525,13 +534,13 @@ namespace PuzzleGlass
             if (bodyMaterial.HasProperty("_BodyDarkColor")) bodyMaterial.SetColor("_BodyDarkColor", darkCol);
             if (bodyMaterial.HasProperty("_OutlineColor")) bodyMaterial.SetColor("_OutlineColor", outlineCol);
             if (bodyMaterial.HasProperty("_HighlightColor")) bodyMaterial.SetColor("_HighlightColor", highlightCol);
-            if (bodyMaterial.HasProperty("_PlateColor")) bodyMaterial.SetColor("_PlateColor", new Color(0.94f, 0.94f, 0.96f, 1.0f));
-            if (bodyMaterial.HasProperty("_PlateShadowColor")) bodyMaterial.SetColor("_PlateShadowColor", new Color(0.81f, 0.83f, 0.88f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketColor")) bodyMaterial.SetColor("_SocketColor", new Color(0.58f, 0.59f, 0.64f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketShadowColor")) bodyMaterial.SetColor("_SocketShadowColor", new Color(0.44f, 0.45f, 0.51f, 1.0f));
+            if (bodyMaterial.HasProperty("_PlateColor")) bodyMaterial.SetColor("_PlateColor", new Color(0.95f, 0.95f, 0.97f, 1.0f));
+            if (bodyMaterial.HasProperty("_PlateShadowColor")) bodyMaterial.SetColor("_PlateShadowColor", new Color(0.74f, 0.77f, 0.84f, 1.0f));
+            if (bodyMaterial.HasProperty("_SocketColor")) bodyMaterial.SetColor("_SocketColor", new Color(0.56f, 0.58f, 0.63f, 1.0f));
+            if (bodyMaterial.HasProperty("_SocketShadowColor")) bodyMaterial.SetColor("_SocketShadowColor", new Color(0.40f, 0.42f, 0.49f, 1.0f));
             ApplySocketLayoutToMaterial();
 
-            socketBallMaterial = PuzzleColorPalette.CreateCandyCubeMaterial(colorType, $"Mat_SocketBall_{colorType}");
+            socketBallMaterial = PuzzleColorPalette.CreateCandyBallMaterial(colorType, $"Mat_SocketBall_{colorType}");
 
             badgeMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(
                 new Color(0.92f, 0.93f, 0.96f, 1f),
@@ -556,7 +565,7 @@ namespace PuzzleGlass
         private static Color GetCarrierOutlineColor(PuzzleColor color)
         {
             Color c = GetCarrierFrameColor(color);
-            return new Color(c.r * 0.54f, c.g * 0.56f, c.b * 0.64f, 1f);
+            return new Color(c.r * 0.42f, c.g * 0.44f, c.b * 0.54f, 1f);
         }
 
         private static Mesh GetSharedSphereMesh()
@@ -839,7 +848,8 @@ namespace PuzzleGlass
             if (bodyMaterial.HasProperty(InnerRadPropId)) bodyMaterial.SetFloat(InnerRadPropId, CarrierBlockShapeUtility.InnerCornerRadius);
             if (bodyMaterial.HasProperty(OutlineThicknessPropId)) bodyMaterial.SetFloat(OutlineThicknessPropId, CarrierBlockShapeUtility.OutlineThickness);
             if (bodyMaterial.HasProperty(LipOffsetPropId)) bodyMaterial.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
-            if (bodyMaterial.HasProperty(ExitHighlightPropId)) bodyMaterial.SetFloat(ExitHighlightPropId, (isExitClearInGrid && !IsMovementOrCollectionBlocked) ? 1f : 0f);
+            if (bodyMaterial.HasProperty(ExitHighlightPropId)) bodyMaterial.SetFloat(ExitHighlightPropId, ((isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked) ? 1f : 0f);
+            if (bodyMaterial.HasProperty(DragHighlightPropId)) bodyMaterial.SetFloat(DragHighlightPropId, 0f);
             if (bodyMaterial.HasProperty(IceAmountPropId)) bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1f : 0f);
         }
 
@@ -903,7 +913,7 @@ namespace PuzzleGlass
             return lossy * _socketBallLocalDiameter;
         }
 
-        private void ActivateAndPulseSocketBall(int socketIndex)
+        private void ActivateAndPulseSocketBall(int socketIndex, bool playSeatEffect = true)
         {
             if (socketBalls == null || socketBalls.Length == 0) return;
             int idx = Mathf.Clamp(socketIndex, 0, socketBalls.Length - 1);
@@ -914,9 +924,24 @@ namespace PuzzleGlass
             sBall.SetActive(true);
             Transform tr = sBall.transform;
             tr.DOKill();
+            tr.localPosition = new Vector3(0f, 0f, -0.024f);
             Vector3 targetLocalScale = Vector3.one * _socketBallLocalDiameter;
-            tr.localScale = targetLocalScale * 1.18f;
-            tr.DOScale(targetLocalScale, 0.14f).SetEase(Ease.OutBack);
+            tr.localScale = new Vector3(targetLocalScale.x * 1.22f, targetLocalScale.y * 0.78f, targetLocalScale.z * 1.14f);
+
+            Sequence sockSeq = DOTween.Sequence();
+            sockSeq.Append(tr.DOScale(
+                new Vector3(targetLocalScale.x * 0.93f, targetLocalScale.y * 1.08f, targetLocalScale.z * 0.96f),
+                0.055f).SetEase(Ease.OutQuad));
+            sockSeq.Append(tr.DOScale(targetLocalScale, 0.145f).SetEase(Ease.OutBounce));
+            sockSeq.Join(tr.DOLocalMoveZ(0f, 0.14f).SetEase(Ease.OutBounce));
+            sockSeq.SetLink(sBall);
+
+            if (playSeatEffect && Application.isPlaying)
+            {
+                float scaleFactor = (bodyPivot != null) ? bodyPivot.lossyScale.x : transform.lossyScale.x;
+                float worldRadius = Mathf.Max(0.08f, _socketBallLocalDiameter * 0.65f * scaleFactor);
+                BlockClearCelebration.PlaySocketSeatRing(tr.position, PuzzleColorPalette.GetPrimaryColor(colorType), worldRadius);
+            }
         }
 
         // ==================== ANIMATIONS ====================
@@ -940,7 +965,11 @@ namespace PuzzleGlass
         {
             if (_idleTween != null && _idleTween.IsActive()) _idleTween.Kill();
             if (_blinkSeq != null && _blinkSeq.IsActive()) _blinkSeq.Kill();
-            if (bodyPivot != null) bodyPivot.localScale = _originalBodyScale;
+            if (bodyPivot != null)
+            {
+                bodyPivot.localScale = _originalBodyScale;
+                bodyPivot.localPosition = Vector3.zero;
+            }
         }
 
         /// <summary>
@@ -1013,9 +1042,11 @@ namespace PuzzleGlass
                 bodyPivot.DOKill(false);
                 Sequence gulpSeq = DOTween.Sequence();
                 gulpSeq.Append(bodyPivot.DOScale(
-                    new Vector3(_originalBodyScale.x * 1.05f, _originalBodyScale.y * 0.95f, _originalBodyScale.z),
-                    0.06f).SetEase(Ease.OutSine));
-                gulpSeq.Append(bodyPivot.DOScale(_originalBodyScale, 0.12f).SetEase(Ease.OutBack));
+                    new Vector3(_originalBodyScale.x * 1.05f, _originalBodyScale.y * 0.94f, _originalBodyScale.z),
+                    0.055f).SetEase(Ease.OutSine));
+                gulpSeq.Join(bodyPivot.DOLocalMoveY(-0.018f, 0.055f).SetEase(Ease.OutSine));
+                gulpSeq.Append(bodyPivot.DOScale(_originalBodyScale, 0.14f).SetEase(Ease.OutBack));
+                gulpSeq.Join(bodyPivot.DOLocalMoveY(0f, 0.14f).SetEase(Ease.OutBounce));
             }
         }
 
@@ -1039,80 +1070,98 @@ namespace PuzzleGlass
                 {
                     if (socketBalls[i] != null && !socketBalls[i].activeSelf)
                     {
-                        ActivateAndPulseSocketBall(i);
+                        ActivateAndPulseSocketBall(i, playSeatEffect: false);
                     }
                 }
                 StartCoroutine(CelebrateAndCompleteRoutine());
             }
         }
 
+        private IEnumerator PlaySocketCompletionWaveRoutine()
+        {
+            int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
+            if (sockCount <= 0) yield break;
+
+            CarrierBlockShapeUtility.ComputeSocketLayoutForShape(blockShape, GetVisibleSocketCount(), out _, out _, out _socketBallLocalDiameter);
+            Vector3 baseScale = Vector3.one * _socketBallLocalDiameter;
+            float scaleFactor = (bodyPivot != null) ? bodyPivot.lossyScale.x : transform.lossyScale.x;
+            float ringRadius = Mathf.Max(0.07f, _socketBallLocalDiameter * 0.56f * scaleFactor);
+            Color glintCol = Color.Lerp(PuzzleColorPalette.GetPrimaryColor(colorType), Color.white, 0.55f);
+
+            float stepDelay = Mathf.Clamp(0.11f / sockCount, 0.012f, 0.026f);
+            for (int i = 0; i < sockCount; i++)
+            {
+                GameObject sBall = socketBalls[i];
+                if (sBall == null || !sBall.activeSelf) continue;
+
+                Transform tr = sBall.transform;
+                tr.DOKill();
+                tr.localScale = baseScale;
+
+                Sequence popSeq = DOTween.Sequence();
+                popSeq.Append(tr.DOScale(baseScale * 1.20f, 0.045f).SetEase(Ease.OutQuad));
+                popSeq.Join(tr.DOLocalMoveZ(-0.020f, 0.045f).SetEase(Ease.OutQuad));
+                popSeq.Append(tr.DOScale(baseScale, 0.075f).SetEase(Ease.OutBack));
+                popSeq.Join(tr.DOLocalMoveZ(0f, 0.075f).SetEase(Ease.OutQuad));
+                popSeq.SetLink(sBall);
+
+                if (Application.isPlaying)
+                {
+                    BlockClearCelebration.PlaySocketSeatRing(tr.position, glintCol, ringRadius, 0.52f);
+                }
+
+                yield return new WaitForSeconds(stepDelay);
+            }
+
+            yield return new WaitForSeconds(0.035f);
+        }
+
         private IEnumerator CelebrateAndCompleteRoutine()
         {
             StopIdleAndBlink();
 
-            // 1. Brief pause so the 3rd ball settles into its gray socket
-            yield return new WaitForSeconds(0.14f);
+            // 1. Brief beat for final ball seat + crisp socket shimmer wave
+            yield return new WaitForSeconds(0.05f);
+            yield return PlaySocketCompletionWaveRoutine();
 
-            // 2. Transparent Lid Snap-Shut ("TIK!" Gachapon / Bento Package Seal)
+            // 2. Short anticipation swell in place ("kabarma"), then elastic implosion inward (~0.18s)
+            Vector3 startScale = transform.localScale;
+            if (bodyPivot != null)
+            {
+                bodyPivot.DOKill(false);
+                yield return bodyPivot.DOScale(_originalBodyScale * 1.07f, 0.065f).SetEase(Ease.OutQuad).WaitForCompletion();
+            }
+            else
+            {
+                yield return transform.DOScale(startScale * 1.07f, 0.065f).SetEase(Ease.OutQuad).WaitForCompletion();
+            }
+
             PuzzleSoundManager.Instance?.PlayBoxComplete();
-            if (transparentLidTransform == null && bodyPivot != null)
-            {
-                transparentLidTransform = bodyPivot.Find("BoxTransparentLid");
-            }
 
-            if (transparentLidTransform != null)
-            {
-                transparentLidTransform.gameObject.SetActive(true);
-                transparentLidTransform.DOKill();
-                transparentLidTransform.localPosition = new Vector3(0f, 0.28f, -0.26f);
-                transparentLidTransform.localScale = new Vector3(0.94f, 0.14f, 1f);
-
-                Sequence lidSnapSeq = DOTween.Sequence();
-                lidSnapSeq.Join(transparentLidTransform.DOLocalMove(new Vector3(0f, 0f, -0.26f), 0.14f).SetEase(Ease.OutBack));
-                lidSnapSeq.Join(transparentLidTransform.DOScale(Vector3.one, 0.14f).SetEase(Ease.OutBack));
-                if (bodyPivot != null)
-                {
-                    // Mechanical "TIK!" lock squash-punch when the lid latches shut
-                    lidSnapSeq.Insert(0.11f, bodyPivot.DOScale(
-                        new Vector3(_originalBodyScale.x * 1.09f, _originalBodyScale.y * 0.91f, _originalBodyScale.z),
-                        0.05f).SetEase(Ease.OutQuad));
-                    lidSnapSeq.Insert(0.16f, bodyPivot.DOScale(_originalBodyScale, 0.10f).SetEase(Ease.OutBack));
-                }
-                yield return lidSnapSeq.WaitForCompletion();
-            }
-
-            // 3. Notify Game Manager (increments Combo Streak / triggers 2x Vacuum Fever Mode & unlocks matching Color Gates!)
+            // Notify listeners & game manager right as the block pops
             if (PuzzleGlassGameManager.Instance != null)
             {
                 PuzzleGlassGameManager.Instance.OnCarrierBoxCompleted(this);
             }
-
             if (assignedSlot != null)
             {
                 assignedSlot.DetachMonster();
                 assignedSlot = null;
             }
-
             OnTargetReached?.Invoke(this);
 
-            // Brief pause so the player admires the sealed transparent package before it lifts away by its handle
-            yield return new WaitForSeconds(0.16f);
+            Vector3 popCenter = (bodyPivot != null) ? bodyPivot.position : transform.position;
+            BlockClearCelebration.PlayImplosionPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), 0.92f);
 
-            Vector3 origPos = transform.position;
-            float sideDir = (origPos.x >= 0f) ? 0.24f : -0.24f;
-
-            // Kutlama: parlama + renkli parçacık patlaması + kısa titreşim
-            BlockClearCelebration.Play(origPos, PuzzleColorPalette.GetPrimaryColor(colorType));
-
-            // 4. Lifted up by its top handle and carried away!
-            Sequence exitSeq = DOTween.Sequence();
+            // Elastic inward implosion directly at current position (never drifts up over the glass bowl)
+            transform.DOKill(false);
+            Sequence implodeSeq = DOTween.Sequence();
             if (bodyPivot != null)
             {
-                exitSeq.Join(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -sideDir * 35f), 0.26f).SetEase(Ease.InOutSine));
+                implodeSeq.Join(bodyPivot.DOScale(_originalBodyScale * 0.96f, 0.04f).SetEase(Ease.OutQuad));
             }
-            exitSeq.Join(transform.DOMove(origPos + new Vector3(sideDir, 0.65f, 0f), 0.26f).SetEase(Ease.InBack));
-            exitSeq.Join(transform.DOScale(Vector3.zero, 0.26f).SetEase(Ease.InBack));
-            yield return exitSeq.WaitForCompletion();
+            implodeSeq.Join(transform.DOScale(Vector3.zero, 0.18f).SetEase(Ease.InBack, 1.15f));
+            yield return implodeSeq.WaitForCompletion();
 
             isCollectingInGrid = false;
             gameObject.SetActive(false);
@@ -1403,7 +1452,7 @@ namespace PuzzleGlass
             }
             if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
             {
-                bool effectiveExit = isExitClearInGrid && !IsMovementOrCollectionBlocked;
+                bool effectiveExit = (isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
                 bodyMaterial.SetFloat(ExitHighlightPropId, effectiveExit ? 1.0f : 0.0f);
             }
 

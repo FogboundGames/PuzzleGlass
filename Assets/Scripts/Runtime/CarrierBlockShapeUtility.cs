@@ -25,10 +25,10 @@ namespace PuzzleGlass
     public static class CarrierBlockShapeUtility
     {
         public const float WallInset = 0.088f;
-        public const float OuterCornerRadius = 0.195f;
-        public const float InnerCornerRadius = 0.125f;
-        public const float OutlineThickness = 0.022f;
-        public const float LipDepthOffset = 0.088f;
+        public const float OuterCornerRadius = 0.148f;
+        public const float InnerCornerRadius = 0.090f;
+        public const float OutlineThickness = 0.018f;
+        public const float LipDepthOffset = 0.102f;
 
         private const float CellPadX = 0.055f;
         private const float CellPadY = 0.075f;
@@ -241,18 +241,12 @@ namespace PuzzleGlass
                 case CarrierBlockShape.JShape3:
                 case CarrierBlockShape.LTopRight3:
                 case CarrierBlockShape.JTopLeft3:
-                    if (c <= 7)
-                        ComputeLPolyominoSockets(shape, c, out positions, out socketRadius);
-                    else
-                        ComputePolyominoCellSockets(shape, c, out positions, out socketRadius);
+                    ComputeLPolyominoSockets(shape, c, out positions, out socketRadius);
                     break;
 
                 case CarrierBlockShape.TShape4:
                 case CarrierBlockShape.TShapeUp4:
-                    if (c <= 8)
-                        ComputeTPolyominoSockets(shape, c, out positions, out socketRadius);
-                    else
-                        ComputePolyominoCellSockets(shape, c, out positions, out socketRadius);
+                    ComputeTPolyominoSockets(shape, c, out positions, out socketRadius);
                     break;
 
                 default:
@@ -310,8 +304,15 @@ namespace PuzzleGlass
                     socketRadius = 0.095f;
                     return;
                 case 5:
-                    positions = BuildOffsetGrid(new[] { 3, 2 }, 0.195f, new[] { -0.115f, 0.105f }, yOff);
-                    socketRadius = 0.080f;
+                    positions = new[]
+                    {
+                        new Vector2(-0.180f, -0.160f + yOff),
+                        new Vector2( 0.180f, -0.160f + yOff),
+                        new Vector2( 0.000f,  yOff),
+                        new Vector2(-0.180f,  0.160f + yOff),
+                        new Vector2( 0.180f,  0.160f + yOff)
+                    };
+                    socketRadius = 0.078f;
                     return;
                 case 6:
                     positions = BuildOffsetGrid(new[] { 3, 3 }, 0.195f, new[] { -0.115f, 0.105f }, yOff);
@@ -469,32 +470,34 @@ namespace PuzzleGlass
                     positions = BuildOffsetGrid(new[] { 3, 3, 3 }, 0.48f, new[] { -0.47f, 0f, 0.47f }, VerticalFrontBias);
                     socketRadius = 0.125f;
                     return;
+                case 10:
+                    positions = BuildOffsetGrid(new[] { 3, 4, 3 }, 0.36f, new[] { -0.46f, 0f, 0.46f }, VerticalFrontBias);
+                    socketRadius = 0.118f;
+                    return;
+                case 11:
+                    positions = BuildOffsetGrid(new[] { 4, 3, 4 }, 0.36f, new[] { -0.46f, 0f, 0.46f }, VerticalFrontBias);
+                    socketRadius = 0.116f;
+                    return;
+                case 12:
+                    positions = BuildOffsetGrid(new[] { 4, 4, 4 }, 0.38f, new[] { -0.46f, 0f, 0.46f }, VerticalFrontBias);
+                    socketRadius = 0.112f;
+                    return;
+                case 13:
+                    positions = BuildOffsetGrid(new[] { 4, 5, 4 }, 0.31f, new[] { -0.46f, 0f, 0.46f }, VerticalFrontBias);
+                    socketRadius = 0.100f;
+                    return;
+                case 14:
+                    positions = BuildOffsetGrid(new[] { 4, 3, 3, 4 }, 0.38f, new[] { -0.54f, -0.18f, 0.18f, 0.54f }, VerticalFrontBias);
+                    socketRadius = 0.098f;
+                    return;
+                case 15:
+                    positions = BuildOffsetGrid(new[] { 5, 5, 5 }, 0.31f, new[] { -0.46f, 0f, 0.46f }, VerticalFrontBias);
+                    socketRadius = 0.100f;
+                    return;
             }
 
-            int cols = c <= 12 ? 4 : 4;
-            int rows = Mathf.CeilToInt(c / (float)cols);
-            const float inner = 1.48f;
-
-            float xStep = (cols > 1) ? inner / cols : 0f;
-            float yStep = (rows > 1) ? (inner - 0.06f) / rows : 0f;
-            socketRadius = Mathf.Clamp(inner / (Mathf.Max(cols, rows) * 2.48f), 0.068f, 0.20f);
-
-            List<Vector2> pts = new List<Vector2>(c);
-            int remaining = c;
-            float startY = 0.5f * (rows - 1) * yStep;
-            for (int r = 0; r < rows; r++)
-            {
-                int inRow = Mathf.Min(cols, remaining);
-                remaining -= inRow;
-                float y = startY - r * yStep + VerticalFrontBias;
-                float startX = -0.5f * (inRow - 1) * xStep;
-                for (int col = 0; col < inRow; col++)
-                {
-                    pts.Add(new Vector2(startX + col * xStep, y));
-                }
-            }
-
-            positions = pts.ToArray();
+            positions = BuildOffsetGrid(new[] { 4, 4, 4, 4 }, 0.38f, new[] { -0.54f, -0.18f, 0.18f, 0.54f }, VerticalFrontBias);
+            socketRadius = 0.095f;
         }
 
         private static void ComputeLPolyominoSockets(
@@ -515,76 +518,116 @@ namespace PuzzleGlass
             }
 
             Vector2Int cornerCell = cells[cornerIdx];
-            Vector2Int armACell = cells[(cornerIdx + 1) % 3];
-            Vector2Int armBCell = cells[(cornerIdx + 2) % 3];
+            Vector2Int armHCell = cornerCell;
+            Vector2Int armVCell = cornerCell;
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (i == cornerIdx) continue;
+                if (cells[i].y == cornerCell.y) armHCell = cells[i];
+                else armVCell = cells[i];
+            }
 
             Vector2 cornerPt = GetCellLocalCenter(shape, cornerCell);
-            Vector2 armAPt = GetCellLocalCenter(shape, armACell);
-            Vector2 armBPt = GetCellLocalCenter(shape, armBCell);
-            Vector2 dirA = (armAPt - cornerPt).normalized;
-            Vector2 dirB = (armBPt - cornerPt).normalized;
+            Vector2 armHPt = GetCellLocalCenter(shape, armHCell);
+            Vector2 armVPt = GetCellLocalCenter(shape, armVCell);
+            Vector2 dirH = (armHPt - cornerPt).normalized;
+            Vector2 dirV = (armVPt - cornerPt).normalized;
 
-            switch (c)
+            if (c == 1)
             {
-                case 1:
-                    positions = new[] { cornerPt };
-                    socketRadius = 0.190f;
-                    return;
-                case 2:
-                    positions = new[] { armAPt, armBPt };
-                    socketRadius = 0.185f;
-                    return;
-                case 3:
-                    positions = new[] { armAPt, cornerPt, armBPt };
-                    socketRadius = 0.175f;
-                    return;
-                case 4:
-                    positions = new[]
-                    {
-                        cornerPt + dirA * 1.07f,
-                        cornerPt + dirA * 0.34f,
-                        cornerPt + dirB * 0.34f,
-                        cornerPt + dirB * 1.07f
-                    };
-                    socketRadius = 0.155f;
-                    return;
-                case 5:
-                    positions = new[]
-                    {
-                        cornerPt + dirA * 1.08f,
-                        cornerPt + dirA * 0.54f,
-                        cornerPt,
-                        cornerPt + dirB * 0.54f,
-                        cornerPt + dirB * 1.08f
-                    };
-                    socketRadius = 0.145f;
-                    return;
-                case 6:
-                    positions = new[]
-                    {
-                        cornerPt + dirA * 1.10f,
-                        cornerPt + dirA * 0.69f,
-                        cornerPt + dirA * 0.28f,
-                        cornerPt + dirB * 0.28f,
-                        cornerPt + dirB * 0.69f,
-                        cornerPt + dirB * 1.10f
-                    };
-                    socketRadius = 0.128f;
-                    return;
-                default: // 7
-                    positions = new[]
-                    {
-                        cornerPt + dirA * 1.11f,
-                        cornerPt + dirA * 0.74f,
-                        cornerPt + dirA * 0.37f,
-                        cornerPt,
-                        cornerPt + dirB * 0.37f,
-                        cornerPt + dirB * 0.74f,
-                        cornerPt + dirB * 1.11f
-                    };
-                    socketRadius = 0.116f;
-                    return;
+                positions = new[] { cornerPt };
+                socketRadius = 0.190f;
+                return;
             }
+            if (c == 2)
+            {
+                positions = new[] { armVPt, armHPt };
+                socketRadius = 0.185f;
+                return;
+            }
+
+            if (c <= 11)
+            {
+                // Always anchor a socket at the corner bend, and use the EXACT SAME grid step
+                // on both arms so orthogonal L rows & columns stay uniformly spaced at every count.
+                int armHCount = c / 2;         // 3->1, 4->2, 5->2, 6->3, 7->3, 8->4, 9->4, 10->5, 11->5
+                int armVCount = (c - 1) / 2;   // 3->1, 4->1, 5->2, 6->2, 7->3, 8->3, 9->4, 10->4, 11->5
+                int maxArm = Mathf.Max(1, Mathf.Max(armHCount, armVCount));
+
+                float reach;
+                switch (c)
+                {
+                    case 3:  reach = 1.00f; break;
+                    case 4:  reach = 1.02f; break;
+                    case 5:  reach = 1.02f; break;
+                    case 6:  reach = 1.14f; break;
+                    case 7:  reach = 1.05f; break;
+                    case 8:  reach = 1.16f; break;
+                    case 9:  reach = 1.08f; break;
+                    case 10: reach = 1.15f; break;
+                    default: reach = 1.10f; break;
+                }
+                float step = reach / maxArm;
+
+                List<Vector2> pts = new List<Vector2>(c);
+                for (int i = armVCount; i >= 1; i--)
+                {
+                    pts.Add(cornerPt + dirV * (step * i));
+                }
+                pts.Add(cornerPt);
+                for (int i = 1; i <= armHCount; i++)
+                {
+                    pts.Add(cornerPt + dirH * (step * i));
+                }
+
+                positions = pts.ToArray();
+                switch (c)
+                {
+                    case 3:  socketRadius = 0.175f; break;
+                    case 4:  socketRadius = 0.155f; break;
+                    case 5:  socketRadius = 0.145f; break;
+                    case 6:  socketRadius = 0.124f; break;
+                    case 7:  socketRadius = 0.118f; break;
+                    case 8:
+                    case 9:  socketRadius = 0.098f; break;
+                    default: socketRadius = 0.080f; break;
+                }
+                return;
+            }
+
+            // 12..16: aligned 2-track grid filling corner + both arms uniformly
+            float[] hCols = (c <= 14)
+                ? new[] { -0.18f, 0.18f, 0.66f, 1.14f }
+                : new[] { -0.17f, 0.17f, 0.50f, 0.84f, 1.18f };
+            float[] vTracks = { -0.16f, 0.16f };
+
+            List<Vector2> gridPts = new List<Vector2>(c);
+            for (int r = 0; r < vTracks.Length; r++)
+            {
+                for (int col = 0; col < hCols.Length; col++)
+                {
+                    gridPts.Add(cornerPt + dirH * hCols[col] + dirV * vTracks[r]);
+                }
+            }
+
+            float[] vRows = (c == 12)
+                ? new[] { 0.64f, 1.12f }
+                : (c == 13 || c == 15)
+                    ? new[] { 0.52f, 0.88f }
+                    : new[] { 0.50f, 0.83f, 1.16f };
+
+            for (int r = 0; r < vRows.Length; r++)
+            {
+                gridPts.Add(cornerPt + dirH * hCols[0] + dirV * vRows[r]);
+                gridPts.Add(cornerPt + dirH * hCols[1] + dirV * vRows[r]);
+            }
+            if (c == 13 || c == 15)
+            {
+                gridPts.Add(cornerPt + dirV * 1.18f);
+            }
+
+            positions = gridPts.ToArray();
+            socketRadius = c == 12 ? 0.092f : (c == 13 ? 0.086f : (c == 14 ? 0.082f : 0.078f));
         }
 
         private static void ComputeTPolyominoSockets(
@@ -595,39 +638,123 @@ namespace PuzzleGlass
         {
             float barY = (shape == CarrierBlockShape.TShapeUp4 ? -0.5f : 0.5f) + VerticalFrontBias;
             float stemY = (shape == CarrierBlockShape.TShapeUp4 ? 0.5f : -0.5f) + VerticalFrontBias;
-            float towardBar = Mathf.Sign(barY - stemY);
+            float towardStem = Mathf.Sign(stemY - barY);
 
-            if (c <= 4)
+            if (c == 1)
             {
-                ComputePolyominoCellSockets(shape, c, out positions, out socketRadius);
+                positions = new[] { new Vector2(0f, barY) };
+                socketRadius = 0.190f;
+                return;
+            }
+            if (c == 2)
+            {
+                positions = new[] { new Vector2(-0.85f, barY), new Vector2(0.85f, barY) };
+                socketRadius = 0.185f;
+                return;
+            }
+            if (c == 3)
+            {
+                positions = new[]
+                {
+                    new Vector2(-1.00f, barY),
+                    new Vector2( 1.00f, barY),
+                    new Vector2( 0.00f, stemY)
+                };
+                socketRadius = 0.175f;
+                return;
+            }
+            if (c == 4)
+            {
+                positions = new[]
+                {
+                    new Vector2(-1.00f, barY),
+                    new Vector2( 0.00f, barY),
+                    new Vector2( 1.00f, barY),
+                    new Vector2( 0.00f, stemY)
+                };
+                socketRadius = 0.170f;
                 return;
             }
 
             List<Vector2> pts = new List<Vector2>(c);
-            int barCount = (c == 5) ? 4 : (c == 6 ? 4 : (c == 7 ? 5 : 6));
-            int stemCount = c - barCount;
-
-            float barSpan = (barCount <= 4) ? 2.08f : 2.16f;
-            float xStep = (barCount > 1) ? barSpan / (barCount - 1) : 0f;
-            float startX = -0.5f * (barCount - 1) * xStep;
-            for (int i = 0; i < barCount; i++)
+            if (c <= 11)
             {
-                pts.Add(new Vector2(startX + i * xStep, barY));
+                int barCount;
+                switch (c)
+                {
+                    case 5:  barCount = 4; break;
+                    case 6:  barCount = 5; break;
+                    case 7:  barCount = 5; break;
+                    case 8:  barCount = 6; break;
+                    case 9:  barCount = 7; break;
+                    case 10: barCount = 7; break;
+                    default: barCount = 8; break;
+                }
+                int stemCount = c - barCount;
+                float barSpan = barCount <= 4 ? 2.04f : (barCount <= 6 ? 2.10f : 2.16f);
+                float xStep = barSpan / (barCount - 1);
+                float startX = -0.5f * barSpan;
+                for (int i = 0; i < barCount; i++)
+                {
+                    pts.Add(new Vector2(startX + i * xStep, barY));
+                }
+
+                if (stemCount == 1)
+                {
+                    pts.Add(new Vector2(0f, stemY));
+                    socketRadius = barCount <= 4 ? 0.158f : 0.145f;
+                }
+                else if (stemCount == 2)
+                {
+                    pts.Add(new Vector2(0f, barY + towardStem * 0.54f));
+                    pts.Add(new Vector2(0f, barY + towardStem * 1.06f));
+                    socketRadius = barCount == 5 ? 0.135f : (barCount == 6 ? 0.125f : 0.115f);
+                }
+                else
+                {
+                    pts.Add(new Vector2(0f, barY + towardStem * 0.36f));
+                    pts.Add(new Vector2(0f, barY + towardStem * 0.72f));
+                    pts.Add(new Vector2(0f, barY + towardStem * 1.08f));
+                    socketRadius = barCount <= 7 ? 0.110f : 0.102f;
+                }
+
+                positions = pts.ToArray();
+                return;
             }
 
-            if (stemCount == 1)
+            // 12..16: 2-row bar + symmetric stem grid
+            int barCols = c == 12 ? 4 : (c <= 14 ? 5 : 6);
+            float bSpan = barCols == 4 ? 1.92f : (barCols == 5 ? 2.08f : 2.12f);
+            float bxStep = bSpan / (barCols - 1);
+            float bStartX = -0.5f * bSpan;
+            float[] barRows = { barY - 0.155f, barY + 0.155f };
+            for (int r = 0; r < barRows.Length; r++)
             {
-                pts.Add(new Vector2(0f, stemY));
-                socketRadius = 0.155f;
+                for (int i = 0; i < barCols; i++)
+                {
+                    pts.Add(new Vector2(bStartX + i * bxStep, barRows[r]));
+                }
+            }
+
+            int remStem = c - barCols * 2;
+            if (remStem == 3)
+            {
+                pts.Add(new Vector2(0f, barY + towardStem * 0.48f));
+                pts.Add(new Vector2(0f, barY + towardStem * 0.80f));
+                pts.Add(new Vector2(0f, barY + towardStem * 1.12f));
             }
             else
             {
-                pts.Add(new Vector2(0f, stemY - towardBar * 0.11f));
-                pts.Add(new Vector2(0f, stemY + towardBar * 0.34f));
-                socketRadius = (barCount <= 4) ? 0.140f : (barCount == 5 ? 0.132f : 0.125f);
+                float[] stemRows = { barY + towardStem * 0.58f, barY + towardStem * 1.04f };
+                for (int r = 0; r < stemRows.Length; r++)
+                {
+                    pts.Add(new Vector2(-0.16f, stemRows[r]));
+                    pts.Add(new Vector2( 0.16f, stemRows[r]));
+                }
             }
 
             positions = pts.ToArray();
+            socketRadius = c == 12 ? 0.088f : (c <= 14 ? 0.084f : 0.078f);
         }
 
         private static void ComputePolyominoCellSockets(

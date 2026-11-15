@@ -176,15 +176,10 @@ namespace PuzzleGlass.Editor
                 }
             }
 
-            // 4. Sync Backdrop palette
+            // 4. Sync Backdrop palette (Pastel Lavender Glass Workshop)
             foreach (var backdrop in Object.FindObjectsByType<PuzzleGlassBackdrop>(FindObjectsSortMode.None))
             {
-                backdrop.topColor  = new Color(0.905f, 0.910f, 0.965f, 1f);
-                backdrop.midColor  = new Color(0.950f, 0.922f, 0.885f, 1f);
-                backdrop.botColor  = new Color(0.920f, 0.862f, 0.798f, 1f);
-                backdrop.glowColor = new Color(0.975f, 0.960f, 0.938f, 1f);
-                backdrop.dotColor  = new Color(0.810f, 0.790f, 0.840f, 1f);
-                backdrop.dotStrength = 0.055f;
+                backdrop.ApplyPastelLavenderStudioPreset();
                 backdrop.EnsureBackdropQuad();
                 backdrop.SyncWithCamera(true);
                 EditorUtility.SetDirty(backdrop);

@@ -85,6 +85,11 @@ namespace PuzzleGlass
         /// </summary>
         private void AutoActivateMatchingTopEdgeBlocks()
         {
+            if (LevelTransitionController.IsTransitioning)
+            {
+                _levelStartTime = Time.time;
+                return;
+            }
             if (Time.time - _levelStartTime < 0.35f) return;
             var grid = StagingGridBoard.Instance;
             var gm = PuzzleGlassGameManager.Instance;
@@ -94,13 +99,14 @@ namespace PuzzleGlass
             for (int i = 0; i < gm.activeMonsters.Count; i++)
             {
                 var m = gm.activeMonsters[i];
-                if (m == null || m.IsCompleted || m.remainingCount <= 0 || !m.gameObject.activeInHierarchy || m.isCollectingInGrid || !m.armedAtTopEdge || m.IsMovementOrCollectionBlocked)
+                if (m == null || m.IsCompleted || m.remainingCount <= 0 || !m.gameObject.activeInHierarchy || m.isCollectingInGrid || m.IsMovementOrCollectionBlocked)
                     continue;
                 if (drag != null && drag.IsBlockCurrentlyDragged(m))
                     continue;
 
                 if (grid.IsBlockAtTopExit(m))
                 {
+                    m.armedAtTopEdge = true;
                     m.TryStartInGridCollection(playDenialFeedback: false);
                 }
             }
@@ -682,7 +688,11 @@ namespace PuzzleGlass
         private void OnBallReachedMonster(BallPhysicsController ball, MonsterCharacter monster)
         {
             _totalCollectedThisLevel++;
-            PuzzleSoundManager.Instance?.PlayBallPop();
+            bool isFinalInBox = (monster != null && monster.remainingCount <= 0);
+            if (PuzzleSoundManager.Instance != null)
+            {
+                PuzzleSoundManager.Instance.PlayBallTransfer(isFinalInBox);
+            }
             OnBallCollected?.Invoke(ball, monster);
             CheckLevelCompletion();
         }

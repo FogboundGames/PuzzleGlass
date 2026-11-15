@@ -199,6 +199,7 @@ namespace PuzzleGlass
                 if (Vector2.Distance(screenPos, _pointerDownScreenPos) > 10f)
                 {
                     _hasMovedBeyondTapThreshold = true;
+                    _draggedMonster.SetDragHighlight(true);
                 }
                 else
                 {
@@ -239,7 +240,7 @@ namespace PuzzleGlass
                     // release triggers direct in-grid collection!
                     _isLiftedOutOfGrid = true;
                     Vector3 snappedAnchorPos = grid.GetWorldPositionForAnchor(_draggedMonster.gridAnchor, _draggedMonster.blockShape);
-                    Vector3 tugPos = snappedAnchorPos + new Vector3(0f, Mathf.Min(0.14f, (pointerWorldGrid.y - grid.TopFrameInnerY) * 0.4f), -0.05f);
+                    Vector3 tugPos = snappedAnchorPos + new Vector3(0f, Mathf.Min(0.14f, (pointerWorldGrid.y - grid.TopFrameInnerY) * 0.4f), -0.08f);
                     _draggedMonster.transform.position = Vector3.Lerp(
                         _draggedMonster.transform.position,
                         tugPos,
@@ -273,7 +274,7 @@ namespace PuzzleGlass
 
                 Vector3 snappedWorld = grid.GetWorldPositionForAnchor(_draggedMonster.gridAnchor, _draggedMonster.blockShape);
                 Vector3 previewPos = ComputeConstrainedGridPreview(grid, _draggedMonster, snappedWorld, desiredCenter, allMonsters);
-                previewPos.z = -0.05f;
+                previewPos.z = -0.08f;
 
                 _draggedMonster.transform.position = Vector3.Lerp(
                     _draggedMonster.transform.position,
@@ -357,6 +358,8 @@ namespace PuzzleGlass
 
             var grid = StagingGridBoard.Instance;
             var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
+
+            monster.SetDragHighlight(false);
 
             bool isQuickTap = !_hasMovedBeyondTapThreshold && (Time.time - _pointerDownTime < 0.30f);
 
