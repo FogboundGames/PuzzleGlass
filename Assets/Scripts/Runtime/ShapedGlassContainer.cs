@@ -110,6 +110,36 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Varsayılan şişenin top sayısına göre otomatik yüksekliği: toplar varsayılan şişeye dizilir, camın üstü
+        /// en üstteki topun biraz üstüne indirilir (az toplu levellerde camın yarısı boş kalmasın). Toplar varsayılan
+        /// yüksekliğe sığmıyorsa varsayılan yükseklik kalır. Cam Stüdyosu'nda elle ayarlanan camlarda kullanılmaz.
+        /// </summary>
+        public static float ComputeAutoBottleHeight(List<LevelMonsterEntry> bottomToTopGroups, float width = DefaultBottleWidth)
+        {
+            const float minHeight = 0.90f;
+            if (bottomToTopGroups == null || bottomToTopGroups.Count == 0) return DefaultBottleHeight;
+            var contour = BuildBottleContour(width, DefaultBottleHeight);
+            var layout = OrderedPoolLayout.BuildShaped(bottomToTopGroups, contour);
+            if (layout.balls == null || layout.balls.Count == 0) return DefaultBottleHeight;
+
+            float ceil = contour[contour.Count - 1].y;
+            float topY = float.MinValue;
+            foreach (var b in layout.balls) topY = Mathf.Max(topY, b.localPos.y);
+            float r = layout.diameter * 0.5f;
+            if (topY + r > ceil + 0.001f) return DefaultBottleHeight; // sığmadı
+
+            // En üst topun üstünde yarım top kadar pay (toplar düşerken/yerleşirken taşmasın)
+            float needed = (topY + r + layout.diameter * 0.55f) - BottleBottomY;
+            return Mathf.Clamp(needed, minHeight, DefaultBottleHeight);
+        }
+
+        /// <summary>Varsayılan (Cam Stüdyosu'nda değiştirilmemiş) şişe konturu: yükseklik top sayısına göre.</summary>
+        public static List<GlassContourPoint> BuildAutoBottleContour(List<LevelMonsterEntry> bottomToTopGroups)
+        {
+            return BuildBottleContour(DefaultBottleWidth, ComputeAutoBottleHeight(bottomToTopGroups));
+        }
+
+        /// <summary>
         /// Düz tabanlı özel şekil (Cam Stüdyosu'nda çizilen yamuk, altıgen, kapsül vb.): tabanı geniş olan
         /// serbest kontur. Oyunda havuz gibi davranır: düz zemin, toplar deliğin üstünden dümdüz iner.
         /// (Tabanı dar olan eski huni ağızlı şişeler bu kapsamda değildir.)

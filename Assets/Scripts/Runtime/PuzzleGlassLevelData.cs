@@ -351,6 +351,13 @@ namespace PuzzleGlass
         [Tooltip("Aktif olduğunda her sütunun sadece en üstteki (öndeki) kutusu seçilebilir; o slota gidince arkadaki kutu öne kayar")]
         public bool useStagingColumnQueue = true;
 
+        [Header("Öğretici (ilk levellerde el ipucu)")]
+        [Tooltip("Açıkken level başında bir el, hangi bloğun nereye sürükleneceğini gösterir.")]
+        public bool tutorialHint = false;
+        public int tutorialBlockIndex = -1;
+        public Vector2Int tutorialFromAnchor;
+        public Vector2Int tutorialTargetAnchor;
+
         [Header("Special Block Mechanics")]
         [Tooltip("Buzlu bloklardaki sayacın ne zaman 1 azalacağını belirler.")]
         public IceMeltMode iceMeltMode = IceMeltMode.PerBallCollected;

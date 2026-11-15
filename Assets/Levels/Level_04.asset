@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Level_04
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 4
-  levelName: "Level 4 - Zor (5x5 Izgara, 9 K\xFCp, 34 Top)"
+  levelName: Level 4 - Zor
   difficulty: 2
   slotCount: 4
   slotSpacing: 0.8
@@ -81,13 +81,25 @@ MonoBehaviour:
   puzzleLayerStyle: 2
   stagingColumns: 3
   useStagingColumnQueue: 0
+  tutorialHint: 0
+  tutorialBlockIndex: -1
+  tutorialFromAnchor: {x: 0, y: 0}
+  tutorialTargetAnchor: {x: 0, y: 0}
   iceMeltMode: 0
-  bottomToTopTriplets: 030000000400000005000000000000000400000005000000050000000000000003000000
+  bottomToTopTriplets: 0500000003000000040000000400000005000000
   bottomToTopGroups:
+  - color: 5
+    count: 6
+    blockShape: 4
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
   - color: 3
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 2, y: 4}
+    count: 6
+    blockShape: 4
+    gridAnchor: {x: 0, y: 3}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -95,112 +107,56 @@ MonoBehaviour:
   - color: 4
     count: 3
     blockShape: 1
-    gridAnchor: {x: 0, y: 4}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 2
-    blockShape: 0
-    gridAnchor: {x: 3, y: 3}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 0
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 2, y: 2}
+    gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 4
-    count: 4
+    count: 3
     blockShape: 2
-    gridAnchor: {x: 4, y: 3}
+    gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 5
     count: 5
-    blockShape: 3
-    gridAnchor: {x: 3, y: 1}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 6
-    blockShape: 3
-    gridAnchor: {x: 0, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 0
-    count: 8
-    blockShape: 7
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 3
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
+    blockShape: 10
+    gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   monsters:
   - color: 5
-    count: 6
-    blockShape: 3
-    gridAnchor: {x: 0, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 0
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 2, y: 2}
+    count: 5
+    blockShape: 10
+    gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 5
-    count: 2
-    blockShape: 0
-    gridAnchor: {x: 3, y: 3}
+    count: 6
+    blockShape: 4
+    gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-  - color: 0
-    count: 8
-    blockShape: 7
-    gridAnchor: {x: 0, y: 0}
+  - color: 4
+    count: 3
+    blockShape: 2
+    gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 3
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 2, y: 4}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 5
-    blockShape: 3
-    gridAnchor: {x: 3, y: 1}
+    count: 6
+    blockShape: 4
+    gridAnchor: {x: 0, y: 3}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -208,23 +164,7 @@ MonoBehaviour:
   - color: 4
     count: 3
     blockShape: 1
-    gridAnchor: {x: 0, y: 4}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 3
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 4
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 4, y: 3}
+    gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

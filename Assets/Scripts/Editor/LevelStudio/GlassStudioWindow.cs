@@ -341,7 +341,7 @@ namespace PuzzleGlass.Editor.Studio
             m_Level.widthScale = 1f;
             m_Level.heightScale = 1f;
             m_Level.showShoulderHandles = false;
-            m_Level.contourPoints = ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
+            m_Level.contourPoints = ShapedGlassContainer.BuildAutoBottleContour(m_Level.bottomToTopGroups);
         }
 
         /// <summary>Şişe: taban sabit şişe omuzları; genişlik (yanlar) ve yükseklik (üst) ayarlı.</summary>
@@ -532,7 +532,7 @@ namespace PuzzleGlass.Editor.Studio
             var bottleBtn = new Button(() =>
             {
                 if (GlassShapeData.IsBottle(m_Level)) return;
-                float w = ShapedGlassContainer.DefaultBottleWidth, h = ShapedGlassContainer.DefaultBottleHeight;
+                float w = ShapedGlassContainer.DefaultBottleWidth, h = ShapedGlassContainer.ComputeAutoBottleHeight(m_Level.bottomToTopGroups);
                 if (GlassShapeData.IsBox(m_Level)) GlassShapeData.GetBox(m_Level, out w, out h, out _);
                 SetBottle(Mathf.Clamp(w, BottleMinW, BottleMaxW), Mathf.Clamp(h, BottleMinH, BottleMaxH), "Şişeye geç");
             }) { text = "Şişe (önerilen)", tooltip = "Taban şişe gibi yuvarlak omuzlarla yakaya iner; yanları ve üstü ayarlanır." };
@@ -644,12 +644,18 @@ namespace PuzzleGlass.Editor.Studio
                 ("Varsayılan", ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight),
                 ("Geniş", 3.00f, 1.00f), ("Yüksek", 2.20f, 1.80f), ("Dar", 1.80f, 1.50f), ("Büyük", 3.00f, 1.60f)
             };
+            var autoChip = new Button(ResetToDefault);
+            autoChip.AddToClassList("chip");
+            autoChip.EnableInClassList("chip--active", !m_Level.useCustomGlassShape);
+            autoChip.Add(new Label("Otomatik"));
+            autoChip.tooltip = "Yükseklik top sayısına göre otomatik ayarlanır (az toplu levellerde cam kısalır).";
+            presets.Add(autoChip);
             foreach (var pr in list)
             {
                 var pp = pr;
                 var chip = new Button(() => SetBottle(pp.w, pp.h, "Hazır şişe"));
                 chip.AddToClassList("chip");
-                chip.EnableInClassList("chip--active", Mathf.Abs(w - pr.w) < 0.01f && Mathf.Abs(h - pr.h) < 0.01f);
+                chip.EnableInClassList("chip--active", m_Level.useCustomGlassShape && Mathf.Abs(w - pr.w) < 0.01f && Mathf.Abs(h - pr.h) < 0.01f);
                 chip.Add(new Label(pr.name));
                 chip.tooltip = $"{pr.w:0.00} × {pr.h:0.00}";
                 presets.Add(chip);

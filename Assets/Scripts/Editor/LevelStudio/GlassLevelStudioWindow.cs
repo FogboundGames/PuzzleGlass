@@ -468,7 +468,8 @@ namespace PuzzleGlass.Editor.Studio
             EditorUtility.CopySerialized(m_Level, m_Pending);
             m_Pending.difficulty = diff;
             m_PendingDifficulty = diff;
-            PuzzleLevelGenerator.GenerateForLevelData(m_Pending, randomSeed: Random.Range(1, int.MaxValue));
+            // Zorluk hedefine (kaydırma aralığına) uyan bir level arar; camı korur
+            PuzzleLevelSolver.GenerateForTarget(m_Pending, diff, tries: 10, seed: Random.Range(1, int.MaxValue));
             m_SelectedBlock = -1;
             m_SelectedGroup = -1;
             m_Solve = null;
@@ -1615,7 +1616,7 @@ namespace PuzzleGlass.Editor.Studio
                         title = "✓ Çözülebilir";
                         detail = m_Solve.minSlides == 0
                             ? "Hiç kaydırmadan çözülüyor."
-                            : $"En az {m_Solve.minSlides} kaydırmayla çözülüyor.";
+                            : $"En az {m_Solve.Drags} sürüklemeyle çözülüyor ({m_Solve.minSlides} hücre).";
                         detail += $" Başta {m_Solve.openingCollectors} blok toplayabiliyor.";
                         m_SolveCard.AddToClassList("solve--good");
                         break;
@@ -1836,6 +1837,32 @@ namespace PuzzleGlass.Editor.Studio
             iceMelt.RegisterValueChangedCallback(e => { Record("Buz erime modu"); lvl.iceMeltMode = (IceMeltMode)e.newValue; OnEdited(syncScene: true); });
             m_Inspector.Add(iceMelt);
 
+            // ---- Öğretici: oyunda bir el, hangi bloğun nereye sürükleneceğini gösterir ----
+            var tutTitle = new Label("Öğretici");
+            tutTitle.AddToClassList("inspector__title");
+            m_Inspector.Add(tutTitle);
+            var tutToggle = new Toggle("El ipucu") { value = lvl.tutorialHint, tooltip = "Level başında çözümün ilk hamlesini bir el ile gösterir (ilk leveller için)." };
+            tutToggle.RegisterValueChangedCallback(e =>
+            {
+                Record("Öğretici ipucu");
+                lvl.tutorialHint = e.newValue;
+                if (e.newValue && lvl.tutorialBlockIndex < 0) TakeTutorialFromSolution(lvl, silent: true);
+                OnEdited(syncScene: false);
+            });
+            m_Inspector.Add(tutToggle);
+            if (lvl.tutorialHint)
+            {
+                string desc = lvl.tutorialBlockIndex >= 0
+                    ? $"Blok #{lvl.tutorialBlockIndex + 1}: ({lvl.tutorialFromAnchor.x + 1},{lvl.tutorialFromAnchor.y + 1}) → ({lvl.tutorialTargetAnchor.x + 1},{lvl.tutorialTargetAnchor.y + 1})"
+                    : "Henüz hamle seçilmedi.";
+                var tutDesc = new Label(desc);
+                tutDesc.AddToClassList("inspector__sub");
+                m_Inspector.Add(tutDesc);
+                var take = new Button(() => TakeTutorialFromSolution(lvl, silent: false)) { text = "Çözümden ilk hamleyi al", tooltip = "Çözücünün bulduğu en kısa çözümün ilk sürüklemesini ipucu yapar." };
+                take.AddToClassList("inspector__action");
+                m_Inspector.Add(take);
+            }
+
             var glassBtn = new Button(() => GlassStudioWindow.OpenFor(m_Level)) { text = "✨ Bu levelin camını düzenle" };
             glassBtn.AddToClassList("inspector__action");
             m_Inspector.Add(glassBtn);
@@ -1850,6 +1877,28 @@ namespace PuzzleGlass.Editor.Studio
                 "• Esc fırçayı bırakır, Delete seçili bloğu siler, Ctrl+Z geri alır.");
             hint.AddToClassList("inspector__hint");
             m_Inspector.Add(hint);
+        }
+
+        /// <summary>Çözümün ilk sürüklemesini öğretici ipucu olarak kaydeder.</summary>
+        private void TakeTutorialFromSolution(PuzzleGlassLevelData lvl, bool silent)
+        {
+            if (m_Solve == null || m_Solve.status != SolveStatus.Solved)
+            {
+                if (!silent) ShowNotification(new GUIContent("Önce çözüm bulunmalı (çözüm aranıyor ya da çözülemiyor)"));
+                return;
+            }
+            if (!m_Solve.TryGetFirstDrag(out int block, out Vector2Int offset) || block < 0 || block >= lvl.monsters.Count)
+            {
+                if (!silent) ShowNotification(new GUIContent("Bu level kaydırmadan çözülüyor: gösterilecek hamle yok"));
+                return;
+            }
+            Record("Öğretici ipucu");
+            lvl.tutorialHint = true;
+            lvl.tutorialBlockIndex = block;
+            lvl.tutorialFromAnchor = lvl.monsters[block].gridAnchor;
+            lvl.tutorialTargetAnchor = lvl.monsters[block].gridAnchor + offset;
+            OnEdited(syncScene: false);
+            if (!silent) ShowNotification(new GUIContent($"İpucu: blok #{block + 1}"));
         }
 
         // ---------- Bulgular ----------
@@ -1916,7 +1965,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             switch (s.status)
             {
-                case SolveStatus.Solved: return $"çözülebilir, en az {s.minSlides} kaydırma";
+                case SolveStatus.Solved: return $"çözülebilir, en az {s.Drags} sürükleme";
                 case SolveStatus.Unsolvable: return "ÇÖZÜLEMİYOR";
                 case SolveStatus.LimitReached: return "çözüm belirsiz";
                 default: return "kontrol edilemedi";

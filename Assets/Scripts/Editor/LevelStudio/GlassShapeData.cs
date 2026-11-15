@@ -63,7 +63,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (lvl != null && lvl.useCustomGlassShape && lvl.contourPoints != null && lvl.contourPoints.Count >= 3)
                 return lvl.contourPoints;
-            return ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
+            return ShapedGlassContainer.BuildAutoBottleContour(lvl?.bottomToTopGroups);
         }
 
         /// <summary>ShapedGlassContainer.ConfigureRoundedBoxPool ile aynı kutu konturu.</summary>

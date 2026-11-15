@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Level_02
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 2
-  levelName: "Level 2 - Kolay (4x4 Izgara, 6 K\xFCp, 18 Top)"
+  levelName: Level 2 - Kolay
   difficulty: 0
   slotCount: 4
   slotSpacing: 0.8
@@ -81,21 +81,17 @@ MonoBehaviour:
   puzzleLayerStyle: 0
   stagingColumns: 3
   useStagingColumnQueue: 0
+  tutorialHint: 0
+  tutorialBlockIndex: -1
+  tutorialFromAnchor: {x: 0, y: 0}
+  tutorialTargetAnchor: {x: 0, y: 0}
   iceMeltMode: 0
-  bottomToTopTriplets: 010000000100000001000000020000000200000002000000
+  bottomToTopTriplets: 01000000010000000100000002000000
   bottomToTopGroups:
   - color: 1
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 3, y: 3}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 1
-    count: 2
-    blockShape: 0
-    gridAnchor: {x: 2, y: 2}
+    count: 3
+    blockShape: 2
+    gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -108,10 +104,10 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-  - color: 2
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 3, y: 1}
+  - color: 1
+    count: 6
+    blockShape: 3
+    gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -119,56 +115,24 @@ MonoBehaviour:
   - color: 2
     count: 5
     blockShape: 3
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 2
-    count: 3
-    blockShape: 2
-    gridAnchor: {x: 2, y: 0}
+    gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   monsters:
   - color: 1
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 3, y: 3}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 2
-    count: 5
+    count: 6
     blockShape: 3
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 2
-    count: 1
-    blockShape: 0
-    gridAnchor: {x: 3, y: 1}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 2
-    count: 3
-    blockShape: 2
-    gridAnchor: {x: 2, y: 0}
+    gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 1
-    count: 2
-    blockShape: 0
-    gridAnchor: {x: 2, y: 2}
+    count: 3
+    blockShape: 2
+    gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -177,6 +141,14 @@ MonoBehaviour:
     count: 6
     blockShape: 3
     gridAnchor: {x: 0, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 5
+    blockShape: 3
+    gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

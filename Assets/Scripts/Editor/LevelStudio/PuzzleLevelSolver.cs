@@ -25,6 +25,41 @@ namespace PuzzleGlass.Editor.Studio
         public int exploredStates;
         /// <summary>Başlangıçta hiç kaydırmadan toplayabilen blok sayısı.</summary>
         public int openingCollectors;
+        /// <summary>Çözüm yolu: sırayla (blok, tek hücrelik kaydırma yönü). Solved ise dolu.</summary>
+        public List<(int block, Vector2Int dir)> moves = new List<(int, Vector2Int)>();
+
+        /// <summary>
+        /// Oyuncunun yapacağı sürükleme sayısı: aynı bloğun art arda kaydırmaları tek sürükleme sayılır
+        /// (alttaki bloğu en üste çıkarmak 3 kaydırma ama 1 sürüklemedir). Zorluk bununla ölçülür.
+        /// </summary>
+        public int Drags
+        {
+            get
+            {
+                if (moves == null || moves.Count == 0) return 0;
+                int n = 1;
+                for (int i = 1; i < moves.Count; i++) if (moves[i].block != moves[i - 1].block) n++;
+                return n;
+            }
+        }
+
+        /// <summary>
+        /// Öğretici için ilk sürükleme: çözümün başındaki aynı bloğa ait ardışık kaydırmalar birleştirilir.
+        /// Hamle yoksa false.
+        /// </summary>
+        public bool TryGetFirstDrag(out int block, out Vector2Int totalOffset)
+        {
+            block = -1;
+            totalOffset = Vector2Int.zero;
+            if (moves == null || moves.Count == 0) return false;
+            block = moves[0].block;
+            foreach (var m in moves)
+            {
+                if (m.block != block) break;
+                totalOffset += m.dir;
+            }
+            return true;
+        }
     }
 
     /// <summary>
@@ -164,10 +199,12 @@ namespace PuzzleGlass.Editor.Studio
                     case SolveStatus.Solved:
                         if (solve.openingCollectors == 0)
                             list.Add(new LevelFinding { severity = FindingSeverity.Info, text = "Başta hiçbir blok toplayamıyor; oyuncu önce kaydırmalı.", why = "Zor açılış. Kolay levellerde ilk hamlede toplanabilen bir blok iyi olur." });
-                        if (lvl.difficulty == LevelDifficulty.Easy && solve.minSlides > 6)
-                            list.Add(new LevelFinding { severity = FindingSeverity.Info, text = $"Kolay level için uzun: en az {solve.minSlides} kaydırma gerekiyor.", why = "Zorluğu Orta yapmayı ya da blokları sadeleştirmeyi düşün." });
-                        if (lvl.difficulty >= LevelDifficulty.Hard && solve.minSlides <= 1)
-                            list.Add(new LevelFinding { severity = FindingSeverity.Info, text = $"{(lvl.difficulty == LevelDifficulty.Boss ? "Boss" : "Zor")} level için çok kısa: {solve.minSlides} kaydırmada çözülüyor.", why = "Blokları kilitlemek için daha fazla blok ya da daha az boşluk ekle." });
+                        GetTargetDrags(lvl.difficulty, out int lo, out int hi);
+                        int drags = solve.Drags;
+                        if (drags > hi)
+                            list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = $"{DifficultyName(lvl.difficulty)} level için uzun: en az {drags} sürükleme (hedef {lo}-{hi}).", why = "Zorluğu yükselt ya da 'Otomatik üret' ile bu zorlukta yeniden üret." });
+                        else if (drags < lo)
+                            list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = $"{DifficultyName(lvl.difficulty)} level için kısa: {drags} sürüklemede çözülüyor (hedef {lo}-{hi}).", why = "Zorluğu düşür ya da daha çok blok/daha az boşluk ile yeniden üret." });
                         break;
                 }
             }
@@ -199,7 +236,9 @@ namespace PuzzleGlass.Editor.Studio
             private readonly List<PuzzleColor>[] m_Stacks;
             private readonly int[] m_StackGridCol;
             private readonly HashSet<string> m_Visited = new HashSet<string>();
-            private readonly Queue<(State s, int depth)> m_Queue = new Queue<(State s, int depth)>();
+            private readonly Queue<(State s, int depth, int node)> m_Queue = new Queue<(State s, int depth, int node)>();
+            // Çözüm yolunu geri kurmak için: her düğümün ebeveyni ve oraya gelen hamle
+            private readonly List<(int parent, int block, Vector2Int dir)> m_Nodes = new List<(int, int, Vector2Int)>();
             private static readonly Vector2Int[] Dirs = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
             public Run(PuzzleGlassLevelData lvl, GlassDims dims, int stateLimit = DefaultStateLimit)
@@ -252,7 +291,8 @@ namespace PuzzleGlass.Editor.Studio
                 Result.openingCollectors = CountFilledAny(start);
                 Result.status = SolveStatus.LimitReached; // bitene kadar
                 m_Visited.Add(Key(start));
-                m_Queue.Enqueue((start, 0));
+                m_Nodes.Add((-1, -1, Vector2Int.zero));
+                m_Queue.Enqueue((start, 0, 0));
             }
 
             /// <summary>En fazla budgetMs milisaniye arar. Bittiyse true döner (Result hazır).</summary>
@@ -262,12 +302,17 @@ namespace PuzzleGlass.Editor.Studio
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 while (m_Queue.Count > 0)
                 {
-                    var (s, depth) = m_Queue.Dequeue();
+                    var (s, depth, node) = m_Queue.Dequeue();
                     Result.exploredStates++;
                     if (AllRemoved(s))
                     {
                         Result.status = SolveStatus.Solved;
                         Result.minSlides = depth;
+                        // Yolu geri kur
+                        var path = new List<(int, Vector2Int)>();
+                        for (int k = node; k > 0; k = m_Nodes[k].parent) path.Add((m_Nodes[k].block, m_Nodes[k].dir));
+                        path.Reverse();
+                        Result.moves = path;
                         Done = true;
                         return true;
                     }
@@ -287,7 +332,11 @@ namespace PuzzleGlass.Editor.Studio
                             next.anchors[i] = s.anchors[i] + d;
                             if (!IsValidPlacement(m_Blocks, next.anchors, next.removed, m_Cols, m_Rows)) continue;
                             CollectClosure(next, m_Blocks, m_Stacks, m_StackGridCol, m_Rows, m_IceMeltMode);
-                            if (m_Visited.Add(Key(next))) m_Queue.Enqueue((next, depth + 1));
+                            if (m_Visited.Add(Key(next)))
+                            {
+                                m_Nodes.Add((node, i, d));
+                                m_Queue.Enqueue((next, depth + 1, m_Nodes.Count - 1));
+                            }
                         }
                     }
 
@@ -445,6 +494,102 @@ namespace PuzzleGlass.Editor.Studio
                 if (!blocked) result.Add(cx);
             }
             return result;
+        }
+
+        /// <summary>
+        /// Zorluk eğrisi hedefi: en kısa çözümdeki sürükleme sayısının bu zorlukta olması gereken aralık.
+        /// Kolay 1-3, Orta 3-6, Zor 5-9, Boss 8+.
+        /// </summary>
+        public static void GetTargetDrags(LevelDifficulty d, out int lo, out int hi)
+        {
+            switch (d)
+            {
+                case LevelDifficulty.Easy: lo = 1; hi = 3; break;
+                case LevelDifficulty.Medium: lo = 3; hi = 6; break;
+                case LevelDifficulty.Hard: lo = 5; hi = 9; break;
+                default: lo = 8; hi = 99; break;
+            }
+        }
+
+        public static string DifficultyName(LevelDifficulty d)
+        {
+            switch (d)
+            {
+                case LevelDifficulty.Easy: return "Kolay";
+                case LevelDifficulty.Medium: return "Orta";
+                case LevelDifficulty.Hard: return "Zor";
+                default: return "Boss";
+            }
+        }
+
+        /// <summary>
+        /// Leveli verilen zorlukta, kaydırma sayısı hedef aralığa düşene kadar farklı tohumlarla üretir
+        /// (cam ve tepsi dışındaki içerik yenilenir). En iyi sonucu döner; hedefe girilemezse en yakını kalır.
+        /// </summary>
+        public static SolveResult GenerateForTarget(PuzzleGlassLevelData lvl, LevelDifficulty diff, int tries = 12, int seed = 0, int stateLimit = 6000, int boxes = 0, int colors = 0)
+        {
+            GetTargetDrags(diff, out int lo, out int hi);
+            var rng = new System.Random(seed != 0 ? seed : System.Environment.TickCount);
+            // Cam ayarlarını koru: üretici camı sıfırlıyor
+            var keep = UnityEngine.ScriptableObject.CreateInstance<PuzzleGlassLevelData>();
+            UnityEditor.EditorUtility.CopySerialized(lvl, keep);
+
+            int bestSeed = 0, bestDist = int.MaxValue;
+            SolveResult best = null;
+            for (int t = 0; t < tries; t++)
+            {
+                int s = rng.Next(1, int.MaxValue);
+                lvl.difficulty = diff;
+                Generate(lvl, s, boxes, colors);
+                RestoreGlass(lvl, keep);
+                var r = Solve(lvl, GlassShapeData.GetDims(lvl), stateLimit);
+                if (r.status != SolveStatus.Solved) continue;
+                int dg = r.Drags;
+                int dist = dg < lo ? lo - dg : (dg > hi ? dg - hi : 0);
+                if (dist < bestDist) { bestDist = dist; bestSeed = s; best = r; }
+                if (dist == 0) break;
+            }
+            if (best != null && bestSeed != 0)
+            {
+                lvl.difficulty = diff;
+                Generate(lvl, bestSeed, boxes, colors);
+                RestoreGlass(lvl, keep);
+            }
+            UnityEngine.Object.DestroyImmediate(keep);
+            return best;
+        }
+
+        private static void Generate(PuzzleGlassLevelData lvl, int seed, int boxes, int colors)
+        {
+            PuzzleLevelGenerator.GenerateForLevelData(lvl,
+                customColorCount: colors > 0 ? colors : (int?)null,
+                customTotalBoxes: boxes > 0 ? boxes : (int?)null,
+                randomSeed: seed);
+        }
+
+        private static void RestoreGlass(PuzzleGlassLevelData lvl, PuzzleGlassLevelData from)
+        {
+            lvl.useCustomGlassShape = from.useCustomGlassShape;
+            lvl.glassIsBottle = from.glassIsBottle;
+            lvl.glassPreset = from.glassPreset;
+            lvl.contourPoints = from.contourPoints != null ? new List<GlassContourPoint>(from.contourPoints) : new List<GlassContourPoint>();
+            lvl.symmetricMode = from.symmetricMode;
+            lvl.widthScale = from.widthScale;
+            lvl.heightScale = from.heightScale;
+            lvl.showShoulderHandles = from.showShoulderHandles;
+            lvl.colorTheme = from.colorTheme;
+            lvl.glassBodyColor = from.glassBodyColor;
+            lvl.glassCenterGlowColor = from.glassCenterGlowColor;
+            lvl.glassOuterRimColor = from.glassOuterRimColor;
+            lvl.glassInnerRimColor = from.glassInnerRimColor;
+            lvl.boxCornerRadius = from.boxCornerRadius;
+            lvl.boxFrameThickness = from.boxFrameThickness;
+            lvl.boxFrameColor = from.boxFrameColor;
+            lvl.boxFrameHighlightColor = from.boxFrameHighlightColor;
+            lvl.boxFrameEdgeShadeColor = from.boxFrameEdgeShadeColor;
+            lvl.levelName = from.levelName;
+            lvl.tutorialHint = from.tutorialHint;
+            lvl.tutorialBlockIndex = -1; // içerik değişti, ipucu yeniden alınmalı
         }
 
         public static string ColorName(PuzzleColor c)

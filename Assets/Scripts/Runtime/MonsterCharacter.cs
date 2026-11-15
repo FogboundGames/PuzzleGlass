@@ -24,6 +24,7 @@ namespace PuzzleGlass
         private static readonly int LipOffsetPropId = Shader.PropertyToID("_LipOffset");
         private static readonly int ExitHighlightPropId = Shader.PropertyToID("_ExitHighlight");
         private static readonly int IceAmountPropId = Shader.PropertyToID("_IceAmount");
+        private static readonly int LockAmountPropId = Shader.PropertyToID("_LockAmount");
         private static readonly int SocketCountPropId = Shader.PropertyToID("_SocketCount");
         private static readonly int SocketRadiusPropId = Shader.PropertyToID("_SocketRadius");
         private static readonly int[] SockPairPropIds = new int[]
@@ -230,6 +231,7 @@ namespace PuzzleGlass
         private GameObject _keyOverlayRoot;
         private GameObject _lockOverlayRoot;
         private TextMeshPro _lockCountText;
+        private bool _unlockAnimPlaying;
         private GameObject _iceOverlayRoot;
         private TextMeshPro _iceCountText;
         private bool _keyConsumedVisually = false;
@@ -494,6 +496,7 @@ namespace PuzzleGlass
             _keyOverlayRoot = null;
             _lockOverlayRoot = null;
             _lockCountText = null;
+            _unlockAnimPlaying = false;
             _iceOverlayRoot = null;
             _iceCountText = null;
             _nextIncomingSocketCounter = 0;
@@ -1098,6 +1101,9 @@ namespace PuzzleGlass
             Vector3 origPos = transform.position;
             float sideDir = (origPos.x >= 0f) ? 0.24f : -0.24f;
 
+            // Kutlama: parlama + renkli parçacık patlaması + kısa titreşim
+            BlockClearCelebration.Play(origPos, PuzzleColorPalette.GetPrimaryColor(colorType));
+
             // 4. Lifted up by its top handle and carried away!
             Sequence exitSeq = DOTween.Sequence();
             if (bodyPivot != null)
@@ -1324,6 +1330,18 @@ namespace PuzzleGlass
             return new Vector2(r0.x, r0.y);
         }
 
+        /// <summary>Bloğun en üst sıradaki en sağ hücresinin sağ üst köşesi (yerel). Anahtar rozeti buraya asılır.</summary>
+        private Vector2 GetTopRightCornerLocal()
+        {
+            var cells = CarrierBlockShapeUtility.GetCells(blockShape);
+            CarrierBlockShapeUtility.GetBounds(blockShape, out int w, out int h);
+            Vector2Int best = cells.Length > 0 ? cells[0] : Vector2Int.zero;
+            foreach (var c in cells)
+                if (c.y > best.y || (c.y == best.y && c.x > best.x)) best = c;
+            // GetRectParts ile aynı yerel uzay: hücre merkezi = (x + 0.5 - w/2, y + 0.5 - h/2 + 0.024)
+            return new Vector2(best.x + 1f - w * 0.5f - 0.055f, best.y + 1f - h * 0.5f + 0.024f - 0.075f);
+        }
+
         public Vector3 GetKeyWorldPosition()
         {
             if (_keyOverlayRoot != null) return _keyOverlayRoot.transform.position;
@@ -1333,9 +1351,33 @@ namespace PuzzleGlass
 
         public Vector3 GetLockWorldPosition()
         {
-            if (_lockOverlayRoot != null) return _lockOverlayRoot.transform.position;
             Vector2 c = GetMechanicAnchorLocal();
-            return transform.TransformPoint(new Vector3(c.x, c.y, -0.30f));
+            Transform t = bodyPivot != null ? bodyPivot : transform;
+            return t.TransformPoint(new Vector3(c.x, c.y, -0.30f));
+        }
+
+        /// <summary>Uçan anahtarın renkleri: beyaz gövde (plaka rengi), bloğun renginde kenar.</summary>
+        public Color KeyFillColor => new Color(0.97f, 0.97f, 0.98f, 1f);
+        public Color KeyEdgeColor => GetCarrierFrameColor(colorType);
+
+        /// <summary>Asma kilidin anahtar deliğinin dünya konumu (anahtar buraya girer).</summary>
+        public Vector3 GetKeyholeWorldPosition()
+        {
+            Vector2 c = GetMechanicAnchorLocal() + LockKeyVisuals.KeyholeOffset * LockKeyVisuals.GlyphScale;
+            Transform t = bodyPivot != null ? bodyPivot : transform;
+            return t.TransformPoint(new Vector3(c.x, c.y, -0.30f));
+        }
+
+        /// <summary>Kilitli bloğa dokunulunca anahtarlı bloğun rozeti zıplar (hangi bloğu doldurman gerektiğini gösterir).</summary>
+        public void PlayKeyHint()
+        {
+            if (!hasKey || _keyConsumedVisually || _isCompleted || _keyOverlayRoot == null || !_keyOverlayRoot.activeInHierarchy) return;
+            LockKeyVisuals.PlayKeyHint(_keyOverlayRoot);
+            if (bodyPivot != null)
+            {
+                bodyPivot.DOKill(true);
+                bodyPivot.DOPunchPosition(new Vector3(0f, 0.10f, 0f), 0.35f, 4, 0.5f);
+            }
         }
 
         public void HideKeyForFlight()
@@ -1349,6 +1391,15 @@ namespace PuzzleGlass
             if (bodyMaterial != null && bodyMaterial.HasProperty(IceAmountPropId))
             {
                 bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1.0f : 0.0f);
+            }
+            // Kilitli blok: plaka kendi renginde kapakla kapanır, ortasında beyaz kilit (açılırken animasyon yönetir)
+            if (bodyMaterial != null && bodyMaterial.HasProperty(LockAmountPropId) && !_unlockAnimPlaying)
+            {
+                bodyMaterial.SetFloat(LockAmountPropId, IsLockedByKey ? 1.0f : 0.0f);
+                Vector2 lc = GetMechanicAnchorLocal();
+                bodyMaterial.SetVector(LockKeyVisuals.LockCenterId, new Vector4(lc.x, lc.y, LockKeyVisuals.GlyphScale, 0f));
+                bodyMaterial.SetFloat(LockKeyVisuals.LockOpenId, 0f);
+                bodyMaterial.SetFloat(LockKeyVisuals.LockWiggleId, 0f);
             }
             if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
             {
@@ -1367,10 +1418,10 @@ namespace PuzzleGlass
             if (showKey)
             {
                 if (_keyOverlayRoot == null) _keyOverlayRoot = BuildKeyOverlay(bodyPivot);
-                Vector2 keyOffset = (showLock || showIce) ? new Vector2(-0.24f, 0.22f) : Vector2.zero;
-                float keyScale = (showLock || showIce) ? 0.62f : 1.0f;
-                _keyOverlayRoot.transform.localPosition = new Vector3(center.x + keyOffset.x, center.y + keyOffset.y, -0.28f);
-                _keyOverlayRoot.transform.localScale = Vector3.one * keyScale;
+                // Anahtar rozeti bloğun sağ üst köşesine asılı durur (top deliklerini kapatmaz)
+                Vector2 corner = GetTopRightCornerLocal();
+                _keyOverlayRoot.transform.localPosition = new Vector3(corner.x - 0.10f, corner.y - 0.10f, -0.30f);
+                _keyOverlayRoot.transform.localScale = Vector3.one * 0.82f;
                 _keyOverlayRoot.SetActive(true);
             }
             else if (_keyOverlayRoot != null)
@@ -1381,14 +1432,16 @@ namespace PuzzleGlass
             if (showLock)
             {
                 if (_lockOverlayRoot == null) _lockOverlayRoot = BuildLockOverlay(bodyPivot, out _lockCountText);
-                Vector2 lockOffset = showIce ? new Vector2(0.18f, 0.16f) : Vector2.zero;
-                float lockScale = showIce ? 0.72f : 1.0f;
-                _lockOverlayRoot.transform.localPosition = new Vector3(center.x + lockOffset.x, center.y + lockOffset.y, -0.31f);
-                _lockOverlayRoot.transform.localScale = Vector3.one * lockScale;
+                _lockOverlayRoot.transform.localPosition = new Vector3(center.x, center.y, -0.31f);
+                _lockOverlayRoot.transform.localScale = Vector3.one;
                 _lockOverlayRoot.SetActive(true);
-                if (_lockCountText != null) _lockCountText.text = remainingLockKeys.ToString();
+                if (_lockCountText != null)
+                {
+                    _lockCountText.text = remainingLockKeys.ToString();
+                    _lockCountText.gameObject.SetActive(lockKeyCount > 1);
+                }
             }
-            else if (_lockOverlayRoot != null)
+            else if (_lockOverlayRoot != null && !_unlockAnimPlaying)
             {
                 _lockOverlayRoot.SetActive(false);
             }
@@ -1428,17 +1481,16 @@ namespace PuzzleGlass
                 return false;
             }
 
-            // Unlocked! Pop open animation
-            if (_lockOverlayRoot != null && Application.isPlaying)
+            // Açıldı! Halka kalkar, kapak açılır, plaka ve delikler görünür
+            if (_lockCountText != null) _lockCountText.gameObject.SetActive(false);
+            if (Application.isPlaying && bodyMaterial != null)
             {
-                GameObject overlay = _lockOverlayRoot;
-                overlay.transform.DOKill();
-                Sequence seq = DOTween.Sequence();
-                seq.Append(overlay.transform.DOScale(Vector3.one * 1.32f, 0.10f).SetEase(Ease.OutQuad));
-                seq.Append(overlay.transform.DOScale(Vector3.zero, 0.14f).SetEase(Ease.InBack));
-                seq.OnComplete(() =>
+                _unlockAnimPlaying = true;
+                LockKeyVisuals.PlayUnlock(bodyMaterial, GetLockWorldPosition(), GetCarrierFrameColor(colorType), gameObject, () =>
                 {
-                    if (overlay != null) overlay.SetActive(false);
+                    _unlockAnimPlaying = false;
+                    if (_lockOverlayRoot != null) _lockOverlayRoot.SetActive(false);
+                    RefreshSpecialMechanicVisuals();
                 });
             }
             else if (_lockOverlayRoot != null)
@@ -1529,8 +1581,13 @@ namespace PuzzleGlass
 
             if (IsLockedByKey && _lockOverlayRoot != null)
             {
-                _lockOverlayRoot.transform.DOKill(true);
-                _lockOverlayRoot.transform.DOPunchScale(Vector3.one * 0.20f, 0.22f, 5, 0.6f);
+                LockKeyVisuals.PlayLockWiggle(bodyMaterial, gameObject);
+
+                // İpucu: anahtarı taşıyan bloklar zıplar
+                var gm = PuzzleGlassGameManager.Instance;
+                if (gm != null && gm.activeMonsters != null)
+                    foreach (var m in gm.activeMonsters)
+                        if (m != null && m != this) m.PlayKeyHint();
             }
             else if (IsFrozenByIce && _iceOverlayRoot != null)
             {
@@ -1564,90 +1621,32 @@ namespace PuzzleGlass
             }
         }
 
-        public static GameObject CreateGoldKeyVisual(Transform parent, string objName = "KeyIcon")
-        {
-            GameObject root = new GameObject(objName);
-            if (parent != null) root.transform.SetParent(parent, false);
-            root.transform.localRotation = Quaternion.Euler(0f, 0f, -32f);
-
-            Material goldMat = CreateMechanicMaterial(new Color(1.00f, 0.80f, 0.16f, 1f), "Mat_GoldKey", glossy: true);
-            Material outlineMat = CreateMechanicMaterial(new Color(0.22f, 0.12f, 0.03f, 1f), "Mat_GoldKeyOutline", glossy: false);
-
-            // Bow (ring)
-            const int segs = 16;
-            Vector3[] ringPts = new Vector3[segs];
-            for (int i = 0; i < segs; i++)
-            {
-                float a = (float)i / segs * Mathf.PI * 2f;
-                ringPts[i] = new Vector3(-0.12f + Mathf.Cos(a) * 0.10f, Mathf.Sin(a) * 0.10f, 0f);
-            }
-            AddMeshPart("Bow", root.transform, Vector3.zero, ProceduralMeshUtils.CreatePipeMesh(ringPts, 0.028f, 8, true), goldMat);
-            AddMeshPart("BowOutline", root.transform, new Vector3(0f, 0f, 0.016f), ProceduralMeshUtils.CreatePipeMesh(ringPts, 0.042f, 8, true), outlineMat);
-
-            // Shaft
-            AddMeshPart("Shaft", root.transform, new Vector3(0.11f, 0f, 0f), ProceduralMeshUtils.CreatePillBadge(0.27f, 0.052f, 0.028f, 0.024f), goldMat);
-            AddMeshPart("ShaftOutline", root.transform, new Vector3(0.11f, 0f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.30f, 0.080f, 0.026f, 0.036f), outlineMat);
-
-            // Teeth
-            AddMeshPart("Tooth1", root.transform, new Vector3(0.15f, -0.055f, 0f), ProceduralMeshUtils.CreatePillBadge(0.048f, 0.082f, 0.026f, 0.016f), goldMat);
-            AddMeshPart("Tooth1Outline", root.transform, new Vector3(0.15f, -0.055f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.074f, 0.108f, 0.024f, 0.024f), outlineMat);
-
-            AddMeshPart("Tooth2", root.transform, new Vector3(0.22f, -0.045f, 0f), ProceduralMeshUtils.CreatePillBadge(0.046f, 0.068f, 0.026f, 0.016f), goldMat);
-            AddMeshPart("Tooth2Outline", root.transform, new Vector3(0.22f, -0.045f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.072f, 0.094f, 0.024f, 0.024f), outlineMat);
-
-            return root;
-        }
-
         private GameObject BuildKeyOverlay(Transform parent)
         {
-            GameObject root = CreateGoldKeyVisual(parent, "KeyOverlay");
-            root.transform.localScale = Vector3.one;
-            return root;
+            return LockKeyVisuals.CreateKeyBadge(parent, GetCarrierFrameColor(colorType), new Color(0.97f, 0.97f, 0.98f, 1f),
+                GetCarrierDarkColor(colorType), "KeyOverlay");
         }
 
+        /// <summary>Kilidin kendisi shader'da çizilir; burada sadece birden fazla anahtar gerekiyorsa sayı rozeti var.</summary>
         private GameObject BuildLockOverlay(Transform parent, out TextMeshPro countLabel)
         {
             GameObject root = new GameObject("LockOverlay");
             root.transform.SetParent(parent, false);
 
-            Material goldMat = CreateMechanicMaterial(new Color(1.00f, 0.78f, 0.16f, 1f), "Mat_PadlockGold", glossy: true);
-            Material outlineMat = CreateMechanicMaterial(new Color(0.22f, 0.12f, 0.03f, 1f), "Mat_PadlockOutline", glossy: false);
-            Material shackleMat = CreateMechanicMaterial(new Color(0.92f, 0.94f, 0.98f, 1f), "Mat_PadlockShackle", glossy: true);
-
-            // U-shackle arch
-            const int arcPts = 11;
-            Vector3[] arch = new Vector3[arcPts];
-            for (int i = 0; i < arcPts; i++)
-            {
-                float t = (float)i / (arcPts - 1);
-                float a = Mathf.Lerp(Mathf.PI, 0f, t);
-                arch[i] = new Vector3(Mathf.Cos(a) * 0.088f, 0.10f + Mathf.Sin(a) * 0.105f, 0f);
-            }
-            AddMeshPart("Shackle", root.transform, Vector3.zero, ProceduralMeshUtils.CreatePipeMesh(arch, 0.026f, 8, false), shackleMat);
-            AddMeshPart("ShackleOutline", root.transform, new Vector3(0f, 0f, 0.016f), ProceduralMeshUtils.CreatePipeMesh(arch, 0.040f, 8, false), outlineMat);
-
-            // Padlock body
-            AddMeshPart("Body", root.transform, new Vector3(0f, -0.02f, 0f), ProceduralMeshUtils.CreatePillBadge(0.30f, 0.24f, 0.055f, 0.065f), goldMat);
-            AddMeshPart("BodyOutline", root.transform, new Vector3(0f, -0.02f, 0.016f), ProceduralMeshUtils.CreatePillBadge(0.335f, 0.275f, 0.050f, 0.078f), outlineMat);
-
-            // Keyhole silhouette
-            AddMeshPart("KeyholeTop", root.transform, new Vector3(0f, 0.005f, -0.032f), ProceduralMeshUtils.CreatePillBadge(0.056f, 0.056f, 0.02f, 0.028f), outlineMat);
-            AddMeshPart("KeyholeSlot", root.transform, new Vector3(0f, -0.038f, -0.032f), ProceduralMeshUtils.CreatePillBadge(0.032f, 0.072f, 0.02f, 0.012f), outlineMat);
-
-            // Required key count text at bottom-right of padlock (matching reference "🔒 2")
             GameObject textObj = new GameObject("LockCountText");
             textObj.transform.SetParent(root.transform, false);
-            textObj.transform.localPosition = new Vector3(0.165f, -0.095f, -0.05f);
+            textObj.transform.localPosition = new Vector3(0.17f, -0.17f, -0.05f);
 
             countLabel = textObj.AddComponent<TextMeshPro>();
             countLabel.alignment = TextAlignmentOptions.Center;
-            countLabel.fontSize = 2.6f;
+            countLabel.fontSize = 2.8f;
             countLabel.fontStyle = FontStyles.Bold;
             countLabel.color = Color.white;
             countLabel.text = remainingLockKeys.ToString();
             countLabel.rectTransform.sizeDelta = new Vector2(0.5f, 0.5f);
             countLabel.sortingOrder = 12;
-            ApplyTmpOutline(countLabel, new Color(0.14f, 0.08f, 0.02f, 1f), 0.30f);
+            ApplyTmpOutline(countLabel, GetCarrierDarkColor(colorType), 0.30f);
+            textObj.SetActive(lockKeyCount > 1);
 
             return root;
         }

@@ -26,6 +26,7 @@ namespace PuzzleGlass
 
         private Vector3 _dragOriginPos;
         private Vector3 _dragStartScale = Vector3.one;
+        private Vector2Int _dragStartAnchor;
         private Vector3 _dragOffset;
         private Vector2 _pointerDownScreenPos;
         private float _pointerDownTime;
@@ -163,6 +164,7 @@ namespace PuzzleGlass
 
             _isDragging = true;
             _draggedMonster = selectedMonster;
+            _dragStartAnchor = selectedMonster.gridAnchor;
             _pointerDownScreenPos = screenPos;
             _pointerDownTime = Time.time;
             _hasMovedBeyondTapThreshold = false;
@@ -376,16 +378,22 @@ namespace PuzzleGlass
                 grid.RefreshAllGridBlockHighlightStates(allMonsters);
             }
 
+            // Hamle sayacı: blok başka hücreye taşındıysa ya da toplamaya başladıysa 1 hamle
+            bool movedCell = monster.gridAnchor != _dragStartAnchor;
+
             // 1. Quick Tap OR sliding/bringing a block up to the top exit row:
             // Starts direct in-grid collection automatically if at the top row & matching bottom ball color!
+            bool startedCollection = false;
             if (isQuickTap || wasLifted)
             {
-                monster.TryStartInGridCollection(playDenialFeedback: true);
+                startedCollection = monster.TryStartInGridCollection(playDenialFeedback: true);
             }
             else if (grid != null && grid.IsBlockAtTopExit(monster))
             {
-                monster.TryStartInGridCollection(playDenialFeedback: false);
+                startedCollection = monster.TryStartInGridCollection(playDenialFeedback: false);
             }
+
+            if (movedCell || startedCollection) PuzzleGlassGameManager.Instance?.RegisterMove();
 
             // 2. Fallback if grid is missing
             if (grid == null)

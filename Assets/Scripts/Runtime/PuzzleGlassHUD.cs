@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using DG.Tweening;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #endif
@@ -23,6 +24,7 @@ namespace PuzzleGlass
         private Text _levelTitleText;
         private Text _levelSubText;
         private Text _shakeCountText;
+        private Text _movesText;
         private Button _shakeButton;
         private Image _shakeButtonImg;
         private Image _soundIconImg;
@@ -46,6 +48,7 @@ namespace PuzzleGlass
         private bool _lastCompleted = false;
         private bool _lastFailed = false;
         private int _lastRemainingBalls = -1;
+        private int _lastShownMoves = -1;
 
         private static readonly Color ColCardCream    = new Color(1.000f, 0.988f, 0.965f, 0.98f);
         private static readonly Color ColPillWhite    = new Color(0.992f, 0.984f, 0.968f, 0.96f);
@@ -177,11 +180,14 @@ namespace PuzzleGlass
             });
 
             // Center: Level Pill Badge + subtle Previous / Next level arrows
+            // (< ve > level atlama butonları sadece test içindir: editörde ve Development Build'de görünür)
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             CreateMiniStepButton("Btn_PrevLevel", topBar, new Vector2(-235f, 4f), "<", () =>
             {
                 PuzzleSoundManager.GetOrCreate().PlayUiClick();
                 PuzzleGlassGameManager.Instance?.LoadPreviousLevel();
             });
+#endif
 
             RectTransform levelPill = CreateRect("LevelPill", topBar);
             levelPill.anchorMin = new Vector2(0.5f, 0.5f);
@@ -221,11 +227,27 @@ namespace PuzzleGlass
             _levelSubText.rectTransform.offsetMin = Vector2.zero;
             _levelSubText.rectTransform.offsetMax = Vector2.zero;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             CreateMiniStepButton("Btn_NextLevel", topBar, new Vector2(235f, 4f), ">", () =>
             {
                 PuzzleSoundManager.GetOrCreate().PlayUiClick();
                 PuzzleGlassGameManager.Instance?.LoadNextLevel();
             });
+#endif
+
+            // Level rozetinin altında hamle sayacı
+            RectTransform movesPill = CreateRect("MovesPill", topBar);
+            movesPill.anchorMin = new Vector2(0.5f, 0.5f);
+            movesPill.anchorMax = new Vector2(0.5f, 0.5f);
+            movesPill.anchoredPosition = new Vector2(0f, -86f);
+            movesPill.sizeDelta = new Vector2(210f, 50f);
+            Image movesImg = movesPill.gameObject.AddComponent<Image>();
+            movesImg.sprite = _roundedPillSprite;
+            movesImg.type = Image.Type.Sliced;
+            movesImg.color = ColPillWhite;
+            movesImg.raycastTarget = false;
+            _movesText = CreateText("MovesText", movesPill, "HAMLE 0", 26, FontStyle.Bold, ColIndigoDeep, TextAnchor.MiddleCenter);
+            StretchFill(_movesText.rectTransform);
 
             // Right: Restart Button
             Button restartBtn = CreateCircleIconButton("Btn_Restart", topBar, new Vector2(410f, 4f), 96f, _iconRestart, ColIndigoDeep, out _);
@@ -410,6 +432,23 @@ namespace PuzzleGlass
                 {
                     string diffStr = GetDifficultyTurkish(gm != null && gm.currentLevel != null ? gm.currentLevel.difficulty : LevelDifficulty.Easy);
                     _levelSubText.text = remainingBalls > 0 ? $"{diffStr} • {remainingBalls} TOP" : diffStr;
+                }
+            }
+
+            int moves = gm != null ? Mathf.Max(0, gm.moveCount) : 0;
+            if (force || moves != _lastShownMoves)
+            {
+                bool bump = !force && moves > _lastShownMoves && _lastShownMoves >= 0;
+                _lastShownMoves = moves;
+                if (_movesText != null)
+                {
+                    _movesText.text = $"HAMLE {moves}";
+                    if (bump)
+                    {
+                        Transform pill = _movesText.transform.parent;
+                        pill.DOKill(true);
+                        pill.DOPunchScale(Vector3.one * 0.14f, 0.22f, 6, 0.6f);
+                    }
                 }
             }
 

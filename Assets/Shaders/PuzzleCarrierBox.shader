@@ -23,6 +23,10 @@ Shader "PuzzleGlass/CarrierBox"
         _LipOffset ("3D Lower Lip Offset", Float) = 0.088
         _ExitHighlight ("Exit-Ready Rim Highlight", Float) = 0.0
         _IceAmount ("Ice Freeze Overlay", Float) = 0.0
+        _LockAmount ("Key-Locked Lid Overlay", Float) = 0.0
+        _LockOpen ("Lock Shackle Open (0..1)", Float) = 0.0
+        _LockWiggle ("Lock Glyph Wiggle (radians)", Float) = 0.0
+        _LockCenter ("Lock Glyph Center (xy) + Scale (z)", Vector) = (0, 0, 1, 0)
         _SocketCount ("Socket Count", Float) = 3.0
         _SocketRadius ("Socket Radius", Float) = 0.108
         _SockPair0 ("Socket Pair 0-1", Vector) = (-0.158, -0.081, 0.158, -0.081)
@@ -81,6 +85,10 @@ Shader "PuzzleGlass/CarrierBox"
                 float _LipOffset;
                 float _ExitHighlight;
                 float _IceAmount;
+                float _LockAmount;
+                float _LockOpen;
+                float _LockWiggle;
+                float4 _LockCenter;
                 float _SocketCount;
                 float _SocketRadius;
                 float4 _SockPair0;
@@ -214,6 +222,55 @@ Shader "PuzzleGlass/CarrierBox"
 
                 float3 sockRGB = lerp(_SocketColor.rgb, _SocketShadowColor.rgb, sockShadowMask);
                 col = lerp(col, sockRGB, sockMask * plateMask);
+
+                // 4b. Kilitli blok: beyaz plaka bloğun kendi renginde bir kapakla kapanır, ortasında düz beyaz asma kilit
+                if (_LockAmount > 0.001)
+                {
+                    float la = saturate(_LockAmount);
+                    float3 lidCol   = lerp(_BodyColor.rgb, float3(1.0, 1.0, 1.0), 0.30);
+                    float3 lidShade = lerp(_BodyColor.rgb, float3(1.0, 1.0, 1.0), 0.08);
+                    float3 lid = lerp(lidCol, lidShade, plateShadowMask);
+
+                    // Kilit simgesi (dönme + ölçek)
+                    float gs = max(0.2, _LockCenter.z);
+                    float2 p = (q - _LockCenter.xy) / gs;
+                    float ca = cos(_LockWiggle), sa = sin(_LockWiggle);
+                    p = float2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y);
+
+                    float2 bp = p - float2(0.0, -0.050);
+                    float dBody = sdRoundBox(bp, float2(0.135, 0.105), 0.050);
+
+                    float2 sp = p - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075);
+                    float dRing = abs(length(sp) - 0.078) - 0.026;
+                    float dLeg = max(abs(abs(sp.x) - 0.078) - 0.026, abs(sp.y + 0.05) - 0.05);
+                    float dShackle = sp.y >= 0.0 ? dRing : dLeg;
+
+                    float dGlyph = min(dBody, dShackle);
+                    float aaG = aa / gs;
+                    float glyphMask = 1.0 - smoothstep(-aaG, aaG, dGlyph);
+
+                    // Yumuşak alt gölge (plakadaki gölge diliyle aynı)
+                    float2 shp = p + float2(0.0, 0.020);
+                    float2 sbp = shp - float2(0.0, -0.050);
+                    float dShadow = min(sdRoundBox(sbp, float2(0.135, 0.105), 0.050),
+                                        (shp - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075)).y >= 0.0
+                                            ? abs(length(shp - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075)) - 0.078) - 0.026
+                                            : 1.0);
+                    float shadowMask = 1.0 - smoothstep(-aaG * 2.0, aaG * 2.0, dShadow);
+
+                    // Anahtar deliği (bloğun koyu renginde)
+                    float dHole = min(length(bp - float2(0.0, 0.016)) - 0.030,
+                                      sdRoundBox(bp - float2(0.0, -0.028), float2(0.013, 0.036), 0.012));
+                    float holeMask = 1.0 - smoothstep(-aaG, aaG, dHole);
+
+                    float3 glyphCol = _PlateColor.rgb;
+                    float3 lockLayer = lid;
+                    lockLayer = lerp(lockLayer, _BodyDarkColor.rgb, shadowMask * 0.45);
+                    lockLayer = lerp(lockLayer, glyphCol, glyphMask);
+                    lockLayer = lerp(lockLayer, _BodyDarkColor.rgb, holeMask);
+
+                    col = lerp(col, lockLayer, plateMask * la);
+                }
 
                 // 5. Optional Stylized Frozen Ice Cap Overlay (_IceAmount = 0..1)
                 if (_IceAmount > 0.001)

@@ -56,6 +56,9 @@ namespace PuzzleGlass
         public int maxShakesPerLevel = 3;
         public int remainingShakes = 3;
 
+        [Tooltip("Bu levelde yapılan hamle sayısı (blok başka hücreye taşındığında artar). HUD'da gösterilir.")]
+        public int moveCount = 0;
+
         [Header("Testing & Debug GUI")]
         public bool showDebugGui = false;
         private bool _showPatternSelector = false;
@@ -539,9 +542,13 @@ namespace PuzzleGlass
                 CancelInvoke(nameof(PrepareNextLevel));
                 Invoke(nameof(PrepareNextLevel), 0.5f);
             }
+
+            // Öğretici: el ipucu ve ilk kez görülen mekanik kartları (bloklar oluştuktan sonra)
+            if (Application.isPlaying) StartCoroutine(BeginTutorialNextFrame(levelData));
             comboStreak = 0;
             feverRemainingTime = 0f;
             remainingShakes = Mathf.Max(1, maxShakesPerLevel);
+            moveCount = 0;
 
             int foundIdx = levels != null ? levels.IndexOf(levelData) : -1;
             if (foundIdx >= 0) currentLevelIndex = foundIdx;
@@ -659,7 +666,8 @@ namespace PuzzleGlass
                     }
                     else if (!levelData.useCustomGlassShape)
                     {
-                        glassContainer.contourPoints = ShapedGlassContainer.BuildBottleContour(ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight);
+                        // Yükseklik top sayısına göre otomatik (Cam Stüdyosu'nda elle ayarlanmadıkça)
+                        glassContainer.contourPoints = ShapedGlassContainer.BuildAutoBottleContour(levelData.bottomToTopGroups);
                         glassContainer.SyncBoundsFromContour();
                     }
                     else
@@ -806,6 +814,13 @@ namespace PuzzleGlass
         /// Called when a Carrier Block activates collection in place or completes inside the grid.
         /// Refreshes top-exit clearance highlights for remaining blocks in StagingGridBoard.
         /// </summary>
+        /// <summary>Oyuncu bir bloğu başka hücreye taşıdığında çağrılır (HUD hamle sayacı).</summary>
+        public void RegisterMove()
+        {
+            if (isLevelCompleted || isLevelFailed) return;
+            moveCount++;
+        }
+
         public void OnStagingBoxPlacedInSlot(MonsterCharacter placedBox)
         {
             if (placedBox == null || activeMonsters == null) return;
@@ -916,6 +931,7 @@ namespace PuzzleGlass
             Vector3 startPos = keyBox.GetKeyWorldPosition();
             startPos.z = -0.55f;
             Vector3 keyScale = keyBox.transform.localScale * 0.92f;
+            Color keyFill = keyBox.KeyFillColor, keyEdge = keyBox.KeyEdgeColor;
             keyBox.HideKeyForFlight();
 
             for (int i = 0; i < lockedTargets.Count; i++)
@@ -927,32 +943,23 @@ namespace PuzzleGlass
                     continue;
                 }
 
-                GameObject flyingKey = MonsterCharacter.CreateGoldKeyVisual(transform, $"FlyingKey_{i}");
-                flyingKey.transform.position = startPos;
-                flyingKey.transform.localScale = keyScale;
-                _activeMechanicVfx.Add(flyingKey);
-
-                Vector3 endPos = target.GetLockWorldPosition();
-                endPos.z = -0.55f;
-
-                Sequence seq = DOTween.Sequence();
-                seq.Join(flyingKey.transform.DOJump(endPos, jumpPower: 0.42f, numJumps: 1, duration: 0.28f).SetEase(Ease.InOutQuad));
-                seq.Join(flyingKey.transform.DORotate(new Vector3(0f, 0f, 360f), 0.28f, RotateMode.FastBeyond360).SetEase(Ease.OutCubic));
-                seq.OnComplete(() =>
-                {
-                    _activeMechanicVfx.Remove(flyingKey);
-                    if (flyingKey != null) Destroy(flyingKey);
-
-                    if (target != null && !target.IsCompleted && target.remainingCount > 0)
+                // Anahtar ışıltılı izle kilide uçar, deliğe girip döner; o anda kilit açılır
+                GameObject flyingKey = null;
+                flyingKey = LockKeyVisuals.FlyKeyIntoLock(transform, startPos, () => target != null ? target.GetKeyholeWorldPosition() : startPos,
+                    keyScale.x, keyFill, keyEdge, () =>
                     {
-                        bool unlocked = target.DecrementLockKey(1);
-                        PuzzleSoundManager.Instance?.PlayUnlock();
-                        if (unlocked && stagingGridBoard != null)
+                        _activeMechanicVfx.Remove(flyingKey);
+                        if (target != null && !target.IsCompleted && target.remainingCount > 0)
                         {
-                            stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+                            bool unlocked = target.DecrementLockKey(1);
+                            if (!unlocked) PuzzleSoundManager.Instance?.PlayUnlock();
+                            if (unlocked && stagingGridBoard != null)
+                            {
+                                stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
+                            }
                         }
-                    }
-                });
+                    });
+                _activeMechanicVfx.Add(flyingKey);
             }
         }
 
@@ -1027,6 +1034,12 @@ namespace PuzzleGlass
         private PuzzleGlassLevelData _preparedProceduralNext;
 
         private void PrepareNextLevel() => PeekNextLevel();
+
+        private System.Collections.IEnumerator BeginTutorialNextFrame(PuzzleGlassLevelData lvl)
+        {
+            yield return null;
+            if (currentLevel == lvl) TutorialOverlay.GetOrCreate().Begin(lvl, activeMonsters);
+        }
 
         /// <summary>
         /// Sonraki level (yüklemeden): kayıtlı level varsa o, yoksa prosedürel level şimdiden üretilip saklanır
