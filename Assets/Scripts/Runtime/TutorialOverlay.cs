@@ -16,8 +16,8 @@ namespace PuzzleGlass
     {
         public static TutorialOverlay Instance { get; private set; }
 
-        private const string PrefIce = "PG_Intro_Ice";
-        private const string PrefLock = "PG_Intro_Lock";
+        public const string PrefIce = "PG_Intro_Ice";
+        public const string PrefLock = "PG_Intro_Lock";
         private const float CycleSeconds = 2.2f;
         private const float CardSeconds = 6f;
 

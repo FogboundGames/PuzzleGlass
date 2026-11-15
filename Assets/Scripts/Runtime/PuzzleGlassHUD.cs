@@ -221,7 +221,7 @@ namespace PuzzleGlass
             _levelTitleText.rectTransform.offsetMax = Vector2.zero;
             AddSoftTextShadow(_levelTitleText.gameObject, new Color(0.14f, 0.16f, 0.44f, 0.55f), new Vector2(0f, -2.5f));
 
-            _levelSubText = CreateText("LevelSub", pillFace, "KOLAY", 21, FontStyle.Bold, new Color(0.90f, 0.93f, 1f, 0.92f), TextAnchor.MiddleCenter);
+            _levelSubText = CreateText("LevelSub", pillFace, "EASY", 21, FontStyle.Bold, new Color(0.90f, 0.93f, 1f, 0.92f), TextAnchor.MiddleCenter);
             _levelSubText.rectTransform.anchorMin = new Vector2(0f, 0.08f);
             _levelSubText.rectTransform.anchorMax = new Vector2(1f, 0.42f);
             _levelSubText.rectTransform.offsetMin = Vector2.zero;
@@ -246,7 +246,7 @@ namespace PuzzleGlass
             movesImg.type = Image.Type.Sliced;
             movesImg.color = ColPillWhite;
             movesImg.raycastTarget = false;
-            _movesText = CreateText("MovesText", movesPill, "HAMLE 0", 26, FontStyle.Bold, ColIndigoDeep, TextAnchor.MiddleCenter);
+            _movesText = CreateText("MovesText", movesPill, "MOVES 0", 26, FontStyle.Bold, ColIndigoDeep, TextAnchor.MiddleCenter);
             StretchFill(_movesText.rectTransform);
 
             // Right: Restart Button
@@ -310,8 +310,8 @@ namespace PuzzleGlass
             iconImg.color = Color.white;
             iconImg.raycastTarget = false;
 
-            // "SALLA" Label
-            Text label = CreateText("ShakeLabel", faceRect, "SALLA", 36, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            // "SHAKE" Label
+            Text label = CreateText("ShakeLabel", faceRect, "SHAKE", 36, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             label.rectTransform.anchorMin = new Vector2(0.22f, 0f);
             label.rectTransform.anchorMax = new Vector2(0.76f, 1f);
             label.rectTransform.offsetMin = Vector2.zero;
@@ -366,13 +366,13 @@ namespace PuzzleGlass
             faceImg.type = Image.Type.Sliced;
             faceImg.color = ColCardCream;
 
-            _resultTitleText = CreateText("ResultTitle", cardFace, "TEBRİKLER!", 52, FontStyle.Bold, ColIndigoDeep, TextAnchor.MiddleCenter);
+            _resultTitleText = CreateText("ResultTitle", cardFace, "WELL DONE!", 52, FontStyle.Bold, ColIndigoDeep, TextAnchor.MiddleCenter);
             _resultTitleText.rectTransform.anchorMin = new Vector2(0.08f, 0.58f);
             _resultTitleText.rectTransform.anchorMax = new Vector2(0.92f, 0.88f);
             _resultTitleText.rectTransform.offsetMin = Vector2.zero;
             _resultTitleText.rectTransform.offsetMax = Vector2.zero;
 
-            _resultBodyText = CreateText("ResultBody", cardFace, "Level Tamamlandı!", 32, FontStyle.Normal, new Color(0.32f, 0.34f, 0.50f, 1f), TextAnchor.MiddleCenter);
+            _resultBodyText = CreateText("ResultBody", cardFace, "Level Complete!", 32, FontStyle.Normal, new Color(0.32f, 0.34f, 0.50f, 1f), TextAnchor.MiddleCenter);
             _resultBodyText.rectTransform.anchorMin = new Vector2(0.08f, 0.36f);
             _resultBodyText.rectTransform.anchorMax = new Vector2(0.92f, 0.58f);
             _resultBodyText.rectTransform.offsetMin = Vector2.zero;
@@ -403,7 +403,7 @@ namespace PuzzleGlass
             _resultActionButton = actRect.gameObject.AddComponent<Button>();
             _resultActionButton.targetGraphic = actFaceImg;
 
-            _resultActionLabel = CreateText("ResultActionLabel", actFace, "SONRAKİ LEVEL", 34, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            _resultActionLabel = CreateText("ResultActionLabel", actFace, "NEXT LEVEL", 34, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFill(_resultActionLabel.rectTransform);
             AddSoftTextShadow(_resultActionLabel.gameObject, new Color(0f, 0.25f, 0.05f, 0.45f), new Vector2(0f, -2f));
 
@@ -431,7 +431,7 @@ namespace PuzzleGlass
                 if (_levelSubText != null)
                 {
                     string diffStr = GetDifficultyTurkish(gm != null && gm.currentLevel != null ? gm.currentLevel.difficulty : LevelDifficulty.Easy);
-                    _levelSubText.text = remainingBalls > 0 ? $"{diffStr} • {remainingBalls} TOP" : diffStr;
+                    _levelSubText.text = remainingBalls > 0 ? $"{diffStr} • {remainingBalls} BALLS" : diffStr;
                 }
             }
 
@@ -442,7 +442,7 @@ namespace PuzzleGlass
                 _lastShownMoves = moves;
                 if (_movesText != null)
                 {
-                    _movesText.text = $"HAMLE {moves}";
+                    _movesText.text = $"MOVES {moves}";
                     if (bump)
                     {
                         Transform pill = _movesText.transform.parent;
@@ -484,9 +484,9 @@ namespace PuzzleGlass
 
                     if (completed && gm != null)
                     {
-                        _resultTitleText.text = "TEBRİKLER!";
-                        _resultBodyText.text = $"Level {levelNum} başarıyla tamamlandı!";
-                        _resultActionLabel.text = "SONRAKİ LEVEL";
+                        _resultTitleText.text = "WELL DONE!";
+                        _resultBodyText.text = $"Level {levelNum} complete!";
+                        _resultActionLabel.text = "NEXT LEVEL";
                         if (_resultActionButton != null)
                         {
                             // Top dökülmeli geçiş açıksa sonraki level otomatik yükleniyor; buton gereksiz
@@ -504,9 +504,9 @@ namespace PuzzleGlass
                     }
                     else if (failed && gm != null)
                     {
-                        _resultTitleText.text = "HAMLE KALMADI";
-                        _resultBodyText.text = "Tekrar deneyerek kutuları sırayla açabilirsin.";
-                        _resultActionLabel.text = "TEKRAR DENE";
+                        _resultTitleText.text = "NO MOVES LEFT";
+                        _resultBodyText.text = "Try again and fill the boxes in the right order.";
+                        _resultActionLabel.text = "TRY AGAIN";
                         if (_resultActionButton != null)
                         {
                             _resultActionButton.gameObject.SetActive(true);
@@ -526,11 +526,11 @@ namespace PuzzleGlass
         {
             switch (d)
             {
-                case LevelDifficulty.Easy:   return "KOLAY";
-                case LevelDifficulty.Medium: return "ORTA";
-                case LevelDifficulty.Hard:   return "ZOR";
+                case LevelDifficulty.Easy:   return "EASY";
+                case LevelDifficulty.Medium: return "MEDIUM";
+                case LevelDifficulty.Hard:   return "HARD";
                 case LevelDifficulty.Boss:   return "BOSS";
-                default:                     return "KLASİK";
+                default:                     return "CLASSIC";
             }
         }
 
