@@ -35,6 +35,7 @@ namespace PuzzleGlass
         private Material _backdropMaterial;
         private float _lastOrthoSize = -1f;
         private float _lastAspect = -1f;
+        private Vector3 _lastCamPos = new Vector3(float.NaN, float.NaN, float.NaN);
 
         private static readonly int MainTexId          = Shader.PropertyToID("_MainTex");
         private static readonly int TintColorId        = Shader.PropertyToID("_TintColor");
@@ -165,21 +166,24 @@ namespace PuzzleGlass
             float ortho = cam.orthographic ? cam.orthographicSize : 4.2f;
             float aspect = Mathf.Max(0.25f, cam.aspect);
 
+            Vector3 camPos = cam.transform.position;
             if (!force && Mathf.Approximately(ortho, _lastOrthoSize) && Mathf.Approximately(aspect, _lastAspect))
             {
-                // Still keep XY aligned to camera center in case camera moved
-                Vector3 cPos = cam.transform.position;
-                _quadTransform.position = new Vector3(cPos.x, cPos.y, 8.0f);
+                if (!Mathf.Approximately(camPos.x, _lastCamPos.x) || !Mathf.Approximately(camPos.y, _lastCamPos.y))
+                {
+                    _lastCamPos = camPos;
+                    _quadTransform.position = new Vector3(camPos.x, camPos.y, 8.0f);
+                }
                 return;
             }
 
             _lastOrthoSize = ortho;
             _lastAspect = aspect;
+            _lastCamPos = camPos;
 
             float h = ortho * 2.15f;
             float w = h * aspect;
 
-            Vector3 camPos = cam.transform.position;
             _quadTransform.position = new Vector3(camPos.x, camPos.y, 8.0f);
             _quadTransform.rotation = Quaternion.identity;
             _quadTransform.localScale = new Vector3(w, h, 1f);

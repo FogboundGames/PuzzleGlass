@@ -9,6 +9,10 @@ Shader "PuzzleGlass/CandyCubeLit"
         _Smoothness ("Satin Smoothness", Range(0.0, 1.0)) = 0.56
         _BevelHighlight ("3D Bevel Edge Catchlight", Range(0.0, 1.0)) = 0.24
         _RimSeparation ("3D Cube Border Separation", Range(0.0, 1.0)) = 0.42
+        _WobblePhase ("Wobble Phase", Float) = 0.0
+        _WobbleAmount ("Wobble Amount", Range(0.0, 1.0)) = 0.0
+        _SquashAmount ("Squash Amount", Range(-0.5, 0.5)) = 0.0
+        _SquashAxis ("Squash Axis (Local)", Vector) = (0.0, 1.0, 0.0, 0.0)
     }
 
     SubShader
@@ -44,12 +48,69 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float _Smoothness;
                 float _BevelHighlight;
                 float _RimSeparation;
+                float _WobblePhase;
+                float _WobbleAmount;
+                float _SquashAmount;
+                float4 _SquashAxis;
             CBUFFER_END
+
+            #if defined(UNITY_INSTANCING_ENABLED) || defined(UNITY_PROCEDURAL_INSTANCING_ENABLED) || defined(UNITY_STEREO_INSTANCING_ENABLED)
+                UNITY_INSTANCING_BUFFER_START(Props)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _ShadowColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _HighlightColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _BevelHighlight)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _RimSeparation)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _WobblePhase)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _WobbleAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _SquashAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SquashAxis)
+                UNITY_INSTANCING_BUFFER_END(Props)
+                #define GET_CANDY_PROP(prop) UNITY_ACCESS_INSTANCED_PROP(Props, prop)
+            #else
+                #define GET_CANDY_PROP(prop) prop
+            #endif
+
+            inline float3 ApplyProceduralCandyVertex(float3 positionOS, float wobblePhase, float wobbleAmount, float squashAmount, float3 squashAxis)
+            {
+                if (wobbleAmount <= 0.0001 && abs(squashAmount) <= 0.0001)
+                    return positionOS;
+
+                float3 outPos = positionOS;
+
+                // 1. Directional volume-preserving squash & stretch (for collision impacts & arrival pop)
+                if (abs(squashAmount) > 0.0001)
+                {
+                    float axisLenSq = dot(squashAxis, squashAxis);
+                    float3 axis = axisLenSq > 0.0001 ? squashAxis * rsqrt(axisLenSq) : float3(0.0, 1.0, 0.0);
+                    float axial = dot(outPos, axis);
+                    float3 radial = outPos - axis * axial;
+                    float scaleAxial = max(0.55, 1.0 + squashAmount);
+                    float scaleRadial = rsqrt(scaleAxial);
+                    outPos = axis * (axial * scaleAxial) + radial * scaleRadial;
+                }
+
+                // 2. Subtle organic GPU wobble / breathing (0 CPU cost)
+                if (wobbleAmount > 0.0001)
+                {
+                    float t = _Time.y * 5.2 + wobblePhase;
+                    float sway = sin(t) * wobbleAmount * 0.032;
+                    float breath = 1.0 + sin(t * 1.3 + 0.7) * wobbleAmount * 0.025;
+                    outPos.y *= breath;
+                    float invBreath = rsqrt(max(0.5, breath));
+                    outPos.x = outPos.x * invBreath + sway * (outPos.y + 0.5);
+                    outPos.z = outPos.z * invBreath;
+                }
+
+                return outPos;
+            }
 
             struct Attributes
             {
-                float4 positionOS : POSITION;
-                float3 normalOS   : NORMAL;
+                float4 vertex       : POSITION;
+                float3 normalOS     : NORMAL;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -61,22 +122,31 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float3 normalOS   : TEXCOORD2;
                 float3 positionOS : TEXCOORD3;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             Varyings vert(Attributes IN)
             {
-                Varyings OUT;
+                Varyings OUT = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
 
-                VertexPositionInputs posInputs = GetVertexPositionInputs(IN.positionOS.xyz);
+                float wobblePhase = GET_CANDY_PROP(_WobblePhase);
+                float wobbleAmount = GET_CANDY_PROP(_WobbleAmount);
+                float squashAmount = GET_CANDY_PROP(_SquashAmount);
+                float3 squashAxis = GET_CANDY_PROP(_SquashAxis).xyz;
+
+                float3 animatedOS = ApplyProceduralCandyVertex(IN.vertex.xyz, wobblePhase, wobbleAmount, squashAmount, squashAxis);
+
+                VertexPositionInputs posInputs = GetVertexPositionInputs(animatedOS);
                 VertexNormalInputs normInputs = GetVertexNormalInputs(IN.normalOS);
 
                 OUT.positionCS = posInputs.positionCS;
                 OUT.positionWS = posInputs.positionWS;
                 OUT.normalWS   = normInputs.normalWS;
                 OUT.normalOS   = IN.normalOS;
-                OUT.positionOS = IN.positionOS.xyz;
+                OUT.positionOS = animatedOS;
                 return OUT;
             }
 
@@ -99,9 +169,12 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float wrapDiff = saturate(ndl * 0.54 + 0.46);
                 float smoothDiff = smoothstep(0.08, 0.92, wrapDiff);
 
-                float3 baseAlbedo = _BaseColor.rgb;
-                float3 shadowTone = _ShadowColor.rgb;
-                float3 highTone   = _HighlightColor.rgb;
+                float3 baseAlbedo = GET_CANDY_PROP(_BaseColor).rgb;
+                float3 shadowTone = GET_CANDY_PROP(_ShadowColor).rgb;
+                float3 highTone   = GET_CANDY_PROP(_HighlightColor).rgb;
+                float smoothness  = GET_CANDY_PROP(_Smoothness);
+                float bevelHigh   = GET_CANDY_PROP(_BevelHighlight);
+                float rimSep      = GET_CANDY_PROP(_RimSeparation);
 
                 float3 col = lerp(shadowTone, baseAlbedo, smoothDiff);
 
@@ -117,12 +190,12 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float maxAxis = max(abs(nOS.x), max(abs(nOS.y), abs(nOS.z)));
                 float bevelMask = saturate((0.975 - maxAxis) * 2.4) * 0.55;
                 float upperBevelLight = bevelMask * saturate(ndl * 0.60 + 0.35) * saturate(N.y + 0.38);
-                col = lerp(col, highTone, upperBevelLight * _BevelHighlight);
+                col = lerp(col, highTone, upperBevelLight * bevelHigh);
 
                 // 4. Lively Satin-Candy Sheen + Delicate Tinted Catchlight (no chalk-white blowout)
                 float3 H = normalize(L_key + V);
                 float ndh = saturate(dot(N, H));
-                float specPower = lerp(18.0, 52.0, _Smoothness);
+                float specPower = lerp(18.0, 52.0, smoothness);
                 float specBroad = pow(ndh, 10.0) * 0.045;
                 float specGloss = pow(ndh, specPower) * (0.09 + 0.06 * bevelMask);
 
@@ -140,7 +213,7 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float grazing = 1.0 - ndv;
                 float rimBorder = smoothstep(0.32, 0.92, grazing);
                 float lowerBias = saturate(-N.y * 0.55 + 0.45);
-                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * _RimSeparation;
+                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * rimSep;
                 col = lerp(col, shadowTone * 0.66, borderShade);
 
                 return half4(saturate(col), 1.0);

@@ -47,6 +47,24 @@ namespace PuzzleGlass
         private Material _jarBackMat;
         private Material _jarFrontMat;
 
+        // Pillar 3: Event-Driven Dirty-Flagged Occupancy Grid + Multi-Source BFS Flow Field
+        private bool _isGridDirty = true;
+        private int _lastGridCols = -1;
+        private int _lastGridRows = -1;
+        private int _lastMonsterCount = -1;
+        private MonsterCharacter[] _cellOccupancy;
+        private MonsterCharacter[] _topExitColumnOwner;
+        private int[] _bfsDistanceField;
+        private Vector2Int[] _bfsFlowDirField;
+        private int[] _bfsQueue;
+        private static readonly int[] BfsDx = { 0, 1, -1, 0 };
+        private static readonly int[] BfsDy = { 1, 0, 0, -1 };
+
+        public void MarkGridDirty()
+        {
+            _isGridDirty = true;
+        }
+
         public float GridOriginX => boardCenter.x - cols * cellSize * 0.5f;
         public float GridOriginY => boardCenter.y - rows * cellSize * 0.5f;
         public float TopFrameInnerY => boardCenter.y + rows * cellSize * 0.5f;
@@ -105,6 +123,7 @@ namespace PuzzleGlass
                 AlignBelowGlass(glass);
             }
 
+            MarkGridDirty();
             BuildBoardVisuals();
         }
 
@@ -178,12 +197,12 @@ namespace PuzzleGlass
             float minGap = (glass.showBottomExitCollar && glass.IsPoolShape) ? 0.36f : 0.14f;
             float targetCenterY = glassBottomY - Mathf.Max(minGap, gapBelowGlass * 1.18f) - topExtent;
 
-            // Keep well inside the bottom edge of orthographic portrait view (above SALLA HUD pill)
+            // Keep well inside the bottom edge of orthographic portrait view
             Camera cam = Camera.main;
             if (cam != null && cam.orthographic)
             {
                 float camBottom = cam.transform.position.y - cam.orthographicSize;
-                float minCenterY = camBottom + botExtent + 0.52f;
+                float minCenterY = camBottom + botExtent + 0.24f;
                 if (targetCenterY < minCenterY) targetCenterY = minCenterY;
             }
 
@@ -262,10 +281,12 @@ namespace PuzzleGlass
             // Top exit rail accent showing blocks pull UP toward the upper glass container
             CreateRoundedPart("TopExitHighlightBar", _visualRoot.transform, new Vector3(0f, innerH * 0.5f + framePadding * 0.50f, 0.00f), innerW * 0.88f, 0.028f, 0.02f, 0.014f, exitRimMat);
 
-            // 3. Individual Rounded Recessed Grid Tiles (cols x rows) with wider gutter spacing
+            // 3. Individual Rounded Recessed Grid Tiles (cols x rows) with shared meshes for GPU Instancing
             float tileOuter = cellSize * 0.81f;
             float tileInner = cellSize * 0.76f;
             float tileRad = cellSize * 0.15f;
+            Mesh sharedBevelMesh = ProceduralMeshUtils.CreatePillBadge(tileOuter, tileOuter, 0.02f, Mathf.Min(tileRad, tileOuter * 0.48f));
+            Mesh sharedInnerMesh = ProceduralMeshUtils.CreatePillBadge(tileInner, tileInner, 0.02f, Mathf.Min(tileRad * 0.88f, tileInner * 0.48f));
 
             for (int r = 0; r < rows; r++)
             {
@@ -274,8 +295,8 @@ namespace PuzzleGlass
                     float lx = -gridW * 0.5f + (c + 0.5f) * cellSize;
                     float ly = -gridH * 0.5f + (r + 0.5f) * cellSize;
 
-                    CreateRoundedPart($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.007f, 0.005f), tileOuter, tileOuter, 0.02f, tileRad, tileBevelMat);
-                    CreateRoundedPart($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.88f, tileBodyMat);
+                    CreateRoundedPartWithMesh($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.007f, 0.005f), sharedBevelMesh, tileBevelMat);
+                    CreateRoundedPartWithMesh($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), sharedInnerMesh, tileBodyMat);
                 }
             }
         }
@@ -343,10 +364,16 @@ namespace PuzzleGlass
 
         private static void CreateRoundedPart(string partName, Transform parent, Vector3 localPos, float w, float h, float depth, float radius, Material mat)
         {
+            Mesh mesh = ProceduralMeshUtils.CreatePillBadge(w, h, depth, Mathf.Min(radius, Mathf.Min(w, h) * 0.48f));
+            CreateRoundedPartWithMesh(partName, parent, localPos, mesh, mat);
+        }
+
+        private static void CreateRoundedPartWithMesh(string partName, Transform parent, Vector3 localPos, Mesh sharedMesh, Material mat)
+        {
             GameObject obj = new GameObject(partName);
             obj.transform.SetParent(parent, false);
             obj.transform.localPosition = localPos;
-            obj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(w, h, depth, Mathf.Min(radius, Mathf.Min(w, h) * 0.48f));
+            obj.AddComponent<MeshFilter>().sharedMesh = sharedMesh;
             var mr = obj.AddComponent<MeshRenderer>();
             mr.sharedMaterial = mat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -405,31 +432,156 @@ namespace PuzzleGlass
             return true;
         }
 
+        public void EnsureFlowFieldUpdated(List<MonsterCharacter> allMonsters)
+        {
+            int totalCells = cols * rows;
+            int monsterCount = allMonsters != null ? allMonsters.Count : 0;
+            bool sizeChanged = _cellOccupancy == null || _cellOccupancy.Length != totalCells || _lastGridCols != cols || _lastGridRows != rows;
+            if (!sizeChanged && !_isGridDirty && monsterCount == _lastMonsterCount)
+            {
+                return;
+            }
+
+            if (sizeChanged)
+            {
+                _cellOccupancy = new MonsterCharacter[totalCells];
+                _topExitColumnOwner = new MonsterCharacter[cols];
+                _bfsDistanceField = new int[totalCells];
+                _bfsFlowDirField = new Vector2Int[totalCells];
+                _bfsQueue = new int[totalCells];
+                _lastGridCols = cols;
+                _lastGridRows = rows;
+            }
+            else
+            {
+                System.Array.Clear(_cellOccupancy, 0, totalCells);
+                System.Array.Clear(_topExitColumnOwner, 0, cols);
+            }
+
+            _lastMonsterCount = monsterCount;
+            _isGridDirty = false;
+
+            if (allMonsters != null)
+            {
+                for (int m = 0; m < allMonsters.Count; m++)
+                {
+                    var other = allMonsters[m];
+                    if (other == null || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0 || !other.gameObject.activeInHierarchy)
+                        continue;
+
+                    Vector2Int[] cells = CarrierBlockShapeUtility.GetCells(other.blockShape);
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        int gx = other.gridAnchor.x + cells[i].x;
+                        int gy = other.gridAnchor.y + cells[i].y;
+                        if (gx >= 0 && gx < cols && gy >= 0 && gy < rows)
+                        {
+                            _cellOccupancy[gy * cols + gx] = other;
+                        }
+                    }
+                }
+            }
+
+            // 1. Her sütunda en üstte yer alan ve çıkışı açık olan bloğu O(cols * rows) içinde bul
+            for (int x = 0; x < cols; x++)
+            {
+                for (int y = rows - 1; y >= 0; y--)
+                {
+                    var occ = _cellOccupancy[y * cols + x];
+                    if (occ != null)
+                    {
+                        if (IsBlockAtTopExit(occ))
+                        {
+                            _topExitColumnOwner[x] = occ;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // 2. Multi-Source BFS Flow Field: Üst çıkış sırasındaki boş hücrelerden aşağı doğru mesafe & akış yönü yay
+            for (int i = 0; i < totalCells; i++)
+            {
+                _bfsDistanceField[i] = -1;
+                _bfsFlowDirField[i] = Vector2Int.zero;
+            }
+
+            int qHead = 0;
+            int qTail = 0;
+            int topRow = rows - 1;
+            for (int x = 0; x < cols; x++)
+            {
+                int idx = topRow * cols + x;
+                if (_cellOccupancy[idx] == null)
+                {
+                    _bfsDistanceField[idx] = 0;
+                    _bfsFlowDirField[idx] = Vector2Int.up;
+                    _bfsQueue[qTail++] = idx;
+                }
+            }
+
+            while (qHead < qTail)
+            {
+                int curIdx = _bfsQueue[qHead++];
+                int cx = curIdx % cols;
+                int cy = curIdx / cols;
+                int nextDist = _bfsDistanceField[curIdx] + 1;
+
+                for (int d = 0; d < 4; d++)
+                {
+                    int nx = cx + BfsDx[d];
+                    int ny = cy + BfsDy[d];
+                    if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+                    int nIdx = ny * cols + nx;
+                    if (_cellOccupancy[nIdx] != null || _bfsDistanceField[nIdx] >= 0) continue;
+
+                    _bfsDistanceField[nIdx] = nextDist;
+                    _bfsFlowDirField[nIdx] = new Vector2Int(cx - nx, cy - ny);
+                    _bfsQueue[qTail++] = nIdx;
+                }
+            }
+        }
+
+        public bool TryGetFlowDirectionToExit(Vector2Int cell, out Vector2Int flowDir, List<MonsterCharacter> allMonsters = null)
+        {
+            if (cell.x < 0 || cell.x >= cols || cell.y < 0 || cell.y >= rows)
+            {
+                flowDir = Vector2Int.zero;
+                return false;
+            }
+            EnsureFlowFieldUpdated(allMonsters ?? (PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null));
+            int idx = cell.y * cols + cell.x;
+            if (_bfsDistanceField[idx] >= 0)
+            {
+                flowDir = _bfsFlowDirField[idx];
+                return true;
+            }
+            flowDir = Vector2Int.zero;
+            return false;
+        }
+
+        public int GetDistanceToExit(Vector2Int cell, List<MonsterCharacter> allMonsters = null)
+        {
+            if (cell.x < 0 || cell.x >= cols || cell.y < 0 || cell.y >= rows) return -1;
+            EnsureFlowFieldUpdated(allMonsters ?? (PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null));
+            return _bfsDistanceField[cell.y * cols + cell.x];
+        }
+
         public bool CanPlaceBlockAt(MonsterCharacter movingBlock, Vector2Int candidateAnchor, List<MonsterCharacter> allMonsters)
         {
             CarrierBlockShape shape = movingBlock != null ? movingBlock.blockShape : CarrierBlockShape.Rect1x1;
             if (!IsInsideGrid(candidateAnchor, shape)) return false;
-
-            Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
             if (allMonsters == null) return true;
 
-            for (int m = 0; m < allMonsters.Count; m++)
+            EnsureFlowFieldUpdated(allMonsters);
+            Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
+            for (int i = 0; i < myCells.Length; i++)
             {
-                var other = allMonsters[m];
-                if (other == null || other == movingBlock || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0)
-                    continue;
-
-                Vector2Int[] otherCells = CarrierBlockShapeUtility.GetCells(other.blockShape);
-                for (int i = 0; i < myCells.Length; i++)
-                {
-                    int mx = candidateAnchor.x + myCells[i].x;
-                    int my = candidateAnchor.y + myCells[i].y;
-                    for (int j = 0; j < otherCells.Length; j++)
-                    {
-                        if (mx == other.gridAnchor.x + otherCells[j].x && my == other.gridAnchor.y + otherCells[j].y)
-                            return false;
-                    }
-                }
+                int mx = candidateAnchor.x + myCells[i].x;
+                int my = candidateAnchor.y + myCells[i].y;
+                var occ = _cellOccupancy[my * cols + mx];
+                if (occ != null && occ != movingBlock)
+                    return false;
             }
             return true;
         }
@@ -509,27 +661,18 @@ namespace PuzzleGlass
 
             if (allMonsters == null) return true;
 
+            EnsureFlowFieldUpdated(allMonsters);
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(block.blockShape);
-            for (int m = 0; m < allMonsters.Count; m++)
+            for (int i = 0; i < myCells.Length; i++)
             {
-                var other = allMonsters[m];
-                if (other == null || other == block || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0)
-                    continue;
-
-                Vector2Int[] otherCells = CarrierBlockShapeUtility.GetCells(other.blockShape);
-                for (int i = 0; i < myCells.Length; i++)
+                int mx = block.gridAnchor.x + myCells[i].x;
+                int my = block.gridAnchor.y + myCells[i].y;
+                if (mx < 0 || mx >= cols) continue;
+                for (int oy = my + 1; oy < rows; oy++)
                 {
-                    int mx = block.gridAnchor.x + myCells[i].x;
-                    int my = block.gridAnchor.y + myCells[i].y;
-                    for (int j = 0; j < otherCells.Length; j++)
-                    {
-                        int ox = other.gridAnchor.x + otherCells[j].x;
-                        int oy = other.gridAnchor.y + otherCells[j].y;
-                        if (ox == mx && oy > my)
-                        {
-                            return false;
-                        }
-                    }
+                    var occ = _cellOccupancy[oy * cols + mx];
+                    if (occ != null && occ != block)
+                        return false;
                 }
             }
 
@@ -569,46 +712,10 @@ namespace PuzzleGlass
         {
             if (block == null || !IsBlockAtTopExit(block)) return false;
 
-            Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(block.blockShape);
-            for (int i = 0; i < myCells.Length; i++)
+            EnsureFlowFieldUpdated(allMonsters);
+            for (int cx = 0; cx < cols; cx++)
             {
-                int cx = block.gridAnchor.x + myCells[i].x;
-                int cy = block.gridAnchor.y + myCells[i].y;
-
-                // Evaluate only the topmost cell of this block in column cx
-                bool hasOwnCellAbove = false;
-                for (int k = 0; k < myCells.Length; k++)
-                {
-                    if (block.gridAnchor.x + myCells[k].x == cx && block.gridAnchor.y + myCells[k].y > cy)
-                    {
-                        hasOwnCellAbove = true;
-                        break;
-                    }
-                }
-                if (hasOwnCellAbove) continue;
-
-                // Skip columns blocked above by another active grid block
-                bool blockedAbove = false;
-                if (allMonsters != null)
-                {
-                    for (int m = 0; m < allMonsters.Count; m++)
-                    {
-                        var other = allMonsters[m];
-                        if (other == null || other == block || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0)
-                            continue;
-                        Vector2Int[] otherCells = CarrierBlockShapeUtility.GetCells(other.blockShape);
-                        for (int j = 0; j < otherCells.Length; j++)
-                        {
-                            if (other.gridAnchor.x + otherCells[j].x == cx && other.gridAnchor.y + otherCells[j].y > cy)
-                            {
-                                blockedAbove = true;
-                                break;
-                            }
-                        }
-                        if (blockedAbove) break;
-                    }
-                }
-                if (blockedAbove) continue;
+                if (_topExitColumnOwner[cx] != block) continue;
 
                 float colLeft = (cx <= 0) ? float.NegativeInfinity : (GridOriginX + cx * cellSize - edgeTolerance);
                 float colRight = (cx >= cols - 1) ? float.PositiveInfinity : (GridOriginX + (cx + 1) * cellSize + edgeTolerance);
@@ -623,6 +730,8 @@ namespace PuzzleGlass
 
         public void RefreshAllGridBlockHighlightStates(List<MonsterCharacter> allMonsters)
         {
+            MarkGridDirty();
+            EnsureFlowFieldUpdated(allMonsters);
             if (allMonsters == null) return;
             for (int i = 0; i < allMonsters.Count; i++)
             {

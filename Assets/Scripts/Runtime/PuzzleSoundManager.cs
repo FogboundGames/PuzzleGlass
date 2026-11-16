@@ -42,7 +42,6 @@ namespace PuzzleGlass
         private AudioClip _clipGridSlide;
         private AudioClip _clipBlockSnap;
         private AudioClip _clipBoxComplete;
-        private AudioClip _clipShakeGlass;
         private AudioClip _clipBlocked;
         private AudioClip _clipUiClick;
         private AudioClip _clipLevelClear;
@@ -208,12 +207,6 @@ namespace PuzzleGlass
             PlayClipWithPitch(_clipBoxComplete, 0.58f, 1.0f);
         }
 
-        public void PlayShakeGlass()
-        {
-            if (isMuted || !Application.isPlaying) return;
-            PlayClipWithPitch(_clipShakeGlass, 0.58f, Random.Range(0.98f, 1.03f));
-        }
-
         public void PlayBlocked()
         {
             if (isMuted || !Application.isPlaying) return;
@@ -290,7 +283,6 @@ namespace PuzzleGlass
             _clipGridSlide    = CreateWoodTickClip("SFX_GridSlide", 0.036f, 240f, 145f);
             _clipBlockSnap    = CreateMarimbaSnapClip("SFX_BlockSnap", 0.065f, 320f, 470f);
             _clipBoxComplete  = CreateChimeChordClip("SFX_BoxComplete", 0.30f, new[] { 523.25f, 659.25f, 783.99f, 987.77f, 1174.66f }, 0.034f);
-            _clipShakeGlass   = CreateGlassClinkClip("SFX_ShakeGlass", 0.28f);
             _clipBlocked      = CreateWoodTickClip("SFX_Blocked", 0.095f, 155f, 92f);
             _clipUiClick      = CreateBubblePopClip("SFX_UiClick", 0.046f, 620f, 890f);
             _clipLevelClear   = CreateChimeChordClip("SFX_LevelClear", 0.62f, new[] { 523.25f, 659.25f, 783.99f, 1046.50f }, 0.078f);
@@ -439,33 +431,6 @@ namespace PuzzleGlass
             for (int i = 0; i < count; i++)
             {
                 data[i] = Mathf.Clamp(data[i] * 0.65f, -0.95f, 0.95f);
-            }
-
-            return FinishClip(name, data);
-        }
-
-        private static AudioClip CreateGlassClinkClip(string name, float duration)
-        {
-            int count = Mathf.Max(256, Mathf.RoundToInt(duration * SampleRate));
-            float[] data = new float[count];
-
-            float[] pingOffsets = { 0f, 0.065f, 0.125f };
-            float[] pingFreqs = { 1380f, 1760f, 1540f };
-
-            for (int p = 0; p < pingOffsets.Length; p++)
-            {
-                int startSample = Mathf.RoundToInt(pingOffsets[p] * SampleRate);
-                float f = pingFreqs[p];
-                for (int i = startSample; i < count; i++)
-                {
-                    float localSec = (i - startSample) / (float)SampleRate;
-                    float attack = Mathf.Min(1f, localSec / 0.004f);
-                    float decay = Mathf.Exp(-localSec * 14f);
-                    float env = attack * decay;
-                    float a = 2f * Mathf.PI * f * localSec;
-                    float clink = Mathf.Sin(a) * 0.60f + Mathf.Sin(a * 1.52f) * 0.25f + Mathf.Sin(a * 2.38f) * 0.12f;
-                    data[i] += clink * env * 0.42f;
-                }
             }
 
             return FinishClip(name, data);

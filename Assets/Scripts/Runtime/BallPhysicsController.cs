@@ -7,6 +7,7 @@ namespace PuzzleGlass
     public enum BallState
     {
         InContainer,
+        InFeedTube,
         AttractingToExit,
         FlyingToMonster,
         Pooled
@@ -53,6 +54,20 @@ namespace PuzzleGlass
         private float _nextCollisionSquashTime = -10f;
         private bool _hasPlayedArrivalSquash = false;
         private TrailRenderer _flightTrail;
+
+        // Cached per-instance MPB visuals (Pillar 1 + Pillar 2: 0 DOTween sequences on balls, 1 instanced draw call)
+        private Color _mpbBaseColor = Color.white;
+        private Color _mpbShadowColor = Color.gray;
+        private Color _mpbHighlightColor = Color.white;
+        private float _mpbSmoothness = 0.52f;
+        private float _wobblePhase = 0f;
+        private float _wobbleAmount = 0f;
+        private float _squashTimer = 0f;
+        private float _squashDuration = 0f;
+        private float _squashAmp = 0f;
+        private Vector3 _squashAxisLocal = Vector3.up;
+        private bool _isGpuSquashing = false;
+        public bool IsGpuSquashing => _isGpuSquashing;
 
         public float AttractionTime => (_attractionStartTime > 0f) ? (Time.time - _attractionStartTime) : 0f;
         public MonsterCharacter TargetMonster => _targetMonster;
@@ -181,38 +196,95 @@ namespace PuzzleGlass
             rowStepWorldY = stepWorldY;
         }
 
-        private void FixedUpdate()
+        /// <summary>
+        /// Centralized physics step driven by BallCollectionController (replaces 140+ per-ball FixedUpdate() calls).
+        /// Skips sleeping balls and avoids waking settled rigidbodies unnecessarily.
+        /// </summary>
+        public void StepBallPhysics(float fixedDt)
         {
-            if (state != BallState.InContainer || rb == null || rb.isKinematic) return;
+            if (state != BallState.InContainer || rb == null || rb.isKinematic || rb.IsSleeping()) return;
 
             Vector3 pos = transform.position;
+            Vector3 vel = rb.linearVelocity;
+            float speedSq = vel.x * vel.x + vel.y * vel.y;
 
-            // Extra downward gravity gives balls a crisp, tactile marble weight in the ball pool
-            if (extraGravity > 0.01f)
+            // Extra downward gravity while actively falling/rolling; once settled, let PhysX sleep naturally
+            if (extraGravity > 0.01f && speedSq > 0.0025f)
             {
                 rb.AddForce(Vector3.down * extraGravity, ForceMode.Acceleration);
             }
 
-            // Gerçek fizik: hız artık elle kırpılmıyor ve sıfırlanmıyor (sekme, yuvarlanma, çökme serbest).
-            // Sadece tünelleme/patlama koruması için yüksek bir üst sınır var; yatışma Unity'nin sleep sistemine bırakıldı.
-            Vector3 vel = rb.linearVelocity;
-            vel.z = 0f;
-            if (vel.sqrMagnitude > maxSafetySpeed * maxSafetySpeed)
+            if (Mathf.Abs(vel.z) > 0.0001f || speedSq > maxSafetySpeed * maxSafetySpeed)
             {
-                vel = vel.normalized * maxSafetySpeed;
+                vel.z = 0f;
+                if (vel.sqrMagnitude > maxSafetySpeed * maxSafetySpeed)
+                {
+                    vel = vel.normalized * maxSafetySpeed;
+                }
+                rb.linearVelocity = vel;
             }
-            rb.linearVelocity = vel;
 
-            // Görsel yuvarlanma: yatay harekete göre dönüş (düşük sürtünmede kaymak yerine yuvarlanıyormuş gibi görünsün)
-            float r = Mathf.Max(0.05f, ballRadius);
-            Vector3 targetAngVel = new Vector3(0f, 0f, -vel.x / r);
-            rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 10f * Time.fixedDeltaTime);
+            // Görsel yuvarlanma: sadece yatay hız belirginse açısal hız uygula (uykuyu bozma)
+            if (Mathf.Abs(vel.x) > 0.03f)
+            {
+                float r = Mathf.Max(0.05f, ballRadius);
+                Vector3 targetAngVel = new Vector3(0f, 0f, -vel.x / r);
+                rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 10f * fixedDt);
+            }
 
             if (Mathf.Abs(pos.z - (-0.10f)) > 0.001f)
             {
                 pos.z = -0.10f;
                 transform.position = pos;
             }
+        }
+
+        public void StepGpuVisualSquash(float dt)
+        {
+            if (!_isGpuSquashing || meshRenderer == null) return;
+
+            _squashTimer += dt;
+            float duration = Mathf.Max(0.05f, _squashDuration);
+            float t = _squashTimer / duration;
+            if (t >= 1f)
+            {
+                _isGpuSquashing = false;
+                FlushPropertyBlock(0f);
+                return;
+            }
+
+            // Smooth damped squash -> rebound -> settle curve on GPU
+            float amount;
+            if (t < 0.25f)
+            {
+                amount = Mathf.Lerp(0f, -_squashAmp, t / 0.25f);
+            }
+            else if (t < 0.60f)
+            {
+                float u = (t - 0.25f) / 0.35f;
+                amount = Mathf.Lerp(-_squashAmp, _squashAmp * 0.34f, u);
+            }
+            else
+            {
+                float u = (t - 0.60f) / 0.40f;
+                amount = Mathf.Lerp(_squashAmp * 0.34f, 0f, u);
+            }
+
+            FlushPropertyBlock(amount);
+        }
+
+        private void FlushPropertyBlock(float squashAmount)
+        {
+            BallObjectPool.ApplyBallPropertyBlock(
+                meshRenderer,
+                _mpbBaseColor,
+                _mpbShadowColor,
+                _mpbHighlightColor,
+                _mpbSmoothness,
+                _wobblePhase,
+                _wobbleAmount,
+                squashAmount,
+                _squashAxisLocal);
         }
 
         /// <summary>
@@ -223,7 +295,8 @@ namespace PuzzleGlass
             float radius,
             PhysicsMaterial physMaterial,
             Material ballMaterial,
-            Mesh sphereMesh)
+            Mesh sphereMesh,
+            int variantIndex = 1)
         {
             EnsureComponents();
 
@@ -246,6 +319,16 @@ namespace PuzzleGlass
                 meshRenderer.receiveShadows = false;
             }
 
+            BallObjectPool.ComputeBallVariantVisuals(
+                color,
+                variantIndex,
+                out _mpbBaseColor,
+                out _mpbShadowColor,
+                out _mpbHighlightColor,
+                out _mpbSmoothness);
+            _wobblePhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+            _wobbleAmount = 0f;
+
             float diameter = ballRadius * 2.0f;
             _originalScale = new Vector3(diameter, diameter, diameter);
             transform.localScale = _originalScale;
@@ -261,22 +344,28 @@ namespace PuzzleGlass
                 // Subtle tactile size variety (±4%) decoupled from collider bounds so rows never wedge
                 float sizeJitter = UnityEngine.Random.Range(0.958f, 1.038f);
                 _visualBaseScale = Vector3.one * sizeJitter;
-                visualTransform.localScale = _visualBaseScale * 0.86f;
-
-                if (Application.isPlaying)
-                {
-                    _visualSeq = DOTween.Sequence();
-                    _visualSeq.Append(visualTransform.DOScale(_visualBaseScale * 1.05f, 0.09f).SetEase(Ease.OutQuad));
-                    _visualSeq.Append(visualTransform.DOScale(_visualBaseScale, 0.08f).SetEase(Ease.OutSine));
-                }
-                else
-                {
-                    visualTransform.localScale = _visualBaseScale;
-                }
+                visualTransform.localScale = _visualBaseScale;
             }
             else
             {
                 _visualBaseScale = Vector3.one;
+            }
+
+            if (Application.isPlaying)
+            {
+                // Lightweight GPU pop-in without allocating DOTween sequences
+                _squashAxisLocal = Vector3.up;
+                _squashAmp = 0.14f;
+                _squashDuration = 0.17f;
+                _squashTimer = 0f;
+                _isGpuSquashing = true;
+                BallCollectionController.Instance?.RegisterSquashingBall(this);
+                FlushPropertyBlock(-0.12f);
+            }
+            else
+            {
+                _isGpuSquashing = false;
+                FlushPropertyBlock(0f);
             }
 
             if (sphereCollider != null)
@@ -358,6 +447,8 @@ namespace PuzzleGlass
                 rb.linearVelocity = new Vector3(0f, -1.2f, 0f);
                 rb.WakeUp();
             }
+
+            BallCollectionController.Instance?.MarkBallFieldDirty();
         }
 
         /// <summary>
@@ -368,6 +459,8 @@ namespace PuzzleGlass
             state = BallState.AttractingToExit;
             _attractionStartTime = Time.time;
             _targetMonster = targetMonster;
+
+            BallCollectionController.Instance?.MarkBallFieldDirty();
 
             Vector3 vacatedPos = transform.position;
 
@@ -548,8 +641,10 @@ namespace PuzzleGlass
         private void OnCollisionEnter(Collision collision)
         {
             if (state != BallState.InContainer || !Application.isPlaying) return;
-            if (visualTransform == null || visualTransform == transform) return;
+            if (meshRenderer == null) return;
             if (Time.time < _spawnTime + 0.045f) return;
+
+            BallCollectionController.Instance?.MarkBallFieldDirty();
 
             float relSpeed = collision.relativeVelocity.magnitude;
             Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
@@ -579,32 +674,19 @@ namespace PuzzleGlass
 
         private void PlayVisualSquashStretch(float amp, Vector3 worldAxis, bool isArrival)
         {
-            if (visualTransform == null || visualTransform == transform) return;
+            if (meshRenderer == null || !Application.isPlaying) return;
 
             Vector3 localAxis = transform.InverseTransformDirection(worldAxis);
             if (localAxis.sqrMagnitude < 0.0001f) localAxis = Vector3.up;
             localAxis.Normalize();
 
-            float ax = Mathf.Abs(localAxis.x);
-            float ay = Mathf.Abs(localAxis.y);
-            float az = Mathf.Abs(localAxis.z);
+            _squashAxisLocal = localAxis;
+            _squashAmp = Mathf.Clamp(Mathf.Abs(amp) * 1.35f, 0.04f, 0.22f) * (amp < 0f ? -1f : 1f);
+            _squashDuration = isArrival ? 0.21f : 0.17f;
+            _squashTimer = 0f;
+            _isGpuSquashing = true;
 
-            Vector3 squashScale = new Vector3(
-                _visualBaseScale.x * Mathf.Clamp(1f + amp * (0.45f - 1.45f * ax), 0.78f, 1.24f),
-                _visualBaseScale.y * Mathf.Clamp(1f + amp * (0.45f - 1.45f * ay), 0.78f, 1.24f),
-                _visualBaseScale.z * Mathf.Clamp(1f + amp * (0.45f - 1.45f * az), 0.78f, 1.24f));
-
-            float rebound = -amp * 0.34f;
-            Vector3 reboundScale = new Vector3(
-                _visualBaseScale.x * (1f + rebound * (0.45f - 1.45f * ax)),
-                _visualBaseScale.y * (1f + rebound * (0.45f - 1.45f * ay)),
-                _visualBaseScale.z * (1f + rebound * (0.45f - 1.45f * az)));
-
-            _visualSeq?.Kill();
-            _visualSeq = DOTween.Sequence();
-            _visualSeq.Append(visualTransform.DOScale(squashScale, isArrival ? 0.045f : 0.038f).SetEase(Ease.OutQuad));
-            _visualSeq.Append(visualTransform.DOScale(reboundScale, isArrival ? 0.068f : 0.055f).SetEase(Ease.OutSine));
-            _visualSeq.Append(visualTransform.DOScale(_visualBaseScale, isArrival ? 0.095f : 0.080f).SetEase(Ease.OutSine));
+            BallCollectionController.Instance?.RegisterSquashingBall(this);
         }
 
         private void KillAllTweens()
@@ -616,6 +698,11 @@ namespace PuzzleGlass
             _scaleSeq = null;
             _visualSeq?.Kill();
             _visualSeq = null;
+            if (_isGpuSquashing)
+            {
+                _isGpuSquashing = false;
+                FlushPropertyBlock(0f);
+            }
             if (visualTransform != null && visualTransform != transform)
             {
                 visualTransform.localScale = Vector3.one;

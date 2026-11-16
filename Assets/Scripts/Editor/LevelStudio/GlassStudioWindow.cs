@@ -558,6 +558,8 @@ namespace PuzzleGlass.Editor.Studio
             else if (box) BuildBoxInspector();
             else BuildContourInspector();
 
+            BuildFeedTubesInspector();
+
             Section("Renk teması (cam)");
             var themes = new VisualElement();
             themes.AddToClassList("chip-grid");
@@ -630,6 +632,138 @@ namespace PuzzleGlass.Editor.Studio
             var reset = new Button(ResetToDefault) { text = "Varsayılan cama dön", tooltip = "Level özel cam kullanmaz; oyunun varsayılan kristal havuzu (2.64 × 1.18) yüklenir." };
             reset.AddToClassList("inspector__action");
             m_Inspector.Add(reset);
+        }
+
+        private void BuildFeedTubesInspector()
+        {
+            Section("Üst Besleme Cam Tüpleri (Bu Levele Özel)");
+
+            var modes = new VisualElement();
+            modes.AddToClassList("segmented");
+
+            var offBtn = new Button(() =>
+            {
+                if (!m_Level.useBallFeedTubes) return;
+                Record("Üst besleme tüplerini kapat");
+                m_Level.useBallFeedTubes = false;
+                OnEdited();
+            }) { text = "Kapalı", tooltip = "Bu levelde üst besleme tüpü olmaz; tüm toplar cam haznede başlar." };
+            offBtn.AddToClassList("segmented__item");
+            offBtn.EnableInClassList("segmented__item--active", !m_Level.useBallFeedTubes);
+            modes.Add(offBtn);
+
+            AddTubeModeBtn(modes, "İki Yan", BallFeedTubeMode.BothLeftAndRight);
+            AddTubeModeBtn(modes, "Sol", BallFeedTubeMode.LeftOnly);
+            AddTubeModeBtn(modes, "Sağ", BallFeedTubeMode.RightOnly);
+            m_Inspector.Add(modes);
+
+            if (!m_Level.useBallFeedTubes)
+            {
+                var offHint = new Label("İki Yan, Sol veya Sağ seçtiğinde yalnızca bu levele özel kıvrımlı üst cam borular açılır; toplar sırayla hazneye akar.");
+                offHint.AddToClassList("inspector__hint");
+                m_Inspector.Add(offHint);
+                return;
+            }
+
+            var layout = GlassShapeData.BuildLayout(m_Level);
+            int total = layout.balls != null ? layout.balls.Count : 0;
+            int effLimit = BallFeedTubeUtility.GetEffectiveContainerLimit(m_Level.feedTubeContainerLimit, total);
+            int queued = Mathf.Max(0, total - effLimit);
+
+            var limitRow = new VisualElement();
+            limitRow.AddToClassList("inspector__row");
+            var limitLbl = new Label("Haznede başlayan top");
+            limitLbl.AddToClassList("inspector__row-label");
+            limitRow.Add(limitLbl);
+            limitRow.Add(new Button(() =>
+            {
+                Record("Tüp hazne limiti");
+                m_Level.feedTubeContainerLimit = Mathf.Clamp(m_Level.feedTubeContainerLimit - 1, 0, 60);
+                OnEdited();
+            }) { text = "−" });
+            var limitField = new IntegerField { value = m_Level.feedTubeContainerLimit, isDelayed = true };
+            limitField.style.width = 42;
+            limitField.RegisterValueChangedCallback(e =>
+            {
+                Record("Tüp hazne limiti");
+                m_Level.feedTubeContainerLimit = Mathf.Clamp(e.newValue, 0, 60);
+                OnEdited();
+            });
+            limitRow.Add(limitField);
+            limitRow.Add(new Button(() =>
+            {
+                Record("Tüp hazne limiti");
+                m_Level.feedTubeContainerLimit = Mathf.Clamp(m_Level.feedTubeContainerLimit + 1, 0, 60);
+                OnEdited();
+            }) { text = "+" });
+            limitRow.Add(new Button(() =>
+            {
+                Record("Otomatik hazne limiti");
+                m_Level.feedTubeContainerLimit = 0;
+                OnEdited();
+            }) { text = "Oto", tooltip = "0 = toplam topların yaklaşık yarısı haznede, kalanı tüplerde başlar." });
+            m_Inspector.Add(limitRow);
+
+            var splitInfo = new Label($"Başlangıç: {effLimit} top haznede  ·  {queued} top üst tüplerde");
+            splitInfo.AddToClassList("inspector__hint");
+            m_Inspector.Add(splitInfo);
+
+            var visRow = new VisualElement();
+            visRow.AddToClassList("inspector__row");
+            var visLbl = new Label("Tüpte görünen top");
+            visLbl.AddToClassList("inspector__row-label");
+            visRow.Add(visLbl);
+            visRow.Add(new Button(() =>
+            {
+                Record("Tüpte görünen top");
+                m_Level.feedTubeQueueVisibleCount = Mathf.Clamp(m_Level.feedTubeQueueVisibleCount - 1, 2, 14);
+                OnEdited();
+            }) { text = "−" });
+            var visVal = new Label(m_Level.feedTubeQueueVisibleCount.ToString());
+            visVal.style.minWidth = 22;
+            visVal.style.unityTextAlign = TextAnchor.MiddleCenter;
+            visRow.Add(visVal);
+            visRow.Add(new Button(() =>
+            {
+                Record("Tüpte görünen top");
+                m_Level.feedTubeQueueVisibleCount = Mathf.Clamp(m_Level.feedTubeQueueVisibleCount + 1, 2, 14);
+                OnEdited();
+            }) { text = "+" });
+            m_Inspector.Add(visRow);
+
+            AddSlider("Tüp genişliği", m_Level.feedTubeWidthMultiplier, 1.05f, 1.65f, v =>
+            {
+                Record("Tüp genişliği");
+                m_Level.feedTubeWidthMultiplier = v;
+                OnEdited();
+            });
+            AddSlider("Tüp açıklığı", m_Level.feedTubeAnchorSpread, 0.15f, 1.0f, v =>
+            {
+                Record("Tüp açıklığı");
+                m_Level.feedTubeAnchorSpread = v;
+                OnEdited();
+            });
+            AddSlider("Akış hızı (sn)", m_Level.feedTubeDropInterval, 0.05f, 0.50f, v =>
+            {
+                Record("Tüp bırakma aralığı");
+                m_Level.feedTubeDropInterval = v;
+                OnEdited();
+            });
+        }
+
+        private void AddTubeModeBtn(VisualElement parent, string label, BallFeedTubeMode mode)
+        {
+            var btn = new Button(() =>
+            {
+                if (m_Level.useBallFeedTubes && m_Level.feedTubeMode == mode) return;
+                Record("Besleme tüpü yönü");
+                m_Level.useBallFeedTubes = true;
+                m_Level.feedTubeMode = mode;
+                OnEdited();
+            }) { text = label };
+            btn.AddToClassList("segmented__item");
+            btn.EnableInClassList("segmented__item--active", m_Level.useBallFeedTubes && m_Level.feedTubeMode == mode);
+            parent.Add(btn);
         }
 
         private void BuildBottleInspector()
@@ -883,8 +1017,8 @@ namespace PuzzleGlass.Editor.Studio
             float bottom = contour[0].y - frame - 0.14f;
             float trayH = TrayHeight(lvl, maxHw);
             float viewBottom = bottom - 0.36f - trayH - 0.22f;
-            float viewTop = top + 0.25f;
-            float viewHalfW = Mathf.Max(maxHw + frame + 0.42f, 1.30f);
+            float viewTop = top + (lvl.useBallFeedTubes ? 1.48f : 0.25f);
+            float viewHalfW = Mathf.Max(maxHw + frame + (lvl.useBallFeedTubes ? 0.58f : 0.42f), 1.30f);
             float sx = rect.width / (viewHalfW * 2f);
             float sy = rect.height / (viewTop - viewBottom);
             m_Scale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.90f);
@@ -989,24 +1123,83 @@ namespace PuzzleGlass.Editor.Studio
                 p.Fill();
             }
 
-            // Toplar (oyundaki dizilim — yüksek kontrast ve parlak belirginlik)
+            // Toplar + opsiyonel üst cam besleme tüpleri (bu levele özel)
             var layout = GlassShapeData.BuildLayout(lvl);
-            float rad = layout.diameter * 0.5f * m_Scale;
-            foreach (var b in layout.balls)
+            float ballRadiusWorld = Mathf.Max(0.05f, layout.diameter * 0.5f);
+            float rad = ballRadiusWorld * m_Scale;
+
+            int totalBalls = layout.balls != null ? layout.balls.Count : 0;
+            int containerCount = totalBalls;
+            if (lvl.useBallFeedTubes && totalBalls > 1)
             {
-                var c = ToPx(b.localPos.x, b.localPos.y);
-                Color bc = PuzzleColorPalette.GetBodyColor(b.color);
-                p.fillColor = bc;
-                p.strokeColor = Color.Lerp(bc, Color.black, 0.36f);
-                p.lineWidth = Mathf.Max(1.1f, rad * 0.15f);
-                p.BeginPath();
-                p.Arc(c, rad * 0.94f, 0f, 360f);
-                p.Fill();
-                p.Stroke();
-                p.fillColor = new Color(1f, 1f, 1f, 0.60f);
-                p.BeginPath();
-                p.Arc(c + new Vector2(-rad * 0.30f, -rad * 0.30f), rad * 0.28f, 0f, 360f);
-                p.Fill();
+                containerCount = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, totalBalls);
+            }
+
+            FeedTubeCurveData? leftTube = null;
+            FeedTubeCurveData? rightTube = null;
+            if (lvl.useBallFeedTubes)
+            {
+                BallFeedTubeUtility.GetTopAnchorFromContour(contour, 1f, 1f, out float ceilY, out float topHalfW, out float topCenterX);
+                if (lvl.feedTubeMode == BallFeedTubeMode.BothLeftAndRight || lvl.feedTubeMode == BallFeedTubeMode.LeftOnly)
+                {
+                    leftTube = BallFeedTubeUtility.BuildTubeCurve(
+                        true, ceilY, topHalfW, topCenterX, ballRadiusWorld, lvl.feedTubeWidthMultiplier, lvl.feedTubeAnchorSpread, 1.42f);
+                    DrawFeedTube2D(p, leftTube.Value, glassWallFill, glassOuterRim);
+                }
+                if (lvl.feedTubeMode == BallFeedTubeMode.BothLeftAndRight || lvl.feedTubeMode == BallFeedTubeMode.RightOnly)
+                {
+                    rightTube = BallFeedTubeUtility.BuildTubeCurve(
+                        false, ceilY, topHalfW, topCenterX, ballRadiusWorld, lvl.feedTubeWidthMultiplier, lvl.feedTubeAnchorSpread, 1.42f);
+                    DrawFeedTube2D(p, rightTube.Value, glassWallFill, glassOuterRim);
+                }
+            }
+
+            // Hazne içindeki toplar
+            for (int i = 0; i < containerCount; i++)
+            {
+                var b = layout.balls[i];
+                DrawPreviewBall2D(p, ToPx(b.localPos.x, b.localPos.y), rad, b.color);
+            }
+
+            // Tüp içindeki sıralı toplar
+            if (lvl.useBallFeedTubes && containerCount < totalBalls)
+            {
+                int leftVis = 0, rightVis = 0;
+                int maxPerTube = Mathf.Clamp(lvl.feedTubeQueueVisibleCount, 2, 14);
+                bool nextLeft = true;
+                float spacing = ballRadiusWorld * 2.15f;
+
+                for (int i = containerCount; i < totalBalls; i++)
+                {
+                    var b = layout.balls[i];
+                    bool putLeft;
+                    if (leftTube.HasValue && rightTube.HasValue)
+                    {
+                        putLeft = nextLeft;
+                        nextLeft = !nextLeft;
+                    }
+                    else
+                    {
+                        putLeft = leftTube.HasValue;
+                    }
+
+                    if (putLeft && leftTube.HasValue && leftVis < maxPerTube)
+                    {
+                        float firstDist = leftTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                        float d = Mathf.Min(leftTube.Value.totalLength - ballRadiusWorld, firstDist + leftVis * spacing);
+                        leftTube.Value.EvaluateAtDistance(d, out Vector2 pt, out _);
+                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, b.color);
+                        leftVis++;
+                    }
+                    else if (!putLeft && rightTube.HasValue && rightVis < maxPerTube)
+                    {
+                        float firstDist = rightTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                        float d = Mathf.Min(rightTube.Value.totalLength - ballRadiusWorld, firstDist + rightVis * spacing);
+                        rightTube.Value.EvaluateAtDistance(d, out Vector2 pt, out _);
+                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, b.color);
+                        rightVis++;
+                    }
+                }
             }
 
             // Üst camın altındaki 3D mor çıkış yakası + alt açık ağızlı cam kavanoz + mor tepsi
@@ -1076,6 +1269,78 @@ namespace PuzzleGlass.Editor.Studio
             {
                 for (int i = 0; i < contour.Count; i++) DrawHandle(p, HandlePos(Handle.Point, i), Handle.Point, i);
             }
+        }
+
+        private void DrawPreviewBall2D(Painter2D p, Vector2 c, float rad, PuzzleColor color)
+        {
+            Color bc = PuzzleColorPalette.GetBodyColor(color);
+            p.fillColor = bc;
+            p.strokeColor = Color.Lerp(bc, Color.black, 0.36f);
+            p.lineWidth = Mathf.Max(1.1f, rad * 0.15f);
+            p.BeginPath();
+            p.Arc(c, rad * 0.94f, 0f, 360f);
+            p.Fill();
+            p.Stroke();
+            p.fillColor = new Color(1f, 1f, 1f, 0.60f);
+            p.BeginPath();
+            p.Arc(c + new Vector2(-rad * 0.30f, -rad * 0.30f), rad * 0.28f, 0f, 360f);
+            p.Fill();
+        }
+
+        private void DrawFeedTube2D(Painter2D p, FeedTubeCurveData curve, Color wallFill, Color outerRim)
+        {
+            if (!curve.IsValid) return;
+
+            // Crystal fill + outer perimeter wall
+            p.BeginPath();
+            p.MoveTo(ToPx(curve.leftEdgePath[0].x, curve.leftEdgePath[0].y));
+            for (int i = 1; i < curve.leftEdgePath.Length; i++)
+                p.LineTo(ToPx(curve.leftEdgePath[i].x, curve.leftEdgePath[i].y));
+            for (int i = curve.rightEdgePath.Length - 1; i >= 0; i--)
+                p.LineTo(ToPx(curve.rightEdgePath[i].x, curve.rightEdgePath[i].y));
+            p.ClosePath();
+            p.fillColor = new Color(wallFill.r, wallFill.g, wallFill.b, 0.34f);
+            p.Fill();
+
+            // Left & right rim curves
+            for (int side = 0; side < 2; side++)
+            {
+                var path = side == 0 ? curve.leftEdgePath : curve.rightEdgePath;
+                p.BeginPath();
+                p.MoveTo(ToPx(path[0].x, path[0].y));
+                for (int i = 1; i < path.Length; i++)
+                    p.LineTo(ToPx(path[i].x, path[i].y));
+                p.strokeColor = outerRim;
+                p.lineWidth = 2.6f;
+                p.Stroke();
+
+                p.BeginPath();
+                p.MoveTo(ToPx(path[0].x, path[0].y));
+                for (int i = 1; i < path.Length; i++)
+                    p.LineTo(ToPx(path[i].x, path[i].y));
+                p.strokeColor = new Color(1f, 1f, 1f, 0.85f);
+                p.lineWidth = 1.3f;
+                p.Stroke();
+            }
+
+            // Engel çizgisi önizlemesi (haznedeki toplar toplanana kadar topları tutan kapak)
+            float radAngle = curve.gateAngleDeg * Mathf.Deg2Rad;
+            Vector2 dir = new Vector2(Mathf.Cos(radAngle), Mathf.Sin(radAngle)) * (curve.gateWidth * 0.5f);
+            Vector2 aPx = ToPx(curve.gatePoint.x - dir.x, curve.gatePoint.y - dir.y);
+            Vector2 bPx = ToPx(curve.gatePoint.x + dir.x, curve.gatePoint.y + dir.y);
+            p.BeginPath();
+            p.MoveTo(aPx);
+            p.LineTo(bPx);
+            p.strokeColor = new Color(0.42f, 0.40f, 0.88f, 0.96f);
+            p.lineWidth = Mathf.Max(4.5f, 0.058f * m_Scale);
+            p.Stroke();
+
+            p.BeginPath();
+            p.MoveTo(aPx);
+            p.LineTo(bPx);
+            p.strokeColor = new Color(0.84f, 0.92f, 1f, 0.95f);
+            p.lineWidth = Mathf.Max(2f, 0.026f * m_Scale);
+            p.Stroke();
         }
 
         private void TraceContourPath(Painter2D p, List<GlassContourPoint> contour)

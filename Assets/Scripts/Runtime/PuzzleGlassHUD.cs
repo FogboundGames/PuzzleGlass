@@ -11,7 +11,6 @@ namespace PuzzleGlass
     /// <summary>
     /// Clean casual-mobile Canvas HUD for PuzzleGlass:
     /// - Top bar: Sound mute/unmute button, LEVEL X badge with level step arrows, Restart button
-    /// - Bottom bar: Salla (Shake) action pill button with remaining charge counter
     /// - Level Clear / Fail feedback cards
     /// All pill backgrounds & crisp icons are generated procedurally with anti-aliased SDFs.
     /// </summary>
@@ -23,10 +22,7 @@ namespace PuzzleGlass
         private Canvas _canvas;
         private Text _levelTitleText;
         private Text _levelSubText;
-        private Text _shakeCountText;
         private Text _movesText;
-        private Button _shakeButton;
-        private Image _shakeButtonImg;
         private Image _soundIconImg;
         private GameObject _resultOverlay;
         private Text _resultTitleText;
@@ -39,11 +35,9 @@ namespace PuzzleGlass
         private Sprite _iconSoundOn;
         private Sprite _iconSoundOff;
         private Sprite _iconRestart;
-        private Sprite _iconShake;
         private Font _uiFont;
 
         private int _lastShownLevel = -1;
-        private int _lastShownShakes = -1;
         private bool _lastMutedState = false;
         private bool _lastCompleted = false;
         private bool _lastFailed = false;
@@ -56,11 +50,8 @@ namespace PuzzleGlass
         private static readonly Color ColIndigoDeep   = new Color(0.240f, 0.255f, 0.580f, 1.00f);
         private static readonly Color ColPeriwinkle   = new Color(0.416f, 0.451f, 0.925f, 1.00f);
         private static readonly Color ColPeriwinkleDk = new Color(0.285f, 0.314f, 0.745f, 1.00f);
-        private static readonly Color ColAmberTop     = new Color(1.000f, 0.678f, 0.196f, 1.00f);
-        private static readonly Color ColAmberBot     = new Color(0.845f, 0.486f, 0.060f, 1.00f);
         private static readonly Color ColGreenTop     = new Color(0.290f, 0.808f, 0.365f, 1.00f);
         private static readonly Color ColGreenBot     = new Color(0.180f, 0.595f, 0.240f, 1.00f);
-        private static readonly Color ColDisabledBtn  = new Color(0.755f, 0.745f, 0.780f, 0.85f);
 
         private void Awake()
         {
@@ -135,7 +126,6 @@ namespace PuzzleGlass
             if (_iconSoundOn == null)  _iconSoundOn  = CreateSpeakerIconSprite(muted: false);
             if (_iconSoundOff == null) _iconSoundOff = CreateSpeakerIconSprite(muted: true);
             if (_iconRestart == null)  _iconRestart  = CreateRestartIconSprite();
-            if (_iconShake == null)    _iconShake    = CreateShakeIconSprite();
         }
 
         private void BuildHudCanvas()
@@ -158,7 +148,6 @@ namespace PuzzleGlass
             canvasObj.AddComponent<GraphicRaycaster>();
 
             BuildTopBar(canvasObj.transform);
-            BuildBottomBar(canvasObj.transform);
             BuildResultOverlay(canvasObj.transform);
         }
 
@@ -258,81 +247,6 @@ namespace PuzzleGlass
             });
         }
 
-        private void BuildBottomBar(Transform root)
-        {
-            RectTransform bottomBar = CreateRect("BottomBar", root);
-            bottomBar.anchorMin = new Vector2(0.5f, 0f);
-            bottomBar.anchorMax = new Vector2(0.5f, 0f);
-            bottomBar.pivot = new Vector2(0.5f, 0f);
-            bottomBar.anchoredPosition = new Vector2(0f, 44f);
-            bottomBar.sizeDelta = new Vector2(720f, 118f);
-
-            RectTransform btnRect = CreateRect("Btn_Shake", bottomBar);
-            btnRect.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRect.anchorMax = new Vector2(0.5f, 0.5f);
-            btnRect.anchoredPosition = Vector2.zero;
-            btnRect.sizeDelta = new Vector2(310f, 94f);
-
-            // 3D bottom lip
-            RectTransform lipRect = CreateRect("ShakeLip", btnRect);
-            StretchFill(lipRect);
-            lipRect.anchoredPosition = new Vector2(0f, -8f);
-            Image lipImg = lipRect.gameObject.AddComponent<Image>();
-            lipImg.sprite = _roundedPillSprite;
-            lipImg.type = Image.Type.Sliced;
-            lipImg.color = ColAmberBot;
-            lipImg.raycastTarget = false;
-
-            // Main face
-            RectTransform faceRect = CreateRect("ShakeFace", btnRect);
-            StretchFill(faceRect);
-            _shakeButtonImg = faceRect.gameObject.AddComponent<Image>();
-            _shakeButtonImg.sprite = _roundedPillSprite;
-            _shakeButtonImg.type = Image.Type.Sliced;
-            _shakeButtonImg.color = ColAmberTop;
-
-            _shakeButton = btnRect.gameObject.AddComponent<Button>();
-            _shakeButton.targetGraphic = _shakeButtonImg;
-            _shakeButton.onClick.AddListener(() =>
-            {
-                PuzzleGlassGameManager.Instance?.TryShakeContainer();
-                RefreshHud(force: true);
-            });
-
-            // Shake Icon
-            RectTransform iconRect = CreateRect("ShakeIcon", faceRect);
-            iconRect.anchorMin = new Vector2(0f, 0.5f);
-            iconRect.anchorMax = new Vector2(0f, 0.5f);
-            iconRect.anchoredPosition = new Vector2(54f, 0f);
-            iconRect.sizeDelta = new Vector2(46f, 46f);
-            Image iconImg = iconRect.gameObject.AddComponent<Image>();
-            iconImg.sprite = _iconShake;
-            iconImg.color = Color.white;
-            iconImg.raycastTarget = false;
-
-            // "SHAKE" Label
-            Text label = CreateText("ShakeLabel", faceRect, "SHAKE", 36, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            label.rectTransform.anchorMin = new Vector2(0.22f, 0f);
-            label.rectTransform.anchorMax = new Vector2(0.76f, 1f);
-            label.rectTransform.offsetMin = Vector2.zero;
-            label.rectTransform.offsetMax = Vector2.zero;
-            AddSoftTextShadow(label.gameObject, new Color(0.45f, 0.22f, 0.0f, 0.45f), new Vector2(0f, -2f));
-
-            // Remaining count badge circle
-            RectTransform countBadge = CreateRect("CountBadge", faceRect);
-            countBadge.anchorMin = new Vector2(1f, 0.5f);
-            countBadge.anchorMax = new Vector2(1f, 0.5f);
-            countBadge.anchoredPosition = new Vector2(-48f, 0f);
-            countBadge.sizeDelta = new Vector2(54f, 54f);
-            Image badgeImg = countBadge.gameObject.AddComponent<Image>();
-            badgeImg.sprite = _roundedCircleSprite;
-            badgeImg.color = new Color(1f, 1f, 1f, 0.96f);
-            badgeImg.raycastTarget = false;
-
-            _shakeCountText = CreateText("ShakeCount", countBadge, "3", 30, FontStyle.Bold, ColAmberBot, TextAnchor.MiddleCenter);
-            StretchFill(_shakeCountText.rectTransform);
-        }
-
         private void BuildResultOverlay(Transform root)
         {
             _resultOverlay = new GameObject("ResultOverlay");
@@ -414,13 +328,16 @@ namespace PuzzleGlass
         {
             var gm = PuzzleGlassGameManager.Instance;
             int levelNum = (gm != null && gm.currentLevel != null) ? gm.currentLevel.levelNumber : 1;
-            int shakes = (gm != null) ? Mathf.Max(0, gm.remainingShakes) : 0;
             bool muted = PuzzleSoundManager.Instance != null && PuzzleSoundManager.Instance.IsMuted;
             bool completed = gm != null && gm.isLevelCompleted;
             bool failed = gm != null && gm.isLevelFailed;
             int remainingBalls = (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls != null)
                 ? BallObjectPool.Instance.ActiveBalls.Count
                 : 0;
+            if (BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.IsActive)
+            {
+                remainingBalls += BallFeedTubeController.Instance.OverflowQueuedCount;
+            }
 
             if (force || levelNum != _lastShownLevel || remainingBalls != _lastRemainingBalls)
             {
@@ -450,14 +367,6 @@ namespace PuzzleGlass
                         pill.DOPunchScale(Vector3.one * 0.14f, 0.22f, 6, 0.6f);
                     }
                 }
-            }
-
-            if (force || shakes != _lastShownShakes)
-            {
-                _lastShownShakes = shakes;
-                if (_shakeCountText != null) _shakeCountText.text = shakes.ToString();
-                if (_shakeButton != null) _shakeButton.interactable = shakes > 0;
-                if (_shakeButtonImg != null) _shakeButtonImg.color = shakes > 0 ? ColAmberTop : ColDisabledBtn;
             }
 
             if (force || muted != _lastMutedState)
@@ -733,40 +642,6 @@ namespace PuzzleGlass
                     bool inArrow = au > -0.14f && au < 0.07f && av > -0.06f && av < 0.15f && (av - au * 0.4f) < 0.14f;
 
                     float a = (inRing || inArrow) ? 1f : 0f;
-                    pixels[y * S + x] = new Color32(255, 255, 255, (byte)(a * 255f));
-                }
-            }
-
-            tex.SetPixels32(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, S, S), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateShakeIconSprite()
-        {
-            const int S = 64;
-            Texture2D tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
-            Color32[] pixels = new Color32[S * S];
-
-            for (int y = 0; y < S; y++)
-            {
-                for (int x = 0; x < S; x++)
-                {
-                    float u = (x + 0.5f) / S - 0.5f;
-                    float v = (y + 0.5f) / S - 0.5f;
-
-                    // Tilted mini cup/tray rounded outline + side shake arcs
-                    float ru = u * 0.94f - v * 0.34f;
-                    float rv = u * 0.34f + v * 0.94f;
-                    float boxD = Mathf.Max(Mathf.Abs(ru) - 0.18f, Mathf.Abs(rv) - 0.15f);
-                    bool inCup = Mathf.Abs(boxD) < 0.042f;
-
-                    float dLeft  = Mathf.Abs(Mathf.Sqrt((u + 0.14f) * (u + 0.14f) + v * v) - 0.22f);
-                    float dRight = Mathf.Abs(Mathf.Sqrt((u - 0.14f) * (u - 0.14f) + v * v) - 0.22f);
-                    bool leftArc  = u < -0.25f && Mathf.Abs(v) < 0.19f && dLeft < 0.032f;
-                    bool rightArc = u >  0.25f && Mathf.Abs(v) < 0.19f && dRight < 0.032f;
-
-                    float a = (inCup || leftArc || rightArc) ? 1f : 0f;
                     pixels[y * S + x] = new Color32(255, 255, 255, (byte)(a * 255f));
                 }
             }

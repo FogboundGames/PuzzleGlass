@@ -130,10 +130,11 @@ namespace PuzzleGlass
                 backBoxCol.size = new Vector3(boxW + 1.0f, boxH + 1.0f, 0.08f);
                 backBoxCol.sharedMaterial = _glassPhysMaterial;
 
-                // Top Ceiling (bottom face at ceilY)
+                // Top Ceiling (bottom face at ceilY, lifted slightly when feed tubes pour down through upper rim)
+                float boxCeilLift = glassContainer.useBallFeedTubes ? 0.06f : 0f;
                 GameObject topBoxCeiling = new GameObject("TopCeilingCollider");
                 topBoxCeiling.transform.SetParent(_collidersRoot.transform, false);
-                topBoxCeiling.transform.localPosition = new Vector3(0f, ceilY + 0.075f, -0.10f);
+                topBoxCeiling.transform.localPosition = new Vector3(0f, ceilY + 0.075f + boxCeilLift, -0.10f);
                 var topBoxCol = topBoxCeiling.AddComponent<BoxCollider>();
                 topBoxCol.size = new Vector3(boxW, 0.15f, wallDepth);
                 topBoxCol.sharedMaterial = _glassPhysMaterial;
@@ -212,9 +213,10 @@ namespace PuzzleGlass
             backCol.sharedMaterial = _glassPhysMaterial;
 
             // 5. Top Ceiling Collider (Seals neck top)
+            float ceilLift = glassContainer.useBallFeedTubes ? 0.06f : 0f;
             GameObject topCeiling = new GameObject("TopCeilingCollider");
             topCeiling.transform.SetParent(_collidersRoot.transform, false);
-            topCeiling.transform.localPosition = new Vector3(0f, glassContainer.neckTopY + 0.12f, -0.10f);
+            topCeiling.transform.localPosition = new Vector3(0f, glassContainer.neckTopY + 0.12f + ceilLift, -0.10f);
             var topCol = topCeiling.AddComponent<BoxCollider>();
             topCol.size = new Vector3(glassContainer.neckWidth + 0.40f, 0.15f, wallDepth);
             topCol.sharedMaterial = _glassPhysMaterial;

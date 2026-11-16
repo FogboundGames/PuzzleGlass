@@ -190,6 +190,13 @@ namespace PuzzleGlass
         PerBoxCompleted = 1     // Her kutu tamamlandığında buz sayacı 1 azalır
     }
 
+    public enum BallFeedTubeMode
+    {
+        BothLeftAndRight = 0,
+        LeftOnly = 1,
+        RightOnly = 2
+    }
+
     [Serializable]
     public class LevelMonsterEntry
     {
@@ -350,6 +357,33 @@ namespace PuzzleGlass
 
         [Tooltip("Aktif olduğunda her sütunun sadece en üstteki (öndeki) kutusu seçilebilir; o slota gidince arkadaki kutu öne kayar")]
         public bool useStagingColumnQueue = true;
+
+        [Header("Üst Cam Besleme Tüpleri (Bu Levele Özel)")]
+        [Tooltip("Açıkken üstten kıvrımlı cam borular eklenir; başlangıçta hazneye belirli sayıda top konur, kalanlar tüplerden sırayla akar.")]
+        public bool useBallFeedTubes = false;
+
+        [Tooltip("Hangi üst cam tüplerin aktif olacağı (İki Yan / Sadece Sol / Sadece Sağ).")]
+        public BallFeedTubeMode feedTubeMode = BallFeedTubeMode.BothLeftAndRight;
+
+        [Tooltip("Başlangıçta cam hazne içinde bulunacak maksimum top sayısı (0 = toplam topların yaklaşık yarısı otomatik).")]
+        [Range(0, 60)]
+        public int feedTubeContainerLimit = 12;
+
+        [Tooltip("Her tüpün içinde görsel olarak sıralanacak maksimum top sayısı.")]
+        [Range(2, 14)]
+        public int feedTubeQueueVisibleCount = 5;
+
+        [Tooltip("Cam besleme tüplerinin top çapına göre iç genişlik çarpanı.")]
+        [Range(1.05f, 1.65f)]
+        public float feedTubeWidthMultiplier = 1.24f;
+
+        [Tooltip("Tüplerin üst kısımdaki yatay açıklık oranı (0 = içe yakın, 1 = köşeye yakın).")]
+        [Range(0.15f, 1.0f)]
+        public float feedTubeAnchorSpread = 0.68f;
+
+        [Tooltip("Haznede yer açıldığında bir sonraki topun tüpten bırakılma aralığı (saniye).")]
+        [Range(0.05f, 0.50f)]
+        public float feedTubeDropInterval = 0.14f;
 
         [Header("Öğretici (ilk levellerde el ipucu)")]
         [Tooltip("Açıkken level başında bir el, hangi bloğun nereye sürükleneceğini gösterir.")]

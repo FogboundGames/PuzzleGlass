@@ -188,6 +188,20 @@ namespace PuzzleGlass
         public Color dropShadowColor = new Color(0.64f, 0.56f, 0.78f, 0.28f);
         public bool showBottomExitCollar = true;
 
+        [Header("Üst Cam Besleme Tüpleri (Per-Level)")]
+        public bool useBallFeedTubes = false;
+        public BallFeedTubeMode feedTubeMode = BallFeedTubeMode.BothLeftAndRight;
+        [Range(0, 60)]
+        public int feedTubeContainerLimit = 12;
+        [Range(2, 14)]
+        public int feedTubeQueueVisibleCount = 5;
+        [Range(1.05f, 1.65f)]
+        public float feedTubeWidthMultiplier = 1.24f;
+        [Range(0.15f, 1.0f)]
+        public float feedTubeAnchorSpread = 0.68f;
+        [Range(0.05f, 0.50f)]
+        public float feedTubeDropInterval = 0.14f;
+
         [Header("Glass 3D Rim & Shell Settings")]
         [Range(0.015f, 0.090f)]
         public float glassRimRadius = 0.042f;
@@ -439,6 +453,12 @@ namespace PuzzleGlass
         private Material _glassFakeShadowMat;
         private Material _dividerOuterRimMat;
         private Material _dividerInnerCoreMat;
+        private Material _feedTubeBackMat;
+        private Material _feedTubeFrontMat;
+        private Transform _leftFeedGateTransform;
+        private Transform _rightFeedGateTransform;
+        private Vector3 _leftFeedGateClosedPos;
+        private Vector3 _rightFeedGateClosedPos;
 
         private List<BottleCube> _bottleCubes = new List<BottleCube>();
         private List<Vector3> _splineWaypoints = new List<Vector3>();
@@ -1134,6 +1154,33 @@ namespace PuzzleGlass
             if (mat.HasProperty("_JarNeckParams")) mat.SetVector("_JarNeckParams", Vector4.zero);
             if (mat.HasProperty("_CenterGlassAlpha")) mat.SetFloat("_CenterGlassAlpha", 0.18f);
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
+            if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
+
+            // Feed tube mouth openings on the container's upper glass wall (flares smoothly into curved tubes)
+            Vector4 openL = Vector4.zero;
+            Vector4 openR = Vector4.zero;
+            if (useBallFeedTubes && contourPoints != null && contourPoints.Count > 0)
+            {
+                GetRoundedBoxPoolExtents(out float cY, out _, out float qh, out _, out _);
+                qh = Mathf.Max(0.01f, qh);
+                BallFeedTubeUtility.GetTopAnchorFromContour(contourPoints, widthScale, heightScale, out float ceilY, out float topHalfW, out float topCenterX);
+                float ballR = Mathf.Clamp(particleSize * 0.5f, 0.07f, 0.17f);
+                bool hasL = feedTubeMode == BallFeedTubeMode.BothLeftAndRight || feedTubeMode == BallFeedTubeMode.LeftOnly;
+                bool hasR = feedTubeMode == BallFeedTubeMode.BothLeftAndRight || feedTubeMode == BallFeedTubeMode.RightOnly;
+
+                if (hasL)
+                {
+                    var lc = BallFeedTubeUtility.BuildTubeCurve(true, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
+                    openL = new Vector4(1f, lc.mouthPoint.x / qh, (lc.innerHalfWidth * 0.88f) / qh, (ceilY - cY) / qh);
+                }
+                if (hasR)
+                {
+                    var rc = BallFeedTubeUtility.BuildTubeCurve(false, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
+                    openR = new Vector4(1f, rc.mouthPoint.x / qh, (rc.innerHalfWidth * 0.88f) / qh, (ceilY - cY) / qh);
+                }
+            }
+            if (mat.HasProperty("_FeedTubeOpeningL")) mat.SetVector("_FeedTubeOpeningL", openL);
+            if (mat.HasProperty("_FeedTubeOpeningR")) mat.SetVector("_FeedTubeOpeningR", openR);
         }
 
         private static readonly Vector4[] _polyBuffer = new Vector4[48];
@@ -1390,6 +1437,43 @@ namespace PuzzleGlass
                 _frontGlassLensMat.SetFloat("_IsFrontLens", 1.0f);
                 ApplyRoundedBoxShaderProperties(_frontGlassLensMat, 1.97975f);
                 _frontGlassLensMat.renderQueue = 3020;
+
+                // Dedicated SDF crystal-glass materials for curved top feed tubes (_IsFeedTube = 1)
+                _feedTubeBackMat = new Material(chamberShader);
+                _feedTubeBackMat.name = "Mat_FeedTubeBackGlass";
+                _feedTubeBackMat.SetColor("_CenterColor", glassCenterGlowColor);
+                _feedTubeBackMat.SetColor("_EdgeColor", glassBodyColor);
+                _feedTubeBackMat.SetColor("_OuterRimColor", outerCobaltCol);
+                _feedTubeBackMat.SetColor("_InnerGrooveColor", innerGrooveCol);
+                _feedTubeBackMat.SetColor("_RimGlowColor", rimHighlightCol);
+                _feedTubeBackMat.SetColor("_FakeShadowColor", dropShadowColor);
+                _feedTubeBackMat.SetFloat("_WallThickness", wallThickWorld);
+                _feedTubeBackMat.SetFloat("_SheenIntensity", sheenStrength);
+                _feedTubeBackMat.SetFloat("_CenterGlassAlpha", 0.15f);
+                _feedTubeBackMat.SetFloat("_IsFrontLens", 0.0f);
+                _feedTubeBackMat.SetFloat("_IsRoundedBoxPool", 0.0f);
+                _feedTubeBackMat.SetFloat("_IsCollar", 0.0f);
+                _feedTubeBackMat.SetFloat("_IsFeedTube", 1.0f);
+                _feedTubeBackMat.SetFloat("_FeedTubeRatio", 0.641f);
+                _feedTubeBackMat.renderQueue = 1997;
+
+                _feedTubeFrontMat = new Material(chamberShader);
+                _feedTubeFrontMat.name = "Mat_FeedTubeFrontGlass";
+                _feedTubeFrontMat.SetColor("_CenterColor", frontCenter);
+                _feedTubeFrontMat.SetColor("_EdgeColor", frontEdge);
+                _feedTubeFrontMat.SetColor("_OuterRimColor", outerCobaltCol);
+                _feedTubeFrontMat.SetColor("_InnerGrooveColor", innerGrooveCol);
+                _feedTubeFrontMat.SetColor("_RimGlowColor", rimHighlightCol);
+                _feedTubeFrontMat.SetColor("_FakeShadowColor", dropShadowColor);
+                _feedTubeFrontMat.SetFloat("_WallThickness", wallThickWorld);
+                _feedTubeFrontMat.SetFloat("_SheenIntensity", sheenStrength);
+                _feedTubeFrontMat.SetFloat("_CenterGlassAlpha", 0.0f);
+                _feedTubeFrontMat.SetFloat("_IsFrontLens", 1.0f);
+                _feedTubeFrontMat.SetFloat("_IsRoundedBoxPool", 0.0f);
+                _feedTubeFrontMat.SetFloat("_IsCollar", 0.0f);
+                _feedTubeFrontMat.SetFloat("_IsFeedTube", 1.0f);
+                _feedTubeFrontMat.SetFloat("_FeedTubeRatio", 0.641f);
+                _feedTubeFrontMat.renderQueue = 3021;
             }
             else
             {
@@ -1549,6 +1633,7 @@ namespace PuzzleGlass
                 }
 
                 BuildGlassDividersGeometry();
+                BuildBallFeedTubesGeometry();
                 return;
             }
 
@@ -1648,6 +1733,191 @@ namespace PuzzleGlass
 
             // 6. Internal Glass Compartment Dividers
             BuildGlassDividersGeometry();
+
+            // 7. Optional Per-Level Top Curved Glass Feed Tubes
+            BuildBallFeedTubesGeometry();
+        }
+
+        /// <summary>
+        /// Updates particleSize to match spawned balls and rebuilds only the feed tube geometry + shader mouth openings.
+        /// </summary>
+        public void SyncFeedTubesToBallDiameter(float actualBallDiameter)
+        {
+            if (!useBallFeedTubes) return;
+            particleSize = actualBallDiameter;
+
+            if (_chamberInnerGlowMat != null && IsPoolShape)
+            {
+                GetRoundedBoxPoolExtents(out _, out float quadHalfW, out float quadHalfH, out _, out _);
+                ApplyRoundedBoxShaderProperties(_chamberInnerGlowMat, quadHalfW / Mathf.Max(0.01f, quadHalfH));
+            }
+            if (_frontGlassLensMat != null && IsPoolShape)
+            {
+                GetRoundedBoxPoolExtents(out _, out float quadHalfW, out float quadHalfH, out _, out _);
+                ApplyRoundedBoxShaderProperties(_frontGlassLensMat, quadHalfW / Mathf.Max(0.01f, quadHalfH));
+            }
+
+            if (_glassWallsObj != null)
+            {
+                for (int i = _glassWallsObj.transform.childCount - 1; i >= 0; i--)
+                {
+                    var child = _glassWallsObj.transform.GetChild(i).gameObject;
+                    if (child.name == "LeftFeedTube" || child.name == "RightFeedTube")
+                    {
+                        if (Application.isPlaying) Destroy(child);
+                        else DestroyImmediate(child);
+                    }
+                }
+                BuildBallFeedTubesGeometry();
+            }
+        }
+
+        private void BuildBallFeedTubesGeometry()
+        {
+            _leftFeedGateTransform = null;
+            _rightFeedGateTransform = null;
+            if (!useBallFeedTubes || _glassWallsObj == null) return;
+
+            bool buildLeft = feedTubeMode == BallFeedTubeMode.BothLeftAndRight || feedTubeMode == BallFeedTubeMode.LeftOnly;
+            bool buildRight = feedTubeMode == BallFeedTubeMode.BothLeftAndRight || feedTubeMode == BallFeedTubeMode.RightOnly;
+            if (!buildLeft && !buildRight) return;
+
+            BallFeedTubeUtility.GetTopAnchorFromContour(contourPoints, widthScale, heightScale, out float ceilY, out float topHalfW, out float topCenterX);
+            float ballR = Mathf.Clamp(particleSize * 0.5f, 0.07f, 0.17f);
+
+            if (buildLeft)
+            {
+                var leftCurve = BallFeedTubeUtility.BuildTubeCurve(
+                    true, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
+                BuildSingleFeedTubeVisual("LeftFeedTube", leftCurve, isLeft: true);
+            }
+
+            if (buildRight)
+            {
+                var rightCurve = BallFeedTubeUtility.BuildTubeCurve(
+                    false, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
+                BuildSingleFeedTubeVisual("RightFeedTube", rightCurve, isLeft: false);
+            }
+        }
+
+        private void BuildSingleFeedTubeVisual(string rootName, FeedTubeCurveData curve, bool isLeft)
+        {
+            if (!curve.IsValid || _glassWallsObj == null) return;
+
+            GameObject root = new GameObject(rootName);
+            root.transform.SetParent(_glassWallsObj.transform, false);
+
+            Vector3[] leftPath = curve.leftShadowPath != null ? curve.leftShadowPath : curve.leftEdgePath;
+            Vector3[] rightPath = curve.rightShadowPath != null ? curve.rightShadowPath : curve.rightEdgePath;
+            Mesh ribbonMesh = ProceduralMeshUtils.CreateTrackFloorRibbon(leftPath, rightPath);
+            float ratio = curve.wallWidthRatio > 0.1f ? curve.wallWidthRatio : 0.641f;
+
+            // Back refractive crystal chamber + soft outer drop shadow (identical glass language as main container)
+            if (_feedTubeBackMat != null && _feedTubeBackMat.HasProperty("_FeedTubeRatio"))
+                _feedTubeBackMat.SetFloat("_FeedTubeRatio", ratio);
+            AddTubeChildMesh(root.transform, "BackGlass", new Vector3(0f, 0f, 0.08f),
+                ribbonMesh, _feedTubeBackMat.OrNull() ?? _chamberInnerGlowMat);
+
+            // Front crystal glass rim + glossy studio highlights (center remains crystal-clear over balls)
+            if (_feedTubeFrontMat != null && _feedTubeFrontMat.HasProperty("_FeedTubeRatio"))
+                _feedTubeFrontMat.SetFloat("_FeedTubeRatio", ratio);
+            AddTubeChildMesh(root.transform, "FrontGlassLens", new Vector3(0f, 0f, -0.24f),
+                ribbonMesh, _feedTubeFrontMat.OrNull() ?? _frontGlassLensMat);
+
+            // Visible barrier gate bar across the tube mouth holding queued balls until bottle empties
+            float barLen = Mathf.Max(0.18f, curve.gateWidth);
+            float barThick = 0.058f;
+            float cornerR = barThick * 0.48f;
+            Vector3 closedPos = new Vector3(curve.gatePoint.x, curve.gatePoint.y, -0.10f);
+
+            GameObject gateRoot = new GameObject("FeedTubeGate");
+            gateRoot.transform.SetParent(root.transform, false);
+            gateRoot.transform.localPosition = closedPos;
+            gateRoot.transform.localRotation = Quaternion.Euler(0f, 0f, curve.gateAngleDeg);
+
+            Material outerMat = _dividerOuterRimMat != null ? _dividerOuterRimMat : _outerBlueRimMat;
+            Material innerMat = _dividerInnerCoreMat != null ? _dividerInnerCoreMat : _innerCyanRimMat;
+            if (outerMat != null)
+            {
+                Mesh outerBar = ProceduralMeshUtils.CreatePillBadge(barLen, barThick, 0.16f, cornerR);
+                gateRoot.AddComponent<MeshFilter>().sharedMesh = outerBar;
+                var outerMr = gateRoot.AddComponent<MeshRenderer>();
+                outerMr.sharedMaterial = outerMat;
+                outerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                outerMr.receiveShadows = false;
+            }
+            if (innerMat != null)
+            {
+                float inLen = Mathf.Max(0.06f, barLen - 0.024f);
+                float inThick = Mathf.Max(0.02f, barThick - 0.024f);
+                GameObject core = new GameObject("InnerHighlight");
+                core.transform.SetParent(gateRoot.transform, false);
+                core.transform.localPosition = new Vector3(0f, 0f, -0.025f);
+                Mesh innerBar = ProceduralMeshUtils.CreatePillBadge(inLen, inThick, 0.13f, inThick * 0.48f);
+                core.AddComponent<MeshFilter>().sharedMesh = innerBar;
+                var innerMr = core.AddComponent<MeshRenderer>();
+                innerMr.sharedMaterial = innerMat;
+                innerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                innerMr.receiveShadows = false;
+            }
+
+            if (isLeft)
+            {
+                _leftFeedGateTransform = gateRoot.transform;
+                _leftFeedGateClosedPos = closedPos;
+            }
+            else
+            {
+                _rightFeedGateTransform = gateRoot.transform;
+                _rightFeedGateClosedPos = closedPos;
+            }
+        }
+
+        /// <summary>
+        /// Opens or closes the visual barrier gate bars across the upper feed tube mouths.
+        /// When opened, the bars retract smoothly so queued balls pour into the empty bottle.
+        /// </summary>
+        public void SetFeedTubeGatesOpen(bool open, bool immediate = false)
+        {
+            AnimateSingleFeedGate(_leftFeedGateTransform, _leftFeedGateClosedPos, -1f, open, immediate);
+            AnimateSingleFeedGate(_rightFeedGateTransform, _rightFeedGateClosedPos, 1f, open, immediate);
+        }
+
+        private static void AnimateSingleFeedGate(Transform gate, Vector3 closedPos, float sideSign, bool open, bool immediate)
+        {
+            if (gate == null) return;
+            gate.DOKill();
+
+            if (!open)
+            {
+                gate.gameObject.SetActive(true);
+                gate.localPosition = closedPos;
+                gate.localScale = Vector3.one;
+                return;
+            }
+
+            if (immediate || !Application.isPlaying)
+            {
+                gate.localScale = new Vector3(0f, 1f, 1f);
+                gate.gameObject.SetActive(false);
+                return;
+            }
+
+            Vector3 openPos = closedPos + gate.localRotation * new Vector3(sideSign * 0.24f, 0f, 0f);
+            gate.DOLocalMove(openPos, 0.20f).SetEase(Ease.InBack);
+            gate.DOScaleX(0.02f, 0.20f).SetEase(Ease.InBack)
+                .OnComplete(() => { if (gate != null) gate.gameObject.SetActive(false); });
+        }
+
+        private static void AddTubeChildMesh(Transform parent, string name, Vector3 localPos, Mesh mesh, Material mat)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPos;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         private void BuildBottomExitCollar(float bottomEdgeY)
@@ -1749,45 +2019,6 @@ namespace PuzzleGlass
                 innerMr.sharedMaterial = innerMatToUse;
                 innerMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 innerMr.receiveShadows = false;
-            }
-        }
-
-        /// <summary>
-        /// Tactile Shake / Tilt mechanic: rocks the glass container left & right while applying lateral + upward
-        /// velocity impulses to all resting balls inside the container to unstick wedged balls.
-        /// </summary>
-        public void ShakeAndTiltContainer(float intensity = 1.0f)
-        {
-            if (_glassWallsObj != null)
-            {
-                Transform visualTr = _glassWallsObj.transform;
-                visualTr.DOKill(true);
-                visualTr.localRotation = Quaternion.identity;
-                visualTr.localPosition = Vector3.zero;
-
-                Sequence tiltSeq = DOTween.Sequence();
-                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, 5.5f * intensity), 0.07f).SetEase(Ease.OutSine));
-                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, -5.5f * intensity), 0.11f).SetEase(Ease.InOutSine));
-                tiltSeq.Append(visualTr.DOLocalRotate(new Vector3(0f, 0f, 3.2f * intensity), 0.09f).SetEase(Ease.InOutSine));
-                tiltSeq.Append(visualTr.DOLocalRotate(Vector3.zero, 0.08f).SetEase(Ease.OutBack));
-                tiltSeq.Join(visualTr.DOPunchPosition(new Vector3(0.09f * intensity, 0.05f * intensity, 0f), 0.32f, 16, 0.8f));
-            }
-
-            if (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls != null)
-            {
-                var balls = BallObjectPool.Instance.ActiveBalls;
-                for (int i = 0; i < balls.Count; i++)
-                {
-                    var b = balls[i];
-                    if (b == null || b.state != BallState.InContainer || b.rb == null || b.rb.isKinematic)
-                        continue;
-
-                    b.rb.WakeUp();
-                    float sideDir = (i % 2 == 0) ? 1f : -1f;
-                    float vx = (sideDir * UnityEngine.Random.Range(1.35f, 2.35f) + UnityEngine.Random.Range(-0.45f, 0.45f)) * intensity;
-                    float vy = UnityEngine.Random.Range(0.75f, 1.55f) * intensity;
-                    b.rb.linearVelocity = new Vector3(vx, vy, 0f);
-                }
             }
         }
 

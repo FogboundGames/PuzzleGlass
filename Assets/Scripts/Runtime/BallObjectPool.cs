@@ -44,11 +44,41 @@ namespace PuzzleGlass
         private readonly Dictionary<PuzzleColor, Material> _candyMaterials = new Dictionary<PuzzleColor, Material>();
         private readonly Dictionary<PuzzleColor, Material[]> _candyMaterialVariants = new Dictionary<PuzzleColor, Material[]>();
 
+        private static MaterialPropertyBlock s_BallPropertyBlock;
+        private static readonly int BaseColorPropId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorPropId = Shader.PropertyToID("_Color");
+        private static readonly int ShadowColorPropId = Shader.PropertyToID("_ShadowColor");
+        private static readonly int HighlightColorPropId = Shader.PropertyToID("_HighlightColor");
+        private static readonly int SmoothnessPropId = Shader.PropertyToID("_Smoothness");
+        private static readonly int BevelHighlightPropId = Shader.PropertyToID("_BevelHighlight");
+        private static readonly int RimSeparationPropId = Shader.PropertyToID("_RimSeparation");
+        private static readonly int WobblePhasePropId = Shader.PropertyToID("_WobblePhase");
+        private static readonly int WobbleAmountPropId = Shader.PropertyToID("_WobbleAmount");
+        private static readonly int SquashAmountPropId = Shader.PropertyToID("_SquashAmount");
+        private static readonly int SquashAxisPropId = Shader.PropertyToID("_SquashAxis");
+
+        private Material _sharedInstancedBallMaterial;
         private PhysicsMaterial _sharedPhysMaterial;
         private Mesh _sharedSphereMesh;
         private GameObject _poolContainer;
 
         public List<BallPhysicsController> ActiveBalls => _activeBalls;
+        public Material SharedInstancedBallMaterial
+        {
+            get
+            {
+                EnsureSharedResources();
+                return _sharedInstancedBallMaterial;
+            }
+        }
+        public Mesh SharedSphereMesh
+        {
+            get
+            {
+                EnsureSharedResources();
+                return _sharedSphereMesh;
+            }
+        }
 
         private void Awake()
         {
@@ -161,47 +191,91 @@ namespace PuzzleGlass
                 {
                     _sharedSphereMesh = mf.sharedMesh;
                 }
-                DestroyImmediate(temp);
+                if (Application.isPlaying) Destroy(temp);
+                else DestroyImmediate(temp);
             }
 
-            // Ensure subtle material variants per color in PuzzleColor enum (satin / standard / pearlescent)
-            var colors = (PuzzleColor[])System.Enum.GetValues(typeof(PuzzleColor));
-            for (int i = 0; i < colors.Length; i++)
+            if (_sharedInstancedBallMaterial == null)
             {
-                var c = colors[i];
-                if (!_candyMaterialVariants.TryGetValue(c, out var variants) || variants == null || variants.Length != ColorVariantCount || variants[0] == null)
+                Shader ballShader = Shader.Find("PuzzleGlass/CandyCubeLit")
+                    ?? Shader.Find("Universal Render Pipeline/Lit")
+                    ?? Shader.Find("Standard");
+                _sharedInstancedBallMaterial = new Material(ballShader)
                 {
-                    variants = new Material[ColorVariantCount];
-                    for (int v = 0; v < ColorVariantCount; v++)
-                    {
-                        variants[v] = CreateBallVariantMaterial(c, v);
-                    }
-                    _candyMaterialVariants[c] = variants;
-                    _candyMaterials[c] = variants[1];
-                }
+                    name = "Mat_CandyBall_Instanced",
+                    enableInstancing = true,
+                    renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15
+                };
+                if (_sharedInstancedBallMaterial.HasProperty(BevelHighlightPropId))
+                    _sharedInstancedBallMaterial.SetFloat(BevelHighlightPropId, 0f);
+                if (_sharedInstancedBallMaterial.HasProperty(RimSeparationPropId))
+                    _sharedInstancedBallMaterial.SetFloat(RimSeparationPropId, 0.46f);
             }
         }
 
-        private static Material CreateBallVariantMaterial(PuzzleColor color, int variantIndex)
+        public static void ComputeBallVariantVisuals(
+            PuzzleColor color,
+            int variantIndex,
+            out Color baseColor,
+            out Color shadowColor,
+            out Color highlightColor,
+            out float smoothness)
         {
-            Material m = PuzzleColorPalette.CreateCandyBallMaterial(color, $"Mat_Ball_{color}_v{variantIndex}");
-            if (m == null || variantIndex == 1) return m;
+            Color raw = PuzzleColorPalette.GetBodyColor(color);
+            int v = Mathf.Abs(variantIndex) % ColorVariantCount;
+            if (v == 0)
+            {
+                baseColor = Color.Lerp(raw, Color.black, 0.03f);
+                smoothness = 0.44f;
+            }
+            else if (v == 2)
+            {
+                baseColor = Color.Lerp(raw, Color.white, 0.025f);
+                smoothness = 0.60f;
+            }
+            else
+            {
+                baseColor = raw;
+                smoothness = 0.52f;
+            }
+            baseColor.a = raw.a;
+            shadowColor = PuzzleColorPalette.GetCubeShadowColor(color);
+            highlightColor = PuzzleColorPalette.GetCubeHighlightColor(color);
+        }
 
-            Color baseColor = m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor") : m.color;
-            Color adjustedColor = (variantIndex == 0)
-                ? Color.Lerp(baseColor, Color.black, 0.03f)
-                : Color.Lerp(baseColor, Color.white, 0.025f);
-            adjustedColor.a = baseColor.a;
+        public static void ApplyBallPropertyBlock(
+            Renderer renderer,
+            Color baseColor,
+            Color shadowColor,
+            Color highlightColor,
+            float smoothness,
+            float wobblePhase,
+            float wobbleAmount,
+            float squashAmount,
+            Vector3 squashAxis)
+        {
+            if (renderer == null) return;
+            if (s_BallPropertyBlock == null) s_BallPropertyBlock = new MaterialPropertyBlock();
 
-            m.color = adjustedColor;
-            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", adjustedColor);
-            if (m.HasProperty("_Color")) m.SetColor("_Color", adjustedColor);
+            s_BallPropertyBlock.Clear();
+            s_BallPropertyBlock.SetColor(BaseColorPropId, baseColor);
+            s_BallPropertyBlock.SetColor(ColorPropId, baseColor);
+            s_BallPropertyBlock.SetColor(ShadowColorPropId, shadowColor);
+            s_BallPropertyBlock.SetColor(HighlightColorPropId, highlightColor);
+            s_BallPropertyBlock.SetFloat(SmoothnessPropId, smoothness);
+            s_BallPropertyBlock.SetFloat(BevelHighlightPropId, 0f);
+            s_BallPropertyBlock.SetFloat(RimSeparationPropId, 0.46f);
+            s_BallPropertyBlock.SetFloat(WobblePhasePropId, wobblePhase);
+            s_BallPropertyBlock.SetFloat(WobbleAmountPropId, wobbleAmount);
+            s_BallPropertyBlock.SetFloat(SquashAmountPropId, squashAmount);
+            s_BallPropertyBlock.SetVector(SquashAxisPropId, new Vector4(squashAxis.x, squashAxis.y, squashAxis.z, 0f));
+            renderer.SetPropertyBlock(s_BallPropertyBlock);
+        }
 
-            float smoothness = (variantIndex == 0) ? 0.44f : 0.60f;
-            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
-            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smoothness);
-
-            return m;
+        public static void ApplyBallPropertyBlock(Renderer renderer, PuzzleColor color, int variantIndex = 1, float wobblePhase = 0f, float wobbleAmount = 0f)
+        {
+            ComputeBallVariantVisuals(color, variantIndex, out Color baseCol, out Color shadowCol, out Color highCol, out float smooth);
+            ApplyBallPropertyBlock(renderer, baseCol, shadowCol, highCol, smooth, wobblePhase, wobbleAmount, 0f, Vector3.up);
         }
 
         private BallPhysicsController CreateNewBallInstance()
@@ -265,8 +339,8 @@ namespace PuzzleGlass
             ball.transform.rotation = UnityEngine.Random.rotation;
             ball.gameObject.SetActive(true);
 
-            Material mat = GetBallMaterialVariant(color, UnityEngine.Random.Range(0, ColorVariantCount));
-            ball.SetupBall(color, r, _sharedPhysMaterial, mat, _sharedSphereMesh);
+            int variantIdx = UnityEngine.Random.Range(0, ColorVariantCount);
+            ball.SetupBall(color, r, _sharedPhysMaterial, _sharedInstancedBallMaterial, _sharedSphereMesh, variantIdx);
 
             _activeBalls.Add(ball);
             return ball;
@@ -275,12 +349,7 @@ namespace PuzzleGlass
         public Material GetBallMaterialVariant(PuzzleColor color, int variantIndex)
         {
             EnsureSharedResources();
-            if (_candyMaterialVariants.TryGetValue(color, out var variants) && variants != null && variants.Length > 0)
-            {
-                int idx = Mathf.Abs(variantIndex) % variants.Length;
-                return variants[idx] ?? variants[0];
-            }
-            return GetBallMaterial(color);
+            return _sharedInstancedBallMaterial;
         }
 
         public void ReturnBall(BallPhysicsController ball)
@@ -294,6 +363,7 @@ namespace PuzzleGlass
                 ball.transform.SetParent(_poolContainer.transform, false);
                 _availableBalls.Enqueue(ball);
             }
+            BallCollectionController.Instance?.MarkBallFieldDirty();
         }
 
         public void ClearAllActiveBalls()
@@ -305,12 +375,13 @@ namespace PuzzleGlass
                 ball.RecycleSelf();
             }
             _activeBalls.Clear();
+            BallCollectionController.Instance?.MarkBallFieldDirty();
         }
 
         public Material GetBallMaterial(PuzzleColor color)
         {
             EnsureSharedResources();
-            return _candyMaterials.ContainsKey(color) ? _candyMaterials[color] : null;
+            return _sharedInstancedBallMaterial;
         }
     }
 }

@@ -29,6 +29,7 @@ namespace PuzzleGlass
         private Coroutine _autoFeedRoutine;
         private int _lastServedIndex = -1;
         private float _continuousFeedTimer = 0f;
+        private readonly List<AssignedCubeOrder> _matchingOrdersCache = new List<AssignedCubeOrder>(8);
 
         private void Awake()
         {
@@ -176,7 +177,7 @@ namespace PuzzleGlass
             PuzzleColor frontColor = frontCube.color;
 
             // 2. ONLY a slotted monster whose color matches the cube closest to the tip can collect it!
-            List<AssignedCubeOrder> matchingOrders = new List<AssignedCubeOrder>();
+            _matchingOrdersCache.Clear();
             for (int i = 0; i < _orders.Count; i++)
             {
                 var o = _orders[i];
@@ -184,12 +185,12 @@ namespace PuzzleGlass
                 {
                     if (o.color == frontColor)
                     {
-                        matchingOrders.Add(o);
+                        _matchingOrdersCache.Add(o);
                     }
                 }
             }
 
-            if (matchingOrders.Count == 0)
+            if (_matchingOrdersCache.Count == 0)
             {
                 // No slotted monster matches the color currently at the tip of the bottle.
                 // The cubes remain in the bottle until a matching monster is placed into a slot!
@@ -197,8 +198,8 @@ namespace PuzzleGlass
             }
 
             // 3. Round-robin among slotted monsters that share this front color
-            _lastServedIndex = (_lastServedIndex + 1) % matchingOrders.Count;
-            AssignedCubeOrder targetOrder = matchingOrders[_lastServedIndex];
+            _lastServedIndex = (_lastServedIndex + 1) % _matchingOrdersCache.Count;
+            AssignedCubeOrder targetOrder = _matchingOrdersCache[_lastServedIndex];
 
             // 4. Consume the single frontmost cube from the bottle tip and drop it into the monster's mouth!
             if (DispatchCube(targetOrder.targetMonster, frontColor))

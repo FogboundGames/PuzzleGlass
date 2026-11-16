@@ -1206,6 +1206,30 @@ namespace PuzzleGlass.Editor.Studio
                 empty.style.color = new Color(1f, 1f, 1f, 0.5f);
                 glass.Add(empty);
             }
+            if (lvl.useBallFeedTubes && layout.balls.Count > 0)
+            {
+                int eff = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, layout.balls.Count);
+                int queued = Mathf.Max(0, layout.balls.Count - eff);
+                string dirLabel = lvl.feedTubeMode == BallFeedTubeMode.LeftOnly ? "Sol Tüp"
+                    : lvl.feedTubeMode == BallFeedTubeMode.RightOnly ? "Sağ Tüp"
+                    : "Çift Tüp";
+                var badge = new Label($"🧪 {dirLabel}: {eff} hazne + {queued} tüpte");
+                badge.style.position = Position.Absolute;
+                badge.style.left = 6;
+                badge.style.top = 4;
+                badge.style.paddingLeft = 6;
+                badge.style.paddingRight = 6;
+                badge.style.paddingTop = 2;
+                badge.style.paddingBottom = 2;
+                badge.style.fontSize = 10;
+                badge.style.borderTopLeftRadius = 6;
+                badge.style.borderTopRightRadius = 6;
+                badge.style.borderBottomLeftRadius = 6;
+                badge.style.borderBottomRightRadius = 6;
+                badge.style.backgroundColor = new Color(0.28f, 0.34f, 0.72f, 0.85f);
+                badge.style.color = Color.white;
+                glass.Add(badge);
+            }
             return glass;
         }
 
@@ -1861,6 +1885,72 @@ namespace PuzzleGlass.Editor.Studio
                 var take = new Button(() => TakeTutorialFromSolution(lvl, silent: false)) { text = "Çözümden ilk hamleyi al", tooltip = "Çözücünün bulduğu en kısa çözümün ilk sürüklemesini ipucu yapar." };
                 take.AddToClassList("inspector__action");
                 m_Inspector.Add(take);
+            }
+
+            // ---- Üst Cam Besleme Tüpleri (bu levele özel) ----
+            var feedTitle = new Label("Üst cam besleme tüpleri (bu levele özel)");
+            feedTitle.AddToClassList("inspector__title");
+            m_Inspector.Add(feedTitle);
+
+            var feedToggle = new Toggle("Üstten tüp besleme")
+            {
+                value = lvl.useBallFeedTubes,
+                tooltip = "Sadece bu levelde üst omuzlardan topları döken kıvrımlı cam borular kullanır."
+            };
+            feedToggle.RegisterValueChangedCallback(e =>
+            {
+                Record("Üst cam besleme tüpleri");
+                lvl.useBallFeedTubes = e.newValue;
+                OnEdited(syncScene: true);
+            });
+            m_Inspector.Add(feedToggle);
+
+            if (lvl.useBallFeedTubes)
+            {
+                var feedModeField = new EnumField("Tüp yönü", lvl.feedTubeMode);
+                feedModeField.RegisterValueChangedCallback(e =>
+                {
+                    Record("Besleme tüpü yönü");
+                    lvl.feedTubeMode = (BallFeedTubeMode)e.newValue;
+                    OnEdited(syncScene: true);
+                });
+                m_Inspector.Add(feedModeField);
+
+                var feedRow = new VisualElement();
+                feedRow.AddToClassList("inspector__row");
+                var feedLbl = new Label("Hazne limiti (0=oto)");
+                feedLbl.AddToClassList("inspector__row-label");
+                feedRow.Add(feedLbl);
+                feedRow.Add(new Button(() =>
+                {
+                    Record("Tüp hazne limiti");
+                    lvl.feedTubeContainerLimit = Mathf.Clamp(lvl.feedTubeContainerLimit - 1, 0, 60);
+                    OnEdited(syncScene: true);
+                }) { text = "−" });
+                var limitField = new IntegerField { value = lvl.feedTubeContainerLimit, isDelayed = true };
+                limitField.style.width = 44;
+                limitField.RegisterValueChangedCallback(e =>
+                {
+                    Record("Tüp hazne limiti");
+                    lvl.feedTubeContainerLimit = Mathf.Clamp(e.newValue, 0, 60);
+                    OnEdited(syncScene: true);
+                });
+                feedRow.Add(limitField);
+                feedRow.Add(new Button(() =>
+                {
+                    Record("Tüp hazne limiti");
+                    lvl.feedTubeContainerLimit = Mathf.Clamp(lvl.feedTubeContainerLimit + 1, 0, 60);
+                    OnEdited(syncScene: true);
+                }) { text = "+" });
+                m_Inspector.Add(feedRow);
+
+                var feedLayout = GlassShapeData.BuildLayout(lvl);
+                int total = feedLayout.balls != null ? feedLayout.balls.Count : 0;
+                int eff = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, total);
+                int q = Mathf.Max(0, total - eff);
+                var feedInfo = new Label($"{eff} top haznede · {q} top tüplerde. Genişlik ve açı için Cam Stüdyosu'nu aç.");
+                feedInfo.AddToClassList("inspector__sub");
+                m_Inspector.Add(feedInfo);
             }
 
             var glassBtn = new Button(() => GlassStudioWindow.OpenFor(m_Level)) { text = "✨ Bu levelin camını düzenle" };

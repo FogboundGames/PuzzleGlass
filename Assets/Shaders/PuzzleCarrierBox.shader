@@ -38,6 +38,9 @@ Shader "PuzzleGlass/CarrierBox"
         _SockPair5 ("Socket Pair 10-11", Vector) = (0, 0, 0, 0)
         _SockPair6 ("Socket Pair 12-13", Vector) = (0, 0, 0, 0)
         _SockPair7 ("Socket Pair 14-15", Vector) = (0, 0, 0, 0)
+        _WobblePhase ("GPU Idle Breath Phase", Float) = 0.0
+        _WobbleAmount ("GPU Idle Breath Amount", Range(0, 1)) = 0.0
+        _SquashAmount ("GPU Squash & Stretch", Range(-0.5, 0.5)) = 0.0
     }
 
     SubShader
@@ -62,6 +65,7 @@ Shader "PuzzleGlass/CarrierBox"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -101,13 +105,69 @@ Shader "PuzzleGlass/CarrierBox"
                 float4 _SockPair5;
                 float4 _SockPair6;
                 float4 _SockPair7;
+                float _WobblePhase;
+                float _WobbleAmount;
+                float _SquashAmount;
             CBUFFER_END
+
+            #if defined(UNITY_INSTANCING_ENABLED) || defined(UNITY_PROCEDURAL_INSTANCING_ENABLED) || defined(UNITY_STEREO_INSTANCING_ENABLED)
+                UNITY_INSTANCING_BUFFER_START(Props)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _BodyColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _BodyDarkColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _OutlineColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _HighlightColor)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _LocalSize)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _RectCount)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _Rect0)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _Rect1)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _ExitHighlight)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _DragHighlight)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _IceAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _LockAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _LockOpen)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _LockWiggle)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _LockCenter)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _SocketCount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _SocketRadius)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair0)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair1)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair2)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair3)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair4)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair5)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair6)
+                    UNITY_DEFINE_INSTANCED_PROP(float4, _SockPair7)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _WobblePhase)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _WobbleAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _SquashAmount)
+                UNITY_INSTANCING_BUFFER_END(Props)
+                #define GET_BOX_PROP(prop) UNITY_ACCESS_INSTANCED_PROP(Props, prop)
+            #else
+                #define GET_BOX_PROP(prop) prop
+            #endif
+
+            inline float3 ApplyProceduralBoxVertex(float3 positionOS, float wobblePhase, float wobbleAmount, float squashAmount)
+            {
+                if (wobbleAmount <= 0.0001 && abs(squashAmount) <= 0.0001)
+                    return positionOS;
+
+                float breath = sin(_Time.y * 3.7 + wobblePhase) * 0.02 * wobbleAmount;
+                float scaleY = max(0.55, 1.0 + breath + squashAmount);
+                float scaleX = rsqrt(scaleY);
+
+                float3 outPos = positionOS;
+                outPos.x *= scaleX;
+                outPos.y *= scaleY;
+                return outPos;
+            }
 
             struct Attributes
             {
-                float4 positionOS : POSITION;
+                float4 vertex     : POSITION;
                 float2 uv         : TEXCOORD0;
                 float4 color      : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
@@ -115,14 +175,25 @@ Shader "PuzzleGlass/CarrierBox"
                 float4 positionCS : SV_POSITION;
                 float2 uv         : TEXCOORD0;
                 float4 color      : COLOR;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             Varyings vert(Attributes IN)
             {
-                Varyings OUT;
-                OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                Varyings OUT = (Varyings)0;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
+
+                float wobblePhase = GET_BOX_PROP(_WobblePhase);
+                float wobbleAmount = GET_BOX_PROP(_WobbleAmount);
+                float squashAmount = GET_BOX_PROP(_SquashAmount);
+                float3 animatedOS = ApplyProceduralBoxVertex(IN.vertex.xyz, wobblePhase, wobbleAmount, squashAmount);
+
+                OUT.positionCS = TransformObjectToHClip(animatedOS);
                 OUT.uv = IN.uv;
-                OUT.color = IN.color * _Color;
+                OUT.color = IN.color * GET_BOX_PROP(_Color);
                 return OUT;
             }
 
@@ -132,15 +203,15 @@ Shader "PuzzleGlass/CarrierBox"
                 return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
             }
 
-            float sdPolyomino(float2 q, float inset, float radius)
+            float sdPolyomino(float2 q, float inset, float radius, float rectCount, float4 rect0, float4 rect1)
             {
                 float rClamped = max(0.008, radius);
-                float2 b0 = max(float2(0.02, 0.02), _Rect0.zw - inset);
-                float d = sdRoundBox(q - _Rect0.xy, b0, min(rClamped, min(b0.x, b0.y)));
-                if (_RectCount > 1.5)
+                float2 b0 = max(float2(0.02, 0.02), rect0.zw - inset);
+                float d = sdRoundBox(q - rect0.xy, b0, min(rClamped, min(b0.x, b0.y)));
+                if (rectCount > 1.5)
                 {
-                    float2 b1 = max(float2(0.02, 0.02), _Rect1.zw - inset);
-                    float d1 = sdRoundBox(q - _Rect1.xy, b1, min(rClamped, min(b1.x, b1.y)));
+                    float2 b1 = max(float2(0.02, 0.02), rect1.zw - inset);
+                    float d1 = sdRoundBox(q - rect1.xy, b1, min(rClamped, min(b1.x, b1.y)));
                     d = min(d, d1);
                 }
                 return d;
@@ -148,13 +219,33 @@ Shader "PuzzleGlass/CarrierBox"
 
             half4 frag(Varyings IN) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(IN);
+
+                float4 localSize      = GET_BOX_PROP(_LocalSize);
+                float  rectCount      = GET_BOX_PROP(_RectCount);
+                float4 rect0          = GET_BOX_PROP(_Rect0);
+                float4 rect1          = GET_BOX_PROP(_Rect1);
+                float3 bodyColor      = GET_BOX_PROP(_BodyColor).rgb;
+                float3 bodyDarkColor  = GET_BOX_PROP(_BodyDarkColor).rgb;
+                float3 outlineColor   = GET_BOX_PROP(_OutlineColor).rgb;
+                float3 highlightColor = GET_BOX_PROP(_HighlightColor).rgb;
+                float  exitHighlight  = GET_BOX_PROP(_ExitHighlight);
+                float  dragHighlight  = GET_BOX_PROP(_DragHighlight);
+                float  iceAmount      = GET_BOX_PROP(_IceAmount);
+                float  lockAmount     = GET_BOX_PROP(_LockAmount);
+                float  lockOpen       = GET_BOX_PROP(_LockOpen);
+                float  lockWiggle     = GET_BOX_PROP(_LockWiggle);
+                float4 lockCenter     = GET_BOX_PROP(_LockCenter);
+                float  socketCountF   = GET_BOX_PROP(_SocketCount);
+                float  socketRadF     = GET_BOX_PROP(_SocketRadius);
+
                 // Isotropic block-local coordinates so circles and borders never stretch across non-square shapes
-                float2 q = (IN.uv - 0.5) * max(_LocalSize.xy, float2(0.25, 0.25));
+                float2 q = (IN.uv - 0.5) * max(localSize.xy, float2(0.25, 0.25));
                 float aa = 0.008;
 
                 // 1. Main Box Geometry (Front Face + 3D Lower Base Extrusion)
-                float dFrontBox = sdPolyomino(q, 0.0, _CornerRad);
-                float dBaseBox  = sdPolyomino(q + float2(0.0, _LipOffset), 0.0, _CornerRad);
+                float dFrontBox = sdPolyomino(q, 0.0, _CornerRad, rectCount, rect0, rect1);
+                float dBaseBox  = sdPolyomino(q + float2(0.0, _LipOffset), 0.0, _CornerRad, rectCount, rect0, rect1);
                 float dTotal    = min(dFrontBox, dBaseBox);
 
                 // Complete Silhouette
@@ -162,40 +253,40 @@ Shader "PuzzleGlass/CarrierBox"
                 if (totalAlpha < 0.002) discard;
 
                 // Sharper outer edge silhouette (brightens cleanly when exit-ready or actively dragged)
-                float activeGlow = saturate(max(_ExitHighlight, _DragHighlight));
-                float3 activeOutline = lerp(_OutlineColor.rgb, float3(0.99, 0.995, 1.0), activeGlow * 0.96);
+                float activeGlow = saturate(max(exitHighlight, dragHighlight));
+                float3 activeOutline = lerp(outlineColor, float3(0.99, 0.995, 1.0), activeGlow * 0.96);
                 float outlineWidth = _OutlineThickness + activeGlow * 0.018;
                 float innerSilhouetteMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dTotal);
                 float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
-                float3 skirtCol = lerp(_BodyDarkColor.rgb * 0.98, _BodyDarkColor.rgb * 0.76, saturate(1.0 - skirtDepth));
+                float3 skirtCol = lerp(bodyDarkColor * 0.98, bodyDarkColor * 0.76, saturate(1.0 - skirtDepth));
                 float3 col = lerp(activeOutline, skirtCol, innerSilhouetteMask);
 
                 // Front Box Frame (chunky bright colored rim above the 3D lower skirt + crisp specular top bevel)
                 float frontOuterMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dFrontBox);
                 float frontRimMask = frontOuterMask - (1.0 - smoothstep(-outlineWidth - 0.024 - aa, -outlineWidth - 0.024 + aa, dFrontBox));
-                float3 topFrameRGB = lerp(_BodyColor.rgb * 0.96, _BodyColor.rgb * 1.04, saturate(q.y * 0.35 + 0.55));
+                float3 topFrameRGB = lerp(bodyColor * 0.96, bodyColor * 1.04, saturate(q.y * 0.35 + 0.55));
                 col = lerp(col, topFrameRGB, frontOuterMask);
-                col = lerp(col, _HighlightColor.rgb, saturate(frontRimMask) * (0.56 + activeGlow * 0.34));
+                col = lerp(col, highlightColor, saturate(frontRimMask) * (0.56 + activeGlow * 0.34));
 
                 // 3. Deep 3D Recessed Tray Cavity with Sunken White Plate
-                float  dPlate    = sdPolyomino(q, _WallInset, _InnerRad);
+                float  dPlate    = sdPolyomino(q, _WallInset, _InnerRad, rectCount, rect0, rect1);
                 float  plateMask = 1.0 - smoothstep(-aa, aa, dPlate);
 
                 // Crisp inner wall rim catchlight just outside the cavity opening
                 float plateOuterRim = (1.0 - smoothstep(0.0, 0.020, dPlate)) * (1.0 - plateMask);
-                col = lerp(col, _HighlightColor.rgb, plateOuterRim * (0.44 + activeGlow * 0.24));
+                col = lerp(col, highlightColor, plateOuterRim * (0.44 + activeGlow * 0.24));
 
                 // Visible colored 3D back (top) and side inner walls descending down to the sunken white floor
-                float  dCavityFloor = sdPolyomino(q + float2(0.0, 0.044), _WallInset + 0.014, max(0.016, _InnerRad - 0.012));
+                float  dCavityFloor = sdPolyomino(q + float2(0.0, 0.044), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
                 float  floorMask    = (1.0 - smoothstep(-aa, aa, dCavityFloor)) * plateMask;
 
                 float  wallDropGrad = saturate(-dPlate / 0.052);
                 float  sideSlope    = saturate((dCavityFloor - dPlate) * 10.0);
-                float3 innerWallCol = lerp(_BodyDarkColor.rgb * 0.88, _BodyDarkColor.rgb * 0.62, wallDropGrad);
-                innerWallCol = lerp(innerWallCol, _BodyColor.rgb * 0.80, sideSlope * 0.24);
+                float3 innerWallCol = lerp(bodyDarkColor * 0.88, bodyDarkColor * 0.62, wallDropGrad);
+                innerWallCol = lerp(innerWallCol, bodyColor * 0.80, sideSlope * 0.24);
 
                 // Deep cast shadow across the upper & edge parts of the white floor so it feels deeply sunken inside the box
-                float  dDeepShadow  = sdPolyomino(q - float2(0.0, -0.056), _WallInset + 0.014, max(0.016, _InnerRad - 0.012));
+                float  dDeepShadow  = sdPolyomino(q - float2(0.0, -0.056), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
                 float  castBandMask = smoothstep(-0.024, 0.018, dDeepShadow);
                 float  edgeAO       = 1.0 - smoothstep(0.0, 0.075, -dCavityFloor);
                 float  floorShadowMix = saturate(max(castBandMask * 0.85, edgeAO * 0.72));
@@ -212,18 +303,27 @@ Shader "PuzzleGlass/CarrierBox"
                 float plateShadowMask = floorShadowMix;
 
                 // 4. Dynamic Gray Circular Sockets (1 to 16 sockets packed in _SockPair0.._SockPair7)
-                float2 socks[16];
-                socks[0]  = _SockPair0.xy; socks[1]  = _SockPair0.zw;
-                socks[2]  = _SockPair1.xy; socks[3]  = _SockPair1.zw;
-                socks[4]  = _SockPair2.xy; socks[5]  = _SockPair2.zw;
-                socks[6]  = _SockPair3.xy; socks[7]  = _SockPair3.zw;
-                socks[8]  = _SockPair4.xy; socks[9]  = _SockPair4.zw;
-                socks[10] = _SockPair5.xy; socks[11] = _SockPair5.zw;
-                socks[12] = _SockPair6.xy; socks[13] = _SockPair6.zw;
-                socks[14] = _SockPair7.xy; socks[15] = _SockPair7.zw;
+                float4 sp0 = GET_BOX_PROP(_SockPair0);
+                float4 sp1 = GET_BOX_PROP(_SockPair1);
+                float4 sp2 = GET_BOX_PROP(_SockPair2);
+                float4 sp3 = GET_BOX_PROP(_SockPair3);
+                float4 sp4 = GET_BOX_PROP(_SockPair4);
+                float4 sp5 = GET_BOX_PROP(_SockPair5);
+                float4 sp6 = GET_BOX_PROP(_SockPair6);
+                float4 sp7 = GET_BOX_PROP(_SockPair7);
 
-                int   sockCount   = clamp((int)round(_SocketCount), 1, 16);
-                float sockRad     = max(0.018, _SocketRadius);
+                float2 socks[16];
+                socks[0]  = sp0.xy; socks[1]  = sp0.zw;
+                socks[2]  = sp1.xy; socks[3]  = sp1.zw;
+                socks[4]  = sp2.xy; socks[5]  = sp2.zw;
+                socks[6]  = sp3.xy; socks[7]  = sp3.zw;
+                socks[8]  = sp4.xy; socks[9]  = sp4.zw;
+                socks[10] = sp5.xy; socks[11] = sp5.zw;
+                socks[12] = sp6.xy; socks[13] = sp6.zw;
+                socks[14] = sp7.xy; socks[15] = sp7.zw;
+
+                int   sockCount   = clamp((int)round(socketCountF), 1, 16);
+                float sockRad     = max(0.018, socketRadF);
                 float dSock       = 1e5;
                 float2 nearestSockPos = float2(0.0, 0.0);
 
@@ -278,23 +378,23 @@ Shader "PuzzleGlass/CarrierBox"
                 col = lerp(col, sockRGB, sockMask * plateMask);
 
                 // 4b. Kilitli blok: beyaz plaka bloğun kendi renginde bir kapakla kapanır, ortasında düz beyaz asma kilit
-                if (_LockAmount > 0.001)
+                if (lockAmount > 0.001)
                 {
-                    float la = saturate(_LockAmount);
-                    float3 lidCol   = lerp(_BodyColor.rgb, float3(1.0, 1.0, 1.0), 0.30);
-                    float3 lidShade = lerp(_BodyColor.rgb, float3(1.0, 1.0, 1.0), 0.08);
+                    float la = saturate(lockAmount);
+                    float3 lidCol   = lerp(bodyColor, float3(1.0, 1.0, 1.0), 0.30);
+                    float3 lidShade = lerp(bodyColor, float3(1.0, 1.0, 1.0), 0.08);
                     float3 lid = lerp(lidCol, lidShade, plateShadowMask);
 
                     // Kilit simgesi (dönme + ölçek)
-                    float gs = max(0.2, _LockCenter.z);
-                    float2 p = (q - _LockCenter.xy) / gs;
-                    float ca = cos(_LockWiggle), sa = sin(_LockWiggle);
+                    float gs = max(0.2, lockCenter.z);
+                    float2 p = (q - lockCenter.xy) / gs;
+                    float ca = cos(lockWiggle), sa = sin(lockWiggle);
                     p = float2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y);
 
                     float2 bp = p - float2(0.0, -0.050);
                     float dBody = sdRoundBox(bp, float2(0.135, 0.105), 0.050);
 
-                    float2 sp = p - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075);
+                    float2 sp = p - float2(0.0, 0.050 + saturate(lockOpen) * 0.075);
                     float dRing = abs(length(sp) - 0.078) - 0.026;
                     float dLeg = max(abs(abs(sp.x) - 0.078) - 0.026, abs(sp.y + 0.05) - 0.05);
                     float dShackle = sp.y >= 0.0 ? dRing : dLeg;
@@ -307,8 +407,8 @@ Shader "PuzzleGlass/CarrierBox"
                     float2 shp = p + float2(0.0, 0.020);
                     float2 sbp = shp - float2(0.0, -0.050);
                     float dShadow = min(sdRoundBox(sbp, float2(0.135, 0.105), 0.050),
-                                        (shp - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075)).y >= 0.0
-                                            ? abs(length(shp - float2(0.0, 0.050 + saturate(_LockOpen) * 0.075)) - 0.078) - 0.026
+                                        (shp - float2(0.0, 0.050 + saturate(lockOpen) * 0.075)).y >= 0.0
+                                            ? abs(length(shp - float2(0.0, 0.050 + saturate(lockOpen) * 0.075)) - 0.078) - 0.026
                                             : 1.0);
                     float shadowMask = 1.0 - smoothstep(-aaG * 2.0, aaG * 2.0, dShadow);
 
@@ -319,17 +419,17 @@ Shader "PuzzleGlass/CarrierBox"
 
                     float3 glyphCol = _PlateColor.rgb;
                     float3 lockLayer = lid;
-                    lockLayer = lerp(lockLayer, _BodyDarkColor.rgb, shadowMask * 0.45);
+                    lockLayer = lerp(lockLayer, bodyDarkColor, shadowMask * 0.45);
                     lockLayer = lerp(lockLayer, glyphCol, glyphMask);
-                    lockLayer = lerp(lockLayer, _BodyDarkColor.rgb, holeMask);
+                    lockLayer = lerp(lockLayer, bodyDarkColor, holeMask);
 
                     col = lerp(col, lockLayer, plateMask * la);
                 }
 
                 // 5. Optional Stylized Frozen Ice Cap Overlay (_IceAmount = 0..1)
-                if (_IceAmount > 0.001)
+                if (iceAmount > 0.001)
                 {
-                    float iceAmt = saturate(_IceAmount);
+                    float iceAmt = saturate(iceAmount);
                     float3 iceOutline = float3(0.14, 0.46, 0.78);
                     float3 iceBaseDark = float3(0.18, 0.56, 0.88);
                     float3 iceBody = float3(0.32, 0.78, 0.98);

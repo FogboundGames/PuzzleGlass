@@ -148,6 +148,17 @@ namespace PuzzleGlass
                 .OnComplete(() => { if (bodyMaterial != null) bodyMaterial.SetFloat(LockWiggleId, 0f); });
         }
 
+        /// <summary>Kilitli bloğa dokunulunca kilit simgesi MaterialPropertyBlock üzerinden sallanır (GPU Instancing uyumlu).</summary>
+        public static void PlayLockWiggle(MonsterCharacter box)
+        {
+            if (box == null) return;
+            DOTween.Kill(box, true);
+            float w = 0f;
+            DOTween.To(() => w, v => { w = v; if (box != null) box.SetLockWiggle(Mathf.Sin(v * Mathf.PI * 5f) * 0.32f * (1f - v)); }, 1f, 0.42f)
+                .SetTarget(box).SetLink(box.gameObject)
+                .OnComplete(() => { if (box != null) box.SetLockWiggle(0f); });
+        }
+
         // ==================== Kilit açma ====================
 
         /// <summary>
@@ -238,6 +249,43 @@ namespace PuzzleGlass
                 onDone?.Invoke();
             });
             if (link != null) seq.SetLink(link);
+        }
+
+        /// <summary>
+        /// Kilidin açılması (GPU Instancing / MaterialPropertyBlock üzerinden):
+        /// tüm bloklar tek materyali paylaşırken kilit açılma animasyonunu bu blok için oynatır.
+        /// </summary>
+        public static void PlayUnlock(MonsterCharacter box, Vector3 lockWorldPos, Color celebrateColor, Action onDone)
+        {
+            if (box == null)
+            {
+                onDone?.Invoke();
+                return;
+            }
+
+            Vector4 center = box.LockCenterValue;
+            float baseScale = center.z > 0.01f ? center.z : 1f;
+
+            Sequence seq = DOTween.Sequence();
+            seq.Append(DOTween.To(() => box.LockOpenValue, v => { if (box != null) box.SetLockOpen(v); }, 1f, 0.14f).SetEase(Ease.OutBack));
+            seq.AppendCallback(() =>
+            {
+                PuzzleSoundManager.Instance?.PlayUnlock();
+                BlockClearCelebration.Play(lockWorldPos, celebrateColor, 0.75f);
+            });
+            seq.Append(DOTween.To(() => baseScale, v => { if (box != null) box.SetLockGlyphScale(v); }, baseScale * 1.25f, 0.30f).SetEase(Ease.OutQuad));
+            seq.Join(DOTween.To(() => box.LockAmountValue, v => { if (box != null) box.SetLockAmount(v); }, 0f, 0.30f).SetEase(Ease.InQuad));
+            seq.OnComplete(() =>
+            {
+                if (box != null)
+                {
+                    box.SetLockOpen(0f);
+                    box.SetLockGlyphScale(baseScale);
+                    box.SetLockAmount(0f);
+                }
+                onDone?.Invoke();
+            });
+            seq.SetLink(box.gameObject);
         }
     }
 }

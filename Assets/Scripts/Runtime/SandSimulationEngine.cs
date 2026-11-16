@@ -140,6 +140,12 @@ namespace PuzzleGlass
         private Material _backgroundMaterial;
         private readonly List<Matrix4x4> _backgroundBatch = new List<Matrix4x4>(1024);
 
+        // Pillar 3: Event-driven dirty flags for grain settling & matrix batch caching
+        private bool _gridFlowDirty = true;
+        private bool _matricesDirty = true;
+        private Matrix4x4 _lastLocalToWorld = Matrix4x4.identity;
+        private float _lastParticleSize = -1f;
+
         private void Awake()
         {
             Instance = this;
@@ -221,6 +227,8 @@ namespace PuzzleGlass
                     _particles[i] = p;
                 }
             }
+            _gridFlowDirty = true;
+            _matricesDirty = true;
         }
 
         public void SetSpoutGate(bool open)
@@ -244,6 +252,8 @@ namespace PuzzleGlass
             _cellGrains = null;
             _lockRow = -1;
             sandAmount = 0;
+            _gridFlowDirty = true;
+            _matricesDirty = true;
             OnAllSandCleared?.Invoke();
         }
 
@@ -361,6 +371,8 @@ namespace PuzzleGlass
             sandAmount = _particles.Count;
             particleSize = _cellSpacing;
             simulationMode = SandSimulationMode.StaticImage;
+            _gridFlowDirty = true;
+            _matricesDirty = true;
             ApplySectionLock();
             OnSandRebuilt?.Invoke();
         }
@@ -387,6 +399,8 @@ namespace PuzzleGlass
         public void UnlockSection()
         {
             _lockRow = -1;
+            _gridFlowDirty = true;
+            _matricesDirty = true;
         }
 
         /// <summary>
@@ -550,6 +564,8 @@ namespace PuzzleGlass
                 p.fillDelay = (float)i / _particles.Count * totalDuration;
                 _particles[i] = p;
             }
+            _gridFlowDirty = true;
+            _matricesDirty = true;
         }
 
         /// <summary>
@@ -583,6 +599,8 @@ namespace PuzzleGlass
                 released.depthZ = -0.18f;
                 _particles[index] = released;
                 _cellGrains[cell] = -1;
+                _gridFlowDirty = true;
+                _matricesDirty = true;
                 return true;
             }
 
@@ -591,18 +609,21 @@ namespace PuzzleGlass
 
         private void StepGrainFlow(float dt)
         {
-            if (_cellGrains == null) return;
+            if (_cellGrains == null || _particles.Count == 0) return;
+            if (!_gridFlowDirty) return;
 
+            bool settledMoved = false;
             _settleTimer += dt;
             if (_settleTimer >= settleStepInterval)
             {
                 _settleTimer = 0f;
-                SettleGrainsOneStep();
+                settledMoved = SettleGrainsOneStep();
             }
 
             float spoutX = GetSpoutCenterX();
             Vector2 funnelMouth = new Vector2(spoutX, _floorY);
             Vector2 exit = new Vector2(spoutX, glassContainer.spoutBottomY - 0.06f);
+            bool anyActiveMotion = settledMoved;
 
             for (int i = 0; i < _particles.Count; i++)
             {
@@ -611,6 +632,7 @@ namespace PuzzleGlass
 
                 if (p.isFilling)
                 {
+                    anyActiveMotion = true;
                     p.fillDelay -= dt;
                     if (p.fillDelay <= 0f)
                     {
@@ -620,6 +642,7 @@ namespace PuzzleGlass
                 }
                 else if (p.isFlowing)
                 {
+                    anyActiveMotion = true;
                     Vector2 target = p.position.y > funnelMouth.y + 0.01f ? funnelMouth : exit;
                     p.position = Vector2.MoveTowards(p.position, target, flowGrainSpeed * dt);
 
@@ -632,19 +655,34 @@ namespace PuzzleGlass
                         continue;
                     }
                 }
+                else if (p.position != p.staticHomePos)
+                {
+                    anyActiveMotion = true;
+                    p.position = Vector2.MoveTowards(p.position, p.staticHomePos, settleGrainSpeed * dt);
+                }
                 else
                 {
-                    p.position = Vector2.MoveTowards(p.position, p.staticHomePos, settleGrainSpeed * dt);
+                    continue;
                 }
 
                 _particles[i] = p;
             }
+
+            if (anyActiveMotion)
+            {
+                _matricesDirty = true;
+            }
+            else
+            {
+                _gridFlowDirty = false;
+            }
         }
 
         // Taneler boşalan hücrelere önce düz aşağı, olmazsa çapraz aşağı kayar; görsel böylece bozulmadan iner
-        private void SettleGrainsOneStep()
+        private bool SettleGrainsOneStep()
         {
             _settleTick++;
+            bool anyMoved = false;
 
             int rowLimit = HasLockedSection ? _lockRow : _rows;
             for (int row = 1; row < rowLimit; row++)
@@ -656,11 +694,12 @@ namespace PuzzleGlass
                     if (grain < 0 || _particles[grain].isFilling) continue;
 
                     int side = ((_settleTick + col + row) & 1) == 0 ? 1 : -1;
-                    if (TryMoveGrain(grain, cell, col, row - 1)) continue;
-                    if (TryMoveGrain(grain, cell, col + side, row - 1)) continue;
-                    TryMoveGrain(grain, cell, col - side, row - 1);
+                    if (TryMoveGrain(grain, cell, col, row - 1)) { anyMoved = true; continue; }
+                    if (TryMoveGrain(grain, cell, col + side, row - 1)) { anyMoved = true; continue; }
+                    if (TryMoveGrain(grain, cell, col - side, row - 1)) { anyMoved = true; }
                 }
             }
+            return anyMoved;
         }
 
         private bool TryMoveGrain(int grain, int fromCell, int col, int row)
@@ -952,40 +991,51 @@ namespace PuzzleGlass
             if (_particles == null || _particles.Count == 0 || _particleMesh == null) return;
             EnsureMeshAndMaterials();
 
-            // Renk gruplarını temizle
-            foreach (var kvp in _batches)
-            {
-                kvp.Value.Clear();
-            }
-            _backgroundBatch.Clear();
-
-            Vector3 scale = Vector3.one * (particleSize / 0.16f);
-
             // Parçacık konumları cam haznenin yerel uzayında tutulur
             Matrix4x4 localToWorld = glassContainer != null ? glassContainer.transform.localToWorldMatrix : Matrix4x4.identity;
+            bool isDynamic = (Application.isPlaying && simulationMode == SandSimulationMode.DynamicPhysics) ||
+                             (!Application.isPlaying && simulationMode == SandSimulationMode.Preview);
+            bool needRebuild = isDynamic || _matricesDirty || localToWorld != _lastLocalToWorld || !Mathf.Approximately(particleSize, _lastParticleSize);
 
-            // Matrisleri hazırla
-            for (int i = 0; i < _particles.Count; i++)
+            if (needRebuild)
             {
-                var p = _particles[i];
-                if (p.isDraining || (p.isFilling && p.fillDelay > 0f)) continue;
+                _matricesDirty = false;
+                _lastLocalToWorld = localToWorld;
+                _lastParticleSize = particleSize;
 
-                Vector3 pos = new Vector3(p.position.x, p.position.y, p.depthZ);
-                Quaternion rot = Quaternion.Euler(0f, 0f, p.angle);
-                Matrix4x4 m = localToWorld * Matrix4x4.TRS(pos, rot, scale);
+                // Renk gruplarını temizle
+                foreach (var kvp in _batches)
+                {
+                    kvp.Value.Clear();
+                }
+                _backgroundBatch.Clear();
 
-                if (p.isBackground)
+                Vector3 scale = Vector3.one * (particleSize / 0.16f);
+
+                // Matrisleri hazırla
+                for (int i = 0; i < _particles.Count; i++)
                 {
-                    _backgroundBatch.Add(m);
+                    var p = _particles[i];
+                    if (p.isDraining || (p.isFilling && p.fillDelay > 0f)) continue;
+
+                    Vector3 pos = new Vector3(p.position.x, p.position.y, p.depthZ);
+                    Quaternion rot = Quaternion.Euler(0f, 0f, p.angle);
+                    Matrix4x4 m = localToWorld * Matrix4x4.TRS(pos, rot, scale);
+
+                    if (p.isBackground)
+                    {
+                        _backgroundBatch.Add(m);
+                    }
+                    else if (_batches.TryGetValue(p.color, out var list))
+                    {
+                        list.Add(m);
+                    }
                 }
-                else if (_batches.TryGetValue(p.color, out var list))
-                {
-                    list.Add(m);
-                }
+
+                CollectLockBarrier(localToWorld);
             }
 
             // Her renk grubunu DrawMeshInstanced ile GPU'ya gönder (maksimum 1023'lük dilimler)
-            CollectLockBarrier(localToWorld);
             DrawBatch(_backgroundMaterial, _backgroundBatch);
             DrawBatch(_lockBarrierMaterial, _lockBarrierBatch);
             foreach (var kvp in _batches)

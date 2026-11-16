@@ -587,6 +587,13 @@ namespace PuzzleGlass.Editor.Studio
             lvl.boxFrameColor = from.boxFrameColor;
             lvl.boxFrameHighlightColor = from.boxFrameHighlightColor;
             lvl.boxFrameEdgeShadeColor = from.boxFrameEdgeShadeColor;
+            lvl.useBallFeedTubes = from.useBallFeedTubes;
+            lvl.feedTubeMode = from.feedTubeMode;
+            lvl.feedTubeContainerLimit = from.feedTubeContainerLimit;
+            lvl.feedTubeQueueVisibleCount = from.feedTubeQueueVisibleCount;
+            lvl.feedTubeWidthMultiplier = from.feedTubeWidthMultiplier;
+            lvl.feedTubeAnchorSpread = from.feedTubeAnchorSpread;
+            lvl.feedTubeDropInterval = from.feedTubeDropInterval;
             lvl.levelName = from.levelName;
             lvl.tutorialHint = from.tutorialHint;
             lvl.tutorialBlockIndex = -1; // içerik değişti, ipucu yeniden alınmalı

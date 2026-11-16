@@ -113,8 +113,8 @@ Material:
     - _SingleIndirectColor: 0
     - _SpecularMapType: 0
     - _SpecularRoughness: 0.5
-    - _SpecularToonSize: 0.12
-    - _SpecularToonSmoothness: 0.22
+    - _SpecularToonSize: 0.1
+    - _SpecularToonSmoothness: 0.4
     - _SpecularType: 1
     - _SrcBlend: 1
     - _UseAlphaTest: 0
@@ -135,12 +135,12 @@ Material:
     m_Colors:
     - _BaseColor: {r: 0.58, g: 0.62, b: 0.7, a: 1}
     - _EmissionColor: {r: 1, g: 1, b: 0, a: 1}
-    - _HColor: {r: 0.95, g: 0.94, b: 0.92, a: 1}
+    - _HColor: {r: 0.98, g: 0.97, b: 0.95, a: 1}
     - _MatCapColor: {r: 1, g: 1, b: 1, a: 1}
     - _OutlineColor: {r: 0, g: 0, b: 0, a: 1}
     - _ReflectionColor: {r: 1, g: 1, b: 1, a: 1}
-    - _RimColor: {r: 0.09, g: 0.1, b: 0.13, a: 1}
-    - _SColor: {r: 0.74, g: 0.77, b: 0.86, a: 1}
-    - _SpecularColor: {r: 0.08, g: 0.08, b: 0.1, a: 1}
+    - _RimColor: {r: 0.07, g: 0.08, b: 0.1, a: 1}
+    - _SColor: {r: 0.78, g: 0.74, b: 0.68, a: 1}
+    - _SpecularColor: {r: 0.06, g: 0.06, b: 0.08, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

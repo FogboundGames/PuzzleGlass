@@ -52,6 +52,34 @@ namespace PuzzleGlass
         private readonly Dictionary<string, ActiveMonsterStream> _activeStreams = new Dictionary<string, ActiveMonsterStream>();
         private readonly List<BallPhysicsController> _attractingBalls = new List<BallPhysicsController>();
 
+        // Pillar 1 & 3: Centralized GPU squash list + Dirty-flagged spatial bottom-candidate cache (0 GC, O(N) instead of O(N^2))
+        private readonly List<BallPhysicsController> _squashingBalls = new List<BallPhysicsController>(64);
+        private readonly List<BallPhysicsController> _bottomCandidatesCache = new List<BallPhysicsController>(32);
+        private readonly List<string> _keysToRemoveCache = new List<string>(8);
+        private readonly List<MonsterCharacter> _idleGridToPauseCache = new List<MonsterCharacter>(8);
+
+        private const int SpatialBucketCount = 64;
+        private const int SpatialBucketHalf = 32;
+        private readonly int[] _colBucketHead = new int[SpatialBucketCount];
+        private int[] _colBucketNext = new int[256];
+        private Vector3[] _cachedLocalPos = new Vector3[256];
+        private bool _ballFieldDirty = true;
+        private float _lastBallFieldRebuildTime = -10f;
+
+        public void MarkBallFieldDirty()
+        {
+            _ballFieldDirty = true;
+        }
+
+        public void RegisterSquashingBall(BallPhysicsController ball)
+        {
+            if (ball == null) return;
+            if (!_squashingBalls.Contains(ball))
+            {
+                _squashingBalls.Add(ball);
+            }
+        }
+
         public event Action<BallPhysicsController, MonsterCharacter> OnBallCollected;
         public event Action OnAllMatchingBallsCollected;
 
@@ -68,6 +96,8 @@ namespace PuzzleGlass
 
         private void Update()
         {
+            StepSquashingBalls(Time.deltaTime);
+
             // If SandSimulation is actively running with sand grains (and no physical balls), yield to sand engine
             if (SandSimulationEngine.Instance != null && SandSimulationEngine.Instance.enabled && SandSimulationEngine.Instance.sandAmount > 0)
             {
@@ -77,6 +107,28 @@ namespace PuzzleGlass
 
             AutoActivateMatchingTopEdgeBlocks();
             PollSlottedMonsters();
+        }
+
+        private void StepSquashingBalls(float dt)
+        {
+            for (int i = _squashingBalls.Count - 1; i >= 0; i--)
+            {
+                var ball = _squashingBalls[i];
+                if (ball == null || !ball.IsGpuSquashing || !ball.gameObject.activeInHierarchy)
+                {
+                    int last = _squashingBalls.Count - 1;
+                    if (i != last) _squashingBalls[i] = _squashingBalls[last];
+                    _squashingBalls.RemoveAt(last);
+                    continue;
+                }
+                ball.StepGpuVisualSquash(dt);
+                if (!ball.IsGpuSquashing)
+                {
+                    int last = _squashingBalls.Count - 1;
+                    if (i != last) _squashingBalls[i] = _squashingBalls[last];
+                    _squashingBalls.RemoveAt(last);
+                }
+            }
         }
 
         /// <summary>
@@ -114,8 +166,37 @@ namespace PuzzleGlass
 
         private void FixedUpdate()
         {
+            StepAllBallPhysics();
             UpdateAttractionPhysics();
             ApplyFloorDriftTowardHungryMonsters();
+        }
+
+        private void StepAllBallPhysics()
+        {
+            if (BallObjectPool.Instance == null) return;
+            var activeBalls = BallObjectPool.Instance.ActiveBalls;
+            if (activeBalls == null || activeBalls.Count == 0) return;
+
+            float fixedDt = Time.fixedDeltaTime;
+            bool anyAwakeMoving = false;
+            for (int i = 0; i < activeBalls.Count; i++)
+            {
+                var b = activeBalls[i];
+                if (b == null) continue;
+                b.StepBallPhysics(fixedDt);
+                if (!anyAwakeMoving && b.state == BallState.InContainer && b.rb != null && !b.rb.isKinematic && !b.rb.IsSleeping())
+                {
+                    if (b.rb.linearVelocity.sqrMagnitude > 0.0025f)
+                    {
+                        anyAwakeMoving = true;
+                    }
+                }
+            }
+
+            if (anyAwakeMoving)
+            {
+                _ballFieldDirty = true;
+            }
         }
 
         /// <summary>
@@ -192,21 +273,20 @@ namespace PuzzleGlass
         private void PollSlottedMonsters()
         {
             // Remove any streams whose block was detached, completed or hidden
-            List<string> keysToRemove = null;
+            _keysToRemoveCache.Clear();
             foreach (var kvp in _activeStreams)
             {
                 var s = kvp.Value;
                 if (s.monster == null || !s.monster.IsActivelyCollecting)
                 {
-                    if (keysToRemove == null) keysToRemove = new List<string>();
-                    keysToRemove.Add(kvp.Key);
+                    _keysToRemoveCache.Add(kvp.Key);
                 }
             }
-            if (keysToRemove != null)
+            if (_keysToRemoveCache.Count > 0)
             {
-                for (int i = 0; i < keysToRemove.Count; i++)
+                for (int i = 0; i < _keysToRemoveCache.Count; i++)
                 {
-                    _activeStreams.Remove(keysToRemove[i]);
+                    _activeStreams.Remove(_keysToRemoveCache[i]);
                 }
             }
 
@@ -271,7 +351,7 @@ namespace PuzzleGlass
             }
 
             // Pause any in-grid stream that has no balls in flight and no reachable matching balls in its own columns
-            List<MonsterCharacter> idleGridToPause = null;
+            _idleGridToPauseCache.Clear();
             foreach (var kvp in _activeStreams)
             {
                 var s = kvp.Value;
@@ -289,16 +369,15 @@ namespace PuzzleGlass
                     (now - s.lastCollectionTime) > 0.45f &&
                     !HasReachableBottomBallForColor(s.monster.colorType, s.monster))
                 {
-                    if (idleGridToPause == null) idleGridToPause = new List<MonsterCharacter>();
-                    idleGridToPause.Add(s.monster);
+                    _idleGridToPauseCache.Add(s.monster);
                 }
             }
 
-            if (idleGridToPause != null)
+            if (_idleGridToPauseCache.Count > 0)
             {
-                for (int i = 0; i < idleGridToPause.Count; i++)
+                for (int i = 0; i < _idleGridToPauseCache.Count; i++)
                 {
-                    idleGridToPause[i].PauseInGridCollection();
+                    _idleGridToPauseCache[i].PauseInGridCollection();
                 }
             }
         }
@@ -350,11 +429,45 @@ namespace PuzzleGlass
 
         private List<BallPhysicsController> CollectBottomCandidates()
         {
-            List<BallPhysicsController> bottomCandidates = new List<BallPhysicsController>();
-            if (BallObjectPool.Instance == null) return bottomCandidates;
+            if (BallObjectPool.Instance == null)
+            {
+                _bottomCandidatesCache.Clear();
+                return _bottomCandidatesCache;
+            }
+
+            if (BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.IsPouringOrSettling)
+            {
+                _bottomCandidatesCache.Clear();
+                return _bottomCandidatesCache;
+            }
 
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
-            if (activeBalls == null || activeBalls.Count == 0) return bottomCandidates;
+            if (activeBalls == null || activeBalls.Count == 0)
+            {
+                _bottomCandidatesCache.Clear();
+                _ballFieldDirty = false;
+                return _bottomCandidatesCache;
+            }
+
+            // If cached bottom candidates are clean and still valid in container, reuse in O(1)
+            if (!_ballFieldDirty && Time.time - _lastBallFieldRebuildTime < 0.20f)
+            {
+                bool cacheValid = true;
+                for (int k = 0; k < _bottomCandidatesCache.Count; k++)
+                {
+                    var cb = _bottomCandidatesCache[k];
+                    if (cb == null || cb.state != BallState.InContainer || !cb.gameObject.activeInHierarchy)
+                    {
+                        cacheValid = false;
+                        break;
+                    }
+                }
+                if (cacheValid) return _bottomCandidatesCache;
+            }
+
+            _ballFieldDirty = false;
+            _lastBallFieldRebuildTime = Time.time;
+            _bottomCandidatesCache.Clear();
 
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
@@ -367,72 +480,105 @@ namespace PuzzleGlass
             // Maximum local Y center for a ball resting at the bottom of its column with no ball underneath it
             float maxBottomFloorCenterLocalY = floorLocalY + ballDiam * 1.15f;
 
-            for (int i = 0; i < activeBalls.Count; i++)
+            int activeCount = activeBalls.Count;
+            if (_colBucketNext.Length < activeCount)
+            {
+                int newCap = Mathf.NextPowerOfTwo(activeCount);
+                _colBucketNext = new int[newCap];
+                _cachedLocalPos = new Vector3[newCap];
+            }
+
+            System.Array.Fill(_colBucketHead, -1);
+            float cellW = Mathf.Max(0.05f, ballDiam * 0.90f);
+            bool hasContainer = container != null;
+            Transform containerTr = hasContainer ? container.transform : null;
+
+            // Pass 1 (O(N)): Transform & bucket ONLY balls inside the bottom floor band into 1D spatial X-columns
+            for (int i = 0; i < activeCount; i++)
             {
                 var b = activeBalls[i];
                 if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
 
-                if (b.rb != null && !b.rb.isKinematic && Mathf.Abs(b.rb.linearVelocity.y) > 1.35f)
-                    continue;
-
-                Vector3 bLocal = (container != null)
-                    ? container.transform.InverseTransformPoint(b.transform.position)
+                Vector3 bLocal = hasContainer
+                    ? containerTr.InverseTransformPoint(b.transform.position)
                     : b.transform.position;
+                _cachedLocalPos[i] = bLocal;
 
-                if (bLocal.y > maxBottomFloorCenterLocalY)
-                    continue;
+                if (bLocal.y > maxBottomFloorCenterLocalY) continue;
 
-                bool blockedByShelf = false;
-                if (container != null && container.dividers != null)
+                int col = Mathf.Clamp(Mathf.FloorToInt(bLocal.x / cellW) + SpatialBucketHalf, 0, SpatialBucketCount - 1);
+                _colBucketNext[i] = _colBucketHead[col];
+                _colBucketHead[col] = i;
+            }
+
+            // Pass 2 (O(N)): Evaluate each bottom-band ball against ONLY adjacent spatial X-columns (col-1..col+1)
+            for (int col = 0; col < SpatialBucketCount; col++)
+            {
+                int i = _colBucketHead[col];
+                while (i != -1)
                 {
-                    for (int d = 0; d < container.dividers.Count; d++)
+                    var b = activeBalls[i];
+                    if (b.rb == null || b.rb.isKinematic || Mathf.Abs(b.rb.linearVelocity.y) <= 1.35f)
                     {
-                        var div = container.dividers[d];
-                        if (div == null || !div.enabled || div.runtimeIsOpened || div.mechanicType != DividerMechanicType.StaticGlass)
-                            continue;
-                        if (Mathf.Abs(div.angleDegrees) < 55f)
+                        Vector3 bLocal = _cachedLocalPos[i];
+
+                        bool blockedByShelf = false;
+                        if (hasContainer && container.dividers != null)
                         {
-                            float halfSpanX = div.length * 0.5f;
-                            if (bLocal.y > div.center.y - 0.02f && Mathf.Abs(bLocal.x - div.center.x) <= halfSpanX)
+                            for (int d = 0; d < container.dividers.Count; d++)
                             {
-                                blockedByShelf = true;
-                                break;
+                                var div = container.dividers[d];
+                                if (div == null || !div.enabled || div.runtimeIsOpened || div.mechanicType != DividerMechanicType.StaticGlass)
+                                    continue;
+                                if (Mathf.Abs(div.angleDegrees) < 55f)
+                                {
+                                    float halfSpanX = div.length * 0.5f;
+                                    if (bLocal.y > div.center.y - 0.02f && Mathf.Abs(bLocal.x - div.center.x) <= halfSpanX)
+                                    {
+                                        blockedByShelf = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!blockedByShelf)
+                        {
+                            bool blockedFromBelow = false;
+                            int minC = Mathf.Max(0, col - 1);
+                            int maxC = Mathf.Min(SpatialBucketCount - 1, col + 1);
+                            for (int nc = minC; nc <= maxC && !blockedFromBelow; nc++)
+                            {
+                                int j = _colBucketHead[nc];
+                                while (j != -1)
+                                {
+                                    if (j != i)
+                                    {
+                                        Vector3 oLocal = _cachedLocalPos[j];
+                                        float dy = bLocal.y - oLocal.y;
+                                        float dx = Mathf.Abs(bLocal.x - oLocal.x);
+                                        if (dy > ballRad * 0.35f && dx < ballDiam * 0.85f &&
+                                            ArePositionsInSameBottomCompartment(container, bLocal.x, oLocal.x, floorLocalY + ballRad))
+                                        {
+                                            blockedFromBelow = true;
+                                            break;
+                                        }
+                                    }
+                                    j = _colBucketNext[j];
+                                }
+                            }
+
+                            if (!blockedFromBelow)
+                            {
+                                _bottomCandidatesCache.Add(b);
                             }
                         }
                     }
-                }
-                if (blockedByShelf) continue;
-
-                bool blockedFromBelow = false;
-                for (int j = 0; j < activeBalls.Count; j++)
-                {
-                    if (i == j) continue;
-                    var other = activeBalls[j];
-                    if (other == null || other.state != BallState.InContainer || !other.gameObject.activeInHierarchy) continue;
-
-                    Vector3 oLocal = (container != null)
-                        ? container.transform.InverseTransformPoint(other.transform.position)
-                        : other.transform.position;
-
-                    if (!ArePositionsInSameBottomCompartment(container, bLocal.x, oLocal.x, floorLocalY + ballRad))
-                        continue;
-
-                    float dy = bLocal.y - oLocal.y;
-                    float dx = Mathf.Abs(bLocal.x - oLocal.x);
-                    if (dy > ballRad * 0.35f && dx < ballDiam * 0.85f)
-                    {
-                        blockedFromBelow = true;
-                        break;
-                    }
-                }
-
-                if (!blockedFromBelow)
-                {
-                    bottomCandidates.Add(b);
+                    i = _colBucketNext[i];
                 }
             }
 
-            return bottomCandidates;
+            return _bottomCandidatesCache;
         }
 
         /// <summary>
@@ -699,7 +845,8 @@ namespace PuzzleGlass
 
         public void CheckLevelCompletion()
         {
-            if (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls.Count == 0)
+            bool hasPendingTubeBalls = BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.HasPendingBalls;
+            if (!hasPendingTubeBalls && BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls.Count == 0)
             {
                 OnAllMatchingBallsCollected?.Invoke();
             }
@@ -724,7 +871,7 @@ namespace PuzzleGlass
                 for (int i = 0; i < active.Count; i++)
                 {
                     var b = active[i];
-                    if (b != null && b.gameObject.activeInHierarchy && b.state != BallState.InContainer && b.state != BallState.Pooled)
+                    if (b != null && b.gameObject.activeInHierarchy && b.state != BallState.InContainer && b.state != BallState.InFeedTube && b.state != BallState.Pooled)
                         return true;
                     if (b != null && b.gameObject.activeInHierarchy && b.rb != null && !b.rb.isKinematic && b.rb.linearVelocity.sqrMagnitude > 0.15f)
                         return true;
@@ -742,6 +889,10 @@ namespace PuzzleGlass
         {
             _attractingBalls.Clear();
             _activeStreams.Clear();
+            _squashingBalls.Clear();
+            _bottomCandidatesCache.Clear();
+            _ballFieldDirty = true;
+            _lastBallFieldRebuildTime = -10f;
             _totalCollectedThisLevel = 0;
             _lastGlobalCollectionTime = -10f;
             _levelStartTime = Time.time;

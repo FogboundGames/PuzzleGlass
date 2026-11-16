@@ -49,12 +49,10 @@ namespace PuzzleGlass
         public bool isLevelFailed = false;
         public ShapePatternType activePatternType = ShapePatternType.GumballMix;
 
-        [Header("Combo / Fever Mode & Shake Mechanic")]
+        [Header("Combo / Fever Mode")]
         public int comboStreak = 0;
         public float feverRemainingTime = 0f;
         public bool IsFeverActive => feverRemainingTime > 0f;
-        public int maxShakesPerLevel = 3;
-        public int remainingShakes = 3;
 
         [Tooltip("Bu levelde yapılan hamle sayısı (blok başka hücreye taşındığında artar). HUD'da gösterilir.")]
         public int moveCount = 0;
@@ -403,7 +401,6 @@ namespace PuzzleGlass
                 if (kb.digit3Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
                 if (kb.digit4Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
                 if (kb.digit5Key.wasPressedThisFrame) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
-                if (kb.sKey.wasPressedThisFrame || kb.tKey.wasPressedThisFrame) TryShakeContainer();
                 if (kb.rKey.wasPressedThisFrame) RestartCurrentPattern();
                 if (kb.nKey.wasPressedThisFrame) LoadNextLevel();
             }
@@ -413,7 +410,6 @@ namespace PuzzleGlass
             if (Input.GetKeyDown(KeyCode.Alpha3)) SetupPixelArtPatternScenario(PixelArtPreset.Mushroom);
             if (Input.GetKeyDown(KeyCode.Alpha4)) SetupPixelArtPatternScenario(PixelArtPreset.Bee);
             if (Input.GetKeyDown(KeyCode.Alpha5)) SetupPixelArtPatternScenario(PixelArtPreset.OctopusSkull);
-            if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.T)) TryShakeContainer();
             if (Input.GetKeyDown(KeyCode.R)) RestartCurrentPattern();
             if (Input.GetKeyDown(KeyCode.N)) LoadNextLevel();
 #endif
@@ -547,7 +543,6 @@ namespace PuzzleGlass
             if (Application.isPlaying) StartCoroutine(BeginTutorialNextFrame(levelData));
             comboStreak = 0;
             feverRemainingTime = 0f;
-            remainingShakes = Mathf.Max(1, maxShakesPerLevel);
             moveCount = 0;
 
             int foundIdx = levels != null ? levels.IndexOf(levelData) : -1;
@@ -677,6 +672,17 @@ namespace PuzzleGlass
                     // Havuz camlarında şişe kulpları çizilmez
                     if (glassContainer.IsPoolShape) glassContainer.showShoulderHandles = false;
                 }
+
+                // Per-level top curved glass feed tubes (controlled from Cam Stüdyosu / Level Stüdyosu)
+                glassContainer.useBallFeedTubes = levelData.useBallFeedTubes;
+                glassContainer.feedTubeMode = levelData.feedTubeMode;
+                glassContainer.feedTubeContainerLimit = levelData.feedTubeContainerLimit;
+                glassContainer.feedTubeQueueVisibleCount = levelData.feedTubeQueueVisibleCount;
+                glassContainer.feedTubeWidthMultiplier = levelData.feedTubeWidthMultiplier;
+                glassContainer.feedTubeAnchorSpread = levelData.feedTubeAnchorSpread;
+                glassContainer.feedTubeDropInterval = levelData.feedTubeDropInterval;
+                BallFeedTubeController.Instance?.ClearAll();
+
                 glassContainer.RebuildContainer();
 
                 // 3. Rebuild Airtight Physics Colliders around container
@@ -972,19 +978,6 @@ namespace PuzzleGlass
             comboStreak = 0;
         }
 
-        /// <summary>
-        /// Uses 1 Shake / Tilt charge to rock the glass container and unstick wedged balls.
-        /// </summary>
-        public void TryShakeContainer()
-        {
-            if (remainingShakes <= 0 || glassContainer == null) return;
-            remainingShakes--;
-            _deadlockTimer = 0f;
-            isLevelFailed = false;
-            PuzzleSoundManager.Instance?.PlayShakeGlass();
-            glassContainer.ShakeAndTiltContainer(1.0f);
-        }
-
         public void GenerateAndLoadProceduralLevel(int levelNum, LevelDifficulty diff)
         {
             PuzzleGlassLevelData runtimeLvl = ScriptableObject.CreateInstance<PuzzleGlassLevelData>();
@@ -1190,6 +1183,7 @@ namespace PuzzleGlass
         public void CheckLevelCompletionState()
         {
             if (activeMonsters == null || activeMonsters.Count == 0) return;
+            if (BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.HasPendingBalls) return;
 
             bool allFinished = true;
             for (int i = 0; i < activeMonsters.Count; i++)
@@ -1427,15 +1421,6 @@ namespace PuzzleGlass
                 feverStyle.normal.textColor = comboStreak > 0 ? new Color(0.45f, 0.95f, 0.65f, 1f) : new Color(0.68f, 0.76f, 0.88f, 1f);
                 GUILayout.Label($"⚡ Kombo Zinciri: {comboStreak} / 3 (3'te 2x Vakum!)", feverStyle);
             }
-
-            // Shake / Tilt Action Row
-            GUILayout.BeginHorizontal();
-            GUI.backgroundColor = remainingShakes > 0 ? new Color(0.96f, 0.64f, 0.16f, 1f) : new Color(0.45f, 0.45f, 0.50f, 1f);
-            if (GUILayout.Button($"📳 Camı Salla ({remainingShakes}/{maxShakesPerLevel}) [S]", GUILayout.Height(24)))
-            {
-                TryShakeContainer();
-            }
-            GUILayout.EndHorizontal();
 
             if (isLevelCompleted)
             {

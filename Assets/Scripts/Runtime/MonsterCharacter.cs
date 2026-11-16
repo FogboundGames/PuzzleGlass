@@ -13,6 +13,10 @@ namespace PuzzleGlass
 
         private float _socketBallLocalDiameter = 0.188f;
 
+        private static readonly int BodyColorPropId = Shader.PropertyToID("_BodyColor");
+        private static readonly int BodyDarkColorPropId = Shader.PropertyToID("_BodyDarkColor");
+        private static readonly int OutlineColorPropId = Shader.PropertyToID("_OutlineColor");
+        private static readonly int HighlightColorPropId = Shader.PropertyToID("_HighlightColor");
         private static readonly int LocalSizePropId = Shader.PropertyToID("_LocalSize");
         private static readonly int RectCountPropId = Shader.PropertyToID("_RectCount");
         private static readonly int Rect0PropId = Shader.PropertyToID("_Rect0");
@@ -26,8 +30,14 @@ namespace PuzzleGlass
         private static readonly int DragHighlightPropId = Shader.PropertyToID("_DragHighlight");
         private static readonly int IceAmountPropId = Shader.PropertyToID("_IceAmount");
         private static readonly int LockAmountPropId = Shader.PropertyToID("_LockAmount");
+        private static readonly int LockOpenPropId = Shader.PropertyToID("_LockOpen");
+        private static readonly int LockWigglePropId = Shader.PropertyToID("_LockWiggle");
+        private static readonly int LockCenterPropId = Shader.PropertyToID("_LockCenter");
         private static readonly int SocketCountPropId = Shader.PropertyToID("_SocketCount");
         private static readonly int SocketRadiusPropId = Shader.PropertyToID("_SocketRadius");
+        private static readonly int WobblePhasePropId = Shader.PropertyToID("_WobblePhase");
+        private static readonly int WobbleAmountPropId = Shader.PropertyToID("_WobbleAmount");
+        private static readonly int SquashAmountPropId = Shader.PropertyToID("_SquashAmount");
         private static readonly int[] SockPairPropIds = new int[]
         {
             Shader.PropertyToID("_SockPair0"),
@@ -39,6 +49,64 @@ namespace PuzzleGlass
             Shader.PropertyToID("_SockPair6"),
             Shader.PropertyToID("_SockPair7")
         };
+
+        private static Material s_SharedCarrierBoxMaterial;
+        private static Material s_SharedSocketBallMaterial;
+        private static Material s_SharedBadgeMaterial;
+        private static Material s_SharedShadowMatGrid;
+        private static Material s_SharedShadowMatTray;
+        private static Material s_SharedLidGlareMat;
+        private static Material s_SharedFrostMat;
+        private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Material> s_SharedLidWindowMats = new System.Collections.Generic.Dictionary<PuzzleColor, Material>();
+        private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Material> s_SharedLidLatchMats = new System.Collections.Generic.Dictionary<PuzzleColor, Material>();
+        private static MaterialPropertyBlock s_BoxPropertyBlock;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetSharedMaterialCaches()
+        {
+            s_SharedCarrierBoxMaterial = null;
+            s_SharedSocketBallMaterial = null;
+            s_SharedBadgeMaterial = null;
+            s_SharedShadowMatGrid = null;
+            s_SharedShadowMatTray = null;
+            s_SharedLidGlareMat = null;
+            s_SharedFrostMat = null;
+            s_SharedLidWindowMats.Clear();
+            s_SharedLidLatchMats.Clear();
+        }
+
+        private MeshRenderer _boxRenderer;
+        private int _builtSocketCount = -1;
+        private Color _mpbBodyColor = Color.white;
+        private Color _mpbBodyDarkColor = Color.gray;
+        private Color _mpbOutlineColor = Color.black;
+        private Color _mpbHighlightColor = Color.white;
+        private Vector4 _mpbLocalSize = new Vector4(1.16f, 1.16f, 0f, 0f);
+        private float _mpbRectCount = 1f;
+        private Vector4 _mpbRect0 = new Vector4(0f, 0.024f, 0.445f, 0.425f);
+        private Vector4 _mpbRect1 = Vector4.zero;
+        private float _mpbExitHighlight = 0f;
+        private float _mpbDragHighlight = 0f;
+        private float _mpbIceAmount = 0f;
+        private float _mpbLockAmount = 0f;
+        private float _mpbLockOpen = 0f;
+        private float _mpbLockWiggle = 0f;
+        private Vector4 _mpbLockCenter = new Vector4(0f, 0f, 1.3f, 0f);
+        private float _mpbSocketCount = 3f;
+        private float _mpbSocketRadius = 0.108f;
+        private readonly Vector4[] _mpbSockPairs = new Vector4[8];
+        private float _mpbWobblePhase = 0f;
+        private float _mpbWobbleAmount = 0f;
+        private float _mpbSquashAmount = 0f;
+
+        public Vector4 LockCenterValue => _mpbLockCenter;
+        public float LockOpenValue => _mpbLockOpen;
+        public float LockAmountValue => _mpbLockAmount;
+
+        public void SetLockWiggle(float v) { _mpbLockWiggle = v; ApplyBoxPropertyBlock(); }
+        public void SetLockOpen(float v) { _mpbLockOpen = v; ApplyBoxPropertyBlock(); }
+        public void SetLockAmount(float v) { _mpbLockAmount = v; ApplyBoxPropertyBlock(); }
+        public void SetLockGlyphScale(float s) { _mpbLockCenter.z = s; ApplyBoxPropertyBlock(); }
 
         /// <summary>
         /// Returns how many visual sockets this Carrier Box should display (clamped 1..16).
@@ -301,12 +369,12 @@ namespace PuzzleGlass
         {
             int expectedSockets = GetVisibleSocketCount();
             if (_builtShape != blockShape) return true;
+            if (_builtSocketCount != expectedSockets) return true;
             if (transform.childCount == 0 || bodyPivot == null) return true;
             if (transform.Find("BodyPivot/CarrierBoxVisual") == null) return true;
             if (socketTransforms == null || socketTransforms.Length != expectedSockets || socketTransforms[0] == null) return true;
             if (socketBalls == null || socketBalls.Length != expectedSockets || socketBalls[0] == null) return true;
             if (bodyMaterial == null) return true;
-            if (bodyMaterial.HasProperty(SocketCountPropId) && Mathf.RoundToInt(bodyMaterial.GetFloat(SocketCountPropId)) != expectedSockets) return true;
             return false;
         }
 
@@ -359,6 +427,7 @@ namespace PuzzleGlass
             slotFitScale = targetSlotFitScale;
             hasStagingHome = true;
             SetExitClearHighlight(exitClear);
+            StagingGridBoard.Instance?.MarkGridDirty();
 
             if (animateMove && Application.isPlaying)
             {
@@ -379,17 +448,21 @@ namespace PuzzleGlass
             bool effectiveClear = (exitClear || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
             isExitClearInGrid = effectiveClear;
             isUnlockedInStaging = effectiveClear;
-            if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
+            float target = effectiveClear ? 1.0f : 0.0f;
+            if (!Mathf.Approximately(_mpbExitHighlight, target))
             {
-                bodyMaterial.SetFloat(ExitHighlightPropId, effectiveClear ? 1.0f : 0.0f);
+                _mpbExitHighlight = target;
+                ApplyBoxPropertyBlock();
             }
         }
 
         public void SetDragHighlight(bool isDragging)
         {
-            if (bodyMaterial != null && bodyMaterial.HasProperty(DragHighlightPropId))
+            float target = isDragging ? 1.0f : 0.0f;
+            if (!Mathf.Approximately(_mpbDragHighlight, target))
             {
-                bodyMaterial.SetFloat(DragHighlightPropId, isDragging ? 1.0f : 0.0f);
+                _mpbDragHighlight = target;
+                ApplyBoxPropertyBlock();
             }
         }
 
@@ -517,37 +590,128 @@ namespace PuzzleGlass
             UpdateBadgeText();
         }
 
-        private void EnsureMaterials()
+        private static Material GetSharedCarrierBoxMaterial()
         {
+            if (s_SharedCarrierBoxMaterial != null) return s_SharedCarrierBoxMaterial;
+
             Shader boxShader = Shader.Find("PuzzleGlass/CarrierBox")
                 ?? Shader.Find("Universal Render Pipeline/Unlit")
                 ?? Shader.Find("Sprites/Default");
 
+            s_SharedCarrierBoxMaterial = new Material(boxShader)
+            {
+                name = "Mat_CarrierBox_Instanced",
+                enableInstancing = true,
+                color = Color.white
+            };
+            if (s_SharedCarrierBoxMaterial.HasProperty("_PlateColor"))
+                s_SharedCarrierBoxMaterial.SetColor("_PlateColor", new Color(0.95f, 0.95f, 0.97f, 1.0f));
+            if (s_SharedCarrierBoxMaterial.HasProperty("_PlateShadowColor"))
+                s_SharedCarrierBoxMaterial.SetColor("_PlateShadowColor", new Color(0.74f, 0.77f, 0.84f, 1.0f));
+            if (s_SharedCarrierBoxMaterial.HasProperty("_SocketColor"))
+                s_SharedCarrierBoxMaterial.SetColor("_SocketColor", new Color(0.56f, 0.58f, 0.63f, 1.0f));
+            if (s_SharedCarrierBoxMaterial.HasProperty("_SocketShadowColor"))
+                s_SharedCarrierBoxMaterial.SetColor("_SocketShadowColor", new Color(0.40f, 0.42f, 0.49f, 1.0f));
+            if (s_SharedCarrierBoxMaterial.HasProperty(WallInsetPropId))
+                s_SharedCarrierBoxMaterial.SetFloat(WallInsetPropId, CarrierBlockShapeUtility.WallInset);
+            if (s_SharedCarrierBoxMaterial.HasProperty(CornerRadPropId))
+                s_SharedCarrierBoxMaterial.SetFloat(CornerRadPropId, CarrierBlockShapeUtility.OuterCornerRadius);
+            if (s_SharedCarrierBoxMaterial.HasProperty(InnerRadPropId))
+                s_SharedCarrierBoxMaterial.SetFloat(InnerRadPropId, CarrierBlockShapeUtility.InnerCornerRadius);
+            if (s_SharedCarrierBoxMaterial.HasProperty(OutlineThicknessPropId))
+                s_SharedCarrierBoxMaterial.SetFloat(OutlineThicknessPropId, CarrierBlockShapeUtility.OutlineThickness);
+            if (s_SharedCarrierBoxMaterial.HasProperty(LipOffsetPropId))
+                s_SharedCarrierBoxMaterial.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
+            return s_SharedCarrierBoxMaterial;
+        }
+
+        private static Material GetSharedSocketBallMaterial()
+        {
+            if (BallObjectPool.Instance != null)
+            {
+                return BallObjectPool.Instance.SharedInstancedBallMaterial;
+            }
+            if (s_SharedSocketBallMaterial != null) return s_SharedSocketBallMaterial;
+
+            Shader ballShader = Shader.Find("PuzzleGlass/CandyCubeLit")
+                ?? Shader.Find("Universal Render Pipeline/Lit")
+                ?? Shader.Find("Standard");
+            s_SharedSocketBallMaterial = new Material(ballShader)
+            {
+                name = "Mat_SocketBall_Instanced",
+                enableInstancing = true,
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15
+            };
+            return s_SharedSocketBallMaterial;
+        }
+
+        private void EnsureMaterials()
+        {
             Color baseCol = GetCarrierFrameColor(colorType);
             Color darkCol = GetCarrierDarkColor(colorType);
             Color outlineCol = GetCarrierOutlineColor(colorType);
             Color highlightCol = Color.Lerp(baseCol, new Color(0.99f, 0.99f, 1.0f, 1f), 0.34f);
 
-            bodyMaterial = new Material(boxShader) { name = $"Mat_CarrierBox_{colorType}" };
-            bodyMaterial.color = Color.white;
-            if (bodyMaterial.HasProperty("_BodyColor")) bodyMaterial.SetColor("_BodyColor", baseCol);
-            if (bodyMaterial.HasProperty("_BodyDarkColor")) bodyMaterial.SetColor("_BodyDarkColor", darkCol);
-            if (bodyMaterial.HasProperty("_OutlineColor")) bodyMaterial.SetColor("_OutlineColor", outlineCol);
-            if (bodyMaterial.HasProperty("_HighlightColor")) bodyMaterial.SetColor("_HighlightColor", highlightCol);
-            if (bodyMaterial.HasProperty("_PlateColor")) bodyMaterial.SetColor("_PlateColor", new Color(0.95f, 0.95f, 0.97f, 1.0f));
-            if (bodyMaterial.HasProperty("_PlateShadowColor")) bodyMaterial.SetColor("_PlateShadowColor", new Color(0.74f, 0.77f, 0.84f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketColor")) bodyMaterial.SetColor("_SocketColor", new Color(0.56f, 0.58f, 0.63f, 1.0f));
-            if (bodyMaterial.HasProperty("_SocketShadowColor")) bodyMaterial.SetColor("_SocketShadowColor", new Color(0.40f, 0.42f, 0.49f, 1.0f));
+            bodyMaterial = GetSharedCarrierBoxMaterial();
+            _mpbBodyColor = baseCol;
+            _mpbBodyDarkColor = darkCol;
+            _mpbOutlineColor = outlineCol;
+            _mpbHighlightColor = highlightCol;
+            _mpbWobblePhase = ((int)colorType * 1.37f + Mathf.Abs(GetInstanceID()) * 0.19f) % (Mathf.PI * 2f);
             ApplySocketLayoutToMaterial();
 
-            socketBallMaterial = PuzzleColorPalette.CreateCandyBallMaterial(colorType, $"Mat_SocketBall_{colorType}");
+            socketBallMaterial = GetSharedSocketBallMaterial();
 
-            badgeMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(
-                new Color(0.92f, 0.93f, 0.96f, 1f),
-                new Color(0.74f, 0.77f, 0.86f, 1f),
-                "Mat_BellyBadge",
-                glossyCandy: false,
-                indirectIntensity: 0.16f);
+            if (s_SharedBadgeMaterial == null)
+            {
+                s_SharedBadgeMaterial = PuzzleColorPalette.CreateToonyHypercasualMaterial(
+                    new Color(0.92f, 0.93f, 0.96f, 1f),
+                    new Color(0.74f, 0.77f, 0.86f, 1f),
+                    "Mat_BellyBadge_Shared",
+                    glossyCandy: false,
+                    indirectIntensity: 0.16f);
+            }
+            badgeMaterial = s_SharedBadgeMaterial;
+        }
+
+        private void ApplyBoxPropertyBlock()
+        {
+            if (_boxRenderer == null && bodyPivot != null)
+            {
+                Transform vis = bodyPivot.Find("CarrierBoxVisual");
+                if (vis != null) _boxRenderer = vis.GetComponent<MeshRenderer>();
+            }
+            if (_boxRenderer == null) return;
+
+            if (s_BoxPropertyBlock == null) s_BoxPropertyBlock = new MaterialPropertyBlock();
+
+            s_BoxPropertyBlock.Clear();
+            s_BoxPropertyBlock.SetColor(BodyColorPropId, _mpbBodyColor);
+            s_BoxPropertyBlock.SetColor(BodyDarkColorPropId, _mpbBodyDarkColor);
+            s_BoxPropertyBlock.SetColor(OutlineColorPropId, _mpbOutlineColor);
+            s_BoxPropertyBlock.SetColor(HighlightColorPropId, _mpbHighlightColor);
+            s_BoxPropertyBlock.SetVector(LocalSizePropId, _mpbLocalSize);
+            s_BoxPropertyBlock.SetFloat(RectCountPropId, _mpbRectCount);
+            s_BoxPropertyBlock.SetVector(Rect0PropId, _mpbRect0);
+            s_BoxPropertyBlock.SetVector(Rect1PropId, _mpbRect1);
+            s_BoxPropertyBlock.SetFloat(ExitHighlightPropId, _mpbExitHighlight);
+            s_BoxPropertyBlock.SetFloat(DragHighlightPropId, _mpbDragHighlight);
+            s_BoxPropertyBlock.SetFloat(IceAmountPropId, _mpbIceAmount);
+            s_BoxPropertyBlock.SetFloat(LockAmountPropId, _mpbLockAmount);
+            s_BoxPropertyBlock.SetFloat(LockOpenPropId, _mpbLockOpen);
+            s_BoxPropertyBlock.SetFloat(LockWigglePropId, _mpbLockWiggle);
+            s_BoxPropertyBlock.SetVector(LockCenterPropId, _mpbLockCenter);
+            s_BoxPropertyBlock.SetFloat(SocketCountPropId, _mpbSocketCount);
+            s_BoxPropertyBlock.SetFloat(SocketRadiusPropId, _mpbSocketRadius);
+            for (int p = 0; p < SockPairPropIds.Length; p++)
+            {
+                s_BoxPropertyBlock.SetVector(SockPairPropIds[p], _mpbSockPairs[p]);
+            }
+            s_BoxPropertyBlock.SetFloat(WobblePhasePropId, _mpbWobblePhase);
+            s_BoxPropertyBlock.SetFloat(WobbleAmountPropId, _mpbWobbleAmount);
+            s_BoxPropertyBlock.SetFloat(SquashAmountPropId, _mpbSquashAmount);
+
+            _boxRenderer.SetPropertyBlock(s_BoxPropertyBlock);
         }
 
         private static Color GetCarrierFrameColor(PuzzleColor color)
@@ -602,9 +766,11 @@ namespace PuzzleGlass
             boxMr.sharedMaterial = bodyMaterial;
             boxMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             boxMr.receiveShadows = false;
+            _boxRenderer = boxMr;
 
             // 3. Gray Socket Landing Points & Settled 3D Balls (1..16)
             int expectedSockets = GetVisibleSocketCount();
+            _builtSocketCount = expectedSockets;
             CarrierBlockShapeUtility.ComputeSocketLayoutForShape(blockShape, expectedSockets, out Vector2[] socketPositions, out float socketRadius, out _socketBallLocalDiameter);
             ApplyShapeMaterialParams(rect0, rect1, rectCount, quadW, quadH);
             ApplySocketLayoutToMaterial(expectedSockets, socketPositions, socketRadius);
@@ -639,6 +805,7 @@ namespace PuzzleGlass
                 mr.sharedMaterial = socketBallMaterial;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.receiveShadows = false;
+                BallObjectPool.ApplyBallPropertyBlock(mr, colorType, variantIndex: 1, wobblePhase: i * 0.65f);
 
                 ballObj.SetActive(false);
                 socketBalls[i] = ballObj;
@@ -675,11 +842,15 @@ namespace PuzzleGlass
             lidRoot.transform.localPosition = new Vector3(0f, 0f, -0.26f);
             transparentLidTransform = lidRoot.transform;
 
-            // Translucent crystal-tinted acrylic window covering the shape's white cavity
-            Color tint = Color.Lerp(GetCarrierFrameColor(colorType), new Color(0.88f, 0.96f, 1.00f, 1f), 0.72f);
-            tint.a = 0.36f;
-            Material windowMat = new Material(spriteShader) { name = "Mat_BoxTransparentLid", color = tint };
-            if (windowMat.HasProperty("_BaseColor")) windowMat.SetColor("_BaseColor", tint);
+            // Translucent crystal-tinted acrylic window covering the shape's white cavity (cached per color)
+            if (!s_SharedLidWindowMats.TryGetValue(colorType, out Material windowMat) || windowMat == null)
+            {
+                Color tint = Color.Lerp(GetCarrierFrameColor(colorType), new Color(0.88f, 0.96f, 1.00f, 1f), 0.72f);
+                tint.a = 0.36f;
+                windowMat = new Material(spriteShader) { name = $"Mat_BoxTransparentLid_{colorType}", color = tint, enableInstancing = true };
+                if (windowMat.HasProperty("_BaseColor")) windowMat.SetColor("_BaseColor", tint);
+                s_SharedLidWindowMats[colorType] = windowMat;
+            }
 
             CarrierBlockShapeUtility.GetRectParts(blockShape, out Vector4 r0, out Vector4 r1, out int rectCount, out _, out _);
             for (int i = 0; i < rectCount; i++)
@@ -697,13 +868,18 @@ namespace PuzzleGlass
                 lidMr.receiveShadows = false;
             }
 
-            // Diagonal white specular reflection glare across the sealed lid
-            Material glareMat = new Material(spriteShader)
+            // Diagonal white specular reflection glare across the sealed lid (shared across all boxes)
+            if (s_SharedLidGlareMat == null)
             {
-                name = "Mat_LidSpecularGlare",
-                color = new Color(1f, 1f, 1f, 0.54f)
-            };
-            if (glareMat.HasProperty("_BaseColor")) glareMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.54f));
+                s_SharedLidGlareMat = new Material(spriteShader)
+                {
+                    name = "Mat_LidSpecularGlare_Shared",
+                    color = new Color(1f, 1f, 1f, 0.54f),
+                    enableInstancing = true
+                };
+                if (s_SharedLidGlareMat.HasProperty("_BaseColor"))
+                    s_SharedLidGlareMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.54f));
+            }
 
             GameObject glare1 = new GameObject("LidGlareMain");
             glare1.transform.SetParent(lidRoot.transform, false);
@@ -711,13 +887,17 @@ namespace PuzzleGlass
             glare1.transform.localRotation = Quaternion.Euler(0f, 0f, -32f);
             glare1.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.46f, 0.065f, 0.02f, 0.030f);
             var g1Mr = glare1.AddComponent<MeshRenderer>();
-            g1Mr.sharedMaterial = glareMat;
+            g1Mr.sharedMaterial = s_SharedLidGlareMat;
             g1Mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-            // Top snap-latch clip ("TIK!" lock clasp)
-            Color latchCol = GetCarrierFrameColor(colorType);
-            Material latchMat = new Material(spriteShader) { name = "Mat_LidLatch", color = latchCol };
-            if (latchMat.HasProperty("_BaseColor")) latchMat.SetColor("_BaseColor", latchCol);
+            // Top snap-latch clip ("TIK!" lock clasp, cached per color)
+            if (!s_SharedLidLatchMats.TryGetValue(colorType, out Material latchMat) || latchMat == null)
+            {
+                Color latchCol = GetCarrierFrameColor(colorType);
+                latchMat = new Material(spriteShader) { name = $"Mat_LidLatch_{colorType}", color = latchCol, enableInstancing = true };
+                if (latchMat.HasProperty("_BaseColor")) latchMat.SetColor("_BaseColor", latchCol);
+                s_SharedLidLatchMats[colorType] = latchMat;
+            }
 
             GameObject latchObj = new GameObject("LidSnapLatch");
             latchObj.transform.SetParent(lidRoot.transform, false);
@@ -741,14 +921,29 @@ namespace PuzzleGlass
             // Blocks inside the dark indigo StagingGridBoard need cool deep-indigo contact shadows
             // clipped cleanly per bottom-exposed cell so polyominoes never bleed shadows into empty cells.
             bool inGridBoard = StagingGridBoard.Instance != null || FindFirstObjectByType<StagingGridBoard>() != null;
-            Color shadowColor = inGridBoard
-                ? new Color(0.05f, 0.04f, 0.16f, 0.54f)
-                : new Color(0.75f, 0.59f, 0.44f, 0.36f);
-
-            Material shadowMat = new Material(shadowShader) { name = "Mat_MonsterFakeShadow" };
-            shadowMat.SetColor("_ShadowColor", shadowColor);
-            shadowMat.SetFloat("_FeatherWidth", 0.52f);
-            shadowMat.SetFloat("_IsRadial", 1.0f);
+            Material shadowMat;
+            if (inGridBoard)
+            {
+                if (s_SharedShadowMatGrid == null)
+                {
+                    s_SharedShadowMatGrid = new Material(shadowShader) { name = "Mat_MonsterFakeShadow_Grid", enableInstancing = true };
+                    s_SharedShadowMatGrid.SetColor("_ShadowColor", new Color(0.05f, 0.04f, 0.16f, 0.54f));
+                    s_SharedShadowMatGrid.SetFloat("_FeatherWidth", 0.52f);
+                    s_SharedShadowMatGrid.SetFloat("_IsRadial", 1.0f);
+                }
+                shadowMat = s_SharedShadowMatGrid;
+            }
+            else
+            {
+                if (s_SharedShadowMatTray == null)
+                {
+                    s_SharedShadowMatTray = new Material(shadowShader) { name = "Mat_MonsterFakeShadow_Tray", enableInstancing = true };
+                    s_SharedShadowMatTray.SetColor("_ShadowColor", new Color(0.75f, 0.59f, 0.44f, 0.36f));
+                    s_SharedShadowMatTray.SetFloat("_FeatherWidth", 0.52f);
+                    s_SharedShadowMatTray.SetFloat("_IsRadial", 1.0f);
+                }
+                shadowMat = s_SharedShadowMatTray;
+            }
 
             for (int i = 0; i < cells.Length; i++)
             {
@@ -838,19 +1033,13 @@ namespace PuzzleGlass
         /// </summary>
         private void ApplyShapeMaterialParams(Vector4 rect0, Vector4 rect1, int rectCount, float quadW, float quadH)
         {
-            if (bodyMaterial == null) return;
-            if (bodyMaterial.HasProperty(LocalSizePropId)) bodyMaterial.SetVector(LocalSizePropId, new Vector4(quadW, quadH, 0f, 0f));
-            if (bodyMaterial.HasProperty(RectCountPropId)) bodyMaterial.SetFloat(RectCountPropId, rectCount);
-            if (bodyMaterial.HasProperty(Rect0PropId)) bodyMaterial.SetVector(Rect0PropId, rect0);
-            if (bodyMaterial.HasProperty(Rect1PropId)) bodyMaterial.SetVector(Rect1PropId, rect1);
-            if (bodyMaterial.HasProperty(WallInsetPropId)) bodyMaterial.SetFloat(WallInsetPropId, CarrierBlockShapeUtility.WallInset);
-            if (bodyMaterial.HasProperty(CornerRadPropId)) bodyMaterial.SetFloat(CornerRadPropId, CarrierBlockShapeUtility.OuterCornerRadius);
-            if (bodyMaterial.HasProperty(InnerRadPropId)) bodyMaterial.SetFloat(InnerRadPropId, CarrierBlockShapeUtility.InnerCornerRadius);
-            if (bodyMaterial.HasProperty(OutlineThicknessPropId)) bodyMaterial.SetFloat(OutlineThicknessPropId, CarrierBlockShapeUtility.OutlineThickness);
-            if (bodyMaterial.HasProperty(LipOffsetPropId)) bodyMaterial.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
-            if (bodyMaterial.HasProperty(ExitHighlightPropId)) bodyMaterial.SetFloat(ExitHighlightPropId, ((isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked) ? 1f : 0f);
-            if (bodyMaterial.HasProperty(DragHighlightPropId)) bodyMaterial.SetFloat(DragHighlightPropId, 0f);
-            if (bodyMaterial.HasProperty(IceAmountPropId)) bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1f : 0f);
+            _mpbLocalSize = new Vector4(quadW, quadH, 0f, 0f);
+            _mpbRectCount = rectCount;
+            _mpbRect0 = rect0;
+            _mpbRect1 = rect1;
+            _mpbExitHighlight = ((isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked) ? 1f : 0f;
+            _mpbDragHighlight = 0f;
+            _mpbIceAmount = IsFrozenByIce ? 1f : 0f;
         }
 
         private void ApplySocketLayoutToMaterial()
@@ -865,17 +1054,16 @@ namespace PuzzleGlass
 
         private void ApplySocketLayoutToMaterial(int count, Vector2[] positions, float radius)
         {
-            if (bodyMaterial == null) return;
-            if (bodyMaterial.HasProperty(SocketCountPropId)) bodyMaterial.SetFloat(SocketCountPropId, count);
-            if (bodyMaterial.HasProperty(SocketRadiusPropId)) bodyMaterial.SetFloat(SocketRadiusPropId, radius);
+            _mpbSocketCount = count;
+            _mpbSocketRadius = radius;
             for (int p = 0; p < SockPairPropIds.Length; p++)
             {
-                if (!bodyMaterial.HasProperty(SockPairPropIds[p])) continue;
                 int pIdx = p * 2;
                 Vector2 a = (positions != null && pIdx < positions.Length) ? positions[pIdx] : Vector2.zero;
                 Vector2 b = (positions != null && pIdx + 1 < positions.Length) ? positions[pIdx + 1] : Vector2.zero;
-                bodyMaterial.SetVector(SockPairPropIds[p], new Vector4(a.x, a.y, b.x, b.y));
+                _mpbSockPairs[p] = new Vector4(a.x, a.y, b.x, b.y);
             }
+            ApplyBoxPropertyBlock();
         }
 
         public int ClaimNextSocketIndex()
@@ -950,21 +1138,22 @@ namespace PuzzleGlass
         {
             StopIdleAndBlink();
 
+            // Pillar 1 (GPU Vertex Animation): CPU'da sürekli DOScale tween'i çalıştırmak yerine
+            // nefes alma animasyonu vertex shader'da _WobbleAmount ve per-instance _WobblePhase ile yapılır.
             if (bodyPivot != null)
             {
                 bodyPivot.localScale = _originalBodyScale;
-                _idleTween = bodyPivot.DOScale(
-                    new Vector3(_originalBodyScale.x * 0.98f, _originalBodyScale.y * 1.02f, _originalBodyScale.z),
-                    0.85f)
-                    .SetEase(Ease.InOutSine)
-                    .SetLoops(-1, LoopType.Yoyo);
             }
+            _mpbWobbleAmount = 1.0f;
+            ApplyBoxPropertyBlock();
         }
 
         public void StopIdleAndBlink()
         {
             if (_idleTween != null && _idleTween.IsActive()) _idleTween.Kill();
             if (_blinkSeq != null && _blinkSeq.IsActive()) _blinkSeq.Kill();
+            _mpbWobbleAmount = 0.0f;
+            ApplyBoxPropertyBlock();
             if (bodyPivot != null)
             {
                 bodyPivot.localScale = _originalBodyScale;
@@ -1064,6 +1253,7 @@ namespace PuzzleGlass
             if (remainingCount <= 0)
             {
                 _isCompleted = true;
+                StagingGridBoard.Instance?.MarkGridDirty();
                 // Ensure all sockets visibly hold settled balls on completion
                 int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
                 for (int i = 0; i < sockCount; i++)
@@ -1437,24 +1627,19 @@ namespace PuzzleGlass
 
         public void RefreshSpecialMechanicVisuals()
         {
-            if (bodyMaterial != null && bodyMaterial.HasProperty(IceAmountPropId))
-            {
-                bodyMaterial.SetFloat(IceAmountPropId, IsFrozenByIce ? 1.0f : 0.0f);
-            }
+            _mpbIceAmount = IsFrozenByIce ? 1.0f : 0.0f;
             // Kilitli blok: plaka kendi renginde kapakla kapanır, ortasında beyaz kilit (açılırken animasyon yönetir)
-            if (bodyMaterial != null && bodyMaterial.HasProperty(LockAmountPropId) && !_unlockAnimPlaying)
+            if (!_unlockAnimPlaying)
             {
-                bodyMaterial.SetFloat(LockAmountPropId, IsLockedByKey ? 1.0f : 0.0f);
+                _mpbLockAmount = IsLockedByKey ? 1.0f : 0.0f;
                 Vector2 lc = GetMechanicAnchorLocal();
-                bodyMaterial.SetVector(LockKeyVisuals.LockCenterId, new Vector4(lc.x, lc.y, LockKeyVisuals.GlyphScale, 0f));
-                bodyMaterial.SetFloat(LockKeyVisuals.LockOpenId, 0f);
-                bodyMaterial.SetFloat(LockKeyVisuals.LockWiggleId, 0f);
+                _mpbLockCenter = new Vector4(lc.x, lc.y, LockKeyVisuals.GlyphScale, 0f);
+                _mpbLockOpen = 0f;
+                _mpbLockWiggle = 0f;
             }
-            if (bodyMaterial != null && bodyMaterial.HasProperty(ExitHighlightPropId))
-            {
-                bool effectiveExit = (isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
-                bodyMaterial.SetFloat(ExitHighlightPropId, effectiveExit ? 1.0f : 0.0f);
-            }
+            bool effectiveExit = (isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
+            _mpbExitHighlight = effectiveExit ? 1.0f : 0.0f;
+            ApplyBoxPropertyBlock();
 
             if (bodyPivot == null) return;
 
@@ -1532,14 +1717,15 @@ namespace PuzzleGlass
 
             // Açıldı! Halka kalkar, kapak açılır, plaka ve delikler görünür
             if (_lockCountText != null) _lockCountText.gameObject.SetActive(false);
-            if (Application.isPlaying && bodyMaterial != null)
+            if (Application.isPlaying)
             {
                 _unlockAnimPlaying = true;
-                LockKeyVisuals.PlayUnlock(bodyMaterial, GetLockWorldPosition(), GetCarrierFrameColor(colorType), gameObject, () =>
+                LockKeyVisuals.PlayUnlock(this, GetLockWorldPosition(), GetCarrierFrameColor(colorType), () =>
                 {
                     _unlockAnimPlaying = false;
                     if (_lockOverlayRoot != null) _lockOverlayRoot.SetActive(false);
                     RefreshSpecialMechanicVisuals();
+                    StagingGridBoard.Instance?.MarkGridDirty();
                 });
             }
             else if (_lockOverlayRoot != null)
@@ -1577,20 +1763,18 @@ namespace PuzzleGlass
             }
 
             // Ice melted! Smooth ice shatter & reveal underlying color
-            if (bodyMaterial != null && bodyMaterial.HasProperty(IceAmountPropId))
+            if (Application.isPlaying)
             {
-                if (Application.isPlaying)
-                {
-                    DOTween.To(
-                        () => bodyMaterial != null ? bodyMaterial.GetFloat(IceAmountPropId) : 0f,
-                        v => { if (bodyMaterial != null) bodyMaterial.SetFloat(IceAmountPropId, v); },
-                        0f,
-                        0.18f);
-                }
-                else
-                {
-                    bodyMaterial.SetFloat(IceAmountPropId, 0f);
-                }
+                DOTween.To(
+                    () => _mpbIceAmount,
+                    v => { _mpbIceAmount = v; ApplyBoxPropertyBlock(); },
+                    0f,
+                    0.18f);
+            }
+            else
+            {
+                _mpbIceAmount = 0f;
+                ApplyBoxPropertyBlock();
             }
 
             if (_iceOverlayRoot != null && Application.isPlaying)
@@ -1630,7 +1814,7 @@ namespace PuzzleGlass
 
             if (IsLockedByKey && _lockOverlayRoot != null)
             {
-                LockKeyVisuals.PlayLockWiggle(bodyMaterial, gameObject);
+                LockKeyVisuals.PlayLockWiggle(this);
 
                 // İpucu: anahtarı taşıyan bloklar zıplar
                 var gm = PuzzleGlassGameManager.Instance;
@@ -1705,9 +1889,12 @@ namespace PuzzleGlass
             GameObject root = new GameObject("IceOverlay");
             root.transform.SetParent(parent, false);
 
-            Material frostMat = CreateMechanicMaterial(new Color(0.88f, 0.98f, 1.00f, 1f), "Mat_IceFrostCrest", glossy: true);
-            AddMeshPart("FrostGlintLeft", root.transform, new Vector3(-0.22f, 0.20f, 0f), ProceduralMeshUtils.CreatePillBadge(0.18f, 0.048f, 0.02f, 0.022f), frostMat);
-            AddMeshPart("FrostGlintRight", root.transform, new Vector3(0.20f, 0.18f, 0f), ProceduralMeshUtils.CreatePillBadge(0.12f, 0.042f, 0.02f, 0.020f), frostMat);
+            if (s_SharedFrostMat == null)
+            {
+                s_SharedFrostMat = CreateMechanicMaterial(new Color(0.88f, 0.98f, 1.00f, 1f), "Mat_IceFrostCrest_Shared", glossy: true);
+            }
+            AddMeshPart("FrostGlintLeft", root.transform, new Vector3(-0.22f, 0.20f, 0f), ProceduralMeshUtils.CreatePillBadge(0.18f, 0.048f, 0.02f, 0.022f), s_SharedFrostMat);
+            AddMeshPart("FrostGlintRight", root.transform, new Vector3(0.20f, 0.18f, 0f), ProceduralMeshUtils.CreatePillBadge(0.12f, 0.042f, 0.02f, 0.020f), s_SharedFrostMat);
 
             GameObject textObj = new GameObject("IceCountText");
             textObj.transform.SetParent(root.transform, false);

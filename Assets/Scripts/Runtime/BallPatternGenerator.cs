@@ -113,6 +113,7 @@ namespace PuzzleGlass
             }
 
             BallObjectPool.Instance.ClearAllActiveBalls();
+            BallFeedTubeController.Instance?.ClearAll();
 
             if (patternType == ShapePatternType.GumballMix ||
                 patternType == ShapePatternType.HorizontalBands ||
@@ -262,6 +263,24 @@ namespace PuzzleGlass
                 }
             }
 
+            // Per-level top glass feed tubes: spawn only containerLimit balls inside the chamber and queue the rest in the tubes
+            List<PuzzleColor> queuedTubeColors = null;
+            int feedContainerLimit = ballSpawns.Count;
+            if (glassContainer != null && glassContainer.useBallFeedTubes && ballSpawns.Count > 1)
+            {
+                feedContainerLimit = BallFeedTubeUtility.GetEffectiveContainerLimit(glassContainer.feedTubeContainerLimit, ballSpawns.Count);
+                if (feedContainerLimit < ballSpawns.Count)
+                {
+                    ballSpawns.Sort((a, b) => a.pos.y.CompareTo(b.pos.y));
+                    queuedTubeColors = new List<PuzzleColor>(ballSpawns.Count - feedContainerLimit);
+                    for (int i = feedContainerLimit; i < ballSpawns.Count; i++)
+                    {
+                        queuedTubeColors.Add(ballSpawns[i].col);
+                    }
+                    ballSpawns.RemoveRange(feedContainerLimit, ballSpawns.Count - feedContainerLimit);
+                }
+            }
+
             // Compute ordered layer indices (0 = bottom-most row, 1 = second row from bottom, etc.)
             List<float> rowYCenters = new List<float>();
             float rowClusterThreshold = ballDiameter * 0.42f;
@@ -342,6 +361,21 @@ namespace PuzzleGlass
             {
                 if (_releaseHoldCoroutine != null) StopCoroutine(_releaseHoldCoroutine);
                 _releaseHoldCoroutine = StartCoroutine(ReleaseBallsHoldRoutine(initialShapeHoldTime, spawnedBalls));
+            }
+
+            if (queuedTubeColors != null && queuedTubeColors.Count > 0 && glassContainer != null)
+            {
+                glassContainer.SyncFeedTubesToBallDiameter(ballRadius * 2f);
+                var tubeCtrl = BallFeedTubeController.GetOrCreate(glassContainer.transform.parent);
+                tubeCtrl.ConfigureAndPopulate(
+                    glassContainer,
+                    queuedTubeColors,
+                    feedContainerLimit,
+                    glassContainer.feedTubeQueueVisibleCount,
+                    glassContainer.feedTubeWidthMultiplier,
+                    glassContainer.feedTubeAnchorSpread,
+                    glassContainer.feedTubeDropInterval,
+                    ballRadius);
             }
 
             return spawnedBalls;

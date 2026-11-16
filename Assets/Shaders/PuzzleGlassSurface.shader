@@ -24,6 +24,10 @@ Shader "PuzzleGlass/GlassChamberLit"
         _JarNeckParams ("Optional Jar Neck (halfW, height, lipOverhang, lipHalfH)", Vector) = (0, 0, 0, 0)
         _CenterGlassAlpha ("Back Chamber Center Alpha", Range(0.0, 1.0)) = 0.20
         _IsCollar ("Periwinkle 3D Collar Mode", Float) = 0.0
+        _IsFeedTube ("Curved Crystal Feed Tube Mode", Float) = 0.0
+        _FeedTubeRatio ("Feed Tube Wall Width Ratio", Range(0.25, 1.0)) = 0.64
+        _FeedTubeOpeningL ("Left Feed Tube Opening (on, pX, pHalfW, pTopY)", Vector) = (0, 0, 0, 0)
+        _FeedTubeOpeningR ("Right Feed Tube Opening (on, pX, pHalfW, pTopY)", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -73,6 +77,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float4 _JarNeckParams;
                 float _CenterGlassAlpha;
                 float _IsCollar;
+                float _IsFeedTube;
+                float _FeedTubeRatio;
+                float4 _FeedTubeOpeningL;
+                float4 _FeedTubeOpeningR;
             CBUFFER_END
 
             // Özel şekilli havuz: iç hattın köşeleri (yarıçap kadar içeri alınmış), iki köşe bir float4'te.
@@ -300,6 +308,24 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float outerMask = 1.0 - smoothstep(-0.008, 0.008, dOuter);
                 float dFromOuter = max(0.0, -dOuter);
 
+                // Cleanly open top border right where curved feed tubes attach (without protruding stubs)
+                float topClipMask = 1.0;
+                if (_FeedTubeOpeningL.x > 0.5)
+                {
+                    float dxL = abs(p.x - _FeedTubeOpeningL.y);
+                    float yZoneL = smoothstep(_FeedTubeOpeningL.w - frameThick * 0.85, _FeedTubeOpeningL.w + 0.015, p.y);
+                    float gapL = 1.0 - smoothstep(_FeedTubeOpeningL.z * 0.82, _FeedTubeOpeningL.z * 1.05, dxL);
+                    topClipMask *= (1.0 - gapL * yZoneL);
+                }
+                if (_FeedTubeOpeningR.x > 0.5)
+                {
+                    float dxR = abs(p.x - _FeedTubeOpeningR.y);
+                    float yZoneR = smoothstep(_FeedTubeOpeningR.w - frameThick * 0.85, _FeedTubeOpeningR.w + 0.015, p.y);
+                    float gapR = 1.0 - smoothstep(_FeedTubeOpeningR.z * 0.82, _FeedTubeOpeningR.z * 1.05, dxR);
+                    topClipMask *= (1.0 - gapR * yZoneR);
+                }
+                outerMask *= topClipMask;
+
                 // Sleek unified periwinkle-crystal blown glass palette (matching Image 2 directly!)
                 float3 rimPeriwinkle = lerp(_OuterRimColor.rgb, float3(0.46, 0.45, 0.92), 0.55);
                 float3 wallIceBlue   = lerp(_EdgeColor.rgb, float3(0.70, 0.74, 0.99), 0.55);
@@ -504,11 +530,81 @@ Shader "PuzzleGlass/GlassChamberLit"
                 wallZoneMask = baseWallMask * outerAA;
             }
 
+            half4 EvaluateFeedTube(Varyings IN)
+            {
+                float ratio = clamp(_FeedTubeRatio, 0.25, 1.0);
+                // xNorm = -1..+1 spans the actual crystal tube diameter; |xNorm| > 1 is outer shadow padding
+                float xNorm = (IN.uv.x * 2.0 - 1.0) / ratio;
+                float absX = abs(xNorm);
+                float dEdge = max(0.0, 1.0 - absX);
+
+                // Smooth feather at bottom mouth where the tube melts into the opened container shoulder at ceilY
+                float mouthFade = smoothstep(0.035, 0.14, IN.uv.y);
+
+                float outerMask = 1.0 - smoothstep(0.955, 1.005, absX);
+
+                float3 rimPeriwinkle = lerp(_OuterRimColor.rgb, float3(0.46, 0.45, 0.92), 0.55);
+                float3 wallIceBlue   = lerp(_EdgeColor.rgb, float3(0.70, 0.74, 0.99), 0.55);
+                float3 pureWhite     = float3(1.00, 1.00, 1.00);
+
+                // Crisp outer glass wall hugging only the outer ~22% margin so balls inside have clear breathing room
+                float outerEdgeRim      = exp(-pow((dEdge - 0.025) / 0.022, 2.0));
+                float crispWhiteRim     = exp(-pow((dEdge - 0.082) / 0.036, 2.0));
+                float wallThicknessFade = exp(-dEdge / 0.17);
+
+                float3 rimGlassCol = lerp(wallIceBlue, rimPeriwinkle, outerEdgeRim * 0.85);
+                rimGlassCol = lerp(rimGlassCol, pureWhite, saturate(crispWhiteRim * 0.90));
+
+                // Smooth subtle studio reflection strictly near inner glass walls (never washing out balls)
+                float leftSpec    = exp(-pow((xNorm + 0.68) / 0.11, 2.0)) * 0.54;
+                float rightSpec   = exp(-pow((xNorm - 0.70) / 0.11, 2.0)) * 0.44;
+                float specularTotal = saturate((leftSpec + rightSpec) * _SheenIntensity) * outerMask;
+
+                if (_IsFrontLens > 0.5)
+                {
+                    float wallRimAlpha = saturate(outerEdgeRim * 0.72 + crispWhiteRim * 0.82 + wallThicknessFade * 0.22) * outerMask;
+                    float specAlpha    = specularTotal * 0.82 * outerMask;
+
+                    float3 frontRgb = lerp(rimGlassCol, pureWhite, saturate(specularTotal * 0.95));
+                    float frontAlpha = saturate(max(wallRimAlpha, specAlpha)) * mouthFade;
+                    if (frontAlpha < 0.002) discard;
+                    return half4(saturate(frontRgb), frontAlpha);
+                }
+                else
+                {
+                    // Soft pastel lavender outer drop shadow outside the curved glass tube
+                    float maxNorm = 1.0 / ratio;
+                    float padSpan = max(0.05, maxNorm - 1.0);
+                    float dOut = clamp((absX - 0.98) / padSpan, 0.0, 1.0);
+                    float shadowAlpha = (1.0 - smoothstep(0.0, 0.92, dOut)) * step(0.98, absX) * _FakeShadowColor.a * mouthFade;
+                    float3 shadowRGB = _FakeShadowColor.rgb;
+
+                    float centerA = clamp(_CenterGlassAlpha, 0.0, 0.35);
+                    float3 chamberRgb = float3(0.95, 0.96, 1.00);
+                    chamberRgb = lerp(chamberRgb, wallIceBlue, wallThicknessFade * 0.52);
+                    chamberRgb = lerp(chamberRgb, rimGlassCol, saturate(outerEdgeRim * 0.75 + crispWhiteRim * 0.85));
+                    chamberRgb = lerp(chamberRgb, pureWhite, specularTotal * 0.70);
+
+                    float chamberAlpha = saturate(max(centerA + wallThicknessFade * 0.36, max(outerEdgeRim * 0.72, specularTotal * 0.54))) * outerMask * mouthFade;
+
+                    float finalAlpha = saturate(chamberAlpha + shadowAlpha * (1.0 - chamberAlpha * 0.92));
+                    if (finalAlpha < 0.002) discard;
+
+                    float3 finalRgb = lerp(shadowRGB * shadowAlpha, chamberRgb, chamberAlpha) / max(finalAlpha, 0.004);
+                    if (chamberAlpha < 0.02) finalRgb = shadowRGB;
+                    return half4(saturate(finalRgb), finalAlpha);
+                }
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
                 if (_IsCollar > 0.5)
                 {
                     return EvaluateCollar3D(IN);
+                }
+                if (_IsFeedTube > 0.5)
+                {
+                    return EvaluateFeedTube(IN);
                 }
                 if (_IsRoundedBoxPool > 0.5)
                 {

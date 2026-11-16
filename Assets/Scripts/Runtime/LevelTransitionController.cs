@@ -6,13 +6,10 @@ using UnityEngine.UI;
 namespace PuzzleGlass
 {
     /// <summary>
-    /// Level geçişi: ekrana yukarıdan renkli toplar dökülür ve ekranı kapatır, ekran kapalıyken
-    /// sonraki level yüklenir, sonra zemin açılır ve toplar aşağı düşerek yeni leveli ortaya çıkarır.
-    ///
-    /// Geçiş topları oyunun BallObjectPool'unu KULLANMAZ: kendi havuzları vardır, BallPhysicsController
-    /// taşımazlar ve kamera önündeki ayrı bir Z düzleminde (z = ballPlaneZ) düşerler. Böylece level
-    /// yüklenirken silinmezler, oyun mantığına (toplanabilir toplar, level bitti kontrolü) karışmazlar
-    /// ve "Ignore Raycast" katmanında oldukları için dokunmaları engellemezler.
+    /// Level geçişi:
+    /// 1) Temaya uygun düz renkli (#E8E7F5) geçiş perdesi açılır; üzerinde oyun adı ve "LOADING" barı dolar.
+    /// 2) Perde kapalıyken sonraki level arka planda yüklenir.
+    /// 3) Bar dolunca perde kalkar ve renkli 3D toplar ekranın üstünden aşağı doğru yumuşakça süzülerek yeni leveli ortaya çıkarır.
     /// </summary>
     public class LevelTransitionController : MonoBehaviour
     {
@@ -21,72 +18,84 @@ namespace PuzzleGlass
         /// <summary>Geçiş oynarken true. Bu sürede oyuncu girdisi kilitlenir.</summary>
         public static bool IsTransitioning => Instance != null && Instance._isPlaying;
 
-        [Header("Toplar")]
-        [Tooltip("Ekran genişliğine kaç top sığsın (top boyutunu belirler)")]
-        [Range(3, 14)] public int ballsAcrossScreen = 6;
-        [Tooltip("Yığının ekranın üstünü kesin aşması için fazladan top satırı")]
-        [Range(0, 8)] public int extraRows = 3;
-        [Tooltip("Rastgele dökülme sıkı dizilimden daha gevşek yığılır; bunu telafi eden çarpan")]
-        [Range(1.0f, 1.6f)] public float looseStackMultiplier = 1.20f;
-        [Range(60, 400)] public int maxBalls = 260;
-
-        [Header("Arka Perde (toplar arası boşlukları kapatır)")]
-        [Tooltip("Toplar ekranı kapladıktan sonra arkalarında düz bir perde açılır; level değişimi aralardan görünmez")]
-        public bool fillGapsWithBackdrop = true;
-        [Tooltip("Perde rengi (alfa = 0 ise kameranın arka plan rengi kullanılır)")]
-        public Color backdropColor = new Color(0f, 0f, 0f, 0f);
-        public float backdropFadeIn = 0.30f;
-        public float backdropFadeOut = 0.25f;
-        [Tooltip("Kamera önündeki ayrı fizik düzlemi (oyunun collider'larına değmesin)")]
-        public float ballPlaneZ = -4f;
-
-        [Header("Fizik")]
-        [Tooltip("Ek yerçekimi: dökülmenin tok ve hızlı hissettirmesi için")]
-        public float extraGravity = 22f;
-        public float bounciness = 0.25f;
-        public float friction = 0.20f;
+        [Header("Oyun Başlığı ve Tema Rengi")]
+        public string gameTitle = "PUZZLE GLASS";
+        public string loadingLabel = "LOADING...";
+        [Tooltip("Geçiş ekranı düz arka plan rengi (oyun teması açık lavanta #E8E7F5)")]
+        public Color themeBackdropColor = new Color(0.910f, 0.906f, 0.961f, 1f);
+        public Color titleColor = new Color(0.240f, 0.255f, 0.580f, 1f);
+        public Color barFillColor = new Color(0.416f, 0.451f, 0.925f, 1f);
+        public Color barTrackColor = new Color(1.000f, 0.988f, 0.965f, 1f);
 
         [Header("Zamanlama (saniye)")]
-        [Tooltip("Level bittikten sonra dökülme başlamadan önceki kısa bekleme")]
-        public float startDelay = 0.35f;
-        [Tooltip("Dökülmenin ne kadar dağınık/uzun olacağı: aynı sütundaki toplar arası en fazla ek boşluk (çap katı)")]
-        [Range(0.05f, 2.0f)] public float pourSpread = 0.9f;
-        [Tooltip("Tüm toplar bu hızın altına inince yığın oturmuş sayılır")]
-        public float settleSpeed = 0.35f;
-        [Tooltip("Yığının oturmasını en fazla bu kadar bekle")]
-        public float maxSettleWait = 3.0f;
-        [Tooltip("Yığın oturup perde açıldıktan sonra level yüklenmeden önceki kısa bekleme")]
-        public float settleDuration = 0.10f;
-        [Tooltip("Yeni level yüklendikten sonra zemin açılmadan önceki bekleme")]
-        public float holdAfterLoad = 0.15f;
-        [Tooltip("Toplar ekrandan çıkmazsa geçişi en geç bu sürede bitir")]
-        public float maxDrainDuration = 2.5f;
+        [Tooltip("Level bittikten sonra geçiş perdesi açılmadan önceki kısa bekleme")]
+        public float startDelay = 0.22f;
+        [Tooltip("Düz renkli ekranın ve yükleme barının görünme süresi")]
+        public float curtainFadeIn = 0.24f;
+        [Tooltip("LOADING barının 0 -> 100% dolma süresi")]
+        public float loadingBarDuration = 0.85f;
+        [Tooltip("Bar %100 olduktan sonra toplar süzülmeye başlamadan önceki kısa bekleme")]
+        public float completeHoldDuration = 0.12f;
+        [Tooltip("Perde kalkma süresi")]
+        public float curtainFadeOut = 0.32f;
 
-        private readonly List<Rigidbody> _pool = new List<Rigidbody>();
-        private readonly List<Rigidbody> _active = new List<Rigidbody>();
+        [Header("Süzülen Geçiş Topları")]
+        [Tooltip("Ekran genişliğine sığacak sütun sayısı")]
+        [Range(5, 14)] public int ballsAcrossScreen = 8;
+        [Tooltip("Bar dolunca topların ekranı kaplayıp belirme süresi")]
+        public float ballCoverPopDuration = 0.22f;
+        [Tooltip("Topların temel aşağı süzülme hızı (dünya birimi/sn)")]
+        public float glideSpeed = 8.4f;
+        [Tooltip("Yumuşak yatay süzülme salınım genliği")]
+        public float swayAmplitude = 0.08f;
+        [Tooltip("Kamera önündeki ayrı düzlem")]
+        public float ballPlaneZ = -4f;
+        public float maxDrainDuration = 2.2f;
+
+        [Header("UI Üstü Çizim")]
+        public int overlaySortingOrder = 30000;
+
+        /// <summary>Geçiş toplarının ayrılmış katmanı (ana kamera çizmez, yalnızca geçiş kamerası çizer).</summary>
+        public const int TransitionLayer = 31;
+
+        private struct GlidingBall
+        {
+            public Transform transform;
+            public MeshRenderer renderer;
+            public Vector3 basePos;
+            public float popDelay;
+            public float speed;
+            public float accel;
+            public float swayFreq;
+            public float swayPhase;
+            public float swayAmp;
+            public Vector3 spinAxis;
+            public float spinSpeed;
+            public float diameter;
+        }
+
+        private readonly List<GameObject> _pool = new List<GameObject>();
+        private readonly List<GlidingBall> _active = new List<GlidingBall>();
         private Transform _ballRoot;
-        private BoxCollider _floor;
-        private BoxCollider _leftWall;
-        private BoxCollider _rightWall;
-        private PhysicsMaterial _physMaterial;
         private Mesh _sphereMesh;
         private bool _isPlaying;
         private Coroutine _routine;
 
-        /// <summary>
-        /// Geçiş objelerinin katmanı (isimsiz, boş katman). Ana kamera bu katmanı çizmez; geçiş kamerası
-        /// sadece bunu çizer ve sonucu en üstteki overlay canvas'ta gösterir -> toplar tüm UI'ın üstünde.
-        /// </summary>
-        public const int TransitionLayer = 31;
-
-        [Header("UI Üstü Çizim")]
-        [Tooltip("Geçiş canvas'ının sıralaması: tüm UI canvas'larından büyük olmalı")]
-        public int overlaySortingOrder = 30000;
-
         private Camera _overlayCam;
         private RenderTexture _overlayRT;
         private Canvas _overlayCanvas;
+        private CanvasGroup _curtainGroup;
+        private Image _curtainBg;
+        private RectTransform _barFillRect;
+        private float _barFullWidth = 580f;
+        private Text _titleText;
+        private Text _loadingText;
         private RawImage _overlayImage;
+
+        private Sprite _pillSprite;
+        private Font _uiFont;
+        private bool _warmedUp;
+        private bool _warming;
 
         public static LevelTransitionController GetOrCreate()
         {
@@ -122,8 +131,8 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Level bittiğinde çağrılır: top dökülmesi -> sonraki level yüklenir -> toplar düşüp gider.
-        /// Geçiş zaten oynuyorsa ikinci çağrı yok sayılır.
+        /// Level bittiğinde çağrılır:
+        /// Düz tema ekranı + oyun adı + LOADING barı dolar -> sonraki level yüklenir -> toplar aşağı süzülür.
         /// </summary>
         public void PlayNextLevelTransition(List<PuzzleColor> colors)
         {
@@ -131,177 +140,19 @@ namespace PuzzleGlass
             _routine = StartCoroutine(TransitionRoutine(colors));
         }
 
-        private IEnumerator TransitionRoutine(List<PuzzleColor> colors)
-        {
-            _isPlaying = true;
-
-            var gm = PuzzleGlassGameManager.Instance;
-            Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
-            if (cam == null || gm == null)
-            {
-                // Kamera yoksa geçiş yapamayız: eski davranışa düş
-                _isPlaying = false;
-                if (gm != null) gm.LoadNextLevel();
-                yield break;
-            }
-
-            if (colors == null || colors.Count == 0)
-            {
-                colors = new List<PuzzleColor>((PuzzleColor[])System.Enum.GetValues(typeof(PuzzleColor)));
-            }
-
-            EnsureResources();
-
-            // --- Ekran sınırları (ortografik kamera) ---
-            float halfH = cam.orthographicSize;
-            float halfW = halfH * cam.aspect;
-            Vector3 camPos = cam.transform.position;
-            float left = camPos.x - halfW;
-            float right = camPos.x + halfW;
-            float bottom = camPos.y - halfH;
-            float top = camPos.y + halfH;
-
-            float diameter = (halfW * 2f) / ballsAcrossScreen;
-            float radius = diameter * 0.5f;
-            int count = ComputeBallCount(cam);
-
-            BuildCage(left, right, bottom, halfH);
-            SetupBackdrop(cam, camPos, halfW, halfH);
-            BeginOverlay(cam);
-
-            // Topları önceden oluştur: dökülme karesinde yüzlerce obje yaratmak takılma yapıyordu ve
-            // büyük deltaTime yüzünden toplar iç içe doğup birbirini fırlatıyordu (ilk geçişte yarım dolma).
-            Prewarm(count);
-
-            if (startDelay > 0f) yield return new WaitForSeconds(startDelay);
-
-            // --- 1. Dökülme ---
-            // Toplar ekran üstünde sütunlar hâlinde, aralarında rastgele boşluklarla üst üste dizilir.
-            // Sütun aralığı = çap, aynı sütunda aralık >= çap: hiçbir top doğarken diğeriyle çakışmaz.
-            // Hepsi aynı anda serbest bırakılır; rastgele boşluklar sayesinde dökülme gibi görünür.
-            int cols = ballsAcrossScreen;
-            float[] colY = new float[cols];
-            for (int ci = 0; ci < cols; ci++) colY[ci] = top + radius + Random.Range(0f, diameter * 1.5f);
-
-            for (int i = 0; i < count; i++)
-            {
-                int ci = i % cols;
-                float x = left + radius + ci * diameter;
-                float y = colY[ci];
-                colY[ci] += diameter * Random.Range(1.02f, 1.0f + pourSpread);
-                PuzzleColor c = colors[Random.Range(0, colors.Count)];
-                SpawnBall(new Vector3(x, y, ballPlaneZ), diameter, c);
-            }
-
-            // --- 2. Yığın gerçekten oturana kadar bekle (en geç maxSettleWait) ---
-            float waited = 0f;
-            float settleSpeedSq = settleSpeed * settleSpeed;
-            while (waited < maxSettleWait)
-            {
-                waited += Time.deltaTime;
-                bool anyFast = false;
-                for (int i = 0; i < _active.Count; i++)
-                {
-                    var rb = _active[i];
-                    if (rb == null) continue;
-                    if (rb.linearVelocity.sqrMagnitude > settleSpeedSq) { anyFast = true; break; }
-                }
-                // Hareket bittiyse (ya da çok az kaldıysa) çık
-                if (!anyFast && waited > 0.3f) break;
-                yield return null;
-            }
-
-            // Toplar arası boşlukları kapatan perde
-            yield return FadeBackdrop(1f, backdropFadeIn);
-            if (settleDuration > 0f) yield return new WaitForSeconds(settleDuration);
-
-            // --- 3. Ekran kapalıyken sonraki leveli yükle ---
-            gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
-            gm.LoadNextLevel();
-
-            if (holdAfterLoad > 0f) yield return new WaitForSeconds(holdAfterLoad);
-
-            // --- 4. Zemini aç, toplar aşağı düşsün ---
-            if (_floor != null) _floor.enabled = false;
-            for (int i = 0; i < _active.Count; i++)
-            {
-                var rb = _active[i];
-                if (rb == null) continue;
-                rb.WakeUp();
-                rb.linearVelocity += new Vector3(Random.Range(-0.4f, 0.4f), Random.Range(-1.5f, -0.3f), 0f);
-            }
-            StartCoroutine(FadeBackdrop(0f, backdropFadeOut));
-
-            float drainT = 0f;
-            float killY = bottom - diameter * 2f;
-            while (_active.Count > 0 && drainT < maxDrainDuration)
-            {
-                drainT += Time.deltaTime;
-                for (int i = _active.Count - 1; i >= 0; i--)
-                {
-                    var rb = _active[i];
-                    if (rb == null || rb.position.y < killY)
-                    {
-                        RecycleAt(i);
-                    }
-                }
-                yield return null;
-            }
-
-            // Süre dolduysa kalanları da topla
-            for (int i = _active.Count - 1; i >= 0; i--) RecycleAt(i);
-
-            if (_floor != null) _floor.enabled = true;
-            EndOverlay();
-            _isPlaying = false;
-            _routine = null;
-        }
-
-        private void FixedUpdate()
-        {
-            if (!_isPlaying || extraGravity <= 0.01f) return;
-            for (int i = 0; i < _active.Count; i++)
-            {
-                var rb = _active[i];
-                if (rb != null && !rb.isKinematic)
-                {
-                    rb.AddForce(Vector3.down * extraGravity, ForceMode.Acceleration);
-                }
-            }
-        }
-
-        /// <summary>Geçişi anında iptal eder ve tüm geçiş toplarını gizler (ör. sahne değişimi).</summary>
+        /// <summary>Geçişi anında iptal eder ve tüm geçiş objelerini gizler.</summary>
         public void CancelTransition()
         {
             if (_routine != null) StopCoroutine(_routine);
             _routine = null;
-            for (int i = _active.Count - 1; i >= 0; i--) RecycleAt(i);
-            if (_floor != null) _floor.enabled = true;
-            if (_backdrop != null) _backdrop.gameObject.SetActive(false);
+            RecycleAllActive();
+            if (_curtainGroup != null) _curtainGroup.alpha = 0f;
             EndOverlay();
             _isPlaying = false;
         }
 
-        // ==================== UI Üstü Çizim (ayrı kamera -> RenderTexture -> en üst canvas) ====================
-
-        /// <summary>Ekranı alttan üste dolduracak top sayısı (altıgen dizilim + fazladan satırlar + gevşek yığılma payı).</summary>
-        private int ComputeBallCount(Camera cam)
-        {
-            float halfH = cam.orthographicSize;
-            float halfW = halfH * cam.aspect;
-            float diameter = (halfW * 2f) / ballsAcrossScreen;
-            int rows = Mathf.CeilToInt((halfH * 2f) / (diameter * 0.866f)) + extraRows;
-            return Mathf.Min(maxBalls, Mathf.CeilToInt(rows * ballsAcrossScreen * looseStackMultiplier));
-        }
-
-        // ==================== Önceden hazırlık (takılmasın diye) ====================
-
-        private bool _warmedUp;
-        private bool _warming;
-
         /// <summary>
-        /// Geçişin ağır kısımlarını (top objeleri, render texture, kamera, canvas, shader derlemesi) level başında
-        /// birkaç kareye yayarak hazırlar. Yoksa son top girdiği anda hepsi aynı karede yapılıp oyun donuyordu.
+        /// İlk geçişte takılma olmaması için geçiş kamerası, canvas, top havuzu ve shader'ları önceden ısıtır.
         /// </summary>
         public void BeginWarmUp()
         {
@@ -312,7 +163,6 @@ namespace PuzzleGlass
         private IEnumerator WarmUpRoutine()
         {
             _warming = true;
-            // Level yüklemesi bitsin
             yield return null;
             yield return null;
 
@@ -324,54 +174,50 @@ namespace PuzzleGlass
             EnsureOverlay(cam);
             yield return null;
 
-            // Topları karelere yayarak oluştur
-            int count = ComputeBallCount(cam);
-            const int perFrame = 20;
-            while (_pool.Count + _active.Count < count)
+            int targetCount = ComputeFullScreenBallCount(cam);
+            const int perFrame = 18;
+            while (_pool.Count + _active.Count < targetCount)
             {
-                if (_isPlaying) { _warming = false; yield break; } // geçiş başladıysa kalanını o halleder
-                int n = Mathf.Min(perFrame, count - (_pool.Count + _active.Count));
+                if (_isPlaying) { _warming = false; yield break; }
+                int n = Mathf.Min(perFrame, targetCount - (_pool.Count + _active.Count));
                 for (int i = 0; i < n; i++)
                 {
-                    var rb = CreateBall();
-                    rb.isKinematic = true;
-                    rb.gameObject.SetActive(false);
-                    _pool.Add(rb);
+                    var go = CreateBallObject();
+                    go.SetActive(false);
+                    _pool.Add(go);
                 }
                 yield return null;
             }
 
-            // Perde sprite'ı
-            float halfH = cam.orthographicSize;
-            SetupBackdrop(cam, cam.transform.position, halfH * cam.aspect, halfH);
-            if (_backdrop != null) _backdrop.gameObject.SetActive(false);
-
-            // Shader ısınması: her renkten bir topu geçiş kamerasıyla bir kez görünmeden çiz
-            // (canvas kapalı olduğu için ekranda bir şey görünmez; ilk geçişteki shader derleme takılmasını önler)
             if (!_isPlaying && BallObjectPool.Instance != null)
             {
                 var colors = (PuzzleColor[])System.Enum.GetValues(typeof(PuzzleColor));
-                var shown = new List<Rigidbody>();
-                float d = (halfH * cam.aspect * 2f) / ballsAcrossScreen;
+                var shown = new List<GameObject>();
+                float d = (cam.orthographicSize * 2f * cam.aspect) / ballsAcrossScreen;
                 Vector3 c = cam.transform.position;
                 for (int i = 0; i < colors.Length && i < _pool.Count; i++)
                 {
-                    var rb = _pool[i];
-                    var mr = rb.GetComponent<MeshRenderer>();
-                    var mat = BallObjectPool.Instance.GetBallMaterial(colors[i]);
-                    if (mr != null && mat != null) mr.sharedMaterial = mat;
-                    rb.transform.position = new Vector3(c.x + (i - colors.Length * 0.5f) * d * 0.5f, c.y, ballPlaneZ);
-                    rb.transform.localScale = Vector3.one * d;
-                    rb.gameObject.SetActive(true);
-                    shown.Add(rb);
+                    var go = _pool[i];
+                    var mr = go.GetComponent<MeshRenderer>();
+                    var mat = BallObjectPool.Instance.SharedInstancedBallMaterial;
+                    if (mr != null && mat != null)
+                    {
+                        mr.sharedMaterial = mat;
+                        BallObjectPool.ApplyBallPropertyBlock(mr, colors[i], variantIndex: 1, wobblePhase: i * 0.47f);
+                    }
+                    go.transform.position = new Vector3(c.x + (i - colors.Length * 0.5f) * d * 0.5f, c.y, ballPlaneZ);
+                    go.transform.localScale = Vector3.one * d;
+                    go.SetActive(true);
+                    shown.Add(go);
                 }
+
                 _overlayCam.enabled = true;
                 yield return new WaitForEndOfFrame();
                 yield return null;
                 if (!_isPlaying)
                 {
                     _overlayCam.enabled = false;
-                    foreach (var rb in shown) rb.gameObject.SetActive(false);
+                    foreach (var go in shown) go.SetActive(false);
                 }
             }
 
@@ -379,19 +225,371 @@ namespace PuzzleGlass
             _warming = false;
         }
 
-        private void BeginOverlay(Camera mainCam)
+        private IEnumerator TransitionRoutine(List<PuzzleColor> colors)
+        {
+            _isPlaying = true;
+
+            var gm = PuzzleGlassGameManager.Instance;
+            Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
+            if (cam == null || gm == null)
+            {
+                _isPlaying = false;
+                if (gm != null) gm.LoadNextLevel();
+                yield break;
+            }
+
+            if (colors == null || colors.Count == 0)
+            {
+                colors = new List<PuzzleColor>((PuzzleColor[])System.Enum.GetValues(typeof(PuzzleColor)));
+            }
+
+            EnsureResources();
+            EnsureOverlay(cam);
+
+            int ballCount = ComputeFullScreenBallCount(cam);
+            Prewarm(ballCount);
+
+            if (startDelay > 0f) yield return new WaitForSeconds(startDelay);
+
+            // --- 1. Düz tema perdesi + oyun adı + LOADING bar açılır ---
+            BeginOverlay(cam, showCurtain: true);
+            SetLoadingProgress(0f);
+
+            float fadeInT = 0f;
+            float fadeInDur = Mathf.Max(0.05f, curtainFadeIn);
+            while (fadeInT < fadeInDur)
+            {
+                fadeInT += Time.deltaTime;
+                if (_curtainGroup != null) _curtainGroup.alpha = Mathf.SmoothStep(0f, 1f, fadeInT / fadeInDur);
+                yield return null;
+            }
+            if (_curtainGroup != null) _curtainGroup.alpha = 1f;
+
+            // --- 2. LOADING bar dolarken perde arkasında sonraki level sessizce yüklenir ---
+            bool nextLoaded = false;
+            float loadDur = Mathf.Max(0.20f, loadingBarDuration);
+            float loadT = 0f;
+            while (loadT < loadDur)
+            {
+                loadT += Time.deltaTime;
+                float u = Mathf.Clamp01(loadT / loadDur);
+                float eased = u < 0.5f ? 2f * u * u : 1f - Mathf.Pow(-2f * u + 2f, 2f) * 0.5f;
+                SetLoadingProgress(eased);
+
+                if (!nextLoaded && u >= 0.42f)
+                {
+                    nextLoaded = true;
+                    gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
+                    gm.LoadNextLevel();
+                }
+                yield return null;
+            }
+
+            if (!nextLoaded)
+            {
+                gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
+                gm.LoadNextLevel();
+            }
+            SetLoadingProgress(1f);
+
+            if (completeHoldDuration > 0f) yield return new WaitForSeconds(completeHoldDuration);
+
+            // --- 3. Bar %100 olunca düz perdenin üstünde tüm ekranı boşluksuz kaplayan toplar belirir ---
+            SpawnFullScreenBlanket(cam, colors);
+
+            float popTotalDur = Mathf.Max(0.10f, ballCoverPopDuration);
+            const float singleBallPopDur = 0.12f;
+            float popT = 0f;
+            while (popT < popTotalDur + singleBallPopDur)
+            {
+                popT += Time.deltaTime;
+                for (int i = 0; i < _active.Count; i++)
+                {
+                    GlidingBall b = _active[i];
+                    if (b.transform == null) continue;
+                    float localT = Mathf.Clamp01((popT - b.popDelay) / singleBallPopDur);
+                    float s = EaseOutBack(localT);
+                    b.transform.localScale = Vector3.one * (b.diameter * s);
+                }
+                yield return null;
+            }
+            for (int i = 0; i < _active.Count; i++)
+            {
+                if (_active[i].transform != null)
+                    _active[i].transform.localScale = Vector3.one * _active[i].diameter;
+            }
+
+            // Ekran toplarla %100 kaplandıktan sonra alttaki düz perde kalkar (oyun henüz tamamen gizlidir)
+            if (_curtainGroup != null)
+            {
+                _curtainGroup.alpha = 0f;
+                _curtainGroup.blocksRaycasts = true;
+            }
+
+            // --- 4. Tüm ekranı kaplayan top perdesi aynı anda aşağı doğru süzülerek yeni leveli ortaya çıkarır ---
+            float halfH = cam.orthographicSize;
+            float killY = cam.transform.position.y - halfH - 1.2f;
+            float revealT = 0f;
+
+            while (_active.Count > 0 && revealT < maxDrainDuration)
+            {
+                float dt = Time.deltaTime;
+                revealT += dt;
+
+                if (_curtainGroup != null && revealT > 0.25f)
+                {
+                    _curtainGroup.blocksRaycasts = false;
+                }
+
+                for (int i = _active.Count - 1; i >= 0; i--)
+                {
+                    GlidingBall b = _active[i];
+                    if (b.transform == null)
+                    {
+                        _active.RemoveAt(i);
+                        continue;
+                    }
+
+                    b.speed += b.accel * dt;
+                    b.basePos.y -= b.speed * dt;
+
+                    float swayOffset = Mathf.Sin(revealT * b.swayFreq + b.swayPhase) * b.swayAmp;
+                    b.transform.position = new Vector3(b.basePos.x + swayOffset, b.basePos.y, b.basePos.z);
+                    b.transform.Rotate(b.spinAxis, b.spinSpeed * dt, Space.World);
+                    _active[i] = b;
+
+                    if (b.basePos.y < killY - b.diameter)
+                    {
+                        RecycleAt(i);
+                    }
+                }
+
+                yield return null;
+            }
+
+            RecycleAllActive();
+            EndOverlay();
+            _isPlaying = false;
+            _routine = null;
+        }
+
+        private void ComputeFullScreenGridParams(Camera cam, out int colsPlusOne, out int rows, out float colStep, out float rowStep, out float diameter, out float left, out float bottom)
+        {
+            float halfH = cam.orthographicSize;
+            float halfW = halfH * cam.aspect;
+            Vector3 camPos = cam.transform.position;
+            left = camPos.x - halfW;
+            bottom = camPos.y - halfH;
+
+            int cols = Mathf.Max(5, ballsAcrossScreen);
+            colStep = (halfW * 2f) / cols;
+            // Çap colStep'ten biraz geniş tutulur: komşu toplar arası hiç boşluk kalmaz, tüm ekran kaplanır
+            diameter = colStep * 1.24f;
+            rowStep = colStep * 0.86f;
+            colsPlusOne = cols + 2;
+            rows = Mathf.CeilToInt((halfH * 2f + diameter * 1.4f) / rowStep) + 2;
+        }
+
+        private int ComputeFullScreenBallCount(Camera cam)
+        {
+            if (cam == null) return 220;
+            ComputeFullScreenGridParams(cam, out int colsPlusOne, out int rows, out _, out _, out _, out _, out _);
+            return colsPlusOne * rows;
+        }
+
+        private void SpawnFullScreenBlanket(Camera cam, List<PuzzleColor> colors)
+        {
+            ComputeFullScreenGridParams(cam, out int colsPlusOne, out int rows, out float colStep, out float rowStep, out float diameter, out float left, out float bottom);
+
+            float popWindow = Mathf.Max(0.05f, ballCoverPopDuration);
+            float startX = left - colStep * 0.5f;
+            float startY = bottom - diameter * 0.25f;
+
+            for (int r = 0; r < rows; r++)
+            {
+                float rowNorm = (float)r / Mathf.Max(1, rows - 1);
+                float stagger = (r % 2 == 1) ? colStep * 0.5f : 0f;
+                for (int c = 0; c < colsPlusOne; c++)
+                {
+                    float x = startX + c * colStep + stagger + Random.Range(-colStep * 0.06f, colStep * 0.06f);
+                    float y = startY + r * rowStep + Random.Range(-rowStep * 0.06f, rowStep * 0.06f);
+                    float z = ballPlaneZ + (((r + c) & 1) == 0 ? 0f : -0.045f);
+
+                    PuzzleColor col = colors[Random.Range(0, colors.Count)];
+                    // Üstten aşağı dalga hâlinde açılış
+                    float popDelay = (1f - rowNorm) * popWindow * 0.72f + Random.Range(0f, popWindow * 0.28f);
+                    SpawnGlidingBall(new Vector3(x, y, z), diameter, col, popDelay);
+                }
+            }
+        }
+
+        private void SpawnGlidingBall(Vector3 pos, float diameter, PuzzleColor color, float popDelay)
+        {
+            GameObject go;
+            if (_pool.Count > 0)
+            {
+                go = _pool[_pool.Count - 1];
+                _pool.RemoveAt(_pool.Count - 1);
+            }
+            else
+            {
+                go = CreateBallObject();
+            }
+
+            go.transform.position = pos;
+            go.transform.rotation = Random.rotation;
+            go.transform.localScale = Vector3.zero;
+
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr != null && BallObjectPool.Instance != null)
+            {
+                Material mat = BallObjectPool.Instance.SharedInstancedBallMaterial;
+                if (mat != null)
+                {
+                    mr.sharedMaterial = mat;
+                    BallObjectPool.ApplyBallPropertyBlock(mr, color, variantIndex: 1, wobblePhase: _active.Count * 0.47f);
+                }
+            }
+
+            go.SetActive(true);
+            _active.Add(new GlidingBall
+            {
+                transform = go.transform,
+                renderer = mr,
+                basePos = pos,
+                popDelay = popDelay,
+                speed = glideSpeed * Random.Range(0.92f, 1.12f),
+                accel = Random.Range(3.2f, 4.8f),
+                swayFreq = Random.Range(2.2f, 3.6f),
+                swayPhase = Random.Range(0f, Mathf.PI * 2f),
+                swayAmp = swayAmplitude * Random.Range(0.5f, 1.1f),
+                spinAxis = Random.onUnitSphere,
+                spinSpeed = Random.Range(75f, 180f),
+                diameter = diameter
+            });
+        }
+
+        private static float EaseOutBack(float t)
+        {
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+            float u = t - 1f;
+            return 1f + c3 * u * u * u + c1 * u * u;
+        }
+
+        private void Prewarm(int count)
+        {
+            int needed = count - (_pool.Count + _active.Count);
+            for (int i = 0; i < needed; i++)
+            {
+                var go = CreateBallObject();
+                go.SetActive(false);
+                _pool.Add(go);
+            }
+        }
+
+        private GameObject CreateBallObject()
+        {
+            var go = new GameObject("TransitionBall");
+            go.layer = TransitionLayer;
+            go.transform.SetParent(_ballRoot, false);
+
+            var mf = go.AddComponent<MeshFilter>();
+            mf.sharedMesh = _sphereMesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            return go;
+        }
+
+        private void RecycleAt(int index)
+        {
+            var b = _active[index];
+            _active.RemoveAt(index);
+            if (b.transform == null) return;
+            b.transform.gameObject.SetActive(false);
+            _pool.Add(b.transform.gameObject);
+        }
+
+        private void RecycleAllActive()
+        {
+            for (int i = _active.Count - 1; i >= 0; i--) RecycleAt(i);
+        }
+
+        private void EnsureResources()
+        {
+            if (_ballRoot == null)
+            {
+                var root = new GameObject("TransitionBalls");
+                root.transform.SetParent(transform, false);
+                _ballRoot = root.transform;
+            }
+
+            if (_sphereMesh == null)
+            {
+                GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                var mf = temp.GetComponent<MeshFilter>();
+                if (mf != null) _sphereMesh = mf.sharedMesh;
+                Destroy(temp);
+            }
+
+            if (_uiFont == null)
+            {
+                _uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                if (_uiFont == null) _uiFont = Font.CreateDynamicFontFromOSFont("Arial", 48);
+            }
+
+            if (_pillSprite == null)
+            {
+                _pillSprite = CreateRoundedPillSprite(96, 48, 22);
+            }
+        }
+
+        private void BeginOverlay(Camera mainCam, bool showCurtain)
         {
             EnsureOverlay(mainCam);
             _overlayCam.enabled = true;
             _overlayCanvas.sortingOrder = overlaySortingOrder;
             _overlayImage.texture = _overlayRT;
+
+            if (_curtainBg != null) _curtainBg.color = themeBackdropColor;
+            if (_titleText != null)
+            {
+                _titleText.text = gameTitle;
+                _titleText.color = titleColor;
+            }
+            if (_loadingText != null) _loadingText.text = loadingLabel;
+            if (_curtainGroup != null)
+            {
+                _curtainGroup.alpha = showCurtain ? 0f : 0f;
+                _curtainGroup.blocksRaycasts = showCurtain;
+            }
+
             _overlayCanvas.gameObject.SetActive(true);
         }
 
-        /// <summary>Render texture, geçiş kamerası ve en üst canvas'ı oluşturur (kapalı hâlde).</summary>
+        private void EndOverlay()
+        {
+            if (_overlayCam != null) _overlayCam.enabled = false;
+            if (_overlayCanvas != null) _overlayCanvas.gameObject.SetActive(false);
+        }
+
+        private void SetLoadingProgress(float progress01)
+        {
+            if (_barFillRect == null) return;
+            float p = Mathf.Clamp01(progress01);
+            float minW = p > 0.001f ? Mathf.Max(28f, _barFullWidth * p) : 0f;
+            _barFillRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, Mathf.Min(_barFullWidth, minW));
+
+            if (_loadingText != null)
+            {
+                int pct = Mathf.RoundToInt(p * 100f);
+                _loadingText.text = $"{loadingLabel}  {pct}%";
+            }
+        }
+
         private void EnsureOverlay(Camera mainCam)
         {
-            // Ana kamera geçiş katmanını çizmesin (yoksa toplar iki kez görünür)
             mainCam.cullingMask &= ~(1 << TransitionLayer);
 
             int w = Mathf.Max(16, Screen.width);
@@ -417,13 +615,12 @@ namespace PuzzleGlass
                 camGo.transform.SetParent(transform, false);
                 _overlayCam = camGo.AddComponent<Camera>();
                 _overlayCam.clearFlags = CameraClearFlags.SolidColor;
-                _overlayCam.backgroundColor = new Color(0f, 0f, 0f, 0f); // şeffaf: sadece toplar ve perde görünsün
+                _overlayCam.backgroundColor = new Color(0f, 0f, 0f, 0f);
                 _overlayCam.cullingMask = 1 << TransitionLayer;
                 _overlayCam.allowHDR = false;
-                _overlayCam.enabled = false; // sadece geçişte (ve ısınmada) çizer
+                _overlayCam.enabled = false;
             }
 
-            // Ana kamerayla birebir aynı kadraj
             _overlayCam.transform.SetPositionAndRotation(mainCam.transform.position, mainCam.transform.rotation);
             _overlayCam.orthographic = mainCam.orthographic;
             _overlayCam.orthographicSize = mainCam.orthographicSize;
@@ -435,233 +632,177 @@ namespace PuzzleGlass
 
             if (_overlayCanvas == null)
             {
-                var canvasGo = new GameObject("TransitionOverlayCanvas");
-                canvasGo.transform.SetParent(transform, false);
-                _overlayCanvas = canvasGo.AddComponent<Canvas>();
-                _overlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                // Geçiş sırasında alttaki UI butonlarına basılmasın
-                canvasGo.AddComponent<GraphicRaycaster>();
-
-                var imgGo = new GameObject("TransitionImage");
-                imgGo.transform.SetParent(canvasGo.transform, false);
-                _overlayImage = imgGo.AddComponent<RawImage>();
-                var rt = _overlayImage.rectTransform;
-                rt.anchorMin = Vector2.zero;
-                rt.anchorMax = Vector2.one;
-                rt.offsetMin = Vector2.zero;
-                rt.offsetMax = Vector2.zero;
-                _overlayImage.raycastTarget = true;
-                canvasGo.SetActive(false); // geçiş başlayana kadar kapalı (UI'ı engellemesin)
+                BuildTransitionCanvas();
             }
 
             _overlayImage.texture = _overlayRT;
         }
 
-        private void EndOverlay()
+        private void BuildTransitionCanvas()
         {
-            if (_overlayCam != null) _overlayCam.enabled = false;
-            if (_overlayCanvas != null) _overlayCanvas.gameObject.SetActive(false);
+            var canvasGo = new GameObject("TransitionOverlayCanvas");
+            canvasGo.transform.SetParent(transform, false);
+            _overlayCanvas = canvasGo.AddComponent<Canvas>();
+            _overlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            _overlayCanvas.sortingOrder = overlaySortingOrder;
+
+            var scaler = canvasGo.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            canvasGo.AddComponent<GraphicRaycaster>();
+
+            // 1) Düz renkli tema perdesi + Başlık + Loading bar
+            var curtainGo = new GameObject("ThemeCurtain");
+            curtainGo.transform.SetParent(canvasGo.transform, false);
+            var curtainRT = curtainGo.AddComponent<RectTransform>();
+            StretchFill(curtainRT);
+            _curtainBg = curtainGo.AddComponent<Image>();
+            _curtainBg.color = themeBackdropColor;
+            _curtainBg.raycastTarget = true;
+            _curtainGroup = curtainGo.AddComponent<CanvasGroup>();
+            _curtainGroup.alpha = 0f;
+
+            var centerGo = new GameObject("CenterContent");
+            centerGo.transform.SetParent(curtainGo.transform, false);
+            var centerRT = centerGo.AddComponent<RectTransform>();
+            centerRT.anchorMin = new Vector2(0.5f, 0.5f);
+            centerRT.anchorMax = new Vector2(0.5f, 0.5f);
+            centerRT.sizeDelta = new Vector2(860f, 360f);
+            centerRT.anchoredPosition = new Vector2(0f, 30f);
+
+            // Oyun İsmi ("PUZZLE GLASS")
+            var titleGo = new GameObject("GameTitle");
+            titleGo.transform.SetParent(centerGo.transform, false);
+            var titleRT = titleGo.AddComponent<RectTransform>();
+            titleRT.anchorMin = new Vector2(0.5f, 1f);
+            titleRT.anchorMax = new Vector2(0.5f, 1f);
+            titleRT.sizeDelta = new Vector2(840f, 120f);
+            titleRT.anchoredPosition = new Vector2(0f, -68f);
+            _titleText = titleGo.AddComponent<Text>();
+            _titleText.font = _uiFont;
+            _titleText.text = gameTitle;
+            _titleText.fontSize = 90;
+            _titleText.fontStyle = FontStyle.Bold;
+            _titleText.color = titleColor;
+            _titleText.alignment = TextAnchor.MiddleCenter;
+            _titleText.raycastTarget = false;
+            var titleShadow = titleGo.AddComponent<Shadow>();
+            titleShadow.effectColor = new Color(barFillColor.r, barFillColor.g, barFillColor.b, 0.25f);
+            titleShadow.effectDistance = new Vector2(0f, -5f);
+
+            // "LOADING..." yazısı
+            var loadTxtGo = new GameObject("LoadingLabel");
+            loadTxtGo.transform.SetParent(centerGo.transform, false);
+            var loadTxtRT = loadTxtGo.AddComponent<RectTransform>();
+            loadTxtRT.anchorMin = new Vector2(0.5f, 0.5f);
+            loadTxtRT.anchorMax = new Vector2(0.5f, 0.5f);
+            loadTxtRT.sizeDelta = new Vector2(600f, 52f);
+            loadTxtRT.anchoredPosition = new Vector2(0f, -24f);
+            _loadingText = loadTxtGo.AddComponent<Text>();
+            _loadingText.font = _uiFont;
+            _loadingText.text = loadingLabel;
+            _loadingText.fontSize = 30;
+            _loadingText.fontStyle = FontStyle.Bold;
+            _loadingText.color = Color.Lerp(titleColor, barFillColor, 0.45f);
+            _loadingText.alignment = TextAnchor.MiddleCenter;
+            _loadingText.raycastTarget = false;
+
+            // Yuvarlak Loading Bar arka gölge
+            const float barW = 600f;
+            const float barH = 42f;
+            const float pad = 6f;
+            _barFullWidth = barW - pad * 2f;
+
+            var barShadowGo = new GameObject("BarShadow");
+            barShadowGo.transform.SetParent(centerGo.transform, false);
+            var barShadowRT = barShadowGo.AddComponent<RectTransform>();
+            barShadowRT.anchorMin = new Vector2(0.5f, 0.5f);
+            barShadowRT.anchorMax = new Vector2(0.5f, 0.5f);
+            barShadowRT.sizeDelta = new Vector2(barW + 6f, barH + 6f);
+            barShadowRT.anchoredPosition = new Vector2(0f, -86f);
+            var barShadowImg = barShadowGo.AddComponent<Image>();
+            barShadowImg.sprite = _pillSprite;
+            barShadowImg.type = Image.Type.Sliced;
+            barShadowImg.color = new Color(0.52f, 0.51f, 0.74f, 0.30f);
+            barShadowImg.raycastTarget = false;
+
+            // Track (krem beyaz yuvarlak çerçeve)
+            var trackGo = new GameObject("LoadingBarTrack");
+            trackGo.transform.SetParent(centerGo.transform, false);
+            var trackRT = trackGo.AddComponent<RectTransform>();
+            trackRT.anchorMin = new Vector2(0.5f, 0.5f);
+            trackRT.anchorMax = new Vector2(0.5f, 0.5f);
+            trackRT.sizeDelta = new Vector2(barW, barH);
+            trackRT.anchoredPosition = new Vector2(0f, -82f);
+            var trackImg = trackGo.AddComponent<Image>();
+            trackImg.sprite = _pillSprite;
+            trackImg.type = Image.Type.Sliced;
+            trackImg.color = barTrackColor;
+            trackImg.raycastTarget = false;
+
+            // Fill bar (periwinkle tema mavisi + yuvarlak uçlu dolgu)
+            var fillGo = new GameObject("LoadingBarFill");
+            fillGo.transform.SetParent(trackGo.transform, false);
+            _barFillRect = fillGo.AddComponent<RectTransform>();
+            _barFillRect.anchorMin = new Vector2(0f, 0.5f);
+            _barFillRect.anchorMax = new Vector2(0f, 0.5f);
+            _barFillRect.pivot = new Vector2(0f, 0.5f);
+            _barFillRect.anchoredPosition = new Vector2(pad, 0f);
+            _barFillRect.sizeDelta = new Vector2(0f, barH - pad * 2f);
+            var fillImg = fillGo.AddComponent<Image>();
+            fillImg.sprite = _pillSprite;
+            fillImg.type = Image.Type.Sliced;
+            fillImg.color = barFillColor;
+            fillImg.raycastTarget = false;
+
+            // 2) En üstte şeffaf arka planlı 3D süzülen top katmanı
+            var imgGo = new GameObject("TransitionBallsOverlay");
+            imgGo.transform.SetParent(canvasGo.transform, false);
+            _overlayImage = imgGo.AddComponent<RawImage>();
+            StretchFill(_overlayImage.rectTransform);
+            _overlayImage.raycastTarget = false;
+
+            canvasGo.SetActive(false);
         }
 
-        // ==================== Arka Perde ====================
-
-        private SpriteRenderer _backdrop;
-        private Color _backdropBaseColor;
-
-        /// <summary>Topların hemen arkasına, ekranı tamamen kaplayan düz renkli bir perde koyar (başta görünmez).</summary>
-        private void SetupBackdrop(Camera cam, Vector3 camPos, float halfW, float halfH)
+        private static void StretchFill(RectTransform rt)
         {
-            if (!fillGapsWithBackdrop) return;
-
-            if (_backdrop == null)
-            {
-                var go = new GameObject("TransitionBackdrop");
-                go.layer = TransitionLayer;
-                go.transform.SetParent(transform, false);
-                _backdrop = go.AddComponent<SpriteRenderer>();
-                var tex = Texture2D.whiteTexture;
-                _backdrop.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), tex.width);
-            }
-
-            _backdropBaseColor = backdropColor.a > 0.01f ? backdropColor : cam.backgroundColor;
-            _backdropBaseColor.a = 1f;
-
-            // Topların hemen arkasında (kameradan daha uzak), oyunun önünde
-            _backdrop.transform.position = new Vector3(camPos.x, camPos.y, ballPlaneZ + 1f);
-            _backdrop.transform.localScale = new Vector3(halfW * 2f + 0.5f, halfH * 2f + 0.5f, 1f);
-            SetBackdropAlpha(0f);
-            _backdrop.gameObject.SetActive(true);
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
-        private IEnumerator FadeBackdrop(float targetAlpha, float duration)
+        private static Sprite CreateRoundedPillSprite(int width, int height, int radius)
         {
-            if (_backdrop == null || !fillGapsWithBackdrop) yield break;
-
-            float start = _backdrop.color.a;
-            float t = 0f;
-            while (t < duration)
+            Texture2D tex = new Texture2D(width, height, TextureFormat.RGBA32, false)
             {
-                t += Time.deltaTime;
-                SetBackdropAlpha(Mathf.Lerp(start, targetAlpha, t / duration));
-                yield return null;
-            }
-            SetBackdropAlpha(targetAlpha);
-            if (targetAlpha <= 0.001f) _backdrop.gameObject.SetActive(false);
-        }
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            Color32[] pixels = new Color32[width * height];
+            float r = Mathf.Min(radius, Mathf.Min(width, height) * 0.5f);
 
-        private void SetBackdropAlpha(float a)
-        {
-            if (_backdrop == null) return;
-            Color c = _backdropBaseColor;
-            c.a = a;
-            _backdrop.color = c;
-        }
-
-        // ==================== Yardımcılar ====================
-
-        private void EnsureResources()
-        {
-            if (_ballRoot == null)
+            for (int y = 0; y < height; y++)
             {
-                var root = new GameObject("TransitionBalls");
-                root.transform.SetParent(transform, false);
-                _ballRoot = root.transform;
-            }
-
-            if (_physMaterial == null)
-            {
-                _physMaterial = new PhysicsMaterial("Mat_TransitionBall")
+                for (int x = 0; x < width; x++)
                 {
-                    bounciness = bounciness,
-                    dynamicFriction = friction,
-                    staticFriction = friction,
-                    bounceCombine = PhysicsMaterialCombine.Average,
-                    frictionCombine = PhysicsMaterialCombine.Average
-                };
+                    float px = x + 0.5f;
+                    float py = y + 0.5f;
+                    float dx = Mathf.Max(0f, Mathf.Abs(px - width * 0.5f) - (width * 0.5f - r));
+                    float dy = Mathf.Max(0f, Mathf.Abs(py - height * 0.5f) - (height * 0.5f - r));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy) - r;
+                    float a = Mathf.Clamp01(0.5f - dist);
+                    pixels[y * width + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
             }
 
-            if (_sphereMesh == null)
-            {
-                GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                var mf = temp.GetComponent<MeshFilter>();
-                if (mf != null) _sphereMesh = mf.sharedMesh;
-                Destroy(temp);
-            }
-        }
-
-        /// <summary>Ekranın altına zemin, iki yanına duvar kurar (geçiş düzleminde).</summary>
-        private void BuildCage(float left, float right, float bottom, float halfH)
-        {
-            const float thickness = 1f;
-            const float depth = 2f;
-            float width = right - left;
-            float wallH = halfH * 40f; // ekran üstünde yüksek sütunlarda doğan toplar da duvarların arasında kalsın
-
-            if (_floor == null) _floor = CreateCageCollider("TransitionFloor");
-            _floor.enabled = true;
-            _floor.transform.position = new Vector3((left + right) * 0.5f, bottom - thickness * 0.5f, ballPlaneZ);
-            _floor.size = new Vector3(width + thickness * 2f, thickness, depth);
-
-            if (_leftWall == null) _leftWall = CreateCageCollider("TransitionWallL");
-            _leftWall.transform.position = new Vector3(left - thickness * 0.5f, bottom + wallH * 0.5f - halfH, ballPlaneZ);
-            _leftWall.size = new Vector3(thickness, wallH, depth);
-
-            if (_rightWall == null) _rightWall = CreateCageCollider("TransitionWallR");
-            _rightWall.transform.position = new Vector3(right + thickness * 0.5f, bottom + wallH * 0.5f - halfH, ballPlaneZ);
-            _rightWall.size = new Vector3(thickness, wallH, depth);
-        }
-
-        private BoxCollider CreateCageCollider(string name)
-        {
-            var go = new GameObject(name);
-            go.layer = TransitionLayer;
-            go.transform.SetParent(transform, false);
-            var col = go.AddComponent<BoxCollider>();
-            col.sharedMaterial = _physMaterial;
-            return col;
-        }
-
-        /// <summary>Havuzda en az 'count' top hazır olsun (pasif hâlde).</summary>
-        private void Prewarm(int count)
-        {
-            int needed = count - (_pool.Count + _active.Count);
-            for (int i = 0; i < needed; i++)
-            {
-                var rb = CreateBall();
-                rb.isKinematic = true;
-                rb.gameObject.SetActive(false);
-                _pool.Add(rb);
-            }
-        }
-
-        private void SpawnBall(Vector3 pos, float diameter, PuzzleColor color)
-        {
-            Rigidbody rb;
-            if (_pool.Count > 0)
-            {
-                rb = _pool[_pool.Count - 1];
-                _pool.RemoveAt(_pool.Count - 1);
-            }
-            else
-            {
-                rb = CreateBall();
-            }
-
-            var go = rb.gameObject;
-            go.transform.position = pos;
-            go.transform.rotation = Random.rotation;
-            go.transform.localScale = Vector3.one * diameter;
-
-            var mr = go.GetComponent<MeshRenderer>();
-            if (mr != null && BallObjectPool.Instance != null)
-            {
-                Material mat = BallObjectPool.Instance.GetBallMaterial(color);
-                if (mat != null) mr.sharedMaterial = mat;
-            }
-
-            go.SetActive(true);
-            rb.isKinematic = false;
-            rb.linearVelocity = new Vector3(Random.Range(-0.15f, 0.15f), Random.Range(-1.5f, -0.5f), 0f);
-            rb.angularVelocity = Random.insideUnitSphere * 6f;
-            _active.Add(rb);
-        }
-
-        private Rigidbody CreateBall()
-        {
-            var go = new GameObject("TransitionBall");
-            go.layer = TransitionLayer;
-            go.transform.SetParent(_ballRoot, false);
-
-            var mf = go.AddComponent<MeshFilter>();
-            mf.sharedMesh = _sphereMesh;
-            var mr = go.AddComponent<MeshRenderer>();
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            mr.receiveShadows = false;
-
-            var sc = go.AddComponent<SphereCollider>();
-            sc.radius = 0.5f;
-            sc.sharedMaterial = _physMaterial;
-
-            var rb = go.AddComponent<Rigidbody>();
-            rb.mass = 0.3f;
-            rb.linearDamping = 0.1f;
-            rb.angularDamping = 0.5f;
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
-            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-            rb.constraints = RigidbodyConstraints.FreezePositionZ;
-            return rb;
-        }
-
-        private void RecycleAt(int index)
-        {
-            var rb = _active[index];
-            _active.RemoveAt(index);
-            if (rb == null) return;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-            rb.isKinematic = true;
-            rb.gameObject.SetActive(false);
-            _pool.Add(rb);
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            Vector4 border = new Vector4(radius, radius, radius, radius);
+            return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
         }
     }
 }
