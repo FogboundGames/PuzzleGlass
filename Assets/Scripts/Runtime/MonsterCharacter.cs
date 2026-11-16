@@ -1138,13 +1138,11 @@ namespace PuzzleGlass
         {
             StopIdleAndBlink();
 
-            // Pillar 1 (GPU Vertex Animation): CPU'da sürekli DOScale tween'i çalıştırmak yerine
-            // nefes alma animasyonu vertex shader'da _WobbleAmount ve per-instance _WobblePhase ile yapılır.
             if (bodyPivot != null)
             {
                 bodyPivot.localScale = _originalBodyScale;
             }
-            _mpbWobbleAmount = 1.0f;
+            _mpbWobbleAmount = 0.0f;
             ApplyBoxPropertyBlock();
         }
 
