@@ -77,6 +77,7 @@ MonoBehaviour:
   trayGapBelowGlass: 0.11
   trayUseManualCellSize: 0
   trayManualCellSize: 0.506
+  trayShowOuterGlassJar: 1
   ballsPerBox: 3
   carrierBoxFormatVersion: 3
   puzzleLayerStyle: 1
@@ -135,7 +136,7 @@ MonoBehaviour:
   - color: 2
     count: 3
     blockShape: 2
-    gridAnchor: {x: 2, y: 2}
+    gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -143,7 +144,7 @@ MonoBehaviour:
   - color: 4
     count: 5
     blockShape: 6
-    gridAnchor: {x: 1, y: 0}
+    gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -151,7 +152,7 @@ MonoBehaviour:
   - color: 3
     count: 6
     blockShape: 4
-    gridAnchor: {x: 3, y: 2}
+    gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -159,7 +160,7 @@ MonoBehaviour:
   - color: 2
     count: 1
     blockShape: 0
-    gridAnchor: {x: 1, y: 3}
+    gridAnchor: {x: 2, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

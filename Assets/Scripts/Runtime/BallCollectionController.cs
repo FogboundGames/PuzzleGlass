@@ -430,6 +430,15 @@ namespace PuzzleGlass
             return false;
         }
 
+        /// <summary>
+        /// Camda şu an alttan toplanabilecek (rafta/sıkışmış olmayan, en altta duran) en az bir top var mı?
+        /// Hiç yoksa camdaki toplar hiçbir blok tarafından alınamaz durumdadır.
+        /// </summary>
+        public bool HasAnyCollectableBottomBall()
+        {
+            return CollectBottomCandidates().Count > 0;
+        }
+
         private List<BallPhysicsController> CollectBottomCandidates()
         {
             if (BallObjectPool.Instance == null)

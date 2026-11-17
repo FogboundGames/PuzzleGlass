@@ -2280,7 +2280,7 @@ namespace PuzzleGlass.Editor.Studio
                 int vis = Mathf.Min(maxVis, colors.Count);
                 float radPx = ballR * m_TubeScale * 0.94f;
                 float spacing = ballR * 2.15f;
-                float firstDist = curve.gateDist + ballR + 0.036f;
+                float firstDist = curve.restDist;
                 for (int i = 0; i < vis; i++)
                 {
                     float dist = Mathf.Min(curve.totalLength - ballR, firstDist + i * spacing);

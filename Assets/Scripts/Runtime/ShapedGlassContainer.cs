@@ -1173,7 +1173,8 @@ namespace PuzzleGlass
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
             if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
 
-            // Feed tube mouth openings on the container's upper glass wall (flares smoothly into curved tubes)
+            // Feed tube openings on the container's top rim: exactly where the tube's walls cross the rim line
+            // (gatePoint = middle of the tube's horizontal cut at ceilY, gateWidth = distance between its inner walls)
             Vector4 openL = Vector4.zero;
             Vector4 openR = Vector4.zero;
             if (useBallFeedTubes && contourPoints != null && contourPoints.Count > 0)
@@ -1188,12 +1189,12 @@ namespace PuzzleGlass
                 if (hasL)
                 {
                     var lc = BallFeedTubeUtility.BuildTubeCurve(true, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
-                    openL = new Vector4(1f, lc.mouthPoint.x / qh, (lc.innerHalfWidth * 0.88f) / qh, (ceilY - cY) / qh);
+                    openL = new Vector4(1f, lc.gatePoint.x / qh, (lc.gateWidth * 0.5f) / qh, (ceilY - cY) / qh);
                 }
                 if (hasR)
                 {
                     var rc = BallFeedTubeUtility.BuildTubeCurve(false, ceilY, topHalfW, topCenterX, ballR, feedTubeWidthMultiplier, feedTubeAnchorSpread);
-                    openR = new Vector4(1f, rc.mouthPoint.x / qh, (rc.innerHalfWidth * 0.88f) / qh, (ceilY - cY) / qh);
+                    openR = new Vector4(1f, rc.gatePoint.x / qh, (rc.gateWidth * 0.5f) / qh, (ceilY - cY) / qh);
                 }
             }
             if (mat.HasProperty("_FeedTubeOpeningL")) mat.SetVector("_FeedTubeOpeningL", openL);
