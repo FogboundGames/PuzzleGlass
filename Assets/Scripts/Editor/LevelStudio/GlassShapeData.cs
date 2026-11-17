@@ -12,8 +12,8 @@ namespace PuzzleGlass.Editor.Studio
         public const float DefaultWidth = 2.64f;
         public const float DefaultHeight = 1.18f;
         public const float DefaultBottomY = -0.56f;
-        public const float MinWidth = 0.80f, MaxWidth = 3.40f;
-        public const float MinHeight = 0.60f, MaxHeight = 2.80f;
+        public const float MinWidth = 0.70f, MaxWidth = 3.40f;
+        public const float MinHeight = 0.50f, MaxHeight = 2.80f;
 
         public static bool IsBoxPreset(GlassShapePreset p) => p == GlassShapePreset.SquareBox || p == GlassShapePreset.RectangleBox;
 
@@ -48,6 +48,17 @@ namespace PuzzleGlass.Editor.Studio
         /// <summary>Oyundaki top dizilimi (kutu ya da düz tabanlı özel şekil için oyunla aynı hesap).</summary>
         public static OrderedPoolLayout.Result BuildLayout(PuzzleGlassLevelData lvl)
         {
+            if (lvl != null && lvl.useManualBallLayout)
+            {
+                if (IsShapedPool(lvl))
+                {
+                    bool custom = lvl.useCustomGlassShape;
+                    return OrderedPoolLayout.BuildManualShaped(lvl.manualBalls, lvl.manualLaneWidth, GetContour(lvl),
+                        custom ? Mathf.Max(0.5f, lvl.widthScale) : 1f, custom ? Mathf.Max(0.5f, lvl.heightScale) : 1f);
+                }
+                var md = GetDims(lvl);
+                return OrderedPoolLayout.BuildManual(lvl.manualBalls, lvl.manualLaneWidth, md.innerHalfW, md.floorY, md.ceilY);
+            }
             if (IsShapedPool(lvl))
             {
                 bool custom = lvl != null && lvl.useCustomGlassShape;
@@ -58,11 +69,71 @@ namespace PuzzleGlass.Editor.Studio
             return OrderedPoolLayout.Build(lvl?.bottomToTopGroups, d.innerHalfW, d.floorY, d.ceilY);
         }
 
+        /// <summary>Elle top yerleşimi için camdaki tüm geçerli petek slotlarını döndürür.</summary>
+        public static List<OrderedPoolLayout.Slot> GetManualSlots(
+            PuzzleGlassLevelData lvl, out float diameter, out int laneWidth, out int totalColumns)
+        {
+            int lw = Mathf.Clamp(lvl != null && lvl.manualLaneWidth > 0 ? lvl.manualLaneWidth : 4, 3, 8);
+            laneWidth = lw;
+            totalColumns = lw * 3;
+            if (IsShapedPool(lvl))
+            {
+                bool custom = lvl != null && lvl.useCustomGlassShape;
+                return OrderedPoolLayout.GetShapedSlots(
+                    lw, GetContour(lvl),
+                    custom ? Mathf.Max(0.5f, lvl.widthScale) : 1f,
+                    custom ? Mathf.Max(0.5f, lvl.heightScale) : 1f,
+                    0.07f, out diameter);
+            }
+            var d = GetDims(lvl);
+            int maxRow = 0;
+            if (lvl != null && lvl.manualBalls != null)
+            {
+                foreach (var b in lvl.manualBalls)
+                    if (b != null && b.row > maxRow) maxRow = b.row;
+            }
+            return OrderedPoolLayout.GetBoxSlots(lw, maxRow + 1, d.innerHalfW, d.floorY, d.ceilY, 0f, out diameter);
+        }
+
+        /// <summary>Verilen düzeni üst besleme tüpleri açıkken Wave 1 (hazne) + Wave 2 (tüpler) olarak ayırır.</summary>
+        public static OrderedPoolLayout.FeedTubeWaveSplit SplitForFeedTubes(PuzzleGlassLevelData lvl, OrderedPoolLayout.Result layout)
+        {
+            if (lvl == null) return OrderedPoolLayout.SplitFeedTubeWaves(layout.balls, false, BallFeedTubeMode.BothLeftAndRight, 0, null, 12);
+            int lw = Mathf.Clamp(layout.laneWidth > 0 ? layout.laneWidth : 4, 3, 8);
+            List<OrderedPoolLayout.Slot> slots;
+            if (IsShapedPool(lvl))
+            {
+                bool custom = lvl.useCustomGlassShape;
+                slots = OrderedPoolLayout.GetShapedSlots(
+                    lw, GetContour(lvl),
+                    custom ? Mathf.Max(0.5f, lvl.widthScale) : 1f,
+                    custom ? Mathf.Max(0.5f, lvl.heightScale) : 1f,
+                    0.07f, out _);
+            }
+            else
+            {
+                var d = GetDims(lvl);
+                int maxRow = 0;
+                if (layout.balls != null)
+                    foreach (var b in layout.balls) if (b.row > maxRow) maxRow = b.row;
+                slots = OrderedPoolLayout.GetBoxSlots(lw, maxRow + 1, d.innerHalfW, d.floorY, d.ceilY, 0f, out _);
+            }
+            return OrderedPoolLayout.SplitFeedTubeWaves(
+                layout.balls,
+                lvl.useBallFeedTubes,
+                lvl.feedTubeMode,
+                lvl.feedTubeContainerLimit,
+                slots,
+                Mathf.Max(1, layout.totalColumns));
+        }
+
         /// <summary>Levelin oyunda kullanacağı kontur (alttan üste).</summary>
         public static List<GlassContourPoint> GetContour(PuzzleGlassLevelData lvl)
         {
             if (lvl != null && lvl.useCustomGlassShape && lvl.contourPoints != null && lvl.contourPoints.Count >= 3)
                 return lvl.contourPoints;
+            if (lvl != null && lvl.useManualBallLayout)
+                return ShapedGlassContainer.BuildManualBottleContour(lvl.manualBalls, lvl.manualLaneWidth);
             return ShapedGlassContainer.BuildAutoBottleContour(lvl?.bottomToTopGroups);
         }
 

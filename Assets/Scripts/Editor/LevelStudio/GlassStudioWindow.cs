@@ -54,6 +54,7 @@ namespace PuzzleGlass.Editor.Studio
         private static readonly (string name, float w, float h, float corner, float frame)[] BoxPresets =
         {
             ("Varsayılan", 2.64f, 1.18f, 0.28f, 0.095f),
+            ("Kompakt", 2.70f, 0.62f, 0.22f, 0.085f),
             ("Kavanoz", 2.40f, 1.38f, 0.36f, 0.095f),
             ("Geniş", 2.92f, 0.96f, 0.24f, 0.090f),
             ("Kare", 1.60f, 1.60f, 0.28f, 0.095f),
@@ -359,7 +360,7 @@ namespace PuzzleGlass.Editor.Studio
             OnEdited(syncScene);
         }
 
-        private const float BottleMinW = 1.20f, BottleMaxW = 3.40f, BottleMinH = 0.90f, BottleMaxH = 2.80f;
+        private const float BottleMinW = 1.20f, BottleMaxW = 3.40f, BottleMinH = 0.55f, BottleMaxH = 2.80f;
 
         private void SetBox(float width, float height, float? corner = null, float? frame = null, string undo = "Cam ölçüsü", bool syncScene = true)
         {
@@ -559,6 +560,7 @@ namespace PuzzleGlass.Editor.Studio
             else BuildContourInspector();
 
             BuildFeedTubesInspector();
+            BuildTrayInspector();
 
             Section("Renk teması (cam)");
             var themes = new VisualElement();
@@ -751,6 +753,109 @@ namespace PuzzleGlass.Editor.Studio
             });
         }
 
+        private void BuildTrayInspector()
+        {
+            Section("Alt Grid Tepsisi (Bu Levele Özel)");
+
+            var presets = new VisualElement();
+            presets.AddToClassList("chip-grid");
+            foreach (var (c, r) in new[] { (5, 4), (6, 5), (6, 7), (7, 8) })
+            {
+                int cc = c, rr = r;
+                var chip = new Button(() =>
+                {
+                    Record("Tepsi boyutu");
+                    m_Level.stagingGridCols = cc;
+                    m_Level.stagingGridRows = rr;
+                    m_Level.EnsureCarrierBoxPuzzleFormat();
+                    OnEdited();
+                }) { text = $"{cc}×{rr}" };
+                chip.AddToClassList("chip");
+                chip.EnableInClassList("chip--active", m_Level.stagingGridCols == cc && m_Level.stagingGridRows == rr);
+                presets.Add(chip);
+            }
+            m_Inspector.Add(presets);
+
+            var colsSlider = new SliderInt("Tepsi sütun", 2, 9) { value = m_Level.stagingGridCols, showInputField = true };
+            colsSlider.RegisterValueChangedCallback(e =>
+            {
+                Record("Tepsi sütun");
+                m_Level.stagingGridCols = e.newValue;
+                m_Level.EnsureCarrierBoxPuzzleFormat();
+                OnEdited();
+            });
+            m_Inspector.Add(colsSlider);
+
+            var rowsSlider = new SliderInt("Tepsi satır", 2, 10) { value = m_Level.stagingGridRows, showInputField = true };
+            rowsSlider.RegisterValueChangedCallback(e =>
+            {
+                Record("Tepsi satır");
+                m_Level.stagingGridRows = e.newValue;
+                m_Level.EnsureCarrierBoxPuzzleFormat();
+                OnEdited();
+            });
+            m_Inspector.Add(rowsSlider);
+
+            var customToggle = new Toggle("Özel tepsi ölçüleri")
+            {
+                value = m_Level.useCustomTraySettings,
+                tooltip = "Açıkken bu level kendi tepsi genişliği, yüksekliği, hücre boyutu ve çerçeve ayarlarını kullanır."
+            };
+            customToggle.RegisterValueChangedCallback(e =>
+            {
+                Record("Özel tepsi ölçüleri");
+                m_Level.useCustomTraySettings = e.newValue;
+                OnEdited();
+            });
+            m_Inspector.Add(customToggle);
+
+            if (!m_Level.useCustomTraySettings) return;
+
+            var matchGlass = new Toggle("Cama göre genişlik") { value = m_Level.trayMatchGlassWidth };
+            matchGlass.RegisterValueChangedCallback(e => { Record("Tepsi genişlik hizası"); m_Level.trayMatchGlassWidth = e.newValue; OnEdited(); });
+            m_Inspector.Add(matchGlass);
+
+            var showJar = new Toggle("Dış cam kavanoz") { value = m_Level.trayShowOuterGlassJar };
+            showJar.RegisterValueChangedCallback(e => { Record("Tepsi dış cam kavanoz"); m_Level.trayShowOuterGlassJar = e.newValue; OnEdited(); });
+            m_Inspector.Add(showJar);
+
+            AddSlider("Maks. genişlik", m_Level.trayMaxBoardWidth, 1.20f, 4.00f, v => { Record("Tepsi maks. genişlik"); m_Level.trayMaxBoardWidth = v; OnEdited(); });
+            AddSlider("Maks. yükseklik", m_Level.trayMaxBoardHeight, 1.20f, 5.20f, v => { Record("Tepsi maks. yükseklik"); m_Level.trayMaxBoardHeight = v; OnEdited(); });
+            AddSlider("Camdan boşluk", m_Level.trayGapBelowGlass, 0.02f, 0.80f, v => { Record("Tepsi boşluk"); m_Level.trayGapBelowGlass = v; OnEdited(); });
+
+            var manualCell = new Toggle("Elle hücre boyutu") { value = m_Level.trayUseManualCellSize };
+            manualCell.RegisterValueChangedCallback(e => { Record("Elle hücre boyutu"); m_Level.trayUseManualCellSize = e.newValue; OnEdited(); });
+            m_Inspector.Add(manualCell);
+
+            if (m_Level.trayUseManualCellSize)
+            {
+                AddSlider("Hücre boyutu", m_Level.trayManualCellSize, 0.22f, 0.82f, v => { Record("Tepsi hücre boyutu"); m_Level.trayManualCellSize = v; OnEdited(); });
+            }
+
+            AddSlider("Çerçeve kalınlığı", m_Level.trayFramePadding, 0.03f, 0.30f, v => { Record("Tepsi çerçeve"); m_Level.trayFramePadding = v; OnEdited(); });
+            AddSlider("Köşe yuvarlaklığı", m_Level.trayFrameCornerRadius, 0.04f, 0.40f, v => { Record("Tepsi köşe"); m_Level.trayFrameCornerRadius = v; OnEdited(); });
+            AddSlider("İç boşluk", m_Level.trayInnerMargin, 0.01f, 0.25f, v => { Record("Tepsi iç boşluk"); m_Level.trayInnerMargin = v; OnEdited(); });
+
+            var resetTray = new Button(() =>
+            {
+                Record("Tepsi ayarlarını sıfırla");
+                m_Level.useCustomTraySettings = false;
+                m_Level.trayMatchGlassWidth = true;
+                m_Level.trayMaxBoardWidth = 2.822f;
+                m_Level.trayMaxBoardHeight = 3.20f;
+                m_Level.trayFramePadding = 0.068f;
+                m_Level.trayInnerMargin = 0.048f;
+                m_Level.trayFrameCornerRadius = 0.135f;
+                m_Level.trayGapBelowGlass = 0.11f;
+                m_Level.trayUseManualCellSize = false;
+                m_Level.trayManualCellSize = 0.506f;
+                m_Level.trayShowOuterGlassJar = true;
+                OnEdited();
+            }) { text = "Tepsiyi varsayılana sıfırla" };
+            resetTray.AddToClassList("inspector__action");
+            m_Inspector.Add(resetTray);
+        }
+
         private void AddTubeModeBtn(VisualElement parent, string label, BallFeedTubeMode mode)
         {
             var btn = new Button(() =>
@@ -776,6 +881,7 @@ namespace PuzzleGlass.Editor.Studio
             var list = new (string name, float w, float h)[]
             {
                 ("Varsayılan", ShapedGlassContainer.DefaultBottleWidth, ShapedGlassContainer.DefaultBottleHeight),
+                ("Kompakt", 2.70f, 0.62f),
                 ("Geniş", 3.00f, 1.00f), ("Yüksek", 2.20f, 1.80f), ("Dar", 1.80f, 1.50f), ("Büyük", 3.00f, 1.60f)
             };
             var autoChip = new Button(ResetToDefault);
@@ -1015,20 +1121,47 @@ namespace PuzzleGlass.Editor.Studio
             float frame = lvl.boxFrameThickness;
             float top = contour[contour.Count - 1].y + frame;
             float bottom = contour[0].y - frame - 0.14f;
-            float trayH = TrayHeight(lvl, maxHw);
-            float viewBottom = bottom - 0.36f - trayH - 0.22f;
+            ComputeTrayPreviewMetrics(lvl, maxHw, out _, out float trayHalfW, out float trayH, out float trayGap, out _, out _);
+            float viewBottom = bottom - trayGap - trayH - 0.22f;
             float viewTop = top + (lvl.useBallFeedTubes ? 1.48f : 0.25f);
-            float viewHalfW = Mathf.Max(maxHw + frame + (lvl.useBallFeedTubes ? 0.58f : 0.42f), 1.30f);
+            float viewHalfW = Mathf.Max(Mathf.Max(maxHw, trayHalfW) + frame + (lvl.useBallFeedTubes ? 0.58f : 0.42f), 1.30f);
             float sx = rect.width / (viewHalfW * 2f);
             float sy = rect.height / (viewTop - viewBottom);
             m_Scale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.90f);
             m_Origin = new Vector2(rect.width * 0.5f, rect.height * 0.5f + (viewTop + viewBottom) * 0.5f * m_Scale);
         }
 
-        private static float TrayHeight(PuzzleGlassLevelData lvl, float glassHalfW)
+        private static void ComputeTrayPreviewMetrics(
+            PuzzleGlassLevelData lvl, float glassHalfW,
+            out float cell, out float trayHalfW, out float trayH, out float gap, out float jarPad, out float cornerR)
         {
-            float cell = glassHalfW * 2f / Mathf.Max(1, lvl.stagingGridCols);
-            return cell * lvl.stagingGridRows;
+            int cols = Mathf.Max(1, lvl.stagingGridCols);
+            int rows = Mathf.Max(1, lvl.stagingGridRows);
+            if (lvl.useCustomTraySettings)
+            {
+                float maxW = Mathf.Max(1.0f, lvl.trayMaxBoardWidth);
+                if (lvl.trayMatchGlassWidth && glassHalfW > 0.5f) maxW = Mathf.Min(glassHalfW * 2.12f, maxW);
+                float frameOverhead = lvl.trayInnerMargin + lvl.trayFramePadding * 2f;
+                float maxH = Mathf.Max(1.0f, lvl.trayMaxBoardHeight);
+                cell = lvl.trayUseManualCellSize
+                    ? Mathf.Clamp(lvl.trayManualCellSize, 0.22f, 0.82f)
+                    : Mathf.Clamp(Mathf.Min((maxW - frameOverhead) / cols, (maxH - frameOverhead) / rows), 0.22f, 0.78f);
+                gap = Mathf.Clamp(lvl.trayGapBelowGlass, 0.02f, 0.80f) + 0.22f;
+                jarPad = Mathf.Clamp(lvl.trayFramePadding, 0.03f, 0.30f);
+                cornerR = Mathf.Clamp(lvl.trayFrameCornerRadius, 0.04f, 0.40f);
+            }
+            else
+            {
+                float maxW = Mathf.Min(glassHalfW * 2.12f, 2.822f);
+                float maxH = rows >= 5 ? 4.4f : 3.2f;
+                float frameOverhead = 0.048f + 0.068f * 2f;
+                cell = Mathf.Clamp(Mathf.Min((maxW - frameOverhead) / cols, (maxH - frameOverhead) / rows), 0.22f, 0.78f);
+                gap = 0.34f;
+                jarPad = 0.11f;
+                cornerR = 0.20f;
+            }
+            trayHalfW = cols * cell * 0.5f;
+            trayH = rows * cell;
         }
 
         private void DrawCanvas(MeshGenerationContext ctx)
@@ -1125,15 +1258,9 @@ namespace PuzzleGlass.Editor.Studio
 
             // Toplar + opsiyonel üst cam besleme tüpleri (bu levele özel)
             var layout = GlassShapeData.BuildLayout(lvl);
+            var split = GlassShapeData.SplitForFeedTubes(lvl, layout);
             float ballRadiusWorld = Mathf.Max(0.05f, layout.diameter * 0.5f);
             float rad = ballRadiusWorld * m_Scale;
-
-            int totalBalls = layout.balls != null ? layout.balls.Count : 0;
-            int containerCount = totalBalls;
-            if (lvl.useBallFeedTubes && totalBalls > 1)
-            {
-                containerCount = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, totalBalls);
-            }
 
             FeedTubeCurveData? leftTube = null;
             FeedTubeCurveData? rightTube = null;
@@ -1155,49 +1282,39 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             // Hazne içindeki toplar
-            for (int i = 0; i < containerCount; i++)
+            var chamberBalls = split.chamberBalls ?? layout.balls;
+            for (int i = 0; i < chamberBalls.Count; i++)
             {
-                var b = layout.balls[i];
+                var b = chamberBalls[i];
                 DrawPreviewBall2D(p, ToPx(b.localPos.x, b.localPos.y), rad, b.color);
             }
 
             // Tüp içindeki sıralı toplar
-            if (lvl.useBallFeedTubes && containerCount < totalBalls)
+            if (lvl.useBallFeedTubes)
             {
-                int leftVis = 0, rightVis = 0;
                 int maxPerTube = Mathf.Clamp(lvl.feedTubeQueueVisibleCount, 2, 14);
-                bool nextLeft = true;
                 float spacing = ballRadiusWorld * 2.15f;
 
-                for (int i = containerCount; i < totalBalls; i++)
+                if (leftTube.HasValue && split.leftTubeColors != null)
                 {
-                    var b = layout.balls[i];
-                    bool putLeft;
-                    if (leftTube.HasValue && rightTube.HasValue)
+                    int vis = Mathf.Min(maxPerTube, split.leftTubeColors.Count);
+                    float firstDist = leftTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                    for (int i = 0; i < vis; i++)
                     {
-                        putLeft = nextLeft;
-                        nextLeft = !nextLeft;
-                    }
-                    else
-                    {
-                        putLeft = leftTube.HasValue;
-                    }
-
-                    if (putLeft && leftTube.HasValue && leftVis < maxPerTube)
-                    {
-                        float firstDist = leftTube.Value.gateDist + ballRadiusWorld + 0.036f;
-                        float d = Mathf.Min(leftTube.Value.totalLength - ballRadiusWorld, firstDist + leftVis * spacing);
+                        float d = Mathf.Min(leftTube.Value.totalLength - ballRadiusWorld, firstDist + i * spacing);
                         leftTube.Value.EvaluateAtDistance(d, out Vector2 pt, out _);
-                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, b.color);
-                        leftVis++;
+                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, split.leftTubeColors[i]);
                     }
-                    else if (!putLeft && rightTube.HasValue && rightVis < maxPerTube)
+                }
+                if (rightTube.HasValue && split.rightTubeColors != null)
+                {
+                    int vis = Mathf.Min(maxPerTube, split.rightTubeColors.Count);
+                    float firstDist = rightTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                    for (int i = 0; i < vis; i++)
                     {
-                        float firstDist = rightTube.Value.gateDist + ballRadiusWorld + 0.036f;
-                        float d = Mathf.Min(rightTube.Value.totalLength - ballRadiusWorld, firstDist + rightVis * spacing);
+                        float d = Mathf.Min(rightTube.Value.totalLength - ballRadiusWorld, firstDist + i * spacing);
                         rightTube.Value.EvaluateAtDistance(d, out Vector2 pt, out _);
-                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, b.color);
-                        rightVis++;
+                        DrawPreviewBall2D(p, ToPx(pt.x, pt.y), rad, split.rightTubeColors[i]);
                     }
                 }
             }
@@ -1215,35 +1332,40 @@ namespace PuzzleGlass.Editor.Studio
                 RoundedRect(p, -collarW * 0.44f, collarTop - 0.055f, collarW * 0.44f, collarTop - 0.01f, 0.025f, new Color(0.86f, 0.84f, 1.00f, 0.82f));
                 RoundedRect(p, -collarW * 0.48f, collarBottom, collarW * 0.48f, collarBottom + 0.05f, 0.03f, new Color(0.28f, 0.22f, 0.64f, 0.72f));
 
-                float trayW = maxHw * 2f;
-                float cell = trayW / Mathf.Max(1, lvl.stagingGridCols);
-                float trayTop = collarBottom - 0.34f;
-                float trayBottom = trayTop - cell * lvl.stagingGridRows;
-                float jarPad = 0.11f;
-                float neckW = Mathf.Clamp(maxHw * 0.43f, 0.38f, 0.64f);
-                float neckTop = collarBottom - 0.14f;
+                ComputeTrayPreviewMetrics(lvl, maxHw, out float cell, out float trayHalfW, out float trayH, out float trayGap, out float jarPad, out float trayCornerR);
+                float trayTop = collarBottom - trayGap;
+                float trayBottom = trayTop - trayH;
+                float neckW = Mathf.Clamp(trayHalfW * 0.43f, 0.38f, 0.64f);
+                float neckTop = collarBottom - Mathf.Min(0.14f, trayGap * 0.40f);
+                bool showJar = !lvl.useCustomTraySettings || lvl.trayShowOuterGlassJar;
 
-                // Alt kavanoz gövde + açık ağızlı 3D boyun + alt yumuşak mor zemin gölgesi
-                RoundedRect(p, -maxHw - jarPad, trayBottom - jarPad - 0.08f, maxHw + jarPad, trayTop + jarPad - 0.06f, 0.24f, new Color(0.58f, 0.50f, 0.82f, 0.24f));
-                RoundedRect(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, glassWallFill);
-                RoundedRectStroke(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, 1.6f, glassOuterRim);
-                RoundedRect(p, -maxHw - jarPad, trayBottom - jarPad, maxHw + jarPad, trayTop + jarPad, 0.24f, glassWallFill);
-                RoundedRectStroke(p, -maxHw - jarPad, trayBottom - jarPad, maxHw + jarPad, trayTop + jarPad, 0.24f, 1.8f, glassOuterRim);
-                RoundedRectStroke(p, -maxHw - jarPad * 0.55f, trayBottom - jarPad * 0.55f, maxHw + jarPad * 0.55f, trayTop + jarPad * 0.55f, 0.21f, 2.2f, new Color(1f, 1f, 1f, 0.86f));
-                // Kavanoz gövde içi parlama şeritleri & üst oval ağız dudağı
-                RoundedRect(p, -maxHw - jarPad * 0.3f, trayBottom + 0.16f, -maxHw - jarPad * 0.02f, trayTop - 0.12f, 0.025f, new Color(1f, 1f, 1f, 0.45f));
-                RoundedRect(p, maxHw + jarPad * 0.02f, trayBottom + 0.22f, maxHw + jarPad * 0.34f, trayTop - 0.04f, 0.03f, new Color(1f, 1f, 1f, 0.70f));
-                RoundedRect(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, new Color(0.90f, 0.92f, 1.00f, 0.85f));
-                RoundedRectStroke(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, 1.6f, glassOuterRim);
-                RoundedRect(p, -neckW * 0.82f, neckTop - 0.032f, neckW * 0.82f, neckTop + 0.006f, 0.02f, new Color(0.66f, 0.64f, 0.96f, 0.52f));
+                if (showJar)
+                {
+                    // Alt kavanoz gövde + açık ağızlı 3D boyun + alt yumuşak mor zemin gölgesi
+                    RoundedRect(p, -trayHalfW - jarPad, trayBottom - jarPad - 0.08f, trayHalfW + jarPad, trayTop + jarPad - 0.06f, 0.24f, new Color(0.58f, 0.50f, 0.82f, 0.24f));
+                    RoundedRect(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, glassWallFill);
+                    RoundedRectStroke(p, -neckW, trayTop + jarPad - 0.02f, neckW, neckTop, 0.08f, 1.6f, glassOuterRim);
+                    RoundedRect(p, -trayHalfW - jarPad, trayBottom - jarPad, trayHalfW + jarPad, trayTop + jarPad, 0.24f, glassWallFill);
+                    RoundedRectStroke(p, -trayHalfW - jarPad, trayBottom - jarPad, trayHalfW + jarPad, trayTop + jarPad, 0.24f, 1.8f, glassOuterRim);
+                    RoundedRectStroke(p, -trayHalfW - jarPad * 0.55f, trayBottom - jarPad * 0.55f, trayHalfW + jarPad * 0.55f, trayTop + jarPad * 0.55f, 0.21f, 2.2f, new Color(1f, 1f, 1f, 0.86f));
+                    // Kavanoz gövde içi parlama şeritleri & üst oval ağız dudağı
+                    RoundedRect(p, -trayHalfW - jarPad * 0.3f, trayBottom + 0.16f, -trayHalfW - jarPad * 0.02f, trayTop - 0.12f, 0.025f, new Color(1f, 1f, 1f, 0.45f));
+                    RoundedRect(p, trayHalfW + jarPad * 0.02f, trayBottom + 0.22f, trayHalfW + jarPad * 0.34f, trayTop - 0.04f, 0.03f, new Color(1f, 1f, 1f, 0.70f));
+                    RoundedRect(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, new Color(0.90f, 0.92f, 1.00f, 0.85f));
+                    RoundedRectStroke(p, -neckW - 0.04f, neckTop - 0.055f, neckW + 0.04f, neckTop + 0.025f, 0.045f, 1.6f, glassOuterRim);
+                    RoundedRect(p, -neckW * 0.82f, neckTop - 0.032f, neckW * 0.82f, neckTop + 0.006f, 0.02f, new Color(0.66f, 0.64f, 0.96f, 0.52f));
+                }
 
-                // Mor yumuşak tepsi ve yuvalar
-                RoundedRect(p, -maxHw - 0.05f, trayBottom - 0.05f, maxHw + 0.05f, trayTop + 0.05f, 0.14f, new Color(0.32f, 0.27f, 0.62f, 0.94f));
+                // Mor yumuşak tepsi ve yuvalar (+ varsa sabit bölmeler)
+                RoundedRect(p, -trayHalfW - 0.05f, trayBottom - 0.05f, trayHalfW + 0.05f, trayTop + 0.05f, Mathf.Min(trayCornerR, 0.22f), new Color(0.32f, 0.27f, 0.62f, 0.94f));
+                var wallSet = lvl.gridWalls != null ? new HashSet<Vector2Int>(lvl.gridWalls) : null;
                 for (int x = 0; x < lvl.stagingGridCols; x++)
                     for (int y = 0; y < lvl.stagingGridRows; y++)
                     {
-                        float x0 = -maxHw + x * cell + 0.03f, y0 = trayBottom + y * cell + 0.03f;
-                        RoundedRect(p, x0, y0, x0 + cell - 0.06f, y0 + cell - 0.06f, 0.05f, new Color(0.42f, 0.37f, 0.74f, 0.96f));
+                        float x0 = -trayHalfW + x * cell + 0.03f, y0 = trayBottom + y * cell + 0.03f;
+                        bool isWall = wallSet != null && wallSet.Contains(new Vector2Int(x, y));
+                        RoundedRect(p, x0, y0, x0 + cell - 0.06f, y0 + cell - 0.06f, 0.05f,
+                            isWall ? new Color(0.68f, 0.66f, 0.94f, 0.96f) : new Color(0.42f, 0.37f, 0.74f, 0.96f));
                     }
             }
 

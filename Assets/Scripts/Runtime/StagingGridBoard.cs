@@ -14,8 +14,8 @@ namespace PuzzleGlass
         public static StagingGridBoard Instance { get; private set; }
 
         [Header("Grid Dimensions")]
-        [Range(2, 7)] public int cols = 5;
-        [Range(2, 6)] public int rows = 4;
+        [Range(2, 9)] public int cols = 5;
+        [Range(2, 10)] public int rows = 4;
 
         [Header("World Layout")]
         public Vector3 boardCenter = new Vector3(0f, -0.82f, 0.30f);
@@ -28,7 +28,7 @@ namespace PuzzleGlass
         public bool matchGlassWidth = true;
         public bool autoAlignBelowGlass = true;
         public bool useManualCellSize = false;
-        [Range(0.30f, 0.82f)] public float manualCellSize = 0.506f;
+        [Range(0.22f, 0.82f)] public float manualCellSize = 0.506f;
 
         [Header("Tray Colors")]
         public Color frameDarkColor = new Color(0.17f, 0.15f, 0.35f, 1f);
@@ -57,8 +57,11 @@ namespace PuzzleGlass
         private int[] _bfsDistanceField;
         private Vector2Int[] _bfsFlowDirField;
         private int[] _bfsQueue;
+        private readonly HashSet<Vector2Int> _wallCells = new HashSet<Vector2Int>();
         private static readonly int[] BfsDx = { 0, 1, -1, 0 };
         private static readonly int[] BfsDy = { 1, 0, 0, -1 };
+
+        public bool IsWallCell(int x, int y) => _wallCells.Contains(new Vector2Int(x, y));
 
         public void MarkGridDirty()
         {
@@ -91,31 +94,53 @@ namespace PuzzleGlass
             ResetDefaultColors();
         }
 
-        public void Configure(int gridCols, int gridRows, ShapedGlassContainer alignGlass = null)
+        public void Configure(int gridCols, int gridRows, ShapedGlassContainer alignGlass = null, List<Vector2Int> wallCells = null)
         {
-            cols = Mathf.Clamp(gridCols, 2, 7);
-            rows = Mathf.Clamp(gridRows, 2, 6);
+            cols = Mathf.Clamp(gridCols, 2, 9);
+            rows = Mathf.Clamp(gridRows, 2, 10);
+
+            _wallCells.Clear();
+            if (wallCells != null)
+            {
+                for (int i = 0; i < wallCells.Count; i++)
+                {
+                    var w = wallCells[i];
+                    if (w.x >= 0 && w.x < cols && w.y >= 0 && w.y < rows) _wallCells.Add(w);
+                }
+            }
 
             ShapedGlassContainer glass = alignGlass ?? FindFirstObjectByType<ShapedGlassContainer>();
 
             if (useManualCellSize)
             {
-                cellSize = Mathf.Clamp(manualCellSize, 0.30f, 0.82f);
+                cellSize = Mathf.Clamp(manualCellSize, 0.22f, 0.82f);
             }
             else
             {
                 float targetBoardWidth = maxBoardWidth;
-                if (matchGlassWidth && glass != null && glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out _, out _))
+                float effectiveMaxHeight = maxBoardHeight;
+                if (glass != null && glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out float gMinY, out _))
                 {
-                    float glassOuterW = gMaxX - gMinX;
-                    // Tepsi camdan biraz geniş ama en fazla maxBoardWidth (dar ters şişede kavanoz ekranı kaplamasın)
-                    if (glassOuterW > 1.0f) targetBoardWidth = Mathf.Min(glassOuterW * 1.06f, maxBoardWidth);
+                    if (matchGlassWidth)
+                    {
+                        float glassOuterW = gMaxX - gMinX;
+                        // Tepsi camdan biraz geniş ama en fazla maxBoardWidth (dar ters şişede kavanoz ekranı kaplamasın)
+                        if (glassOuterW > 1.0f) targetBoardWidth = Mathf.Min(glassOuterW * 1.06f, maxBoardWidth);
+                    }
+                    Camera cam = Camera.main;
+                    if (cam != null && cam.orthographic && rows >= 5)
+                    {
+                        float minGap = (glass.showBottomExitCollar && glass.IsPoolShape) ? 0.36f : 0.14f;
+                        float camBottom = cam.transform.position.y - cam.orthographicSize;
+                        float availH = (gMinY - Mathf.Max(minGap, gapBelowGlass * 1.18f)) - (camBottom + 0.36f);
+                        if (availH > effectiveMaxHeight) effectiveMaxHeight = Mathf.Min(availH, 5.2f);
+                    }
                 }
 
                 float frameOverhead = innerMargin + framePadding * 2f;
                 float usableW = Mathf.Max(0.8f, targetBoardWidth - frameOverhead);
-                float usableH = Mathf.Max(0.8f, maxBoardHeight - frameOverhead);
-                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.32f, 0.78f);
+                float usableH = Mathf.Max(0.8f, effectiveMaxHeight - frameOverhead);
+                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.22f, 0.78f);
             }
 
             if (autoAlignBelowGlass && glass != null)
@@ -281,12 +306,14 @@ namespace PuzzleGlass
             // Top exit rail accent showing blocks pull UP toward the upper glass container
             CreateRoundedPart("TopExitHighlightBar", _visualRoot.transform, new Vector3(0f, innerH * 0.5f + framePadding * 0.50f, 0.00f), innerW * 0.88f, 0.028f, 0.02f, 0.014f, exitRimMat);
 
-            // 3. Individual Rounded Recessed Grid Tiles (cols x rows) with shared meshes for GPU Instancing
+            // 3. Individual Rounded Recessed Grid Tiles (cols x rows) + Raised Grid Walls/Dividers
             float tileOuter = cellSize * 0.81f;
             float tileInner = cellSize * 0.76f;
             float tileRad = cellSize * 0.15f;
             Mesh sharedBevelMesh = ProceduralMeshUtils.CreatePillBadge(tileOuter, tileOuter, 0.02f, Mathf.Min(tileRad, tileOuter * 0.48f));
             Mesh sharedInnerMesh = ProceduralMeshUtils.CreatePillBadge(tileInner, tileInner, 0.02f, Mathf.Min(tileRad * 0.88f, tileInner * 0.48f));
+            Mesh sharedWallBaseMesh = _wallCells.Count > 0 ? ProceduralMeshUtils.CreatePillBadge(cellSize * 0.94f, cellSize * 0.94f, 0.06f, cellSize * 0.14f) : null;
+            Mesh sharedWallTopMesh = _wallCells.Count > 0 ? ProceduralMeshUtils.CreatePillBadge(cellSize * 0.82f, cellSize * 0.82f, 0.03f, cellSize * 0.12f) : null;
 
             for (int r = 0; r < rows; r++)
             {
@@ -295,8 +322,26 @@ namespace PuzzleGlass
                     float lx = -gridW * 0.5f + (c + 0.5f) * cellSize;
                     float ly = -gridH * 0.5f + (r + 0.5f) * cellSize;
 
-                    CreateRoundedPartWithMesh($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.007f, 0.005f), sharedBevelMesh, tileBevelMat);
-                    CreateRoundedPartWithMesh($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), sharedInnerMesh, tileBodyMat);
+                    if (IsWallCell(c, r))
+                    {
+                        CreateRoundedPartWithMesh($"WallBase_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.025f), sharedWallBaseMesh, frameFrontMat);
+                        CreateRoundedPartWithMesh($"WallTop_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.008f, -0.055f), sharedWallTopMesh, exitRimMat);
+                        if (c + 1 < cols && IsWallCell(c + 1, r))
+                        {
+                            CreateRoundedPart($"WallBridgeH_{c}_{r}", _visualRoot.transform, new Vector3(lx + cellSize * 0.5f, ly, -0.025f), cellSize * 0.50f, cellSize * 0.92f, 0.06f, cellSize * 0.06f, frameFrontMat);
+                            CreateRoundedPart($"WallBridgeHTop_{c}_{r}", _visualRoot.transform, new Vector3(lx + cellSize * 0.5f, ly + 0.008f, -0.055f), cellSize * 0.50f, cellSize * 0.80f, 0.03f, cellSize * 0.04f, exitRimMat);
+                        }
+                        if (r + 1 < rows && IsWallCell(c, r + 1))
+                        {
+                            CreateRoundedPart($"WallBridgeV_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + cellSize * 0.5f, -0.025f), cellSize * 0.92f, cellSize * 0.50f, 0.06f, cellSize * 0.06f, frameFrontMat);
+                            CreateRoundedPart($"WallBridgeVTop_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + cellSize * 0.5f + 0.008f, -0.055f), cellSize * 0.80f, cellSize * 0.50f, 0.03f, cellSize * 0.04f, exitRimMat);
+                        }
+                    }
+                    else
+                    {
+                        CreateRoundedPartWithMesh($"CellBevel_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly + 0.007f, 0.005f), sharedBevelMesh, tileBevelMat);
+                        CreateRoundedPartWithMesh($"CellTile_{c}_{r}", _visualRoot.transform, new Vector3(lx, ly, -0.005f), sharedInnerMesh, tileBodyMat);
+                    }
                 }
             }
         }
@@ -317,24 +362,24 @@ namespace PuzzleGlass
             {
                 Material m = (existing != null && existing.shader == chamberShader) ? existing : new Material(chamberShader);
                 m.name = matName;
-                m.SetColor("_CenterColor", frontLens ? new Color(0.95f, 0.98f, 1.00f, 0.0f) : new Color(0.84f, 0.87f, 0.98f, 0.12f));
-                m.SetColor("_EdgeColor", new Color(0.50f, 0.54f, 0.84f, 0.34f));
-                m.SetColor("_OuterRimColor", new Color(0.32f, 0.30f, 0.64f, 0.62f));
-                m.SetColor("_InnerGrooveColor", new Color(0.28f, 0.26f, 0.56f, 0.52f));
-                m.SetColor("_RimGlowColor", new Color(0.86f, 0.88f, 0.98f, 0.42f));
-                m.SetColor("_FrameColor", new Color(0.32f, 0.30f, 0.60f, 0.84f));
-                m.SetColor("_FrameHighlight", new Color(0.74f, 0.77f, 0.94f, 0.70f));
-                m.SetColor("_FrameEdgeShade", new Color(0.22f, 0.20f, 0.46f, 0.88f));
-                m.SetColor("_FakeShadowColor", new Color(0.46f, 0.40f, 0.68f, 0.24f));
+                m.SetColor("_CenterColor", frontLens ? new Color(0.98f, 0.99f, 1.00f, 0.0f) : new Color(0.94f, 0.95f, 1.00f, 0.06f));
+                m.SetColor("_EdgeColor", new Color(0.74f, 0.78f, 0.99f, 0.52f));
+                m.SetColor("_OuterRimColor", new Color(0.44f, 0.46f, 0.86f, 0.88f));
+                m.SetColor("_InnerGrooveColor", new Color(0.44f, 0.46f, 0.84f, 0.72f));
+                m.SetColor("_RimGlowColor", new Color(1.00f, 1.00f, 1.00f, 0.96f));
+                m.SetColor("_FrameColor", new Color(0.52f, 0.50f, 0.90f, 0.88f));
+                m.SetColor("_FrameHighlight", new Color(0.98f, 0.99f, 1.00f, 0.92f));
+                m.SetColor("_FrameEdgeShade", new Color(0.40f, 0.42f, 0.84f, 0.90f));
+                m.SetColor("_FakeShadowColor", new Color(0.54f, 0.54f, 0.88f, 0.34f));
                 m.SetFloat("_IsFrontLens", frontLens ? 1f : 0f);
                 m.SetFloat("_IsCollar", 0f);
                 m.SetFloat("_IsRoundedBoxPool", 1f);
                 m.SetFloat("_PolyCount", 0f);
                 m.SetFloat("_BoxAspect", boxAspect);
-                m.SetFloat("_BoxCornerRadius", 0.20f);
+                m.SetFloat("_BoxCornerRadius", 0.22f);
                 m.SetFloat("_FrameThickness", JarFrameNormThick);
-                m.SetFloat("_SheenIntensity", 0.42f);
-                m.SetFloat("_CenterGlassAlpha", 0.12f);
+                m.SetFloat("_SheenIntensity", 0.92f);
+                m.SetFloat("_CenterGlassAlpha", 0.05f);
                 m.SetVector("_JarNeckParams", neckParams);
                 m.renderQueue = frontLens ? 3022 : 1998;
                 return m;
@@ -487,6 +532,7 @@ namespace PuzzleGlass
             {
                 for (int y = rows - 1; y >= 0; y--)
                 {
+                    if (IsWallCell(x, y)) break;
                     var occ = _cellOccupancy[y * cols + x];
                     if (occ != null)
                     {
@@ -512,7 +558,7 @@ namespace PuzzleGlass
             for (int x = 0; x < cols; x++)
             {
                 int idx = topRow * cols + x;
-                if (_cellOccupancy[idx] == null)
+                if (!IsWallCell(x, topRow) && _cellOccupancy[idx] == null)
                 {
                     _bfsDistanceField[idx] = 0;
                     _bfsFlowDirField[idx] = Vector2Int.up;
@@ -533,7 +579,7 @@ namespace PuzzleGlass
                     int ny = cy + BfsDy[d];
                     if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
                     int nIdx = ny * cols + nx;
-                    if (_cellOccupancy[nIdx] != null || _bfsDistanceField[nIdx] >= 0) continue;
+                    if (IsWallCell(nx, ny) || _cellOccupancy[nIdx] != null || _bfsDistanceField[nIdx] >= 0) continue;
 
                     _bfsDistanceField[nIdx] = nextDist;
                     _bfsFlowDirField[nIdx] = new Vector2Int(cx - nx, cy - ny);
@@ -571,17 +617,19 @@ namespace PuzzleGlass
         {
             CarrierBlockShape shape = movingBlock != null ? movingBlock.blockShape : CarrierBlockShape.Rect1x1;
             if (!IsInsideGrid(candidateAnchor, shape)) return false;
-            if (allMonsters == null) return true;
-
             EnsureFlowFieldUpdated(allMonsters);
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
             for (int i = 0; i < myCells.Length; i++)
             {
                 int mx = candidateAnchor.x + myCells[i].x;
                 int my = candidateAnchor.y + myCells[i].y;
-                var occ = _cellOccupancy[my * cols + mx];
-                if (occ != null && occ != movingBlock)
-                    return false;
+                if (IsWallCell(mx, my)) return false;
+                if (allMonsters != null)
+                {
+                    var occ = _cellOccupancy[my * cols + mx];
+                    if (occ != null && occ != movingBlock)
+                        return false;
+                }
             }
             return true;
         }
@@ -670,6 +718,7 @@ namespace PuzzleGlass
                 if (mx < 0 || mx >= cols) continue;
                 for (int oy = my + 1; oy < rows; oy++)
                 {
+                    if (IsWallCell(mx, oy)) return false;
                     var occ = _cellOccupancy[oy * cols + mx];
                     if (occ != null && occ != block)
                         return false;
@@ -766,6 +815,11 @@ namespace PuzzleGlass
         {
             if (!IsInsideGrid(candidateAnchor, shape)) return false;
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
+            for (int i = 0; i < myCells.Length; i++)
+            {
+                if (IsWallCell(candidateAnchor.x + myCells[i].x, candidateAnchor.y + myCells[i].y))
+                    return false;
+            }
             if (allMonsters == null) return true;
 
             for (int m = 0; m < allMonsters.Count; m++)

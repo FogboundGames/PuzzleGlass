@@ -27,10 +27,10 @@ namespace PuzzleGlass
         [Header("Physical Settings")]
         public float ballRadius = 0.12f;
         public float defaultMass = 0.32f;
-        public float defaultDrag = 0.45f;
-        public float defaultAngularDrag = 0.65f;
-        [Tooltip("Top havuzu toplarının tok ve hızlı düşmesi için ek yerçekimi ivmesi")]
-        public float extraGravity = 14.0f;
+        public float defaultDrag = 0.20f;
+        public float defaultAngularDrag = 0.42f;
+        [Tooltip("Top havuzu toplarının akıcı ve doyurucu düşmesi için ek yerçekimi ivmesi")]
+        public float extraGravity = 9.5f;
         [Tooltip("Sadece tünelleme/patlama koruması. Normal harekete karışmaz.")]
         public float maxSafetySpeed = 12.0f;
 
@@ -108,6 +108,10 @@ namespace PuzzleGlass
 
             if (rb != null)
             {
+                if (defaultDrag >= 0.39f) defaultDrag = 0.20f;
+                if (defaultAngularDrag >= 0.60f) defaultAngularDrag = 0.42f;
+                if (Mathf.Approximately(extraGravity, 14f)) extraGravity = 9.5f;
+
                 rb.mass = defaultMass;
                 rb.linearDamping = defaultDrag;
                 rb.angularDamping = defaultAngularDrag;
@@ -486,7 +490,7 @@ namespace PuzzleGlass
                 toExit.z = 0f;
                 if (toExit.sqrMagnitude > 0.001f)
                 {
-                    rb.linearVelocity = toExit.normalized * 2.6f;
+                    rb.linearVelocity = toExit.normalized * 1.55f;
                 }
                 rb.WakeUp();
             }
@@ -511,14 +515,14 @@ namespace PuzzleGlass
                         float dy = op.y - vacatedPos.y;
                         if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
                         {
-                            float inwardVx = Mathf.Clamp(dx * 2.0f, -0.62f, 0.62f);
-                            other.rb.linearVelocity += new Vector3(inwardVx, -0.52f, 0f);
+                            float inwardVx = Mathf.Clamp(dx * 1.45f, -0.45f, 0.45f);
+                            other.rb.linearVelocity += new Vector3(inwardVx, -0.24f, 0f);
 
                             if (dy <= ballRadius * 3.0f && Mathf.Abs(dx) <= ballRadius * 2.6f && Time.time >= other._nextCollisionSquashTime)
                             {
-                                other._nextCollisionSquashTime = Time.time + 0.16f;
+                                other._nextCollisionSquashTime = Time.time + 0.14f;
                                 Vector3 slideDir = new Vector3(inwardVx, -1f, 0f).normalized;
-                                other.PlayVisualSquashStretch(0.032f, slideDir, isArrival: false);
+                                other.PlayVisualSquashStretch(0.036f, slideDir, isArrival: false);
                             }
                         }
                     }
@@ -614,10 +618,10 @@ namespace PuzzleGlass
                 targetMonster.OnBallIncoming(this);
             }
 
-            float duration = Mathf.Clamp(Vector3.Distance(startPos, socketPos) * 0.19f, 0.26f, 0.40f);
+            float duration = Mathf.Clamp(Vector3.Distance(startPos, socketPos) * 0.28f, 0.40f, 0.62f);
             if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive)
             {
-                duration *= 0.52f; // 2x Vacuum speed in Fever Mode!
+                duration *= 0.60f;
             }
 
             // Tactile pop-scale + parabolic jump arc directly into the gray circular socket (without shrinking to zero!)
@@ -650,26 +654,23 @@ namespace PuzzleGlass
             Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
 
             // Arrival squash & stretch on first settling impact inside the glass container
-            if (!_hasPlayedArrivalSquash && relSpeed >= 1.05f)
+            if (!_hasPlayedArrivalSquash && relSpeed >= 0.65f)
             {
                 _hasPlayedArrivalSquash = true;
-                _nextCollisionSquashTime = Time.time + 0.14f;
-                float arrivalAmp = Mathf.Clamp(0.065f + relSpeed * 0.016f, 0.075f, 0.145f);
+                _nextCollisionSquashTime = Time.time + 0.09f;
+                float arrivalAmp = Mathf.Clamp(0.068f + relSpeed * 0.018f, 0.078f, 0.155f);
                 PlayVisualSquashStretch(arrivalAmp, normal, isArrival: true);
-                PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.9f) / 4.5f));
+                PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.50f) / 3.8f));
                 return;
             }
 
-            if (relSpeed < 0.85f || Time.time < _nextCollisionSquashTime) return;
-            _nextCollisionSquashTime = Time.time + 0.13f;
+            if (relSpeed < 0.52f || Time.time < _nextCollisionSquashTime) return;
+            _nextCollisionSquashTime = Time.time + 0.075f;
 
-            float amp = Mathf.Clamp(0.032f + (relSpeed - 0.85f) * 0.016f, 0.032f, 0.095f);
+            float amp = Mathf.Clamp(0.036f + (relSpeed - 0.52f) * 0.018f, 0.036f, 0.105f);
             PlayVisualSquashStretch(amp, normal, isArrival: false);
 
-            if (relSpeed >= 1.40f)
-            {
-                PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 1.35f) / 4.8f) * 0.75f);
-            }
+            PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.45f) / 3.9f));
         }
 
         private void PlayVisualSquashStretch(float amp, Vector3 worldAxis, bool isArrival)
@@ -681,8 +682,8 @@ namespace PuzzleGlass
             localAxis.Normalize();
 
             _squashAxisLocal = localAxis;
-            _squashAmp = Mathf.Clamp(Mathf.Abs(amp) * 1.35f, 0.04f, 0.22f) * (amp < 0f ? -1f : 1f);
-            _squashDuration = isArrival ? 0.21f : 0.17f;
+            _squashAmp = Mathf.Clamp(Mathf.Abs(amp) * 1.38f, 0.042f, 0.23f) * (amp < 0f ? -1f : 1f);
+            _squashDuration = isArrival ? 0.24f : 0.19f;
             _squashTimer = 0f;
             _isGpuSquashing = true;
 

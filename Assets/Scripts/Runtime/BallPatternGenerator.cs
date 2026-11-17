@@ -210,7 +210,11 @@ namespace PuzzleGlass
 
             if (ballSpawns.Count == 0)
             {
-                GenerateOrderedBallPool(ballDiameter, monsterGoals, ballSpawns);
+                var gmEmpty = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+                if (gmEmpty == null || gmEmpty.currentLevel == null || !gmEmpty.currentLevel.useManualBallLayout)
+                {
+                    GenerateOrderedBallPool(ballDiameter, monsterGoals, ballSpawns);
+                }
             }
 
             // Ensure no spawned ball overlaps any active internal glass divider
@@ -308,20 +312,22 @@ namespace PuzzleGlass
                 ? glassContainer.transform.TransformPoint(new Vector3(0f, localFloorY, 0f)).y
                 : localFloorY;
             float worldRowStepY = ballDiameter * 0.855f * ((glassContainer != null) ? glassContainer.transform.lossyScale.y : 1f);
+            float maxSpawnLocalY = float.MaxValue;
+            if (glassContainer != null && glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+            {
+                float topY = glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y * glassContainer.heightScale;
+                maxSpawnLocalY = topY - ballRadius * 1.18f;
+            }
 
             List<BallPhysicsController> spawnedBalls = new List<BallPhysicsController>(ballSpawns.Count);
             if (Application.isPlaying)
             {
-                PuzzleSoundManager.Instance?.SuppressBallTaps(0.24f);
+                PuzzleSoundManager.Instance?.SuppressBallTaps(0.02f);
             }
 
             for (int i = 0; i < ballSpawns.Count; i++)
             {
                 var entry = ballSpawns[i];
-                Vector3 localPos = new Vector3(entry.pos.x, entry.pos.y, -0.10f);
-                Vector3 worldPos = (glassContainer != null)
-                    ? glassContainer.transform.TransformPoint(localPos)
-                    : localPos;
 
                 int layerIdx = 0;
                 float bestDiff = float.MaxValue;
@@ -334,6 +340,18 @@ namespace PuzzleGlass
                         layerIdx = r;
                     }
                 }
+
+                float spawnLocalY = entry.pos.y;
+                if (Application.isPlaying && initialShapeHoldTime <= 0.05f && !hasSlopedDivider)
+                {
+                    float liftedY = entry.pos.y + 0.12f + layerIdx * 0.042f;
+                    spawnLocalY = Mathf.Min(liftedY, Mathf.Max(entry.pos.y, maxSpawnLocalY));
+                }
+
+                Vector3 localPos = new Vector3(entry.pos.x, spawnLocalY, -0.10f);
+                Vector3 worldPos = (glassContainer != null)
+                    ? glassContainer.transform.TransformPoint(localPos)
+                    : localPos;
 
                 var ball = BallObjectPool.Instance.SpawnBall(entry.col, worldPos, ballRadius);
                 if (ball != null)
@@ -485,6 +503,38 @@ namespace PuzzleGlass
             if (gm != null && gm.currentLevel != null)
             {
                 gm.currentLevel.EnsureCarrierBoxPuzzleFormat();
+                if (gm.currentLevel.useManualBallLayout)
+                {
+                    OrderedPoolLayout.Result manual;
+                    if (glassContainer != null && glassContainer.IsCustomPool)
+                    {
+                        manual = OrderedPoolLayout.BuildManualShaped(
+                            gm.currentLevel.manualBalls,
+                            gm.currentLevel.manualLaneWidth,
+                            glassContainer.contourPoints,
+                            glassContainer.widthScale,
+                            glassContainer.heightScale);
+                    }
+                    else
+                    {
+                        float mHalfW = (glassContainer != null && glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                            ? glassContainer.contourPoints[0].halfWidth * glassContainer.widthScale
+                            : 1.32f;
+                        float mFloorY = (glassContainer != null) ? glassContainer.GetChamberFloorY() : -0.56f;
+                        float mCeilY = (glassContainer != null && glassContainer.contourPoints != null && glassContainer.contourPoints.Count > 0)
+                            ? glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y * glassContainer.heightScale
+                            : 0.62f;
+                        manual = OrderedPoolLayout.BuildManual(
+                            gm.currentLevel.manualBalls,
+                            gm.currentLevel.manualLaneWidth,
+                            mHalfW, mFloorY, mCeilY, patternVerticalOffset);
+                    }
+
+                    this.ballDiameter = manual.diameter;
+                    if (glassContainer != null) glassContainer.particleSize = manual.diameter;
+                    foreach (var b in manual.balls) list.Add((b.localPos, b.color));
+                    return;
+                }
                 if (gm.currentLevel.bottomToTopGroups != null && gm.currentLevel.bottomToTopGroups.Count > 0)
                 {
                     for (int i = 0; i < gm.currentLevel.bottomToTopGroups.Count; i++)

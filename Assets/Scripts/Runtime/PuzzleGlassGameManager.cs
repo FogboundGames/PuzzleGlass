@@ -62,6 +62,8 @@ namespace PuzzleGlass
         private bool _showPatternSelector = false;
         private float _deadlockTimer = 0f;
         private readonly List<GameObject> _activeMechanicVfx = new List<GameObject>();
+        private bool _hasBaseGlassLocalPos;
+        private Vector3 _baseGlassLocalPos;
 
         private void Awake()
         {
@@ -662,7 +664,9 @@ namespace PuzzleGlass
                     else if (!levelData.useCustomGlassShape)
                     {
                         // Yükseklik top sayısına göre otomatik (Cam Stüdyosu'nda elle ayarlanmadıkça)
-                        glassContainer.contourPoints = ShapedGlassContainer.BuildAutoBottleContour(levelData.bottomToTopGroups);
+                        glassContainer.contourPoints = levelData.useManualBallLayout
+                            ? ShapedGlassContainer.BuildManualBottleContour(levelData.manualBalls, levelData.manualLaneWidth)
+                            : ShapedGlassContainer.BuildAutoBottleContour(levelData.bottomToTopGroups);
                         glassContainer.SyncBoundsFromContour();
                     }
                     else
@@ -684,6 +688,24 @@ namespace PuzzleGlass
                 BallFeedTubeController.Instance?.ClearAll();
 
                 glassContainer.RebuildContainer();
+
+                if (Application.isPlaying)
+                {
+                    if (!_hasBaseGlassLocalPos)
+                    {
+                        _hasBaseGlassLocalPos = true;
+                        _baseGlassLocalPos = glassContainer.transform.localPosition;
+                    }
+                    float glassH = 1.18f;
+                    if (glassContainer.contourPoints != null && glassContainer.contourPoints.Count >= 2)
+                    {
+                        glassH = (glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y - glassContainer.contourPoints[0].y) * Mathf.Max(0.5f, glassContainer.heightScale);
+                    }
+                    float lift = (!levelData.useBallFeedTubes && glassH < 1.05f && levelData.stagingGridRows >= 5)
+                        ? Mathf.Clamp((1.18f - glassH) * 0.55f, 0f, 0.40f)
+                        : 0f;
+                    glassContainer.transform.localPosition = _baseGlassLocalPos + Vector3.up * lift;
+                }
 
                 // 3. Rebuild Airtight Physics Colliders around container
                 if (containerPhysics != null)
@@ -707,13 +729,27 @@ namespace PuzzleGlass
                         stagingGridBoard.frameCornerRadius = Mathf.Clamp(levelData.trayFrameCornerRadius, 0.04f, 0.40f);
                         stagingGridBoard.gapBelowGlass = Mathf.Clamp(levelData.trayGapBelowGlass, 0.02f, 0.80f);
                         stagingGridBoard.useManualCellSize = levelData.trayUseManualCellSize;
-                        stagingGridBoard.manualCellSize = Mathf.Clamp(levelData.trayManualCellSize, 0.30f, 0.82f);
+                        stagingGridBoard.manualCellSize = Mathf.Clamp(levelData.trayManualCellSize, 0.22f, 0.82f);
+                        stagingGridBoard.showOuterGlassJar = levelData.trayShowOuterGlassJar;
                     }
-                    stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer);
+                    else
+                    {
+                        stagingGridBoard.matchGlassWidth = true;
+                        stagingGridBoard.maxBoardWidth = 2.822f;
+                        stagingGridBoard.maxBoardHeight = 3.20f;
+                        stagingGridBoard.framePadding = 0.068f;
+                        stagingGridBoard.innerMargin = 0.048f;
+                        stagingGridBoard.frameCornerRadius = 0.135f;
+                        stagingGridBoard.gapBelowGlass = 0.11f;
+                        stagingGridBoard.useManualCellSize = false;
+                        stagingGridBoard.manualCellSize = 0.506f;
+                        stagingGridBoard.showOuterGlassJar = true;
+                    }
+                    stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer, levelData.gridWalls);
                 }
                 else
                 {
-                    stagingGridBoard.Configure(stagingGridBoard.cols, stagingGridBoard.rows, glassContainer);
+                    stagingGridBoard.Configure(stagingGridBoard.cols, stagingGridBoard.rows, glassContainer, levelData.gridWalls);
                 }
             }
             SpawnMonsterStagingArea(levelData.monsters);
@@ -735,7 +771,7 @@ namespace PuzzleGlass
                 }
                 int gCols = (currentLevel != null) ? currentLevel.stagingGridCols : 5;
                 int gRows = (currentLevel != null) ? currentLevel.stagingGridRows : 4;
-                stagingGridBoard.Configure(gCols, gRows);
+                stagingGridBoard.Configure(gCols, gRows, glassContainer, currentLevel != null ? currentLevel.gridWalls : null);
             }
 
             float gridCellScale = stagingGridBoard.cellSize;
@@ -794,9 +830,13 @@ namespace PuzzleGlass
             List<MonsterCharacter> placedBlocks)
         {
             if (board == null || !board.IsInsideGrid(anchor, shape)) return false;
-            if (placedBlocks == null || placedBlocks.Count == 0) return true;
-
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
+            for (int i = 0; i < myCells.Length; i++)
+            {
+                if (board.IsWallCell(anchor.x + myCells[i].x, anchor.y + myCells[i].y))
+                    return false;
+            }
+            if (placedBlocks == null || placedBlocks.Count == 0) return true;
             for (int m = 0; m < placedBlocks.Count; m++)
             {
                 var other = placedBlocks[m];

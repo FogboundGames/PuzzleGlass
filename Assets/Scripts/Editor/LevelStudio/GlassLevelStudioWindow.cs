@@ -22,7 +22,10 @@ namespace PuzzleGlass.Editor.Studio
         private const string StylePath = "Assets/Scripts/Editor/LevelStudio/GlassLevelStudio.uss";
         private const string SelectedKey = "PuzzleGlass_Studio_SelectedLevel";
         private const string LiveKey = "PuzzleGlass_Studio_LiveSync";
-        private const float CellPx = 64f;
+        private const float BaseCellPx = 64f;
+        private float CellPx => Shown != null && (Shown.stagingGridCols > 5 || Shown.stagingGridRows > 5)
+            ? Mathf.Clamp(340f / Mathf.Max(Shown.stagingGridCols, Shown.stagingGridRows), 40f, 58f)
+            : BaseCellPx;
 
         private static readonly PuzzleColor[] BrushColors =
         {
@@ -43,9 +46,16 @@ namespace PuzzleGlass.Editor.Studio
         private PuzzleGlassLevelData m_Level;
         private PuzzleGlassLevelData m_Pending;      // otomatik üretim önizlemesi (asset'e dokunmaz)
         private LevelDifficulty m_PendingDifficulty;
+        private bool m_PendingFullMechanics;
         private string m_Search = "";
 
-        private enum MechanicBrush { None, Key, Lock, Ice }
+        private bool m_ShowSmartGenTab;
+        private FullMechanicsLevelGenerator.Options m_GenOptions = FullMechanicsLevelGenerator.Options.Balanced;
+        private bool m_GenProgressive = true;
+        private LevelDifficulty m_GenDifficulty = LevelDifficulty.Medium;
+        private int m_GenBatchCount = 3;
+
+        private enum MechanicBrush { None, Key, Lock, Ice, Wall }
 
         // Etkileşim durumu
         private int m_SelectedBlock = -1;
@@ -59,6 +69,18 @@ namespace PuzzleGlass.Editor.Studio
         private Vector2Int m_DragAnchor;
         private bool m_DragMoved;
 
+        // Elle top yerleşimi etkileşimi
+        private PuzzleColor? m_BallBrushColor;
+        private bool m_BallEraser;
+        private (int col, int row)? m_SelectedBallSlot;
+        private (int col, int row)? m_DragBallSlot;
+        private (int col, int row)? m_HoverBallSlot;
+        private bool m_BallDragMoved;
+        private bool m_BallPainting;
+        private int m_BallPaintButton = -1;
+        private bool m_BallStrokeRecorded;
+        private readonly List<(VisualElement el, int col, int row)> m_BallSlotElements = new List<(VisualElement, int, int)>();
+
         // Çözüm
         private SolveResult m_Solve;
         private List<LevelFinding> m_Findings = new List<LevelFinding>();
@@ -71,8 +93,13 @@ namespace PuzzleGlass.Editor.Studio
         // UI
         private ListView m_List;
         private Label m_Title, m_State, m_Summary;
-        private Button m_SaveButton;
-        private VisualElement m_Palette, m_PreviewBar, m_BoardContent, m_GlassHolder, m_Tray, m_OrderHolder;
+        private Button m_SaveButton, m_ManualBallsBtn, m_GenToggleBtn;
+        private Button m_TabLevelsBtn, m_TabSmartGenBtn;
+        private VisualElement m_LevelsSubPanel, m_SmartGenSubPanel, m_SmartGenForm, m_GenStatusBox, m_GenLinksRow;
+        private Label m_GenStatusText;
+        private VisualElement m_Palette, m_PreviewBar, m_BoardContent, m_GlassHeader, m_BallToolbar, m_TubeCanvas, m_Glass, m_Tray, m_OrderHolder;
+        private float m_TubeHeight, m_TubeScale, m_TubeHalfW, m_TubeBallDiam;
+        private List<PuzzleColor> m_TubeLeftColors, m_TubeRightColors;
         private Label m_GlassCaption, m_OrderCaption, m_EmptyLabel;
         private Label m_PreviewTitle, m_PreviewDetail;
         private VisualElement m_SolveCard, m_Stats, m_Inspector;
@@ -109,6 +136,8 @@ namespace PuzzleGlass.Editor.Studio
         private void OnUndoRedo()
         {
             if (m_Level == null) return;
+            if (m_SelectedBallSlot.HasValue && FindManualBallIndex(m_SelectedBallSlot.Value.col, m_SelectedBallSlot.Value.row) < 0)
+                m_SelectedBallSlot = null;
             ClampSelection();
             OnEdited(syncScene: true);
         }
@@ -203,10 +232,23 @@ namespace PuzzleGlass.Editor.Studio
         {
             var panel = new VisualElement();
             panel.AddToClassList("levels");
+
+            var tabs = new VisualElement();
+            tabs.AddToClassList("left-tabs");
+            m_TabLevelsBtn = new Button(() => SetLeftTab(false)) { text = "📋 Leveller" };
+            m_TabLevelsBtn.AddToClassList("left-tabs__btn");
+            m_TabSmartGenBtn = new Button(() => SetLeftTab(true)) { text = "🤖 Akıllı Üretici" };
+            m_TabSmartGenBtn.AddToClassList("left-tabs__btn");
+            tabs.Add(m_TabLevelsBtn);
+            tabs.Add(m_TabSmartGenBtn);
+            panel.Add(tabs);
+
+            m_LevelsSubPanel = new VisualElement();
+            m_LevelsSubPanel.AddToClassList("left-subpanel");
             var search = new ToolbarSearchField();
             search.style.width = StyleKeyword.Auto;
             search.RegisterValueChangedCallback(e => { m_Search = e.newValue ?? ""; ApplyFilter(); });
-            panel.Add(search);
+            m_LevelsSubPanel.Add(search);
 
             var zone = new VisualElement();
             zone.AddToClassList("create-zone");
@@ -215,7 +257,7 @@ namespace PuzzleGlass.Editor.Studio
             var del = new Button(DeleteLevel) { text = "Sil", tooltip = "Seçili leveli çöp kutusuna taşır." };
             del.AddToClassList("inspector__danger");
             zone.Add(del);
-            panel.Add(zone);
+            m_LevelsSubPanel.Add(zone);
 
             m_List = new ListView(m_Visible, 48, MakeLevelRow, BindLevelRow) { selectionType = SelectionType.Single };
             m_List.style.flexGrow = 1;
@@ -223,8 +265,29 @@ namespace PuzzleGlass.Editor.Studio
             {
                 foreach (var item in items) { SelectLevel((PuzzleGlassLevelData)item); break; }
             };
-            panel.Add(m_List);
+            m_LevelsSubPanel.Add(m_List);
+            panel.Add(m_LevelsSubPanel);
+
+            m_SmartGenSubPanel = BuildSmartGenPanel();
+            panel.Add(m_SmartGenSubPanel);
+
+            SetLeftTab(m_ShowSmartGenTab);
             return panel;
+        }
+
+        private void SetLeftTab(bool smartGen)
+        {
+            m_ShowSmartGenTab = smartGen;
+            if (m_LevelsSubPanel != null)
+                m_LevelsSubPanel.style.display = smartGen ? DisplayStyle.None : DisplayStyle.Flex;
+            if (m_SmartGenSubPanel != null)
+                m_SmartGenSubPanel.style.display = smartGen ? DisplayStyle.Flex : DisplayStyle.None;
+            if (m_TabLevelsBtn != null)
+                m_TabLevelsBtn.EnableInClassList("left-tabs__btn--active", !smartGen);
+            if (m_TabSmartGenBtn != null)
+                m_TabSmartGenBtn.EnableInClassList("left-tabs__btn--active", smartGen);
+            if (m_GenToggleBtn != null)
+                m_GenToggleBtn.EnableInClassList("chip--active", smartGen);
         }
 
         private VisualElement BuildAutomation()
@@ -238,6 +301,20 @@ namespace PuzzleGlass.Editor.Studio
             row.Add(new Button(() => ProposeGenerated(LevelDifficulty.Medium)) { text = "Orta" });
             row.Add(new Button(() => ProposeGenerated(LevelDifficulty.Hard)) { text = "Zor" });
             row.Add(new Button(() => ProposeGenerated(LevelDifficulty.Boss)) { text = "Boss" });
+            var fullBtn = new Button(() =>
+            {
+                SetLeftTab(true);
+                ProposeFullMechanics(Shown?.difficulty ?? m_GenDifficulty);
+            })
+            {
+                text = "✨ Tüm Mekanikler",
+                tooltip = "Sol paneldeki oranlarla çözülebilir önizleme üretir ve sol panelden ince ayar yapmanı sağlar."
+            };
+            row.Add(fullBtn);
+            m_GenToggleBtn = Chip(() => SetLeftTab(!m_ShowSmartGenTab), m_ShowSmartGenTab);
+            m_GenToggleBtn.Add(new Label("🤖 Akıllı Üretici"));
+            m_GenToggleBtn.tooltip = "Sol panelde mekanik oranlarını sorarak kontrollü üretim ekranını açar.";
+            row.Add(m_GenToggleBtn);
             var spacer = new VisualElement();
             spacer.style.flexGrow = 1;
             row.Add(spacer);
@@ -247,6 +324,314 @@ namespace PuzzleGlass.Editor.Studio
                 tooltip = "Camdaki top sırasını kutuların renk ve yuvalarından yeniden kurar (elle yaptığın sıra değişir)."
             });
             return row;
+        }
+
+        private VisualElement BuildSmartGenPanel()
+        {
+            var container = new VisualElement();
+            container.style.flexGrow = 1;
+            container.style.minHeight = 0;
+
+            var scroll = new ScrollView();
+            scroll.AddToClassList("smart-gen");
+            m_SmartGenForm = new VisualElement();
+            scroll.Add(m_SmartGenForm);
+            container.Add(scroll);
+
+            var actions = new VisualElement();
+            actions.AddToClassList("smart-gen__actions");
+
+            var previewBtn = new Button(() => ProposeFullMechanics(m_GenProgressive && m_Level != null ? m_Level.difficulty : m_GenDifficulty))
+            {
+                text = "👁 Seçili Levelde Önizle",
+                tooltip = "Mevcut levele henüz kaydetmeden seçili oranlarla önizleme kurar (Uygula / Vazgeç ile kontrollü)."
+            };
+            previewBtn.AddToClassList("smart-gen__btn");
+            actions.Add(previewBtn);
+
+            var batchCountRow = new VisualElement();
+            batchCountRow.AddToClassList("smart-gen__row");
+            var countLabel = new Label("Yeni level adedi") { tooltip = "Tek seferde oluşturulacak çözülebilir level sayısı." };
+            countLabel.AddToClassList("smart-gen__label");
+            batchCountRow.Add(countLabel);
+            var countReadout = new Label($"{m_GenBatchCount}");
+            countReadout.AddToClassList("smart-gen__pct");
+            var minusBtn = new Button(() =>
+            {
+                m_GenBatchCount = Mathf.Clamp(m_GenBatchCount - 1, 1, 15);
+                countReadout.text = $"{m_GenBatchCount}";
+            }) { text = "-" };
+            minusBtn.style.width = 24; minusBtn.style.height = 20;
+            var plusBtn = new Button(() =>
+            {
+                m_GenBatchCount = Mathf.Clamp(m_GenBatchCount + 1, 1, 15);
+                countReadout.text = $"{m_GenBatchCount}";
+            }) { text = "+" };
+            plusBtn.style.width = 24; plusBtn.style.height = 20;
+            batchCountRow.Add(minusBtn);
+            batchCountRow.Add(countReadout);
+            batchCountRow.Add(plusBtn);
+            actions.Add(batchCountRow);
+
+            var createBatchBtn = new Button(() => GenerateBatchLevels(m_GenBatchCount))
+            {
+                text = "✨ Oranlara Göre Yeni Level(ler) Üret",
+                tooltip = "Belirlediğin % oranlarına göre çözülebilir yeni leveller üretir ve sonuç dökümünü gösterir."
+            };
+            createBatchBtn.AddToClassList("smart-gen__btn-primary");
+            actions.Add(createBatchBtn);
+
+            var quickRow = new VisualElement();
+            quickRow.AddToClassList("smart-gen__batch-row");
+            quickRow.Add(new Button(() => GenerateBatchLevels(1)) { text = "+1" });
+            quickRow.Add(new Button(() => GenerateBatchLevels(3)) { text = "+3" });
+            quickRow.Add(new Button(() => GenerateBatchLevels(5)) { text = "+5" });
+            quickRow.Add(new Button(() => SetLeftTab(false)) { text = "📋 Liste" });
+            actions.Add(quickRow);
+
+            m_GenStatusBox = new VisualElement();
+            m_GenStatusBox.AddToClassList("smart-gen__status");
+            m_GenStatusBox.style.display = DisplayStyle.None;
+            m_GenStatusText = new Label();
+            m_GenStatusText.AddToClassList("smart-gen__status-text");
+            m_GenStatusBox.Add(m_GenStatusText);
+            m_GenLinksRow = new VisualElement();
+            m_GenLinksRow.AddToClassList("smart-gen__links");
+            m_GenStatusBox.Add(m_GenLinksRow);
+            actions.Add(m_GenStatusBox);
+
+            container.Add(actions);
+            RebuildSmartGenForm();
+            return container;
+        }
+
+        private void RebuildSmartGenForm()
+        {
+            if (m_SmartGenForm == null) return;
+            m_SmartGenForm.Clear();
+
+            var intro = new Label("Önce oran ve sınırları belirle, ardından önizle veya toplu üret. Tüm leveller çözücüyle doğrulanır.");
+            intro.AddToClassList("smart-gen__intro");
+            m_SmartGenForm.Add(intro);
+
+            // Hazır profiller
+            var presetRow = new VisualElement();
+            presetRow.AddToClassList("smart-gen__presets");
+            presetRow.Add(new Button(() => { m_GenOptions = FullMechanicsLevelGenerator.Options.Balanced; RebuildSmartGenForm(); }) { text = "Dengeli" });
+            presetRow.Add(new Button(() => { m_GenOptions = FullMechanicsLevelGenerator.Options.HeavyMechanics; RebuildSmartGenForm(); }) { text = "Bol Mekanik" });
+            presetRow.Add(new Button(() => { m_GenOptions = FullMechanicsLevelGenerator.Options.ClassicLight; RebuildSmartGenForm(); }) { text = "Sade" });
+            m_SmartGenForm.Add(presetRow);
+
+            // 1. Zorluk & Tepsi
+            var secLayout = new Label("ZORLUK VE TEPSİ YERLEŞİMİ");
+            secLayout.AddToClassList("smart-gen__section");
+            m_SmartGenForm.Add(secLayout);
+
+            var layoutCard = new VisualElement();
+            layoutCard.AddToClassList("smart-gen__card");
+
+            var progToggle = new Toggle("İlerleyen zorluk (toplu)")
+            {
+                value = m_GenProgressive,
+                tooltip = "Açıkken yeni leveller numaraya göre Kolay → Orta → Zor → Boss ilerler."
+            };
+            progToggle.RegisterValueChangedCallback(e => m_GenProgressive = e.newValue);
+            layoutCard.Add(progToggle);
+
+            var diffSeg = new VisualElement();
+            diffSeg.AddToClassList("segmented");
+            diffSeg.style.marginTop = 3;
+            diffSeg.style.marginBottom = 4;
+            void AddDiffBtn(LevelDifficulty d, string title)
+            {
+                var b = new Button(() => { m_GenDifficulty = d; RebuildSmartGenForm(); }) { text = title };
+                b.AddToClassList("segmented__item");
+                if (m_GenDifficulty == d) b.AddToClassList("segmented__item--active");
+                diffSeg.Add(b);
+            }
+            AddDiffBtn(LevelDifficulty.Easy, "Kolay");
+            AddDiffBtn(LevelDifficulty.Medium, "Orta");
+            AddDiffBtn(LevelDifficulty.Hard, "Zor");
+            AddDiffBtn(LevelDifficulty.Boss, "Boss");
+            layoutCard.Add(diffSeg);
+
+            void AddAutoStepper(string title, int val, int minV, int maxV, int defOnEnable, System.Action<int> setter)
+            {
+                var r = new VisualElement();
+                r.AddToClassList("smart-gen__row");
+                var lbl = new Label(title);
+                lbl.AddToClassList("smart-gen__label");
+                r.Add(lbl);
+
+                bool isAuto = val <= 0;
+                var valLbl = new Label(isAuto ? "Oto" : $"{val}");
+                valLbl.AddToClassList("smart-gen__pct");
+                if (isAuto) valLbl.style.color = new StyleColor(new Color(0.60f, 0.62f, 0.66f));
+
+                var autoBtn = new Button(() =>
+                {
+                    setter(isAuto ? defOnEnable : 0);
+                    RebuildSmartGenForm();
+                }) { text = isAuto ? "Oto" : "Özel" };
+                autoBtn.style.height = 19; autoBtn.style.fontSize = 10; autoBtn.style.paddingLeft = 5; autoBtn.style.paddingRight = 5;
+
+                r.Add(autoBtn);
+                if (!isAuto)
+                {
+                    var m = new Button(() => { setter(Mathf.Clamp(val - 1, minV, maxV)); RebuildSmartGenForm(); }) { text = "-" };
+                    m.style.width = 20; m.style.height = 19;
+                    var p = new Button(() => { setter(Mathf.Clamp(val + 1, minV, maxV)); RebuildSmartGenForm(); }) { text = "+" };
+                    p.style.width = 20; p.style.height = 19;
+                    r.Add(m);
+                    r.Add(valLbl);
+                    r.Add(p);
+                }
+                else
+                {
+                    r.Add(valLbl);
+                }
+                layoutCard.Add(r);
+            }
+
+            AddAutoStepper("Tepsi Sütun", m_GenOptions.customGridCols, 4, 7, 5, v => m_GenOptions.customGridCols = v);
+            AddAutoStepper("Tepsi Satır", m_GenOptions.customGridRows, 4, 7, 5, v => m_GenOptions.customGridRows = v);
+            AddAutoStepper("Küp (Blok)", m_GenOptions.customBoxCount, 3, 16, 8, v => m_GenOptions.customBoxCount = v);
+            AddAutoStepper("Renk Çeşidi", m_GenOptions.customColorCount, 2, 8, 4, v => m_GenOptions.customColorCount = v);
+            AddAutoStepper("Üst Yuva", m_GenOptions.customSlotCount, 2, 5, 3, v => m_GenOptions.customSlotCount = v);
+            m_SmartGenForm.Add(layoutCard);
+
+            // 2. Mekanik Oranları
+            var secMech = new Label("MEKANİK ORANLARI (%0 KAPALI · %100 KESİN)");
+            secMech.AddToClassList("smart-gen__section");
+            m_SmartGenForm.Add(secMech);
+
+            VisualElement AddPctCard(string title, int pct, System.Action<int> setPct, System.Action<VisualElement> buildSub = null)
+            {
+                var card = new VisualElement();
+                card.AddToClassList("smart-gen__card");
+
+                var hdr = new VisualElement();
+                hdr.AddToClassList("smart-gen__row");
+                var lbl = new Label(title);
+                lbl.AddToClassList("smart-gen__label");
+                var pctLbl = new Label(pct <= 0 ? "Kapalı" : $"%{pct}");
+                pctLbl.AddToClassList("smart-gen__pct");
+                if (pct <= 0) pctLbl.style.color = new StyleColor(new Color(0.58f, 0.60f, 0.65f));
+                hdr.Add(lbl);
+                hdr.Add(pctLbl);
+                card.Add(hdr);
+
+                var slider = new SliderInt(0, 100) { value = pct };
+                slider.RegisterValueChangedCallback(e =>
+                {
+                    bool wasOff = pct <= 0;
+                    bool isOff = e.newValue <= 0;
+                    setPct(e.newValue);
+                    pctLbl.text = isOff ? "Kapalı" : $"%{e.newValue}";
+                    pctLbl.style.color = isOff
+                        ? new StyleColor(new Color(0.58f, 0.60f, 0.65f))
+                        : new StyleColor(new Color(0.35f, 0.66f, 0.94f));
+                    if (buildSub != null && wasOff != isOff) RebuildSmartGenForm();
+                });
+                card.Add(slider);
+
+                if (buildSub != null && pct > 0)
+                {
+                    var sub = new VisualElement();
+                    sub.AddToClassList("smart-gen__sub");
+                    buildSub(sub);
+                    card.Add(sub);
+                }
+
+                m_SmartGenForm.Add(card);
+                return card;
+            }
+
+            void AddSubSlider(VisualElement parent, string labelText, int min, int max, int val, string suffix, System.Action<int> setVal)
+            {
+                var s = new SliderInt(labelText, min, max) { value = val, showInputField = true };
+                s.tooltip = $"{labelText}: {val}{suffix}";
+                s.RegisterValueChangedCallback(e => setVal(e.newValue));
+                parent.Add(s);
+            }
+
+            // Anahtar & Kilit
+            AddPctCard("🔑 Anahtar & Kilit", m_GenOptions.keyLockChancePct,
+                v => m_GenOptions.keyLockChancePct = v,
+                sub => AddSubSlider(sub, "Maks. Anahtar", 1, 3, m_GenOptions.maxKeyPairs, "", v => m_GenOptions.maxKeyPairs = v));
+
+            // Buz
+            AddPctCard("❄ Buzlu Blok", m_GenOptions.iceChancePct,
+                v => m_GenOptions.iceChancePct = v,
+                sub =>
+                {
+                    AddSubSlider(sub, "Maks. Blok", 1, 3, m_GenOptions.maxIceBlocks, "", v => m_GenOptions.maxIceBlocks = v);
+                    AddSubSlider(sub, "Yoğunluk %", 25, 90, m_GenOptions.iceRatioPct, "%", v => m_GenOptions.iceRatioPct = v);
+
+                    var meltSeg = new VisualElement();
+                    meltSeg.AddToClassList("segmented");
+                    meltSeg.style.marginTop = 2;
+                    void AddMeltBtn(FullMechanicsLevelGenerator.IceMeltPreference pref, string t)
+                    {
+                        var b = new Button(() => { m_GenOptions.iceMeltPreference = pref; RebuildSmartGenForm(); }) { text = t };
+                        b.AddToClassList("segmented__item");
+                        b.style.height = 20; b.style.fontSize = 10;
+                        if (m_GenOptions.iceMeltPreference == pref) b.AddToClassList("segmented__item--active");
+                        meltSeg.Add(b);
+                    }
+                    AddMeltBtn(FullMechanicsLevelGenerator.IceMeltPreference.Mixed, "Karışık");
+                    AddMeltBtn(FullMechanicsLevelGenerator.IceMeltPreference.PerBallCollected, "Topta");
+                    AddMeltBtn(FullMechanicsLevelGenerator.IceMeltPreference.PerBoxCompleted, "Kutuda");
+                    sub.Add(meltSeg);
+                });
+
+            // Üst Besleme Tüpü
+            AddPctCard("🧪 Üst Besleme Tüpü", m_GenOptions.feedTubeChancePct,
+                v => m_GenOptions.feedTubeChancePct = v,
+                sub =>
+                {
+                    AddSubSlider(sub, "Tüpteki Top %", 20, 70, m_GenOptions.feedTubeHoldRatioPct, "%", v => m_GenOptions.feedTubeHoldRatioPct = v);
+                    AddSubSlider(sub, "İki Yan %", 0, 100, m_GenOptions.feedTubeBothSidesPct, "%", v => m_GenOptions.feedTubeBothSidesPct = v);
+                });
+
+            // Tepsi Bölmesi
+            AddPctCard("🧱 Tepsi Bölmesi (Duvar)", m_GenOptions.trayWallChancePct,
+                v => m_GenOptions.trayWallChancePct = v,
+                sub => AddSubSlider(sub, "Maks. Hücre", 1, 4, m_GenOptions.maxTrayWalls, "", v => m_GenOptions.maxTrayWalls = v));
+
+            // Cam Şekli
+            AddPctCard("🏺 Farklı Cam Şekli", m_GenOptions.variedGlassChancePct,
+                v => m_GenOptions.variedGlassChancePct = v,
+                sub =>
+                {
+                    var shapeSeg = new VisualElement();
+                    shapeSeg.AddToClassList("segmented");
+                    void AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter flt, string t)
+                    {
+                        var b = new Button(() => { m_GenOptions.glassShapeFilter = flt; RebuildSmartGenForm(); }) { text = t };
+                        b.AddToClassList("segmented__item");
+                        b.style.height = 20; b.style.fontSize = 10;
+                        if (m_GenOptions.glassShapeFilter == flt) b.AddToClassList("segmented__item--active");
+                        shapeSeg.Add(b);
+                    }
+                    AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter.All, "Tümü");
+                    AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter.BottlesOnly, "Şişe");
+                    AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter.BoxesOnly, "Kutu");
+                    AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter.CustomPoolsOnly, "Özel");
+                    sub.Add(shapeSeg);
+                });
+
+            // El İpucu
+            var hintCard = new VisualElement();
+            hintCard.AddToClassList("smart-gen__card");
+            var hintToggle = new Toggle("👆 İlk Hamle El İpucu")
+            {
+                value = m_GenOptions.addTutorialHint,
+                tooltip = "Çözücünün bulduğu ilk hamle için öğretici el ipucu ekler."
+            };
+            hintToggle.RegisterValueChangedCallback(e => m_GenOptions.addTutorialHint = e.newValue);
+            hintCard.Add(hintToggle);
+            m_SmartGenForm.Add(hintCard);
         }
 
         private VisualElement BuildPreviewBar()
@@ -266,7 +651,11 @@ namespace PuzzleGlass.Editor.Studio
             var apply = new Button(ApplyPending) { text = "Uygula" };
             apply.AddToClassList("preview__apply");
             m_PreviewBar.Add(apply);
-            m_PreviewBar.Add(new Button(() => ProposeGenerated(m_PendingDifficulty)) { text = "Yeniden üret" });
+            m_PreviewBar.Add(new Button(() =>
+            {
+                if (m_PendingFullMechanics) ProposeFullMechanics(m_PendingDifficulty);
+                else ProposeGenerated(m_PendingDifficulty);
+            }) { text = "Yeniden üret" });
             m_PreviewBar.Add(new Button(() => { DiscardPending(); RefreshAll(); }) { text = "Vazgeç" });
             m_PreviewBar.style.display = DisplayStyle.None;
             return m_PreviewBar;
@@ -368,6 +757,11 @@ namespace PuzzleGlass.Editor.Studio
             m_SelectedBlock = -1;
             m_SelectedGroup = -1;
             m_DragBlock = -1;
+            m_SelectedBallSlot = null;
+            m_DragBallSlot = null;
+            m_HoverBallSlot = null;
+            m_BallPainting = false;
+            m_BallStrokeRecorded = false;
             if (lvl != null) SessionState.SetString(SelectedKey, AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(lvl)));
             // Eski formatta kaydedilmiş level (kutularda şekil/konum yok): oyun bunu yüklerken bellekte çeviriyor
             // ama dosya eski kalıyor ve stüdyoda boş görünüyordu. Oyunla aynı dönüşümü yapıp kaydet.
@@ -404,6 +798,9 @@ namespace PuzzleGlass.Editor.Studio
             lvl.monsters = new List<LevelMonsterEntry>();
             lvl.bottomToTopGroups = new List<LevelMonsterEntry>();
             lvl.bottomToTopTriplets = new List<PuzzleColor>();
+            lvl.useManualBallLayout = false;
+            lvl.manualLaneWidth = 0;
+            lvl.manualBalls = new List<ManualPoolBallEntry>();
             lvl.stagingGridCols = 5;
             lvl.stagingGridRows = 4;
             CreateAsset(lvl, next);
@@ -463,6 +860,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_Level == null) return;
             DiscardPending();
+            m_PendingFullMechanics = false;
             m_Pending = CreateInstance<PuzzleGlassLevelData>();
             m_Pending.hideFlags = HideFlags.DontSave;
             EditorUtility.CopySerialized(m_Level, m_Pending);
@@ -475,6 +873,101 @@ namespace PuzzleGlass.Editor.Studio
             m_Solve = null;
             ScheduleSolve();
             RefreshAll();
+        }
+
+        private void ProposeFullMechanics(LevelDifficulty diff)
+        {
+            if (m_Level == null) return;
+            DiscardPending();
+            m_PendingFullMechanics = true;
+            m_Pending = CreateInstance<PuzzleGlassLevelData>();
+            m_Pending.hideFlags = HideFlags.DontSave;
+            EditorUtility.CopySerialized(m_Level, m_Pending);
+            m_Pending.difficulty = diff;
+            m_PendingDifficulty = diff;
+            FullMechanicsLevelGenerator.Generate(m_Pending, diff, m_GenOptions, seed: Random.Range(1, int.MaxValue));
+            m_SelectedBlock = -1;
+            m_SelectedGroup = -1;
+            m_Solve = null;
+            ScheduleSolve();
+            RefreshAll();
+        }
+
+        private void GenerateBatchLevels(int count)
+        {
+            if (!Directory.Exists(LevelsFolder)) Directory.CreateDirectory(LevelsFolder);
+            count = Mathf.Clamp(count, 1, 20);
+            int next = NextLevelNumber();
+            var createdList = new List<PuzzleGlassLevelData>(count);
+            var batchPlan = FullMechanicsLevelGenerator.PlanBatch(m_GenOptions, count, Random.Range(1, int.MaxValue));
+            int solvedCount = 0;
+            int keysCount = 0, iceCount = 0, tubeCount = 0, wallCount = 0;
+
+            try
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar(
+                        "Akıllı Level Üretici",
+                        $"Level {next} üretiliyor ve doğrulanıyor ({i + 1}/{count})...",
+                        (float)i / count))
+                        break;
+
+                    var lvl = CreateInstance<PuzzleGlassLevelData>();
+                    lvl.levelNumber = next;
+                    var diff = m_GenProgressive ? PuzzleLevelGenerator.GetProgressiveDifficulty(next) : m_GenDifficulty;
+                    var solve = FullMechanicsLevelGenerator.Generate(lvl, diff, batchPlan[i], seed: next * 7919 + Random.Range(1, 9999));
+                    if (solve != null && solve.status == SolveStatus.Solved) solvedCount++;
+
+                    bool hasK = false, hasI = false;
+                    if (lvl.monsters != null)
+                    {
+                        foreach (var m in lvl.monsters)
+                        {
+                            if (m == null) continue;
+                            if (m.hasKey || m.lockKeyCount > 0) hasK = true;
+                            if (m.iceCount > 0) hasI = true;
+                        }
+                    }
+                    if (hasK) keysCount++;
+                    if (hasI) iceCount++;
+                    if (lvl.useBallFeedTubes) tubeCount++;
+                    if (lvl.gridWalls != null && lvl.gridWalls.Count > 0) wallCount++;
+
+                    string path = AssetDatabase.GenerateUniqueAssetPath($"{LevelsFolder}/Level_{next:00}.asset");
+                    AssetDatabase.CreateAsset(lvl, path);
+                    createdList.Add(lvl);
+                    next++;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            AssetDatabase.SaveAssets();
+            LoadLevels(keepSelection: false);
+            SyncGameManagerLevels();
+            if (createdList.Count > 0) SelectAndShow(createdList[0]);
+
+            if (m_GenStatusBox != null && m_GenStatusText != null && m_GenLinksRow != null)
+            {
+                int produced = Mathf.Max(1, createdList.Count);
+                m_GenStatusText.text =
+                    $"Üretildi: {solvedCount}/{createdList.Count} çözülebilir\n" +
+                    $"🔑 {keysCount}/{produced} · ❄ {iceCount}/{produced} · 🧪 {tubeCount}/{produced} · 🧱 {wallCount}/{produced}";
+                m_GenLinksRow.Clear();
+                foreach (var created in createdList)
+                {
+                    var captured = created;
+                    var linkBtn = new Button(() => SelectAndShow(captured)) { text = $"L{captured.levelNumber}" };
+                    linkBtn.AddToClassList("smart-gen__link");
+                    m_GenLinksRow.Add(linkBtn);
+                }
+                m_GenStatusBox.style.display = createdList.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+
+            ShowNotification(new GUIContent($"{solvedCount}/{createdList.Count} çözülebilir level üretildi (kontrol edebilirsin)"));
         }
 
         private void ApplyPending()
@@ -701,7 +1194,65 @@ namespace PuzzleGlass.Editor.Studio
             if (m_Level == null || m_Level.bottomToTopGroups == null || m_SelectedGroup >= m_Level.bottomToTopGroups.Count) m_SelectedGroup = -1;
         }
 
-        /// <summary>Şekil verilen konumda tepsiye sığıyor ve başka blokla çakışmıyor mu? (ignore = taşınan blok)</summary>
+        private static bool IsWall(PuzzleGlassLevelData lvl, int x, int y)
+        {
+            if (lvl?.gridWalls == null) return false;
+            for (int i = 0; i < lvl.gridWalls.Count; i++)
+                if (lvl.gridWalls[i].x == x && lvl.gridWalls[i].y == y) return true;
+            return false;
+        }
+
+        private static void PruneOutOfBoundsWalls(PuzzleGlassLevelData lvl)
+        {
+            if (lvl?.gridWalls == null) return;
+            for (int i = lvl.gridWalls.Count - 1; i >= 0; i--)
+            {
+                var w = lvl.gridWalls[i];
+                if (w.x < 0 || w.y < 0 || w.x >= lvl.stagingGridCols || w.y >= lvl.stagingGridRows)
+                    lvl.gridWalls.RemoveAt(i);
+            }
+        }
+
+        private void ToggleWallCell(Vector2Int cell, bool? forceAdd = null)
+        {
+            if (m_Level == null || m_Pending != null) return;
+            if (m_Level.gridWalls == null) m_Level.gridWalls = new List<Vector2Int>();
+            int idx = m_Level.gridWalls.IndexOf(cell);
+            bool shouldAdd = forceAdd ?? (idx < 0);
+            if (shouldAdd && idx >= 0) return;
+            if (!shouldAdd && idx < 0) return;
+            Record(shouldAdd ? "Tepsi bölmesi ekle" : "Tepsi bölmesi sil");
+            if (shouldAdd) m_Level.gridWalls.Add(cell);
+            else m_Level.gridWalls.RemoveAt(idx);
+            OnEdited(syncScene: true);
+        }
+
+        private void SetQuickGlassSize(bool compact)
+        {
+            if (m_Level == null || m_Pending != null) return;
+            Record(compact ? "Kompakt cam" : "Normal cam");
+            if (compact)
+            {
+                m_Level.useCustomGlassShape = true;
+                m_Level.glassIsBottle = true;
+                m_Level.glassPreset = GlassShapePreset.CustomFreeform;
+                m_Level.symmetricMode = true;
+                m_Level.widthScale = 1f;
+                m_Level.heightScale = 1f;
+                m_Level.showShoulderHandles = false;
+                m_Level.contourPoints = ShapedGlassContainer.BuildBottleContour(2.70f, 0.62f);
+                m_Level.boxCornerRadius = 0.22f;
+                m_Level.boxFrameThickness = 0.055f;
+            }
+            else
+            {
+                m_Level.useCustomGlassShape = false;
+                m_Level.glassIsBottle = false;
+            }
+            OnEdited(syncScene: true);
+        }
+
+        /// <summary>Şekil verilen konumda tepsiye sığıyor, bölmeye çarpmıyor ve başka blokla çakışmıyor mu? (ignore = taşınan blok)</summary>
         private static bool Fits(PuzzleGlassLevelData lvl, CarrierBlockShape shape, Vector2Int anchor, int ignore)
         {
             var own = CarrierBlockShapeUtility.GetCells(shape);
@@ -709,6 +1260,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 int x = anchor.x + c.x, y = anchor.y + c.y;
                 if (x < 0 || y < 0 || x >= lvl.stagingGridCols || y >= lvl.stagingGridRows) return false;
+                if (IsWall(lvl, x, y)) return false;
                 if (BlockAt(lvl, new Vector2Int(x, y), ignore) >= 0) return false;
             }
             return true;
@@ -873,9 +1425,12 @@ namespace PuzzleGlass.Editor.Studio
             bool show = m_Pending != null;
             m_PreviewBar.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
             if (!show) return;
-            m_PreviewTitle.text = $"Önizleme: otomatik {DifficultyName(m_PendingDifficulty)} level";
+            m_PreviewTitle.text = m_PendingFullMechanics
+                ? $"Önizleme: tüm mekanikli {DifficultyName(m_PendingDifficulty)} level"
+                : $"Önizleme: otomatik {DifficultyName(m_PendingDifficulty)} level";
             string solve = m_Solve == null ? "çözüm aranıyor…" : SolveText(m_Solve);
-            m_PreviewDetail.text = $"{m_Pending.monsters.Count} blok · {m_Pending.GetTotalBallCount()} top · {m_Pending.stagingGridCols}x{m_Pending.stagingGridRows} tepsi · {solve}. Uygula derseniz şimdiki levelin yerine geçer.";
+            string tube = m_Pending.useBallFeedTubes ? " · 🧪 tüp" : "";
+            m_PreviewDetail.text = $"{m_Pending.monsters.Count} blok · {m_Pending.GetTotalBallCount()} top · {m_Pending.stagingGridCols}x{m_Pending.stagingGridRows} tepsi{tube} · {solve}. Uygula derseniz şimdiki levelin yerine geçer.";
         }
 
         // ---------- Palet ----------
@@ -932,6 +1487,7 @@ namespace PuzzleGlass.Editor.Studio
             AddMechanicChip("🔑 Anahtar", MechanicBrush.Key, "Bloğa tıkla = anahtar ekle/kaldır (tamamlanınca 1 kilit açar).");
             AddMechanicChip("🔒 Kilit", MechanicBrush.Lock, "Bloğa tıkla = kilit ekle/kaldır (kaç anahtar gerektiği sağdan ayarlanır).");
             AddMechanicChip("❄ Buz", MechanicBrush.Ice, "Bloğa tıkla = buz ekle/kaldır (sayaç sağdan ayarlanır).");
+            AddMechanicChip("🧱 Bölme", MechanicBrush.Wall, "Boş hücreye tıkla = tepsi duvarı/bölmesi ekle veya kaldır (bloklar içinden geçemez).");
 
             AddSep();
             var eraser = Chip(() =>
@@ -1015,11 +1571,42 @@ namespace PuzzleGlass.Editor.Studio
             m_EmptyLabel.AddToClassList("board__caption");
             m_BoardContent.Add(m_EmptyLabel);
 
+            m_GlassHeader = new VisualElement();
+            m_GlassHeader.AddToClassList("glass-header");
             m_GlassCaption = new Label("Cam (toplar alttan üste; seçili bloğun deliğinin üstü ve rengi vurgulanır)");
             m_GlassCaption.AddToClassList("board__caption");
-            m_BoardContent.Add(m_GlassCaption);
-            m_GlassHolder = new VisualElement();
-            m_BoardContent.Add(m_GlassHolder);
+            m_GlassHeader.Add(m_GlassCaption);
+            m_ManualBallsBtn = Chip(ToggleManualBallLayout, false);
+            m_ManualBallsBtn.Add(new Label("✋ Elle top diz"));
+            m_ManualBallsBtn.tooltip = "Açıkken camdaki slotlara tıklayıp sürükleyerek topları kendin yerleştirebilirsin.";
+            m_GlassHeader.Add(m_ManualBallsBtn);
+            m_BoardContent.Add(m_GlassHeader);
+
+            m_BallToolbar = new VisualElement();
+            m_BallToolbar.AddToClassList("ball-bar");
+            m_BoardContent.Add(m_BallToolbar);
+
+            m_TubeCanvas = new VisualElement();
+            m_TubeCanvas.pickingMode = PickingMode.Ignore;
+            m_TubeCanvas.style.marginBottom = -4f;
+            m_TubeCanvas.style.overflow = Overflow.Visible;
+            m_TubeCanvas.generateVisualContent += DrawStudioFeedTubes;
+            m_BoardContent.Add(m_TubeCanvas);
+
+            m_Glass = new VisualElement();
+            m_Glass.AddToClassList("glass");
+            m_Glass.RegisterCallback<PointerDownEvent>(OnGlassPointerDown);
+            m_Glass.RegisterCallback<PointerMoveEvent>(OnGlassPointerMove);
+            m_Glass.RegisterCallback<PointerUpEvent>(OnGlassPointerUp);
+            m_Glass.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                if (m_HoverBallSlot.HasValue && !m_BallPainting && !m_DragBallSlot.HasValue)
+                {
+                    m_HoverBallSlot = null;
+                    RedrawGlass();
+                }
+            });
+            m_BoardContent.Add(m_Glass);
 
             m_Tray = new VisualElement();
             m_Tray.AddToClassList("tray");
@@ -1041,33 +1628,53 @@ namespace PuzzleGlass.Editor.Studio
             var lvl = Shown;
             bool has = lvl != null;
             m_EmptyLabel.style.display = has ? DisplayStyle.None : DisplayStyle.Flex;
-            foreach (var el in new VisualElement[] { m_GlassCaption, m_GlassHolder, m_Tray, m_OrderCaption, m_OrderHolder })
+            foreach (var el in new VisualElement[] { m_GlassHeader, m_Glass, m_Tray, m_OrderCaption, m_OrderHolder })
                 el.style.display = has ? DisplayStyle.Flex : DisplayStyle.None;
-            if (!has) return;
+            if (!has)
+            {
+                m_BallToolbar.style.display = DisplayStyle.None;
+                m_TubeCanvas.style.display = DisplayStyle.None;
+                return;
+            }
 
-            int cols = lvl.stagingGridCols;
-            m_GlassHolder.Clear();
-            m_GlassHolder.Add(BuildGlass(lvl, GetGlassDims(lvl), cols * CellPx, cols));
+            bool manual = lvl.useManualBallLayout;
+            m_ManualBallsBtn.EnableInClassList("chip--active", manual);
+            m_ManualBallsBtn.SetEnabled(m_Pending == null);
+            m_GlassCaption.text = manual
+                ? "Cam (elle dizim: slota tıkla/sürükle = koy veya taşı, sağ tık = sil)"
+                : "Cam (toplar alttan üste; seçili bloğun deliğinin üstü ve rengi vurgulanır)";
+
+            m_BallToolbar.style.display = manual && m_Pending == null ? DisplayStyle.Flex : DisplayStyle.None;
+            if (manual && m_Pending == null) RefreshBallToolbar(lvl);
+
+            RedrawGlass();
             RedrawTray();
+
+            m_OrderCaption.text = manual
+                ? "Cam sırası devre dışı (elle top yerleşimi açık)"
+                : "Cam sırası (alttan üste) · bir çipe, sonra diğerine tıkla = yer değiştir";
+            m_OrderHolder.style.display = manual ? DisplayStyle.None : DisplayStyle.Flex;
             m_OrderHolder.Clear();
-            m_OrderHolder.Add(BuildOrder(lvl));
+            if (!manual) m_OrderHolder.Add(BuildOrder(lvl));
         }
 
         private int m_CellCols = -1, m_CellRows = -1;
+        private float m_LastTrayCellPx = -1f;
 
         private void RedrawTray()
         {
             var lvl = Shown;
             if (lvl == null) { m_Tray.Clear(); m_CellElements.Clear(); m_CellCols = m_CellRows = -1; return; }
             int cols = lvl.stagingGridCols, rows = lvl.stagingGridRows;
-            m_Tray.style.width = cols * CellPx + 6f;   // + kenarlık
-            m_Tray.style.height = rows * CellPx + 6f;
+            float cellPx = CellPx;
+            m_Tray.style.width = cols * cellPx + 6f;   // + kenarlık
+            m_Tray.style.height = rows * cellPx + 6f;
 
             var critical = new HashSet<int>();
             foreach (var f in m_Findings) if (f.severity == FindingSeverity.Critical && f.blockIndex >= 0) critical.Add(f.blockIndex);
 
-            // Hücre kutuları kalıcı: sadece tepsi boyutu değişince yeniden kurulur (fare eşlemesi ekrandaki konumlarını kullanır)
-            if (cols != m_CellCols || rows != m_CellRows || m_CellElements.Count == 0)
+            // Hücre kutuları kalıcı: sadece tepsi boyutu veya hücre boyutu değişince yeniden kurulur
+            if (cols != m_CellCols || rows != m_CellRows || !Mathf.Approximately(cellPx, m_LastTrayCellPx) || m_CellElements.Count == 0)
             {
                 m_Tray.Clear();
                 m_CellElements.Clear();
@@ -1086,29 +1693,49 @@ namespace PuzzleGlass.Editor.Studio
                 }
                 m_CellCols = cols;
                 m_CellRows = rows;
+                m_LastTrayCellPx = cellPx;
             }
             else
             {
-                // Hücreler kalsın, blokları temizle
+                // Hücreler kalsın, blokları ve duvarları temizle
                 for (int i = m_Tray.childCount - 1; i >= 0; i--)
                     if (!m_Tray[i].ClassListContains("tray__cell")) m_Tray.RemoveAt(i);
             }
 
-            if (lvl.monsters == null) return;
-            for (int i = 0; i < lvl.monsters.Count; i++)
+            var wallSet = new HashSet<Vector2Int>();
+            if (lvl.gridWalls != null)
             {
-                var m = lvl.monsters[i];
-                if (m == null) continue;
-                bool dragging = i == m_DragBlock && m_Pending == null;
-                Vector2Int anchor = dragging ? m_DragAnchor : m.gridAnchor;
-                bool invalid = dragging && !Fits(lvl, m.blockShape, anchor, i);
-                DrawBlock(m_Tray, m, i, anchor, rows, i == m_SelectedBlock, critical.Contains(i), dragging, invalid);
+                foreach (var w in lvl.gridWalls)
+                    if (w.x >= 0 && w.y >= 0 && w.x < cols && w.y < rows) wallSet.Add(w);
+                foreach (var w in wallSet) DrawTrayWallCell(w, rows, wallSet, ghost: false);
             }
 
-            // Fırça hayaleti: boş hücrede yeni blok, blok üstünde yeni şekil/mekanik
+            if (lvl.monsters != null)
+            {
+                for (int i = 0; i < lvl.monsters.Count; i++)
+                {
+                    var m = lvl.monsters[i];
+                    if (m == null) continue;
+                    bool dragging = i == m_DragBlock && m_Pending == null;
+                    Vector2Int anchor = dragging ? m_DragAnchor : m.gridAnchor;
+                    bool invalid = dragging && !Fits(lvl, m.blockShape, anchor, i);
+                    DrawBlock(m_Tray, m, i, anchor, rows, i == m_SelectedBlock, critical.Contains(i), dragging, invalid);
+                }
+            }
+
+            // Fırça hayaleti
             if (m_HoverCell.HasValue && m_Pending == null && (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None) && !m_Eraser)
             {
                 var cell = m_HoverCell.Value;
+                if (m_BrushMechanic == MechanicBrush.Wall)
+                {
+                    if (BlockAt(lvl, cell) < 0)
+                    {
+                        var ghostWalls = new HashSet<Vector2Int>(wallSet) { cell };
+                        DrawTrayWallCell(cell, rows, ghostWalls, ghost: true);
+                    }
+                    return;
+                }
                 int hit = BlockAt(lvl, cell);
                 var shape = m_BrushShape ?? (hit >= 0 ? lvl.monsters[hit].blockShape : CarrierBlockShape.Rect1x1);
                 var color = m_BrushColor ?? (hit >= 0 ? lvl.monsters[hit].color : PuzzleColor.Blue);
@@ -1131,20 +1758,289 @@ namespace PuzzleGlass.Editor.Studio
             }
         }
 
-        private VisualElement BuildGlass(PuzzleGlassLevelData lvl, PuzzleLevelSolver.GlassDims dims, float width, int cols)
+        private void DrawTrayWallCell(Vector2Int c, int rows, HashSet<Vector2Int> walls, bool ghost)
         {
+            const float gap = 2f, border = 2.5f, radius = 8f, innerPad = 5f, innerRadius = 4f;
+            bool left = !walls.Contains(c + Vector2Int.left);
+            bool right = !walls.Contains(c + Vector2Int.right);
+            bool up = !walls.Contains(c + Vector2Int.up);
+            bool down = !walls.Contains(c + Vector2Int.down);
+
+            var el = new VisualElement();
+            el.AddToClassList("tray-wall");
+            if (ghost) el.AddToClassList("tray-wall--ghost");
+            el.pickingMode = PickingMode.Ignore;
+
+            float cpx = CellPx;
+            el.style.left = c.x * cpx + (left ? gap : 0f);
+            el.style.top = (rows - 1 - c.y) * cpx + (up ? gap : 0f);
+            el.style.width = cpx - (left ? gap : 0f) - (right ? gap : 0f);
+            el.style.height = cpx - (up ? gap : 0f) - (down ? gap : 0f);
+
+            el.style.borderLeftWidth = left ? border : 0f;
+            el.style.borderRightWidth = right ? border : 0f;
+            el.style.borderTopWidth = up ? border : 0f;
+            el.style.borderBottomWidth = down ? border : 0f;
+            el.style.borderTopLeftRadius = (up && left) ? radius : 0f;
+            el.style.borderTopRightRadius = (up && right) ? radius : 0f;
+            el.style.borderBottomLeftRadius = (down && left) ? radius : 0f;
+            el.style.borderBottomRightRadius = (down && right) ? radius : 0f;
+
+            var inner = new VisualElement();
+            inner.AddToClassList("tray-wall__inner");
+            inner.pickingMode = PickingMode.Ignore;
+            inner.style.left = left ? innerPad : 0f;
+            inner.style.right = right ? innerPad : 0f;
+            inner.style.top = up ? innerPad : 0f;
+            inner.style.bottom = down ? innerPad : 0f;
+            inner.style.borderTopLeftRadius = (up && left) ? innerRadius : 0f;
+            inner.style.borderTopRightRadius = (up && right) ? innerRadius : 0f;
+            inner.style.borderBottomLeftRadius = (down && left) ? innerRadius : 0f;
+            inner.style.borderBottomRightRadius = (down && right) ? innerRadius : 0f;
+            el.Add(inner);
+
+            m_Tray.Add(el);
+        }
+
+        private void ToggleManualBallLayout()
+        {
+            if (m_Level == null || m_Pending != null) return;
+            if (!m_Level.useManualBallLayout)
+            {
+                var currentLayout = GlassShapeData.BuildLayout(m_Level);
+                Record("Elle top yerleşimi");
+                if (m_Level.manualBalls == null) m_Level.manualBalls = new List<ManualPoolBallEntry>();
+                if (m_Level.manualBalls.Count == 0 && currentLayout.balls != null && currentLayout.balls.Count > 0)
+                {
+                    CopyLayoutToManualBalls(m_Level, currentLayout);
+                }
+                else if (m_Level.manualLaneWidth <= 0)
+                {
+                    m_Level.manualLaneWidth = Mathf.Clamp(currentLayout.laneWidth > 0 ? currentLayout.laneWidth : 4, 3, 8);
+                }
+                m_Level.useManualBallLayout = true;
+                m_SelectedGroup = -1;
+            }
+            else
+            {
+                Record("Otomatik top yerleşimi");
+                m_Level.useManualBallLayout = false;
+                m_SelectedBallSlot = null;
+                m_DragBallSlot = null;
+                m_HoverBallSlot = null;
+                m_BallPainting = false;
+            }
+            OnEdited(syncScene: true);
+        }
+
+        private static void CopyLayoutToManualBalls(PuzzleGlassLevelData lvl, OrderedPoolLayout.Result layout)
+        {
+            if (lvl.manualBalls == null) lvl.manualBalls = new List<ManualPoolBallEntry>();
+            lvl.manualBalls.Clear();
+            lvl.manualLaneWidth = Mathf.Clamp(layout.laneWidth > 0 ? layout.laneWidth : 4, 3, 8);
+            if (layout.balls == null) return;
+            foreach (var b in layout.balls)
+                lvl.manualBalls.Add(new ManualPoolBallEntry(b.color, b.ballColumn, b.row));
+        }
+
+        private void RefreshBallToolbar(PuzzleGlassLevelData lvl)
+        {
+            m_BallToolbar.Clear();
+            if (lvl == null) return;
+
+            var moveChip = BallChip(() =>
+            {
+                m_BallBrushColor = null;
+                m_BallEraser = false;
+                RefreshBallToolbar(lvl);
+            }, !m_BallBrushColor.HasValue && !m_BallEraser);
+            moveChip.Add(new Label("✋ Taşı"));
+            moveChip.tooltip = "Taşı / Değiştir: iki topa sırayla tıkla ya da topu başka slota sürükle.";
+            m_BallToolbar.Add(moveChip);
+
+            var placedByColor = new Dictionary<PuzzleColor, int>();
+            if (lvl.manualBalls != null)
+            {
+                foreach (var b in lvl.manualBalls)
+                    if (b != null) placedByColor[b.color] = (placedByColor.TryGetValue(b.color, out int v) ? v : 0) + 1;
+            }
+            var neededByColor = new Dictionary<PuzzleColor, int>();
+            if (lvl.monsters != null)
+            {
+                foreach (var m in lvl.monsters)
+                    if (m != null) neededByColor[m.color] = (neededByColor.TryGetValue(m.color, out int v) ? v : 0) + Mathf.Max(1, m.count);
+            }
+
+            // Önce leveldeki blokların/camın renkleri, sonra diğer palet renkleri
+            var orderedColors = new List<PuzzleColor>();
+            foreach (var c in BrushColors) if (neededByColor.ContainsKey(c) || placedByColor.ContainsKey(c)) orderedColors.Add(c);
+            foreach (var c in BrushColors) if (!orderedColors.Contains(c)) orderedColors.Add(c);
+
+            foreach (var c in orderedColors)
+            {
+                var color = c;
+                neededByColor.TryGetValue(color, out int need);
+                placedByColor.TryGetValue(color, out int have);
+                bool active = m_BallBrushColor == color && !m_BallEraser;
+                var chip = BallChip(() =>
+                {
+                    m_BallEraser = false;
+                    m_BallBrushColor = m_BallBrushColor == color ? (PuzzleColor?)null : color;
+                    m_SelectedBallSlot = null;
+                    RefreshBallToolbar(lvl);
+                    RedrawGlass();
+                }, active);
+                if (need != have) chip.AddToClassList("ball-chip--warn");
+
+                var sw = new VisualElement();
+                sw.AddToClassList("swatch");
+                sw.style.backgroundColor = PuzzleColorPalette.GetBodyColor(color);
+                if (need == 0 && have == 0) sw.style.marginRight = 0;
+                chip.Add(sw);
+                if (need > 0 || have > 0) chip.Add(new Label($"{have}/{need}"));
+                chip.tooltip = need > 0 || have > 0
+                    ? $"{PuzzleLevelSolver.ColorName(color)}: camda {have}, kutularda {need} yuva. Tıkla = top fırçası."
+                    : $"{PuzzleLevelSolver.ColorName(color)} top fırçası";
+                m_BallToolbar.Add(chip);
+            }
+
+            var eraser = BallChip(() =>
+            {
+                m_BallEraser = !m_BallEraser;
+                m_SelectedBallSlot = null;
+                RefreshBallToolbar(lvl);
+                RedrawGlass();
+            }, m_BallEraser);
+            eraser.Add(new Label("Silgi"));
+            eraser.tooltip = "Tıklanan/sürüklenen slottaki topu siler (sağ tık da her zaman siler).";
+            m_BallToolbar.Add(eraser);
+
+            var sep = new VisualElement();
+            sep.AddToClassList("ball-bar__sep");
+            m_BallToolbar.Add(sep);
+
+            int lw = Mathf.Clamp(lvl.manualLaneWidth > 0 ? lvl.manualLaneWidth : 4, 3, 8);
+            var colMinus = BallChip(() => SetManualLaneWidth(lw - 1), false);
+            colMinus.Add(new Label("−"));
+            colMinus.tooltip = "Sütun sayısını azalt (toplar büyür).";
+            colMinus.SetEnabled(lw > 3);
+            m_BallToolbar.Add(colMinus);
+
+            var colLabel = new Label($"{lw * 3} sütun");
+            colLabel.AddToClassList("ball-bar__count");
+            colLabel.tooltip = "Camdaki petek sütun yoğunluğu";
+            m_BallToolbar.Add(colLabel);
+
+            var colPlus = BallChip(() => SetManualLaneWidth(lw + 1), false);
+            colPlus.Add(new Label("+"));
+            colPlus.tooltip = "Sütun sayısını artır (toplar küçülür).";
+            colPlus.SetEnabled(lw < 8);
+            m_BallToolbar.Add(colPlus);
+
+            var dropBtn = BallChip(ApplyManualBallGravity, false);
+            dropBtn.Add(new Label("↓ Oturt"));
+            dropBtn.tooltip = "Altta boşluk kalan topları kendi sütununda en alta düşürür.";
+            m_BallToolbar.Add(dropBtn);
+
+            var resetBtn = BallChip(ResetManualBallsFromAuto, false);
+            resetBtn.Add(new Label("↺ Sıradan al"));
+            resetBtn.tooltip = "Camı şu anki otomatik grup sırasından yeniden doldurur.";
+            m_BallToolbar.Add(resetBtn);
+
+            var clearBtn = BallChip(ClearManualBalls, false);
+            clearBtn.Add(new Label("✕ Boşalt"));
+            clearBtn.tooltip = "Camdaki tüm topları temizler (sıfırdan kendin koy).";
+            m_BallToolbar.Add(clearBtn);
+        }
+
+        private static Button BallChip(System.Action onClick, bool active)
+        {
+            var chip = new Button(onClick);
+            chip.AddToClassList("ball-chip");
+            chip.EnableInClassList("ball-chip--active", active);
+            return chip;
+        }
+
+        private void SetManualLaneWidth(int newLw)
+        {
+            if (m_Level == null || m_Pending != null) return;
+            newLw = Mathf.Clamp(newLw, 3, 8);
+            if (m_Level.manualLaneWidth == newLw) return;
+            Record("Cam sütun yoğunluğu");
+            m_Level.manualLaneWidth = newLw;
+            m_SelectedBallSlot = null;
+            OnEdited(syncScene: true);
+        }
+
+        private void ApplyManualBallGravity()
+        {
+            if (m_Level == null || m_Pending != null || m_Level.manualBalls == null) return;
+            var slots = GlassShapeData.GetManualSlots(m_Level, out _, out _, out _);
+            Record("Topları alta oturt");
+            OrderedPoolLayout.ApplyGravityToManualBalls(m_Level.manualBalls, slots);
+            m_SelectedBallSlot = null;
+            OnEdited(syncScene: true);
+        }
+
+        private void ResetManualBallsFromAuto()
+        {
+            if (m_Level == null || m_Pending != null) return;
+            bool prev = m_Level.useManualBallLayout;
+            m_Level.useManualBallLayout = false;
+            var autoLayout = GlassShapeData.BuildLayout(m_Level);
+            m_Level.useManualBallLayout = prev;
+            Record("Camı otomatik sıradan doldur");
+            CopyLayoutToManualBalls(m_Level, autoLayout);
+            m_SelectedBallSlot = null;
+            OnEdited(syncScene: true);
+        }
+
+        private void ClearManualBalls()
+        {
+            if (m_Level == null || m_Pending != null) return;
+            Record("Camdaki topları temizle");
+            if (m_Level.manualBalls == null) m_Level.manualBalls = new List<ManualPoolBallEntry>();
+            m_Level.manualBalls.Clear();
+            m_SelectedBallSlot = null;
+            OnEdited(syncScene: true);
+        }
+
+        private void RedrawGlass()
+        {
+            m_Glass.Clear();
+            m_BallSlotElements.Clear();
+            var lvl = Shown;
+            if (lvl == null) return;
+
+            var dims = GetGlassDims(lvl);
+            int cols = lvl.stagingGridCols;
+            float width = cols * CellPx;
+            bool manual = lvl.useManualBallLayout && m_Pending == null;
+
             var layout = GlassShapeData.BuildLayout(lvl);
+            var split = GlassShapeData.SplitForFeedTubes(lvl, layout);
+            bool hasFeedSplit = lvl.useBallFeedTubes && layout.balls.Count > 1 &&
+                                (split.leftTubeColors.Count > 0 || split.rightTubeColors.Count > 0);
+            var chamberBalls = hasFeedSplit ? split.chamberBalls : layout.balls;
+
+            List<OrderedPoolLayout.Slot> slots = null;
+            float drawDiam = layout.diameter;
+            if (manual)
+            {
+                slots = GlassShapeData.GetManualSlots(lvl, out drawDiam, out _, out _);
+            }
+
             float scale = width / Mathf.Max(0.01f, dims.innerHalfW * 2f);
-            // Uzun camlarda (ör. varsayılan ters şişe) önizleme sadece topların olduğu kısmı gösterir
             float ballsTop = dims.floorY + 0.6f;
-            foreach (var bb in layout.balls) ballsTop = Mathf.Max(ballsTop, bb.localPos.y + layout.diameter);
-            float shownTop = Mathf.Min(dims.ceilY, ballsTop + 0.35f);
+            foreach (var bb in (manual ? layout.balls : chamberBalls)) ballsTop = Mathf.Max(ballsTop, bb.localPos.y + drawDiam);
+            float extraTop = hasFeedSplit ? 0.38f : 0.35f;
+            float shownTop = manual
+                ? Mathf.Min(dims.ceilY, Mathf.Max(ballsTop + drawDiam * 1.4f, dims.floorY + Mathf.Max(0.85f, drawDiam * 3.5f)))
+                : Mathf.Min(dims.ceilY, ballsTop + extraTop);
             float height = Mathf.Max(80f, (shownTop - dims.floorY) * scale);
 
-            var glass = new VisualElement();
-            glass.AddToClassList("glass");
-            glass.style.width = width + 6f;   // + kenarlık (UI Toolkit genişliği kenarlığı içerir)
-            glass.style.height = height + 6f;
+            m_Glass.style.width = width + 6f;   // + kenarlık (UI Toolkit genişliği kenarlığı içerir)
+            m_Glass.style.height = height + 6f;
 
             // Seçili blok: deliğinin üstündeki sütunları ve rengini vurgula
             PuzzleColor? focusColor = null;
@@ -1167,73 +2063,467 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     var col = new VisualElement();
                     col.AddToClassList("glass__column");
+                    col.pickingMode = PickingMode.Ignore;
                     col.style.left = c * CellPx;
                     col.style.width = CellPx;
-                    glass.Add(col);
+                    m_Glass.Add(col);
                 }
                 if (c > 0)
                 {
                     var guide = new VisualElement();
                     guide.AddToClassList("glass__guide");
+                    guide.pickingMode = PickingMode.Ignore;
                     guide.style.left = c * CellPx;
-                    glass.Add(guide);
+                    m_Glass.Add(guide);
                 }
             }
 
-            float d = layout.diameter * scale;
-            foreach (var b in layout.balls)
+            float d = drawDiam * scale;
+            if (manual && slots != null)
             {
-                var ball = new VisualElement();
-                ball.AddToClassList("ball");
-                float cx = (b.localPos.x + dims.innerHalfW) * scale;
-                float cy = height - (b.localPos.y - dims.floorY) * scale;
-                ball.style.left = cx - d * 0.5f;
-                ball.style.top = cy - d * 0.5f;
-                ball.style.width = d;
-                ball.style.height = d;
-                ball.style.backgroundColor = PuzzleColorPalette.GetBodyColor(b.color);
-                if (focusColor.HasValue && b.color != focusColor.Value) ball.AddToClassList("ball--dim");
-                glass.Add(ball);
+                var chamberSet = new HashSet<(int col, int row)>();
+                if (hasFeedSplit)
+                {
+                    foreach (var cb in chamberBalls) chamberSet.Add((cb.ballColumn, cb.row));
+                }
+
+                var occupied = new Dictionary<(int col, int row), PuzzleColor>();
+                if (lvl.manualBalls != null)
+                {
+                    foreach (var mb in lvl.manualBalls)
+                        if (mb != null && !occupied.ContainsKey((mb.column, mb.row)))
+                            occupied[(mb.column, mb.row)] = mb.color;
+                }
+
+                var drawnKeys = new HashSet<(int col, int row)>();
+                foreach (var s in slots)
+                {
+                    float cx = (s.localPos.x + dims.innerHalfW) * scale;
+                    float cy = height - (s.localPos.y - dims.floorY) * scale;
+                    if (cy < -d * 0.25f || cy > height + d * 0.25f) continue;
+
+                    var key = (s.column, s.row);
+                    drawnKeys.Add(key);
+                    bool hasBall = occupied.TryGetValue(key, out PuzzleColor ballColor);
+                    bool hovered = m_HoverBallSlot.HasValue && m_HoverBallSlot.Value == key;
+                    bool selected = m_SelectedBallSlot.HasValue && m_SelectedBallSlot.Value == key;
+                    bool draggingSrc = m_DragBallSlot.HasValue && m_DragBallSlot.Value == key && m_BallDragMoved;
+
+                    var el = new VisualElement();
+                    el.pickingMode = PickingMode.Ignore;
+                    el.style.left = cx - d * 0.5f;
+                    el.style.top = cy - d * 0.5f;
+                    el.style.width = d;
+                    el.style.height = d;
+                    if (hasBall)
+                    {
+                        el.AddToClassList("ball");
+                        el.style.backgroundColor = PuzzleColorPalette.GetBodyColor(ballColor);
+                        if (hasFeedSplit && !chamberSet.Contains(key)) el.AddToClassList("ball--tube");
+                        if (focusColor.HasValue && ballColor != focusColor.Value && !m_BallBrushColor.HasValue && !m_BallEraser)
+                            el.AddToClassList("ball--dim");
+                        if (selected) el.AddToClassList("ball--selected");
+                        if (hovered && m_DragBallSlot.HasValue && m_BallDragMoved) el.AddToClassList("ball--hover");
+                        if (draggingSrc) el.style.opacity = 0.45f;
+                    }
+                    else
+                    {
+                        el.AddToClassList("ball-slot");
+                        if (hovered) el.AddToClassList("ball-slot--hover");
+                    }
+                    m_Glass.Add(el);
+                    m_BallSlotElements.Add((el, s.column, s.row));
+                }
+
+                // Taşma varsa (kontur küçüldüyse) görünmeyen topları da çiz
+                foreach (var b in layout.balls)
+                {
+                    if (drawnKeys.Contains((b.ballColumn, b.row))) continue;
+                    var ball = new VisualElement();
+                    ball.AddToClassList("ball");
+                    if (hasFeedSplit && !chamberSet.Contains((b.ballColumn, b.row))) ball.AddToClassList("ball--tube");
+                    ball.pickingMode = PickingMode.Ignore;
+                    float cx = (b.localPos.x + dims.innerHalfW) * scale;
+                    float cy = height - (b.localPos.y - dims.floorY) * scale;
+                    ball.style.left = cx - d * 0.5f;
+                    ball.style.top = cy - d * 0.5f;
+                    ball.style.width = d;
+                    ball.style.height = d;
+                    ball.style.backgroundColor = PuzzleColorPalette.GetBodyColor(b.color);
+                    m_Glass.Add(ball);
+                    m_BallSlotElements.Add((ball, b.ballColumn, b.row));
+                }
             }
-            if (layout.balls.Count == 0)
+            else
             {
-                var empty = new Label("Camda top yok");
-                empty.style.position = Position.Absolute;
-                empty.style.left = 0;
-                empty.style.right = 0;
-                empty.style.top = height * 0.4f;
-                empty.style.unityTextAlign = TextAnchor.MiddleCenter;
-                empty.style.color = new Color(1f, 1f, 1f, 0.5f);
-                glass.Add(empty);
+                foreach (var b in chamberBalls)
+                {
+                    var ball = new VisualElement();
+                    ball.AddToClassList("ball");
+                    ball.pickingMode = PickingMode.Ignore;
+                    float cx = (b.localPos.x + dims.innerHalfW) * scale;
+                    float cy = height - (b.localPos.y - dims.floorY) * scale;
+                    ball.style.left = cx - d * 0.5f;
+                    ball.style.top = cy - d * 0.5f;
+                    ball.style.width = d;
+                    ball.style.height = d;
+                    ball.style.backgroundColor = PuzzleColorPalette.GetBodyColor(b.color);
+                    if (focusColor.HasValue && b.color != focusColor.Value) ball.AddToClassList("ball--dim");
+                    m_Glass.Add(ball);
+                }
+                if (chamberBalls.Count == 0)
+                {
+                    var empty = new Label("Camda top yok");
+                    empty.pickingMode = PickingMode.Ignore;
+                    empty.style.position = Position.Absolute;
+                    empty.style.left = 0;
+                    empty.style.right = 0;
+                    empty.style.top = height * 0.4f;
+                    empty.style.unityTextAlign = TextAnchor.MiddleCenter;
+                    empty.style.color = new Color(1f, 1f, 1f, 0.5f);
+                    m_Glass.Add(empty);
+                }
             }
-            if (lvl.useBallFeedTubes && layout.balls.Count > 0)
+
+            if (lvl.useBallFeedTubes)
             {
-                int eff = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, layout.balls.Count);
+                float bendH = Mathf.Clamp(dims.innerHalfW * 0.72f, 0.62f, 1.15f);
+                float tubeH = Mathf.Clamp((bendH + 0.42f) * scale, 96f, 150f);
+                m_TubeCanvas.style.display = DisplayStyle.Flex;
+                m_TubeCanvas.style.width = width + 6f;
+                m_TubeCanvas.style.height = tubeH;
+                m_TubeHeight = tubeH;
+                m_TubeScale = scale;
+                m_TubeHalfW = dims.innerHalfW;
+                m_TubeBallDiam = drawDiam;
+                m_TubeLeftColors = split.leftTubeColors;
+                m_TubeRightColors = split.rightTubeColors;
+                m_TubeCanvas.MarkDirtyRepaint();
+
+                int eff = split.effectiveContainerLimit;
                 int queued = Mathf.Max(0, layout.balls.Count - eff);
                 string dirLabel = lvl.feedTubeMode == BallFeedTubeMode.LeftOnly ? "Sol Tüp"
                     : lvl.feedTubeMode == BallFeedTubeMode.RightOnly ? "Sağ Tüp"
                     : "Çift Tüp";
                 var badge = new Label($"🧪 {dirLabel}: {eff} hazne + {queued} tüpte");
+                badge.AddToClassList("tube-pill");
+                badge.AddToClassList("tube-pill__label");
+                badge.pickingMode = PickingMode.Ignore;
                 badge.style.position = Position.Absolute;
-                badge.style.left = 6;
                 badge.style.top = 4;
-                badge.style.paddingLeft = 6;
-                badge.style.paddingRight = 6;
-                badge.style.paddingTop = 2;
-                badge.style.paddingBottom = 2;
-                badge.style.fontSize = 10;
-                badge.style.borderTopLeftRadius = 6;
-                badge.style.borderTopRightRadius = 6;
-                badge.style.borderBottomLeftRadius = 6;
-                badge.style.borderBottomRightRadius = 6;
-                badge.style.backgroundColor = new Color(0.28f, 0.34f, 0.72f, 0.85f);
-                badge.style.color = Color.white;
-                glass.Add(badge);
+                if (lvl.feedTubeMode == BallFeedTubeMode.LeftOnly) badge.style.right = 6;
+                else badge.style.left = 6;
+                m_Glass.Add(badge);
             }
-            return glass;
+            else
+            {
+                m_TubeCanvas.style.display = DisplayStyle.None;
+            }
         }
 
-        private static void PlaceCell(VisualElement el, int x, int y, int rows, float inset)
+        private void DrawStudioFeedTubes(MeshGenerationContext mgc)
+        {
+            var lvl = Shown;
+            if (lvl == null || !lvl.useBallFeedTubes || m_TubeScale <= 0.01f) return;
+
+            var p = mgc.painter2D;
+            float ballR = Mathf.Clamp(m_TubeBallDiam * 0.5f, 0.07f, 0.17f);
+            float aboveWorld = Mathf.Max(0.55f, (m_TubeHeight - 8f) / m_TubeScale);
+            bool useLeft = lvl.feedTubeMode == BallFeedTubeMode.BothLeftAndRight || lvl.feedTubeMode == BallFeedTubeMode.LeftOnly;
+            bool useRight = lvl.feedTubeMode == BallFeedTubeMode.BothLeftAndRight || lvl.feedTubeMode == BallFeedTubeMode.RightOnly;
+
+            Vector2 ToTubePx(float x, float y) => new Vector2(3f + (x + m_TubeHalfW) * m_TubeScale, m_TubeHeight - y * m_TubeScale);
+
+            void DrawOneTube(bool isLeft, List<PuzzleColor> colors)
+            {
+                var curve = BallFeedTubeUtility.BuildTubeCurve(
+                    isLeft, 0f, m_TubeHalfW, 0f, ballR,
+                    lvl.feedTubeWidthMultiplier, lvl.feedTubeAnchorSpread, aboveWorld);
+                if (!curve.IsValid) return;
+
+                p.BeginPath();
+                p.MoveTo(ToTubePx(curve.leftEdgePath[0].x, curve.leftEdgePath[0].y));
+                for (int i = 1; i < curve.leftEdgePath.Length; i++)
+                    p.LineTo(ToTubePx(curve.leftEdgePath[i].x, curve.leftEdgePath[i].y));
+                for (int i = curve.rightEdgePath.Length - 1; i >= 0; i--)
+                    p.LineTo(ToTubePx(curve.rightEdgePath[i].x, curve.rightEdgePath[i].y));
+                p.ClosePath();
+                p.fillColor = new Color(0.875f, 0.894f, 0.984f, 0.92f);
+                p.Fill();
+
+                for (int side = 0; side < 2; side++)
+                {
+                    var path = side == 0 ? curve.leftEdgePath : curve.rightEdgePath;
+                    p.BeginPath();
+                    p.MoveTo(ToTubePx(path[0].x, path[0].y));
+                    for (int i = 1; i < path.Length; i++)
+                        p.LineTo(ToTubePx(path[i].x, path[i].y));
+                    p.strokeColor = new Color(0.620f, 0.588f, 0.933f, 1f);
+                    p.lineWidth = 3.2f;
+                    p.Stroke();
+                }
+
+                // Kapak çizgisi
+                float radAngle = curve.gateAngleDeg * Mathf.Deg2Rad;
+                Vector2 dir = new Vector2(Mathf.Cos(radAngle), Mathf.Sin(radAngle)) * (curve.gateWidth * 0.5f);
+                Vector2 aPx = ToTubePx(curve.gatePoint.x - dir.x, curve.gatePoint.y - dir.y);
+                Vector2 bPx = ToTubePx(curve.gatePoint.x + dir.x, curve.gatePoint.y + dir.y);
+                p.BeginPath();
+                p.MoveTo(aPx);
+                p.LineTo(bPx);
+                p.strokeColor = new Color(0.36f, 0.34f, 0.82f, 0.96f);
+                p.lineWidth = 4f;
+                p.Stroke();
+
+                if (colors == null || colors.Count == 0) return;
+                int maxVis = Mathf.Clamp(lvl.feedTubeQueueVisibleCount, 2, 14);
+                int vis = Mathf.Min(maxVis, colors.Count);
+                float radPx = ballR * m_TubeScale * 0.94f;
+                float spacing = ballR * 2.15f;
+                float firstDist = curve.gateDist + ballR + 0.036f;
+                for (int i = 0; i < vis; i++)
+                {
+                    float dist = Mathf.Min(curve.totalLength - ballR, firstDist + i * spacing);
+                    curve.EvaluateAtDistance(dist, out Vector2 pt, out _);
+                    Vector2 c = ToTubePx(pt.x, pt.y);
+                    Color bc = PuzzleColorPalette.GetBodyColor(colors[i]);
+                    p.fillColor = bc;
+                    p.strokeColor = Color.Lerp(bc, Color.black, 0.40f);
+                    p.lineWidth = 1.5f;
+                    p.BeginPath();
+                    p.Arc(c, radPx, 0f, 360f);
+                    p.Fill();
+                    p.Stroke();
+                }
+            }
+
+            if (useLeft) DrawOneTube(true, m_TubeLeftColors);
+            if (useRight) DrawOneTube(false, m_TubeRightColors);
+        }
+
+        private (int col, int row)? BallSlotAtPanel(Vector2 panelPos)
+        {
+            float best = float.MaxValue;
+            (int col, int row)? hit = null;
+            foreach (var (el, col, row) in m_BallSlotElements)
+            {
+                Rect r = el.worldBound;
+                float radius = Mathf.Max(12f, r.width * 0.55f);
+                float d2 = (r.center - panelPos).sqrMagnitude;
+                if (d2 <= radius * radius && d2 < best)
+                {
+                    best = d2;
+                    hit = (col, row);
+                }
+            }
+            return hit;
+        }
+
+        private int FindManualBallIndex(int col, int row)
+        {
+            if (m_Level?.manualBalls == null) return -1;
+            for (int i = 0; i < m_Level.manualBalls.Count; i++)
+            {
+                var b = m_Level.manualBalls[i];
+                if (b != null && b.column == col && b.row == row) return i;
+            }
+            return -1;
+        }
+
+        private void EnsureBallStrokeRecorded(string label)
+        {
+            if (m_BallStrokeRecorded) return;
+            Record(label);
+            m_BallStrokeRecorded = true;
+        }
+
+        private bool ApplyPaintOrEraseAt((int col, int row) slot, bool erase)
+        {
+            if (m_Level == null) return false;
+            if (m_Level.manualBalls == null) m_Level.manualBalls = new List<ManualPoolBallEntry>();
+            int idx = FindManualBallIndex(slot.col, slot.row);
+            if (erase)
+            {
+                if (idx < 0) return false;
+                EnsureBallStrokeRecorded("Camdan top sil");
+                m_Level.manualBalls.RemoveAt(idx);
+                return true;
+            }
+            if (!m_BallBrushColor.HasValue) return false;
+            var color = m_BallBrushColor.Value;
+            if (idx >= 0)
+            {
+                if (m_Level.manualBalls[idx].color == color) return false;
+                EnsureBallStrokeRecorded("Top rengini boya");
+                m_Level.manualBalls[idx].color = color;
+                return true;
+            }
+            EnsureBallStrokeRecorded("Cama top koy");
+            m_Level.manualBalls.Add(new ManualPoolBallEntry(color, slot.col, slot.row));
+            return true;
+        }
+
+        private void MoveOrSwapManualBall((int col, int row) from, (int col, int row) to)
+        {
+            if (m_Level?.manualBalls == null || from == to) return;
+            int fromIdx = FindManualBallIndex(from.col, from.row);
+            if (fromIdx < 0) return;
+            int toIdx = FindManualBallIndex(to.col, to.row);
+            Record(toIdx >= 0 ? "Topların yerini değiştir" : "Topu taşı");
+            if (toIdx >= 0)
+            {
+                (m_Level.manualBalls[fromIdx].color, m_Level.manualBalls[toIdx].color) =
+                    (m_Level.manualBalls[toIdx].color, m_Level.manualBalls[fromIdx].color);
+            }
+            else
+            {
+                m_Level.manualBalls[fromIdx].column = to.col;
+                m_Level.manualBalls[fromIdx].row = to.row;
+            }
+            OnEdited(syncScene: true);
+        }
+
+        private void OnGlassPointerDown(PointerDownEvent e)
+        {
+            if (m_Level == null || m_Pending != null || !m_Level.useManualBallLayout) return;
+            var slot = BallSlotAtPanel(e.position);
+
+            if (e.button == 1)
+            {
+                m_BallPainting = true;
+                m_BallPaintButton = 1;
+                m_BallStrokeRecorded = false;
+                m_SelectedBallSlot = null;
+                m_Glass.CapturePointer(e.pointerId);
+                if (slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: true))
+                {
+                    RefreshBallToolbar(m_Level);
+                    RedrawGlass();
+                }
+                e.StopPropagation();
+                return;
+            }
+
+            if (e.button != 0) return;
+
+            if (m_BallEraser || m_BallBrushColor.HasValue)
+            {
+                m_BallPainting = true;
+                m_BallPaintButton = 0;
+                m_BallStrokeRecorded = false;
+                m_Glass.CapturePointer(e.pointerId);
+                if (slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: m_BallEraser))
+                {
+                    RefreshBallToolbar(m_Level);
+                    RedrawGlass();
+                }
+                e.StopPropagation();
+                return;
+            }
+
+            if (!slot.HasValue)
+            {
+                if (m_SelectedBallSlot.HasValue) { m_SelectedBallSlot = null; RedrawGlass(); }
+                return;
+            }
+
+            int hitIdx = FindManualBallIndex(slot.Value.col, slot.Value.row);
+            if (hitIdx >= 0)
+            {
+                m_DragBallSlot = slot.Value;
+                m_HoverBallSlot = slot.Value;
+                m_BallDragMoved = false;
+                m_Glass.CapturePointer(e.pointerId);
+                RedrawGlass();
+            }
+            else if (m_SelectedBallSlot.HasValue)
+            {
+                var from = m_SelectedBallSlot.Value;
+                m_SelectedBallSlot = null;
+                MoveOrSwapManualBall(from, slot.Value);
+            }
+            e.StopPropagation();
+        }
+
+        private void OnGlassPointerMove(PointerMoveEvent e)
+        {
+            if (m_Level == null || m_Pending != null || !m_Level.useManualBallLayout) return;
+            var slot = BallSlotAtPanel(e.position);
+
+            if (m_BallPainting)
+            {
+                bool changed = slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: m_BallPaintButton == 1 || m_BallEraser);
+                if (slot != m_HoverBallSlot || changed)
+                {
+                    m_HoverBallSlot = slot;
+                    if (changed) RefreshBallToolbar(m_Level);
+                    RedrawGlass();
+                }
+                return;
+            }
+
+            if (m_DragBallSlot.HasValue)
+            {
+                if (slot.HasValue && slot.Value != m_DragBallSlot.Value) m_BallDragMoved = true;
+                if (slot != m_HoverBallSlot)
+                {
+                    m_HoverBallSlot = slot;
+                    RedrawGlass();
+                }
+                return;
+            }
+
+            if (slot != m_HoverBallSlot)
+            {
+                m_HoverBallSlot = slot;
+                RedrawGlass();
+            }
+        }
+
+        private void OnGlassPointerUp(PointerUpEvent e)
+        {
+            if (m_Glass.HasPointerCapture(e.pointerId)) m_Glass.ReleasePointer(e.pointerId);
+
+            if (m_BallPainting)
+            {
+                m_BallPainting = false;
+                m_BallPaintButton = -1;
+                if (m_BallStrokeRecorded)
+                {
+                    m_BallStrokeRecorded = false;
+                    OnEdited(syncScene: true);
+                }
+                return;
+            }
+
+            if (!m_DragBallSlot.HasValue) return;
+            var from = m_DragBallSlot.Value;
+            m_DragBallSlot = null;
+            var drop = BallSlotAtPanel(e.position) ?? m_HoverBallSlot;
+
+            if (m_BallDragMoved && drop.HasValue && drop.Value != from)
+            {
+                m_SelectedBallSlot = null;
+                MoveOrSwapManualBall(from, drop.Value);
+                return;
+            }
+
+            if (!m_BallDragMoved)
+            {
+                if (!m_SelectedBallSlot.HasValue) m_SelectedBallSlot = from;
+                else if (m_SelectedBallSlot.Value == from) m_SelectedBallSlot = null;
+                else
+                {
+                    var prev = m_SelectedBallSlot.Value;
+                    m_SelectedBallSlot = null;
+                    MoveOrSwapManualBall(prev, from);
+                    return;
+                }
+            }
+            RedrawGlass();
+        }
+
+        private void PlaceCell(VisualElement el, int x, int y, int rows, float inset)
         {
             el.style.left = x * CellPx + inset;
             el.style.top = (rows - 1 - y) * CellPx + inset;
@@ -1454,6 +2744,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 var p = anchor + c;
                 if (p.x < 0 || p.y < 0 || p.x >= lvl.stagingGridCols || p.y >= lvl.stagingGridRows) return $"tepsinin dışına taşıyor (hücre {cell.x + 1},{cell.y + 1})";
+                if (IsWall(lvl, p.x, p.y)) return $"tepsi bölmesiyle çakışıyor (hücre {cell.x + 1},{cell.y + 1})";
                 int b = BlockAt(lvl, p, ignore);
                 if (b >= 0) return $"#{b + 1} ile çakışıyor (hücre {cell.x + 1},{cell.y + 1})";
             }
@@ -1471,6 +2762,15 @@ namespace PuzzleGlass.Editor.Studio
             if (m_Eraser)
             {
                 if (hit >= 0) RemoveBlock(hit);
+                else if (IsWall(lvl, cell.x, cell.y)) ToggleWallCell(cell, forceAdd: false);
+                e.StopPropagation();
+                return;
+            }
+
+            if (m_BrushMechanic == MechanicBrush.Wall)
+            {
+                if (hit >= 0) ShowNotification(new GUIContent($"#{hit + 1} bloğunun üstüne bölme konulamaz"));
+                else ToggleWallCell(cell);
                 e.StopPropagation();
                 return;
             }
@@ -1672,7 +2972,10 @@ namespace PuzzleGlass.Editor.Studio
             var colors = new HashSet<PuzzleColor>();
             if (lvl.monsters != null) foreach (var m in lvl.monsters) if (m != null) colors.Add(m.color);
             m_Stats.Add(Stat((lvl.monsters?.Count ?? 0).ToString(), "blok"));
-            m_Stats.Add(Stat(lvl.GetTotalBallCount().ToString(), "top"));
+            int boxBalls = lvl.GetTotalBallCount();
+            int camBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : boxBalls;
+            string ballStat = lvl.useManualBallLayout && camBalls != boxBalls ? $"{camBalls}/{boxBalls}" : camBalls.ToString();
+            m_Stats.Add(Stat(ballStat, lvl.useManualBallLayout ? "top (elle)" : "top"));
             m_Stats.Add(Stat(colors.Count.ToString(), "renk"));
 
             if (m_Pending != null)
@@ -1803,12 +3106,24 @@ namespace PuzzleGlass.Editor.Studio
                 m_Inspector.Add(mechHint);
             }
 
-            int g = FindGroup(m.color, m.count, fromTop: false);
-            var order = new Label(g >= 0
-                ? $"Bu bloğun topları cam sırasında {g + 1}. sırada (alttan). Sırayı aşağıdaki şeritten değiştir."
-                : "Bu bloğun topları cam sırasında yok!");
-            order.AddToClassList("inspector__hint");
-            m_Inspector.Add(order);
+            if (m_Level.useManualBallLayout)
+            {
+                int inGlass = 0;
+                if (m_Level.manualBalls != null)
+                    foreach (var mb in m_Level.manualBalls) if (mb != null && mb.color == m.color) inGlass++;
+                var order = new Label($"Elle top yerleşimi açık: camda {inGlass} adet {PuzzleLevelSolver.ColorName(m.color)} top var.");
+                order.AddToClassList("inspector__hint");
+                m_Inspector.Add(order);
+            }
+            else
+            {
+                int g = FindGroup(m.color, m.count, fromTop: false);
+                var order = new Label(g >= 0
+                    ? $"Bu bloğun topları cam sırasında {g + 1}. sırada (alttan). Sırayı aşağıdaki şeritten değiştir."
+                    : "Bu bloğun topları cam sırasında yok!");
+                order.AddToClassList("inspector__hint");
+                m_Inspector.Add(order);
+            }
 
             var del = new Button(() => RemoveBlock(i)) { text = "Bloğu sil (Delete)" };
             del.AddToClassList("inspector__action");
@@ -1849,12 +3164,126 @@ namespace PuzzleGlass.Editor.Studio
             diff.RegisterValueChangedCallback(e => { Record("Zorluk"); lvl.difficulty = (LevelDifficulty)e.newValue; OnEdited(syncScene: false); });
             m_Inspector.Add(diff);
 
-            var cols = new SliderInt("Tepsi sütun", 2, 7) { value = lvl.stagingGridCols, showInputField = true };
-            cols.RegisterValueChangedCallback(e => { Record("Tepsi sütun"); lvl.stagingGridCols = e.newValue; OnEdited(syncScene: true); });
+            var trayPresets = new VisualElement();
+            trayPresets.AddToClassList("chip-grid");
+            foreach (var (tc, tr) in new[] { (5, 4), (6, 5), (6, 7), (7, 8) })
+            {
+                int cc = tc, rr = tr;
+                var chip = Chip(() =>
+                {
+                    Record("Tepsi boyutu");
+                    lvl.stagingGridCols = cc;
+                    lvl.stagingGridRows = rr;
+                    PruneOutOfBoundsWalls(lvl);
+                    OnEdited(syncScene: true);
+                }, lvl.stagingGridCols == cc && lvl.stagingGridRows == rr);
+                chip.Add(new Label($"{cc}×{rr}"));
+                trayPresets.Add(chip);
+            }
+            m_Inspector.Add(trayPresets);
+
+            var cols = new SliderInt("Tepsi sütun", 2, 9) { value = lvl.stagingGridCols, showInputField = true };
+            cols.RegisterValueChangedCallback(e =>
+            {
+                Record("Tepsi sütun");
+                lvl.stagingGridCols = e.newValue;
+                PruneOutOfBoundsWalls(lvl);
+                OnEdited(syncScene: true);
+            });
             m_Inspector.Add(cols);
-            var rows = new SliderInt("Tepsi satır", 2, 6) { value = lvl.stagingGridRows, showInputField = true };
-            rows.RegisterValueChangedCallback(e => { Record("Tepsi satır"); lvl.stagingGridRows = e.newValue; OnEdited(syncScene: true); });
+            var rows = new SliderInt("Tepsi satır", 2, 10) { value = lvl.stagingGridRows, showInputField = true };
+            rows.RegisterValueChangedCallback(e =>
+            {
+                Record("Tepsi satır");
+                lvl.stagingGridRows = e.newValue;
+                PruneOutOfBoundsWalls(lvl);
+                OnEdited(syncScene: true);
+            });
             m_Inspector.Add(rows);
+
+            var customTrayToggle = new Toggle("Özel tepsi ölçüleri")
+            {
+                value = lvl.useCustomTraySettings,
+                tooltip = "Açıkken sahnedeki tepsinin fiziksel genişliğini, yüksekliğini, boşluğunu, hücre boyutunu ve çerçevesini özelleştirir."
+            };
+            customTrayToggle.RegisterValueChangedCallback(e =>
+            {
+                Record("Özel tepsi ölçüleri");
+                lvl.useCustomTraySettings = e.newValue;
+                OnEdited(syncScene: true);
+            });
+            m_Inspector.Add(customTrayToggle);
+
+            if (lvl.useCustomTraySettings)
+            {
+                void SyncTrayVisualOnly()
+                {
+                    EditorUtility.SetDirty(lvl);
+                    RefreshState();
+                    if (m_LiveSync) ScheduleSceneSync();
+                }
+
+                void AddTraySlider(string label, float value, float min, float max, System.Action<float> setter)
+                {
+                    var s = new Slider(label, min, max) { value = value, showInputField = true };
+                    s.RegisterValueChangedCallback(e =>
+                    {
+                        Record(label);
+                        setter(e.newValue);
+                        SyncTrayVisualOnly();
+                    });
+                    m_Inspector.Add(s);
+                }
+
+                var matchGlass = new Toggle("Cama göre genişlik") { value = lvl.trayMatchGlassWidth };
+                matchGlass.RegisterValueChangedCallback(e => { Record("Tepsi genişlik hizası"); lvl.trayMatchGlassWidth = e.newValue; SyncTrayVisualOnly(); });
+                m_Inspector.Add(matchGlass);
+
+                var showJar = new Toggle("Dış cam kavanoz") { value = lvl.trayShowOuterGlassJar };
+                showJar.RegisterValueChangedCallback(e => { Record("Tepsi dış cam kavanoz"); lvl.trayShowOuterGlassJar = e.newValue; SyncTrayVisualOnly(); });
+                m_Inspector.Add(showJar);
+
+                AddTraySlider("Maks. genişlik", lvl.trayMaxBoardWidth, 1.20f, 4.00f, v => lvl.trayMaxBoardWidth = v);
+                AddTraySlider("Maks. yükseklik", lvl.trayMaxBoardHeight, 1.20f, 5.20f, v => lvl.trayMaxBoardHeight = v);
+                AddTraySlider("Camdan boşluk", lvl.trayGapBelowGlass, 0.02f, 0.80f, v => lvl.trayGapBelowGlass = v);
+
+                var manualCell = new Toggle("Elle hücre boyutu") { value = lvl.trayUseManualCellSize };
+                manualCell.RegisterValueChangedCallback(e =>
+                {
+                    Record("Elle hücre boyutu");
+                    lvl.trayUseManualCellSize = e.newValue;
+                    OnEdited(syncScene: true);
+                });
+                m_Inspector.Add(manualCell);
+
+                if (lvl.trayUseManualCellSize)
+                {
+                    AddTraySlider("Hücre boyutu", lvl.trayManualCellSize, 0.22f, 0.82f, v => lvl.trayManualCellSize = v);
+                }
+
+                AddTraySlider("Çerçeve kalınlığı", lvl.trayFramePadding, 0.03f, 0.30f, v => lvl.trayFramePadding = v);
+                AddTraySlider("Köşe yuvarlaklığı", lvl.trayFrameCornerRadius, 0.04f, 0.40f, v => lvl.trayFrameCornerRadius = v);
+                AddTraySlider("İç boşluk", lvl.trayInnerMargin, 0.01f, 0.25f, v => lvl.trayInnerMargin = v);
+
+                var resetTray = new Button(() =>
+                {
+                    Record("Tepsi ayarlarını sıfırla");
+                    lvl.useCustomTraySettings = false;
+                    lvl.trayMatchGlassWidth = true;
+                    lvl.trayMaxBoardWidth = 2.822f;
+                    lvl.trayMaxBoardHeight = 3.20f;
+                    lvl.trayFramePadding = 0.068f;
+                    lvl.trayInnerMargin = 0.048f;
+                    lvl.trayFrameCornerRadius = 0.135f;
+                    lvl.trayGapBelowGlass = 0.11f;
+                    lvl.trayUseManualCellSize = false;
+                    lvl.trayManualCellSize = 0.506f;
+                    lvl.trayShowOuterGlassJar = true;
+                    OnEdited(syncScene: true);
+                }) { text = "Tepsiyi varsayılana sıfırla" };
+                resetTray.AddToClassList("inspector__action");
+                m_Inspector.Add(resetTray);
+            }
 
             var iceMelt = new EnumField("Buz erimesi", lvl.iceMeltMode);
             iceMelt.tooltip = "PerBallCollected: herhangi bir kutuya her top indiğinde buz sayacı 1 düşer.\nPerBoxCompleted: her kutu tamamlandığında buz sayacı 1 düşer.";
@@ -1953,6 +3382,29 @@ namespace PuzzleGlass.Editor.Studio
                 m_Inspector.Add(feedInfo);
             }
 
+            var glassSizeRow = new VisualElement();
+            glassSizeRow.AddToClassList("inspector__row");
+            var glassSizeLbl = new Label("Cam boyutu");
+            glassSizeLbl.AddToClassList("inspector__row-label");
+            glassSizeRow.Add(glassSizeLbl);
+            var compactBtn = new Button(() => SetQuickGlassSize(compact: true))
+            {
+                text = "Kompakt",
+                tooltip = "Camı alçaltır (2.70 × 0.62); büyük grid tepsilere yer açar."
+            };
+            compactBtn.style.width = StyleKeyword.Auto;
+            compactBtn.style.flexGrow = 1;
+            glassSizeRow.Add(compactBtn);
+            var normalGlassBtn = new Button(() => SetQuickGlassSize(compact: false))
+            {
+                text = "Normal",
+                tooltip = "Varsayılan otomatik cam yüksekliğine döner."
+            };
+            normalGlassBtn.style.width = StyleKeyword.Auto;
+            normalGlassBtn.style.flexGrow = 1;
+            glassSizeRow.Add(normalGlassBtn);
+            m_Inspector.Add(glassSizeRow);
+
             var glassBtn = new Button(() => GlassStudioWindow.OpenFor(m_Level)) { text = "✨ Bu levelin camını düzenle" };
             glassBtn.AddToClassList("inspector__action");
             m_Inspector.Add(glassBtn);
@@ -1964,7 +3416,8 @@ namespace PuzzleGlass.Editor.Studio
                 "• Mekanik sayaçlarını (kilit anahtar sayısı / buz sayacı) bloğu seçip buradan ayarla.\n" +
                 "• Fırça yokken bloğu sürükle: taşınır.\n" +
                 "• Cam sırasında iki çipe sırayla tıkla: yerleri değişir.\n" +
-                "• Esc fırçayı bırakır, Delete seçili bloğu siler, Ctrl+Z geri alır.");
+                "• '✋ Elle top diz' açıkken camdaki slotlara tıklayıp/sürükleyerek topları kendin koyabilir veya yerini değiştirebilirsin.\n" +
+                "• Esc fırçayı bırakır, Delete seçili bloğu/topu siler, Ctrl+Z geri alır.");
             hint.AddToClassList("inspector__hint");
             m_Inspector.Add(hint);
         }
@@ -2035,17 +3488,35 @@ namespace PuzzleGlass.Editor.Studio
             if (e.keyCode == KeyCode.Escape)
             {
                 ClearBrush();
+                m_BallBrushColor = null;
+                m_BallEraser = false;
+                m_SelectedBallSlot = null;
                 m_SelectedGroup = -1;
                 m_SelectedBlock = -1;
                 RefreshAll();
                 e.StopPropagation();
             }
-            else if ((e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace) && m_SelectedBlock >= 0 && m_Pending == null)
+            else if ((e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace) && m_Pending == null)
             {
                 var ve = e.target as VisualElement;
                 if (ve != null && (ve.GetFirstOfType<TextField>() != null || ve.GetFirstOfType<IntegerField>() != null)) return;
-                RemoveBlock(m_SelectedBlock);
-                e.StopPropagation();
+                if (m_SelectedBlock >= 0)
+                {
+                    RemoveBlock(m_SelectedBlock);
+                    e.StopPropagation();
+                }
+                else if (m_Level != null && m_Level.useManualBallLayout && m_SelectedBallSlot.HasValue)
+                {
+                    int idx = FindManualBallIndex(m_SelectedBallSlot.Value.col, m_SelectedBallSlot.Value.row);
+                    if (idx >= 0)
+                    {
+                        Record("Camdan top sil");
+                        m_Level.manualBalls.RemoveAt(idx);
+                        m_SelectedBallSlot = null;
+                        OnEdited(syncScene: true);
+                        e.StopPropagation();
+                    }
+                }
             }
         }
 

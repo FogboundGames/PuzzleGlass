@@ -66,6 +66,7 @@ MonoBehaviour:
   compartmentZones: []
   stagingGridCols: 4
   stagingGridRows: 4
+  gridWalls: []
   useCustomTraySettings: 0
   trayMatchGlassWidth: 1
   trayMaxBoardWidth: 2.822
@@ -81,11 +82,21 @@ MonoBehaviour:
   puzzleLayerStyle: 0
   stagingColumns: 3
   useStagingColumnQueue: 0
+  useBallFeedTubes: 0
+  feedTubeMode: 0
+  feedTubeContainerLimit: 12
+  feedTubeQueueVisibleCount: 5
+  feedTubeWidthMultiplier: 1.24
+  feedTubeAnchorSpread: 0.68
+  feedTubeDropInterval: 0.14
   tutorialHint: 0
   tutorialBlockIndex: -1
   tutorialFromAnchor: {x: 0, y: 0}
   tutorialTargetAnchor: {x: 0, y: 0}
   iceMeltMode: 0
+  useManualBallLayout: 0
+  manualLaneWidth: 0
+  manualBalls: []
   bottomToTopTriplets: 01000000010000000100000002000000
   bottomToTopGroups:
   - color: 1
@@ -124,7 +135,7 @@ MonoBehaviour:
   - color: 1
     count: 6
     blockShape: 3
-    gridAnchor: {x: 2, y: 1}
+    gridAnchor: {x: 2, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -132,7 +143,7 @@ MonoBehaviour:
   - color: 1
     count: 3
     blockShape: 2
-    gridAnchor: {x: 3, y: 2}
+    gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -148,7 +159,7 @@ MonoBehaviour:
   - color: 2
     count: 5
     blockShape: 3
-    gridAnchor: {x: 1, y: 0}
+    gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

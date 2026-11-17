@@ -94,7 +94,7 @@ namespace PuzzleGlass
         public static List<GlassContourPoint> BuildBottleContour(float width, float height, float bottomY = BottleBottomY)
         {
             float hw = Mathf.Clamp(width, 1.20f, 3.40f) * 0.5f;
-            float h = Mathf.Clamp(height, 0.90f, 4.60f);
+            float h = Mathf.Clamp(height, 0.55f, 4.60f);
             // Omuz yüksekliği: genişlikle orantılı ama camın yarısını geçmez
             float sh = Mathf.Min(hw * 0.50f, h * 0.50f);
             float top = bottomY + h;
@@ -137,6 +137,23 @@ namespace PuzzleGlass
         public static List<GlassContourPoint> BuildAutoBottleContour(List<LevelMonsterEntry> bottomToTopGroups)
         {
             return BuildBottleContour(DefaultBottleWidth, ComputeAutoBottleHeight(bottomToTopGroups));
+        }
+
+        /// <summary>Elle top yerleşimi açıkken varsayılan şişe konturu: en az DefaultBottleHeight yüksekliğinde (slotlar kaymaz).</summary>
+        public static List<GlassContourPoint> BuildManualBottleContour(List<ManualPoolBallEntry> manualBalls, int manualLaneWidth, float width = DefaultBottleWidth)
+        {
+            float height = DefaultBottleHeight;
+            if (manualBalls != null && manualBalls.Count > 0)
+            {
+                var baseContour = BuildBottleContour(width, DefaultBottleHeight);
+                var layout = OrderedPoolLayout.BuildManualShaped(manualBalls, manualLaneWidth, baseContour);
+                float topY = float.MinValue;
+                foreach (var b in layout.balls) topY = Mathf.Max(topY, b.localPos.y);
+                float r = layout.diameter * 0.5f;
+                float needed = (topY + r + layout.diameter * 0.55f) - BottleBottomY;
+                if (needed > height) height = Mathf.Clamp(needed, DefaultBottleHeight, 4.60f);
+            }
+            return BuildBottleContour(width, height);
         }
 
         /// <summary>
@@ -518,16 +535,16 @@ namespace PuzzleGlass
         private void ApplyCrystalLavenderThemeColors()
         {
             colorTheme = GlassColorTheme.SkyBlueGlossy;
-            glassBodyColor = new Color(0.66f, 0.72f, 0.99f, 0.56f);
-            glassCenterGlowColor = new Color(0.92f, 0.94f, 1.00f, 0.18f);
-            glassOuterRimColor = new Color(0.46f, 0.45f, 0.92f, 0.92f);
-            glassInnerRimColor = new Color(0.99f, 0.99f, 1.00f, 0.96f);
-            glassFrontLensColor = new Color(0.96f, 0.99f, 1.00f, 0.00f);
+            glassBodyColor = new Color(0.74f, 0.78f, 0.99f, 0.52f);
+            glassCenterGlowColor = new Color(0.95f, 0.96f, 1.00f, 0.08f);
+            glassOuterRimColor = new Color(0.44f, 0.46f, 0.86f, 0.90f);
+            glassInnerRimColor = new Color(1.00f, 1.00f, 1.00f, 0.98f);
+            glassFrontLensColor = new Color(0.98f, 0.99f, 1.00f, 0.00f);
             earHandleColor = new Color(0.96f, 0.98f, 1.00f, 1.00f);
-            boxFrameColor = new Color(0.49f, 0.44f, 0.90f, 1.0f);
-            boxFrameHighlightColor = new Color(0.96f, 0.97f, 1.00f, 1.0f);
-            boxFrameEdgeShadeColor = new Color(0.36f, 0.34f, 0.84f, 1.0f);
-            dropShadowColor = new Color(0.62f, 0.54f, 0.84f, 0.30f);
+            boxFrameColor = new Color(0.52f, 0.50f, 0.90f, 1.0f);
+            boxFrameHighlightColor = new Color(0.98f, 0.99f, 1.00f, 1.0f);
+            boxFrameEdgeShadeColor = new Color(0.40f, 0.42f, 0.84f, 1.0f);
+            dropShadowColor = new Color(0.54f, 0.54f, 0.88f, 0.34f);
         }
 
         public void CleanOrphanedChildren()
@@ -1152,7 +1169,7 @@ namespace PuzzleGlass
             if (mat.HasProperty("_FrameEdgeShade")) mat.SetColor("_FrameEdgeShade", boxFrameEdgeShadeColor);
             if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
             if (mat.HasProperty("_JarNeckParams")) mat.SetVector("_JarNeckParams", Vector4.zero);
-            if (mat.HasProperty("_CenterGlassAlpha")) mat.SetFloat("_CenterGlassAlpha", 0.18f);
+            if (mat.HasProperty("_CenterGlassAlpha")) mat.SetFloat("_CenterGlassAlpha", 0.08f);
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
             if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
 
@@ -1449,7 +1466,7 @@ namespace PuzzleGlass
                 _feedTubeBackMat.SetColor("_FakeShadowColor", dropShadowColor);
                 _feedTubeBackMat.SetFloat("_WallThickness", wallThickWorld);
                 _feedTubeBackMat.SetFloat("_SheenIntensity", sheenStrength);
-                _feedTubeBackMat.SetFloat("_CenterGlassAlpha", 0.15f);
+                _feedTubeBackMat.SetFloat("_CenterGlassAlpha", 0.07f);
                 _feedTubeBackMat.SetFloat("_IsFrontLens", 0.0f);
                 _feedTubeBackMat.SetFloat("_IsRoundedBoxPool", 0.0f);
                 _feedTubeBackMat.SetFloat("_IsCollar", 0.0f);
@@ -2767,6 +2784,35 @@ namespace PuzzleGlass
             }
 
             return -0.46f * heightScale;
+        }
+
+        /// <summary>
+        /// Returns the world-space center of the bottom exit cap/collar where collected balls exit the glass.
+        /// </summary>
+        public Vector3 GetBottomExitWorldPosition()
+        {
+            EnsureContourInitialized();
+
+            float collarX = (contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
+                ? contourPoints[0].centerX * widthScale
+                : 0f;
+
+            float exitLocalY;
+            if (IsPoolShape)
+            {
+                GetRoundedBoxPoolExtents(out float centerY, out _, out _, out _, out float visibleHalfH);
+                float bottomEdgeY = centerY - visibleHalfH;
+                const float visibleCollarH = 0.25f;
+                exitLocalY = bottomEdgeY - visibleCollarH * 0.28f;
+            }
+            else
+            {
+                exitLocalY = (contourPoints != null && contourPoints.Count > 0)
+                    ? contourPoints[0].y * heightScale
+                    : spoutBottomY;
+            }
+
+            return transform.TransformPoint(new Vector3(collarX, exitLocalY, -0.16f));
         }
 
         private void GetRoundedBoxPoolExtents(

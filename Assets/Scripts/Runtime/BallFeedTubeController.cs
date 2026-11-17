@@ -583,12 +583,20 @@ namespace PuzzleGlass
                 var slot = lane.visibleSlots[i];
                 if (slot.ball == null || slot.ball.state != BallState.InFeedTube) continue;
 
+                float prevDist = slot.currentDist;
                 slot.targetDist = Mathf.Min(lane.curve.totalLength - _ballRadius, firstDist + i * spacing);
                 slot.currentDist = Mathf.MoveTowards(slot.currentDist, slot.targetDist, slideSpeed * dt);
+                float deltaDist = prevDist - slot.currentDist;
 
                 lane.curve.EvaluateAtDistance(slot.currentDist, out Vector2 local2D, out _);
                 Vector3 worldPos = _glass.transform.TransformPoint(new Vector3(local2D.x, local2D.y, -0.10f));
                 slot.ball.transform.position = worldPos;
+                if (Mathf.Abs(deltaDist) > 0.0001f)
+                {
+                    bool isRightSide = ReferenceEquals(lane, _rightLane);
+                    float rollDeg = (deltaDist / Mathf.Max(0.04f, _ballRadius)) * Mathf.Rad2Deg * (isRightSide ? 1f : -1f);
+                    slot.ball.transform.Rotate(0f, 0f, rollDeg, Space.Self);
+                }
             }
         }
 
@@ -608,7 +616,7 @@ namespace PuzzleGlass
 
             BallPhysicsController ball = front.ball;
             lane.visibleSlots.RemoveAt(0);
-            lane.dropCooldown = Mathf.Min(_dropInterval, 0.085f);
+            lane.dropCooldown = Mathf.Clamp(_dropInterval, 0.095f, 0.22f);
 
             // Place strictly INSIDE the container chamber below TopCeilingCollider and inside side wall colliders
             lane.curve.EvaluateAtDistance(0f, out Vector2 mouth2D, out Vector2 tangentUp);
@@ -638,9 +646,10 @@ namespace PuzzleGlass
             if (ball.rb != null)
             {
                 float inwardSign = localX > 0.01f ? -1f : (localX < -0.01f ? 1f : 0f);
-                ball.rb.linearVelocity = new Vector3(inwardSign * 0.45f, -2.5f, 0f);
-                ball.rb.angularVelocity = Vector3.zero;
+                ball.rb.linearVelocity = new Vector3(inwardSign * 0.28f, -0.78f, 0f);
+                ball.rb.angularVelocity = new Vector3(0f, 0f, -inwardSign * 5.5f);
             }
+            PuzzleSoundManager.Instance?.PlayBallTap(0.22f);
 
             if (lane.overflowColors.Count > 0)
             {

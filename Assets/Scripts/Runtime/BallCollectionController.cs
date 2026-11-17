@@ -11,14 +11,14 @@ namespace PuzzleGlass
 
         [Header("Attraction Physics Settings")]
         [Tooltip("Force pulling matching balls down towards the spout exit.")]
-        public float attractionPullForce = 24f;
+        public float attractionPullForce = 15f;
 
         [Tooltip("Maximum velocity for balls while navigating towards exit.")]
-        public float maxBallSpeed = 3.4f;
+        public float maxBallSpeed = 2.05f;
 
         [Tooltip("Interval between initiating collection of successive balls from the spout.")]
         [Range(0.10f, 0.60f)]
-        public float collectionInterval = 0.15f;
+        public float collectionInterval = 0.24f;
 
         [Tooltip("Maximum balls simultaneously traveling through the spout neck.")]
         public int maxBallsInSpout = 3;
@@ -26,8 +26,11 @@ namespace PuzzleGlass
         [Tooltip("Maximum balls currently traveling in air per monster.")]
         public int maxBallsInTransitPerMonster = 4;
 
-        [Tooltip("Vertical tolerance around spout bottom to trigger mouth launch.")]
-        public float exitTriggerYOffset = 0.16f;
+        [Tooltip("Vertical tolerance around bottom exit cap to trigger mouth launch.")]
+        public float exitTriggerYOffset = 0.10f;
+
+        [Tooltip("Horizontal tolerance around bottom exit cap center so balls always route through the cap.")]
+        public float exitCollarHorizontalTolerance = 0.16f;
 
         [Tooltip("Vertical tolerance for balls considered part of the bottom layer in container.")]
         public float bottomLayerTolerance = 0.14f;
@@ -333,7 +336,7 @@ namespace PuzzleGlass
             // Pacing & congestion limit: ensure smooth, readable flow without overcrowding
             // During Fever Mode (Streak >= 3), vacuum speed is 2x faster!
             bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
-            float effectiveInterval = isFever ? (collectionInterval * 0.45f) : collectionInterval;
+            float effectiveInterval = isFever ? (collectionInterval * 0.55f) : collectionInterval;
             int effectiveMaxInSpout = isFever ? (maxBallsInSpout + 2) : maxBallsInSpout;
 
             float now = Time.time;
@@ -711,24 +714,12 @@ namespace PuzzleGlass
 
         private Vector3 GetExitWorldPosForBall(ShapedGlassContainer container, BallPhysicsController ball)
         {
-            if (container != null && container.IsPoolShape)
+            if (container != null)
             {
-                float floorLocalY = container.GetChamberFloorY() * container.heightScale;
-                float worldFloorY = container.transform.TransformPoint(new Vector3(0f, floorLocalY, 0f)).y;
-                float ballX = (ball != null) ? ball.transform.position.x : 0f;
-                return new Vector3(ballX, worldFloorY - 0.06f, -0.16f);
+                return container.GetBottomExitWorldPosition();
             }
 
-            float botY = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
-                ? container.contourPoints[0].y * container.heightScale
-                : (container != null ? container.spoutBottomY : -1.20f);
-
-            float spoutCenterX = (container != null && container.contourPoints != null && container.contourPoints.Count > 0)
-                ? (container.symmetricMode ? 0f : container.contourPoints[0].centerX) * container.widthScale
-                : 0f;
-
-            Vector3 localExit = new Vector3(spoutCenterX, botY, -0.10f);
-            return (container != null) ? container.transform.TransformPoint(localExit) : localExit;
+            return new Vector3(0f, -1.20f, -0.16f);
         }
 
         private void StartBallAttraction(BallPhysicsController ball, MonsterCharacter monster, ActiveMonsterStream stream)
@@ -787,13 +778,16 @@ namespace PuzzleGlass
                 Vector3 exitPos = GetExitWorldPosForBall(container, ball);
 
                 bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
-                float pullF = isFever ? (attractionPullForce * 2.0f) : attractionPullForce;
-                float maxSpd = isFever ? (maxBallSpeed * 1.95f) : maxBallSpeed;
+                float pullF = isFever ? (attractionPullForce * 1.65f) : attractionPullForce;
+                float maxSpd = isFever ? (maxBallSpeed * 1.55f) : maxBallSpeed;
 
                 ball.ApplyAttractionToExit(exitPos, pullF, maxSpd);
 
-                bool reachedExit = ball.transform.position.y <= exitPos.y + exitTriggerYOffset;
-                bool timedOut = ball.AttractionTime > (isFever ? 0.30f : 0.55f);
+                Vector3 ballPos = ball.transform.position;
+                bool reachedVertical = ballPos.y <= exitPos.y + exitTriggerYOffset;
+                bool reachedCollarX = Mathf.Abs(ballPos.x - exitPos.x) <= exitCollarHorizontalTolerance;
+                bool reachedExit = reachedVertical && reachedCollarX;
+                bool timedOut = ball.AttractionTime > (isFever ? 1.00f : 1.65f);
 
                 if (reachedExit || timedOut)
                 {
@@ -801,8 +795,7 @@ namespace PuzzleGlass
 
                     if (targetMonster != null)
                     {
-                        Vector3 launchPos = ball.transform.position;
-                        ball.LaunchToMonsterMouth(launchPos, targetMonster, (b) =>
+                        ball.LaunchToMonsterMouth(ballPos, targetMonster, (b) =>
                         {
                             OnBallReachedMonster(b, targetMonster);
                         });

@@ -116,7 +116,9 @@ namespace PuzzleGlass
             int? customStagingColumns = null,
             PuzzleLayerStyle? customLayerStyle = null,
             int? randomSeed = null,
-            int? customBallsPerBox = null)
+            int? customBallsPerBox = null,
+            int? customGridCols = null,
+            int? customGridRows = null)
         {
             if (levelData == null) return;
 
@@ -152,6 +154,8 @@ namespace PuzzleGlass
 
             // 2. Choose framed grid dimensions fitting the polyomino blocks + at least 4 sliding cells
             GetRecommendedGridDimensions(levelData.difficulty, targetBoxes, out int gridCols, out int gridRows);
+            if (customGridCols.HasValue) gridCols = Mathf.Clamp(customGridCols.Value, 4, 7);
+            if (customGridRows.HasValue) gridRows = Mathf.Clamp(customGridRows.Value, 4, 7);
 
             // 3. Pack solvable polyomino blocks into the grid and compute a valid slide-out extraction sequence
             List<GridPackedBlock> packedBlocks = BuildSolvableGridLayout(

@@ -48,6 +48,23 @@ namespace PuzzleGlass
     }
 
     [Serializable]
+    public class ManualPoolBallEntry
+    {
+        public PuzzleColor color = PuzzleColor.Blue;
+        public int column;
+        public int row;
+
+        public ManualPoolBallEntry() { }
+
+        public ManualPoolBallEntry(PuzzleColor color, int column, int row)
+        {
+            this.color = color;
+            this.column = column;
+            this.row = row;
+        }
+    }
+
+    [Serializable]
     public class GlassDividerData
     {
         public string name = "Cam Bölme";
@@ -322,10 +339,12 @@ namespace PuzzleGlass
         public List<CompartmentColorZone> compartmentZones = new List<CompartmentColorZone>();
 
         [Header("Bottom Grid Tray (Sliding Block Puzzle Area)")]
-        [Range(2, 7)]
+        [Range(2, 9)]
         public int stagingGridCols = 5;
-        [Range(2, 6)]
+        [Range(2, 10)]
         public int stagingGridRows = 4;
+        [Tooltip("Tepsi içindeki sabit duvar/bölme hücreleri (bloklar bu hücrelerden geçemez).")]
+        public List<Vector2Int> gridWalls = new List<Vector2Int>();
 
         [Tooltip("True ise bu level kendi özel tepsi boyutlarını/boşluklarını uygular.")]
         public bool useCustomTraySettings = false;
@@ -337,8 +356,9 @@ namespace PuzzleGlass
         public float trayFrameCornerRadius = 0.18f;
         public float trayGapBelowGlass = 0.11f;
         public bool trayUseManualCellSize = false;
-        [Range(0.30f, 0.82f)]
+        [Range(0.22f, 0.82f)]
         public float trayManualCellSize = 0.506f;
+        public bool trayShowOuterGlassJar = true;
 
         [Header("Carrier Box Puzzle Settings (Variable-Socket Boxes & Bottom-to-Top Layers)")]
         [Tooltip("Her kutunun içindeki varsayılan gri yuva/boşluk sayısı (1 - 16 arası)")]
@@ -395,6 +415,13 @@ namespace PuzzleGlass
         [Header("Special Block Mechanics")]
         [Tooltip("Buzlu bloklardaki sayacın ne zaman 1 azalacağını belirler.")]
         public IceMeltMode iceMeltMode = IceMeltMode.PerBallCollected;
+
+        [Header("Manual Ball Layout (Optional)")]
+        [Tooltip("Açıkken camdaki toplar otomatik grup sırası yerine aşağıda elle yerleştirilen slotlardan oluşur.")]
+        public bool useManualBallLayout = false;
+        [Tooltip("Elle dizilimde şerit başına sütun sayısı (0 = otomatik, 3..8 = sabit sütun yoğunluğu).")]
+        public int manualLaneWidth = 0;
+        public List<ManualPoolBallEntry> manualBalls = new List<ManualPoolBallEntry>();
 
         [Tooltip("Cam haznedeki top gruplarının En Alttan (0) En Üste doğru renk sırası (Eski/uyumluluk listesi)")]
         public List<PuzzleColor> bottomToTopTriplets = new List<PuzzleColor>()
@@ -478,8 +505,19 @@ namespace PuzzleGlass
         {
             ballsPerBox = Mathf.Clamp(ballsPerBox, 1, 16);
             if (stagingColumns < 2 || stagingColumns > 4) stagingColumns = 3;
-            stagingGridCols = Mathf.Clamp(stagingGridCols <= 0 ? 5 : stagingGridCols, 2, 7);
-            stagingGridRows = Mathf.Clamp(stagingGridRows <= 0 ? 4 : stagingGridRows, 2, 6);
+            stagingGridCols = Mathf.Clamp(stagingGridCols <= 0 ? 5 : stagingGridCols, 2, 9);
+            stagingGridRows = Mathf.Clamp(stagingGridRows <= 0 ? 4 : stagingGridRows, 2, 10);
+            if (gridWalls == null) gridWalls = new List<Vector2Int>();
+            else if (gridWalls.Count > 0)
+            {
+                var seen = new HashSet<Vector2Int>();
+                for (int i = gridWalls.Count - 1; i >= 0; i--)
+                {
+                    var w = gridWalls[i];
+                    if (w.x < 0 || w.y < 0 || w.x >= stagingGridCols || w.y >= stagingGridRows || !seen.Add(w))
+                        gridWalls.RemoveAt(i);
+                }
+            }
 
             if (monsters == null || monsters.Count == 0)
             {

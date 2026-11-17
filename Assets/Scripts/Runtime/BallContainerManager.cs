@@ -48,10 +48,10 @@ namespace PuzzleGlass
             {
                 _glassPhysMaterial = new PhysicsMaterial("Mat_GlassContainerWall")
                 {
-                    bounciness = 0.10f,
-                    dynamicFriction = 0.04f,
-                    staticFriction = 0.05f,
-                    bounceCombine = PhysicsMaterialCombine.Minimum,
+                    bounciness = 0.16f,
+                    dynamicFriction = 0.03f,
+                    staticFriction = 0.04f,
+                    bounceCombine = PhysicsMaterialCombine.Average,
                     frictionCombine = PhysicsMaterialCombine.Minimum
                 };
             }

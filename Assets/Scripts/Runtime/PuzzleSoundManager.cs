@@ -13,7 +13,7 @@ namespace PuzzleGlass
 
         private const string MutePrefKey = "PuzzleGlass_AudioMuted";
         private const int SampleRate = 44100;
-        private const int PitchedVoiceCount = 5;
+        private const int PitchedVoiceCount = 8;
 
         private static readonly float[] PentatonicPitchScale =
         {
@@ -27,6 +27,18 @@ namespace PuzzleGlass
             2.500f  // E6
         };
 
+        private static readonly float[] AsmrDropPitchScale =
+        {
+            0.891f,
+            0.944f,
+            1.000f,
+            1.059f,
+            1.122f,
+            1.189f,
+            1.260f,
+            1.335f
+        };
+
         [Header("Master Audio Settings")]
         [Range(0f, 1f)] public float masterVolume = 0.72f;
         [SerializeField] private bool isMuted = false;
@@ -38,6 +50,7 @@ namespace PuzzleGlass
         private AudioClip _clipBallPop;
         private AudioClip _clipTransferBead;
         private AudioClip _clipBallTap;
+        private AudioClip _clipBallSoftSettle;
         private AudioClip _clipLidLatch;
         private AudioClip _clipGridSlide;
         private AudioClip _clipBlockSnap;
@@ -54,6 +67,7 @@ namespace PuzzleGlass
         private float _tapSuppressedUntil = -10f;
         private float _lastSlideTime = -10f;
         private int _popChainCount = 0;
+        private int _tapCascadeCount = 0;
 
         public bool IsMuted => isMuted;
 
@@ -144,14 +158,35 @@ namespace PuzzleGlass
         public void PlayBallTap(float intensity01)
         {
             if (isMuted || !Application.isPlaying) return;
-            if (Time.unscaledTime < _tapSuppressedUntil) return;
-            if (Time.unscaledTime - _lastTapTime < 0.060f) return;
+            float now = Time.unscaledTime;
+            if (now < _tapSuppressedUntil) return;
+            if (now - _lastTapTime < 0.032f) return;
 
-            _lastTapTime = Time.unscaledTime;
+            if (now - _lastTapTime > 0.34f)
+            {
+                _tapCascadeCount = 0;
+            }
+            else
+            {
+                _tapCascadeCount = (_tapCascadeCount + 1) % AsmrDropPitchScale.Length;
+            }
+            _lastTapTime = now;
+
             float k = Mathf.Clamp01(intensity01);
-            float volume = Mathf.Lerp(0.08f, 0.21f, k);
-            float pitch = Mathf.Lerp(0.92f, 1.12f, Random.value);
-            PlayClipWithPitch(_clipBallTap, volume, pitch);
+            float cascadePitch = AsmrDropPitchScale[_tapCascadeCount] * Random.Range(0.985f, 1.015f);
+
+            if (k < 0.42f)
+            {
+                float softVol = Mathf.Lerp(0.11f, 0.23f, k / 0.42f);
+                PlayClipWithPitch(_clipBallSoftSettle, softVol, cascadePitch * 0.96f);
+            }
+            else
+            {
+                float tapVol = Mathf.Lerp(0.15f, 0.32f, (k - 0.42f) / 0.58f);
+                float bodyVol = Mathf.Lerp(0.09f, 0.17f, k);
+                PlayClipWithPitch(_clipBallTap, tapVol, cascadePitch);
+                PlayClipWithPitch(_clipBallSoftSettle, bodyVol, cascadePitch * 0.92f);
+            }
         }
 
         public void PlayBallPop()
@@ -276,9 +311,10 @@ namespace PuzzleGlass
         {
             if (_clipBallPop != null) return;
 
-            _clipBallPop      = CreateBubblePopClip("SFX_BallPop", 0.072f, 440f, 820f);
-            _clipTransferBead = CreateTransferBeadClip("SFX_TransferBead", 0.095f, 523.25f);
-            _clipBallTap      = CreateBallTapClip("SFX_BallTap", 0.028f);
+            _clipBallPop        = CreateBubblePopClip("SFX_BallPop", 0.072f, 440f, 820f);
+            _clipTransferBead   = CreateTransferBeadClip("SFX_TransferBead", 0.095f, 523.25f);
+            _clipBallTap        = CreateBallTapClip("SFX_BallTap", 0.036f);
+            _clipBallSoftSettle = CreateBallSoftSettleClip("SFX_BallSoftSettle", 0.042f);
             _clipLidLatch     = CreateLidLatchClip("SFX_LidLatch", 0.036f);
             _clipGridSlide    = CreateWoodTickClip("SFX_GridSlide", 0.036f, 240f, 145f);
             _clipBlockSnap    = CreateMarimbaSnapClip("SFX_BlockSnap", 0.065f, 320f, 470f);
@@ -313,16 +349,40 @@ namespace PuzzleGlass
         {
             int count = Mathf.Max(128, Mathf.RoundToInt(duration * SampleRate));
             float[] data = new float[count];
+            double phase = 0.0;
             for (int i = 0; i < count; i++)
             {
                 float sec = i / (float)SampleRate;
                 float t = i / (float)count;
-                float attack = Mathf.Min(1f, sec / 0.0018f);
-                float decay = Mathf.Exp(-t * 10.5f);
-                // Soft rounded marble resonance without harsh high-frequency grit
-                float tone = Mathf.Sin(2f * Mathf.PI * 430f * sec) * 0.56f
-                           + Mathf.Sin(2f * Mathf.PI * 1160f * sec) * 0.34f * Mathf.Exp(-t * 12f)
-                           + Mathf.Sin(2f * Mathf.PI * 1840f * sec) * 0.10f * Mathf.Exp(-t * 18f);
+                float attack = Mathf.Min(1f, sec / 0.0016f);
+                float bodyDecay = Mathf.Exp(-t * 8.2f);
+                float crispDecay = Mathf.Exp(-t * 15.5f);
+                float bodyFreq = Mathf.Lerp(470f, 345f, Mathf.Pow(t, 0.45f));
+                phase += 2.0 * Mathf.PI * bodyFreq / SampleRate;
+                // Warm marble/acrylic core layered with delicate glass clink harmonic
+                float tone = Mathf.Sin((float)phase) * 0.56f * bodyDecay
+                           + Mathf.Sin(2f * Mathf.PI * 1380f * sec) * 0.28f * crispDecay
+                           + Mathf.Sin(2f * Mathf.PI * 2280f * sec) * 0.12f * Mathf.Exp(-t * 21f);
+                data[i] = tone * attack;
+            }
+            return FinishClip(name, data);
+        }
+
+        private static AudioClip CreateBallSoftSettleClip(string name, float duration)
+        {
+            int count = Mathf.Max(128, Mathf.RoundToInt(duration * SampleRate));
+            float[] data = new float[count];
+            double phase = 0.0;
+            for (int i = 0; i < count; i++)
+            {
+                float sec = i / (float)SampleRate;
+                float t = i / (float)count;
+                float attack = Mathf.Min(1f, sec / 0.0028f);
+                float decay = Mathf.Exp(-t * 7.8f);
+                float freq = Mathf.Lerp(335f, 225f, Mathf.Pow(t, 0.55f));
+                phase += 2.0 * Mathf.PI * freq / SampleRate;
+                float tone = Mathf.Sin((float)phase) * 0.74f
+                           + Mathf.Sin((float)(phase * 2.05)) * 0.20f * Mathf.Exp(-t * 11f);
                 data[i] = tone * attack * decay;
             }
             return FinishClip(name, data);

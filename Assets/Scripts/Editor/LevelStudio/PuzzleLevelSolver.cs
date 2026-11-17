@@ -107,7 +107,12 @@ namespace PuzzleGlass.Editor.Studio
                 return list;
             }
 
-            // Sınır dışı / çakışma
+            // Sınır dışı / çakışma / duvar
+            var wallGrid = new bool[cols, rows];
+            if (lvl.gridWalls != null)
+                foreach (var w in lvl.gridWalls)
+                    if (w.x >= 0 && w.y >= 0 && w.x < cols && w.y < rows) wallGrid[w.x, w.y] = true;
+
             var owner = new int[cols, rows];
             for (int x = 0; x < cols; x++) for (int y = 0; y < rows; y++) owner[x, y] = -1;
             for (int i = 0; i < monsters.Count; i++)
@@ -122,6 +127,11 @@ namespace PuzzleGlass.Editor.Studio
                         list.Add(new LevelFinding { severity = FindingSeverity.Critical, blockIndex = i, text = $"Blok #{i + 1} tepsinin dışına taşıyor.", why = "Bloğu tepsi içine sürükle ya da tepsiyi büyüt." });
                         break;
                     }
+                    if (wallGrid[x, y])
+                    {
+                        list.Add(new LevelFinding { severity = FindingSeverity.Critical, blockIndex = i, text = $"Blok #{i + 1} tepsi bölmesiyle çakışıyor.", why = "Bloğu boş hücreye taşı ya da bölmeyi sil." });
+                        break;
+                    }
                     if (owner[x, y] >= 0)
                     {
                         list.Add(new LevelFinding { severity = FindingSeverity.Critical, blockIndex = i, text = $"Blok #{i + 1} ile #{owner[x, y] + 1} üst üste biniyor.", why = "Bloklardan birini boş hücreye sürükle." });
@@ -134,8 +144,15 @@ namespace PuzzleGlass.Editor.Studio
             // Renk dengesi: camdaki top sayısı = o rengin kutularındaki yuva sayısı
             var glass = new Dictionary<PuzzleColor, int>();
             var sockets = new Dictionary<PuzzleColor, int>();
-            if (lvl.bottomToTopGroups != null)
+            if (lvl.useManualBallLayout)
+            {
+                if (lvl.manualBalls != null)
+                    foreach (var b in lvl.manualBalls) if (b != null) glass[b.color] = (glass.TryGetValue(b.color, out int v) ? v : 0) + 1;
+            }
+            else if (lvl.bottomToTopGroups != null)
+            {
                 foreach (var g in lvl.bottomToTopGroups) if (g != null) glass[g.color] = (glass.TryGetValue(g.color, out int v) ? v : 0) + Mathf.Max(1, g.count);
+            }
             foreach (var m in monsters) if (m != null) sockets[m.color] = (sockets.TryGetValue(m.color, out int v) ? v : 0) + Mathf.Max(1, m.count);
             var allColors = new HashSet<PuzzleColor>(glass.Keys);
             allColors.UnionWith(sockets.Keys);
@@ -144,12 +161,52 @@ namespace PuzzleGlass.Editor.Studio
                 glass.TryGetValue(c, out int gc);
                 sockets.TryGetValue(c, out int sc);
                 if (gc != sc)
-                    list.Add(new LevelFinding { severity = FindingSeverity.Critical, text = $"{ColorName(c)}: camda {gc} top var, kutularda {sc} yuva.", why = "Her renk için camdaki top sayısı kutu yuvalarının toplamına eşit olmalı. Cam sırasını kutulardan yeniden kurabilirsin." });
+                    list.Add(new LevelFinding
+                    {
+                        severity = FindingSeverity.Critical,
+                        text = $"{ColorName(c)}: camda {gc} top var, kutularda {sc} yuva.",
+                        why = lvl.useManualBallLayout
+                            ? "Her renk için camdaki top sayısı kutu yuvalarının toplamına eşit olmalı. Elle top fırçası ile ekle/sil veya kutu yuvasını ayarla."
+                            : "Her renk için camdaki top sayısı kutu yuvalarının toplamına eşit olmalı. Cam sırasını kutulardan yeniden kurabilirsin."
+                    });
+            }
+
+            if (lvl.useManualBallLayout && lvl.manualBalls != null && lvl.manualBalls.Count > 0)
+            {
+                var validSlots = GlassShapeData.GetManualSlots(lvl, out _, out _, out _);
+                var occupiedSlots = new HashSet<(int col, int row)>();
+                foreach (var b in lvl.manualBalls) if (b != null) occupiedSlots.Add((b.column, b.row));
+                var validSet = new HashSet<(int col, int row)>();
+                foreach (var s in validSlots) validSet.Add((s.column, s.row));
+
+                bool hasFloating = false;
+                foreach (var b in lvl.manualBalls)
+                {
+                    if (b == null) continue;
+                    for (int r = 0; r < b.row; r++)
+                    {
+                        if (validSet.Contains((b.column, r)) && !occupiedSlots.Contains((b.column, r)))
+                        {
+                            hasFloating = true;
+                            break;
+                        }
+                    }
+                    if (hasFloating) break;
+                }
+                if (hasFloating)
+                {
+                    list.Add(new LevelFinding
+                    {
+                        severity = FindingSeverity.Info,
+                        text = "Camda altında boşluk olan top var.",
+                        why = "Oyunda toplar yerçekimiyle alttaki boş slota düşer; gerçekçi görünüm için '↓ Alta oturt' butonunu kullanabilirsin."
+                    });
+                }
             }
 
             // Tepside boş hücre
             int occupied = 0;
-            for (int x = 0; x < cols; x++) for (int y = 0; y < rows; y++) if (owner[x, y] >= 0) occupied++;
+            for (int x = 0; x < cols; x++) for (int y = 0; y < rows; y++) if (owner[x, y] >= 0 || wallGrid[x, y]) occupied++;
             if (occupied >= cols * rows)
                 list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = "Tepside boş hücre yok: hiçbir blok kaydırılamaz.", why = "Oyuncu sadece en üst sıradaki bloklarla başlayabilir." });
 
@@ -183,6 +240,21 @@ namespace PuzzleGlass.Editor.Studio
                         string unit = lvl.iceMeltMode == IceMeltMode.PerBallCollected ? "top" : "kutu";
                         list.Add(new LevelFinding { severity = FindingSeverity.Critical, text = $"{i + 1}. blok ({ColorName(m.color)}) {m.iceCount} buz istiyor ama kendisi donukken en fazla {maxProgress} {unit} tamamlanabilir.", why = "Buz sayacını düşür veya başka kutu/yuva ekle." });
                     }
+                }
+            }
+
+            if (lvl.useBallFeedTubes)
+            {
+                int totalBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetTotalBallCount();
+                int eff = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, totalBalls);
+                if (totalBalls > 1 && eff >= totalBalls)
+                {
+                    list.Add(new LevelFinding
+                    {
+                        severity = FindingSeverity.Info,
+                        text = "Üst cam besleme tüpü açık ama tüm toplar zaten haznede başlıyor.",
+                        why = "Tüpte bekleyen top olması için 'Haznede başlayan' limitini toplam top sayısından küçük yap."
+                    });
                 }
             }
 
@@ -221,6 +293,153 @@ namespace PuzzleGlass.Editor.Studio
             return run.Result;
         }
 
+        public struct PlaythroughAnalysis
+        {
+            public List<int> completionOrder;
+            public int[] ballsCollectedBeforeFinish;
+            public int[] boxesCompletedBeforeFinish;
+            public int[] waveAtFinish;
+        }
+
+        /// <summary>Çözülen hamleleri baştan oynatıp blokların tamamlanma sırasını ve öncesindeki ilerlemeyi çıkarır.</summary>
+        public static PlaythroughAnalysis AnalyzePlaythrough(PuzzleGlassLevelData lvl, GlassDims dims, SolveResult solve)
+        {
+            var res = new PlaythroughAnalysis
+            {
+                completionOrder = new List<int>(),
+                ballsCollectedBeforeFinish = new int[lvl?.monsters?.Count ?? 0],
+                boxesCompletedBeforeFinish = new int[lvl?.monsters?.Count ?? 0],
+                waveAtFinish = new int[lvl?.monsters?.Count ?? 0]
+            };
+            if (lvl == null || lvl.monsters == null || solve == null || solve.status != SolveStatus.Solved) return res;
+
+            BuildRuntimeModel(lvl, dims, out var blocks, out var anchors, out var walls, out var wave1, out var wave2, out var stackGridCol, out bool hasWave2, out int bc);
+            if (blocks == null) return res;
+
+            var s = new State { anchors = anchors, removed = new bool[blocks.Length], fill = new int[blocks.Length], taken = new int[bc], wave = 0 };
+            var order = new List<int>();
+            var prevRemoved = new bool[blocks.Length];
+
+            void RecordNewCompletions(int ballsBeforeStep, int boxesBeforeStep)
+            {
+                for (int i = 0; i < blocks.Length; i++)
+                {
+                    if (!prevRemoved[i] && s.removed[i])
+                    {
+                        prevRemoved[i] = true;
+                        order.Add(i);
+                        res.ballsCollectedBeforeFinish[i] = ballsBeforeStep;
+                        res.boxesCompletedBeforeFinish[i] = boxesBeforeStep;
+                        res.waveAtFinish[i] = s.wave;
+                    }
+                }
+            }
+
+            CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, RecordNewCompletions);
+            if (solve.moves != null)
+            {
+                foreach (var (blockIdx, dir) in solve.moves)
+                {
+                    if (blockIdx < 0 || blockIdx >= blocks.Length) continue;
+                    s.anchors[blockIdx] += dir;
+                    CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, RecordNewCompletions);
+                }
+            }
+            res.completionOrder = order;
+            return res;
+        }
+
+        private static bool BuildRuntimeModel(
+            PuzzleGlassLevelData lvl, GlassDims dims,
+            out Block[] blocks, out Vector2Int[] anchors, out bool[,] walls,
+            out List<PuzzleColor>[] wave1Stacks, out List<PuzzleColor>[] wave2Stacks,
+            out int[] stackGridCol, out bool hasWave2, out int bc)
+        {
+            blocks = null;
+            anchors = null;
+            walls = null;
+            wave1Stacks = null;
+            wave2Stacks = null;
+            stackGridCol = null;
+            hasWave2 = false;
+            bc = 1;
+            if (lvl == null || lvl.monsters == null || lvl.monsters.Count == 0) return false;
+
+            int cols = lvl.stagingGridCols, rows = lvl.stagingGridRows;
+            walls = new bool[cols, rows];
+            if (lvl.gridWalls != null)
+            {
+                foreach (var w in lvl.gridWalls)
+                    if (w.x >= 0 && w.y >= 0 && w.x < cols && w.y < rows) walls[w.x, w.y] = true;
+            }
+
+            int n = lvl.monsters.Count;
+            blocks = new Block[n];
+            anchors = new Vector2Int[n];
+            for (int i = 0; i < n; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null) return false;
+                blocks[i] = new Block
+                {
+                    color = m.color,
+                    count = Mathf.Max(1, m.count),
+                    cells = CarrierBlockShapeUtility.GetCells(m.blockShape),
+                    hasKey = m.hasKey,
+                    lockKeyCount = Mathf.Max(0, m.lockKeyCount),
+                    iceCount = Mathf.Max(0, m.iceCount)
+                };
+                anchors[i] = m.gridAnchor;
+            }
+            if (!IsValidPlacement(blocks, anchors, new bool[n], cols, rows, walls)) return false;
+
+            var layout = GlassShapeData.BuildLayout(lvl);
+            var split = GlassShapeData.SplitForFeedTubes(lvl, layout);
+            int localBc = Mathf.Max(1, layout.totalColumns + 3);
+            var localWave1 = new List<PuzzleColor>[localBc];
+            var localWave2 = new List<PuzzleColor>[localBc];
+            var localGridCol = new int[localBc];
+            for (int c = 0; c < localBc; c++)
+            {
+                localWave1[c] = new List<PuzzleColor>();
+                localWave2[c] = new List<PuzzleColor>();
+                localGridCol[c] = -1;
+            }
+
+            FillStacks(split.chamberBalls, localWave1, localGridCol, localBc, dims.innerHalfW, cols);
+            if (split.wave2Balls != null && split.wave2Balls.Count > 0)
+            {
+                hasWave2 = true;
+                FillStacks(split.wave2Balls, localWave2, localGridCol, localBc, dims.innerHalfW, cols);
+            }
+
+            bc = localBc;
+            wave1Stacks = localWave1;
+            wave2Stacks = localWave2;
+            stackGridCol = localGridCol;
+            return true;
+        }
+
+        private static void FillStacks(
+            List<OrderedPoolLayout.PoolBall> balls,
+            List<PuzzleColor>[] target,
+            int[] stackGridCol,
+            int bc,
+            float innerHalfW,
+            int gridCols)
+        {
+            if (balls == null || balls.Count == 0) return;
+            var sorted = new List<OrderedPoolLayout.PoolBall>(balls);
+            sorted.Sort((a, b) => a.row.CompareTo(b.row));
+            foreach (var b in sorted)
+            {
+                int col = Mathf.Clamp(b.ballColumn, 0, bc - 1);
+                target[col].Add(b.color);
+                if (stackGridCol[col] < 0)
+                    stackGridCol[col] = OrderedPoolLayout.GridColumnForX(b.localPos.x, innerHalfW, gridCols);
+            }
+        }
+
         /// <summary>
         /// Parça parça ilerleyen çözüm: her Step çağrısı verilen süre kadar arar ve döner.
         /// Level Stüdyosu bunu her editör karesinde birkaç milisaniye çalıştırır; Unity hiç donmaz.
@@ -233,7 +452,10 @@ namespace PuzzleGlass.Editor.Studio
             private readonly int m_Limit, m_Cols, m_Rows, m_N;
             private readonly IceMeltMode m_IceMeltMode;
             private readonly Block[] m_Blocks;
-            private readonly List<PuzzleColor>[] m_Stacks;
+            private readonly bool[,] m_Walls;
+            private readonly List<PuzzleColor>[] m_Wave1Stacks;
+            private readonly List<PuzzleColor>[] m_Wave2Stacks;
+            private readonly bool m_HasWave2;
             private readonly int[] m_StackGridCol;
             private readonly HashSet<string> m_Visited = new HashSet<string>();
             private readonly Queue<(State s, int depth, int node)> m_Queue = new Queue<(State s, int depth, int node)>();
@@ -245,49 +467,19 @@ namespace PuzzleGlass.Editor.Studio
             {
                 Result = new SolveResult { status = SolveStatus.Invalid };
                 m_Limit = stateLimit;
-                if (lvl == null || lvl.monsters == null || lvl.monsters.Count == 0) { Done = true; return; }
+                if (!BuildRuntimeModel(lvl, dims, out m_Blocks, out var anchors, out m_Walls, out m_Wave1Stacks, out m_Wave2Stacks, out m_StackGridCol, out m_HasWave2, out int bc))
+                {
+                    Done = true;
+                    return;
+                }
 
                 m_Cols = lvl.stagingGridCols;
                 m_Rows = lvl.stagingGridRows;
                 m_IceMeltMode = lvl.iceMeltMode;
-                m_N = lvl.monsters.Count;
-                m_Blocks = new Block[m_N];
-                var anchors = new Vector2Int[m_N];
-                for (int i = 0; i < m_N; i++)
-                {
-                    var m = lvl.monsters[i];
-                    if (m == null) { Done = true; return; }
-                    m_Blocks[i] = new Block
-                    {
-                        color = m.color,
-                        count = Mathf.Max(1, m.count),
-                        cells = CarrierBlockShapeUtility.GetCells(m.blockShape),
-                        hasKey = m.hasKey,
-                        lockKeyCount = Mathf.Max(0, m.lockKeyCount),
-                        iceCount = Mathf.Max(0, m.iceCount)
-                    };
-                    anchors[i] = m.gridAnchor;
-                }
-                if (!IsValidPlacement(m_Blocks, anchors, new bool[m_N], m_Cols, m_Rows)) { Done = true; return; }
+                m_N = m_Blocks.Length;
 
-                // Cam: top sütunları (alttan üste) ve her sütunun hangi tepsi sütununun üstünde olduğu
-                var layout = GlassShapeData.BuildLayout(lvl);
-                int bc = Mathf.Max(1, layout.totalColumns + 3);
-                m_Stacks = new List<PuzzleColor>[bc];
-                m_StackGridCol = new int[bc];
-                for (int c = 0; c < bc; c++) { m_Stacks[c] = new List<PuzzleColor>(); m_StackGridCol[c] = -1; }
-                var sorted = new List<OrderedPoolLayout.PoolBall>(layout.balls);
-                sorted.Sort((a, b) => a.row.CompareTo(b.row));
-                foreach (var b in sorted)
-                {
-                    int col = Mathf.Clamp(b.ballColumn, 0, bc - 1);
-                    m_Stacks[col].Add(b.color);
-                    if (m_StackGridCol[col] < 0)
-                        m_StackGridCol[col] = OrderedPoolLayout.GridColumnForX(b.localPos.x, dims.innerHalfW, m_Cols);
-                }
-
-                var start = new State { anchors = anchors, removed = new bool[m_N], fill = new int[m_N], taken = new int[bc] };
-                CollectClosure(start, m_Blocks, m_Stacks, m_StackGridCol, m_Rows, m_IceMeltMode);
+                var start = new State { anchors = anchors, removed = new bool[m_N], fill = new int[m_N], taken = new int[bc], wave = 0 };
+                CollectClosure(start, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode);
                 Result.openingCollectors = CountFilledAny(start);
                 Result.status = SolveStatus.LimitReached; // bitene kadar
                 m_Visited.Add(Key(start));
@@ -330,8 +522,8 @@ namespace PuzzleGlass.Editor.Studio
                         {
                             var next = s.Clone();
                             next.anchors[i] = s.anchors[i] + d;
-                            if (!IsValidPlacement(m_Blocks, next.anchors, next.removed, m_Cols, m_Rows)) continue;
-                            CollectClosure(next, m_Blocks, m_Stacks, m_StackGridCol, m_Rows, m_IceMeltMode);
+                            if (!IsValidPlacement(m_Blocks, next.anchors, next.removed, m_Cols, m_Rows, m_Walls)) continue;
+                            CollectClosure(next, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode);
                             if (m_Visited.Add(Key(next)))
                             {
                                 m_Nodes.Add((node, i, d));
@@ -355,13 +547,15 @@ namespace PuzzleGlass.Editor.Studio
             public bool[] removed;
             public int[] fill;
             public int[] taken;
+            public byte wave;
 
             public State Clone() => new State
             {
                 anchors = (Vector2Int[])anchors.Clone(),
                 removed = (bool[])removed.Clone(),
                 fill = (int[])fill.Clone(),
-                taken = (int[])taken.Clone()
+                taken = (int[])taken.Clone(),
+                wave = wave
             };
         }
 
@@ -380,7 +574,8 @@ namespace PuzzleGlass.Editor.Studio
 
         private static string Key(State s)
         {
-            var sb = new StringBuilder(s.anchors.Length * 6 + s.taken.Length * 2);
+            var sb = new StringBuilder(s.anchors.Length * 6 + s.taken.Length * 2 + 4);
+            sb.Append(s.wave).Append('|');
             for (int i = 0; i < s.anchors.Length; i++)
             {
                 if (s.removed[i]) sb.Append('x');
@@ -392,7 +587,7 @@ namespace PuzzleGlass.Editor.Studio
             return sb.ToString();
         }
 
-        private static bool IsValidPlacement(Block[] blocks, Vector2Int[] anchors, bool[] removed, int cols, int rows)
+        private static bool IsValidPlacement(Block[] blocks, Vector2Int[] anchors, bool[] removed, int cols, int rows, bool[,] walls)
         {
             var occ = new bool[cols, rows];
             for (int i = 0; i < blocks.Length; i++)
@@ -401,7 +596,7 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (var c in blocks[i].cells)
                 {
                     int x = anchors[i].x + c.x, y = anchors[i].y + c.y;
-                    if (x < 0 || y < 0 || x >= cols || y >= rows || occ[x, y]) return false;
+                    if (x < 0 || y < 0 || x >= cols || y >= rows || occ[x, y] || (walls != null && walls[x, y])) return false;
                     occ[x, y] = true;
                 }
             }
@@ -423,7 +618,8 @@ namespace PuzzleGlass.Editor.Studio
                 int progress = 0;
                 if (iceMeltMode == IceMeltMode.PerBallCollected)
                 {
-                    for (int c = 0; c < s.taken.Length; c++) progress += s.taken[c];
+                    for (int j = 0; j < blocks.Length; j++)
+                        progress += s.removed[j] ? blocks[j].count : s.fill[j];
                 }
                 else
                 {
@@ -435,21 +631,49 @@ namespace PuzzleGlass.Editor.Studio
             return false;
         }
 
+        private static bool AllStacksTaken(int[] taken, List<PuzzleColor>[] stacks)
+        {
+            for (int c = 0; c < stacks.Length; c++)
+                if (taken[c] < stacks[c].Count) return false;
+            return true;
+        }
+
         /// <summary>
         /// Oyundaki kendiliğinden toplama: en üst sıradaki bloklar kendi açık sütunlarının hizasındaki
-        /// en alt topları alır; dolan blok çıkar. Değişiklik kalmayana kadar tekrarlar.
+        /// en alt topları alır; dolan blok çıkar. Haznedeki toplar bitince (Wave 1) üst tüpler açılır (Wave 2).
         /// </summary>
-        private static void CollectClosure(State s, Block[] blocks, List<PuzzleColor>[] stacks, int[] stackGridCol, int rows, IceMeltMode iceMeltMode)
+        private static void CollectClosure(
+            State s, Block[] blocks, bool[,] walls, List<PuzzleColor>[] wave1Stacks, List<PuzzleColor>[] wave2Stacks,
+            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode)
+        {
+            CollectClosureWithTrace(s, blocks, walls, wave1Stacks, wave2Stacks, hasWave2, stackGridCol, rows, iceMeltMode, null);
+        }
+
+        private static void CollectClosureWithTrace(
+            State s, Block[] blocks, bool[,] walls, List<PuzzleColor>[] wave1Stacks, List<PuzzleColor>[] wave2Stacks,
+            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode,
+            System.Action<int, int> onStepCompleted)
         {
             bool changed = true;
             while (changed)
             {
                 changed = false;
+                var stacks = s.wave == 0 ? wave1Stacks : wave2Stacks;
                 for (int i = 0; i < blocks.Length; i++)
                 {
                     if (s.removed[i] || IsBlockBlocked(i, s, blocks, iceMeltMode)) continue;
-                    var open = OpenColumns(i, s, blocks, rows);
+                    var open = OpenColumns(i, s, blocks, walls, rows);
                     if (open == null) continue;
+
+                    int ballsBefore = 0, boxesBefore = 0;
+                    if (onStepCompleted != null)
+                    {
+                        for (int j = 0; j < blocks.Length; j++)
+                        {
+                            ballsBefore += s.removed[j] ? blocks[j].count : s.fill[j];
+                            if (s.removed[j]) boxesBefore++;
+                        }
+                    }
 
                     for (int c = 0; c < stacks.Length && s.fill[i] < blocks[i].count; c++)
                     {
@@ -465,7 +689,15 @@ namespace PuzzleGlass.Editor.Studio
                     {
                         s.removed[i] = true;
                         changed = true;
+                        onStepCompleted?.Invoke(ballsBefore, boxesBefore);
                     }
+                }
+
+                if (s.wave == 0 && hasWave2 && AllStacksTaken(s.taken, wave1Stacks))
+                {
+                    s.wave = 1;
+                    System.Array.Clear(s.taken, 0, s.taken.Length);
+                    changed = true;
                 }
             }
         }
@@ -474,7 +706,7 @@ namespace PuzzleGlass.Editor.Studio
         /// Blok en üst sıraya değiyorsa, üstünde başka blok olmayan sütunları (deliği açık sütunlar); değmiyorsa null.
         /// StagingGridBoard.IsWorldXAlignedWithBlockTopColumns ile aynı kural.
         /// </summary>
-        private static HashSet<int> OpenColumns(int i, State s, Block[] blocks, int rows)
+        private static HashSet<int> OpenColumns(int i, State s, Block[] blocks, bool[,] walls, int rows)
         {
             bool atTop = false;
             foreach (var c in blocks[i].cells) if (s.anchors[i].y + c.y >= rows - 1) { atTop = true; break; }
@@ -485,6 +717,11 @@ namespace PuzzleGlass.Editor.Studio
             {
                 int cx = s.anchors[i].x + c.x, cy = s.anchors[i].y + c.y;
                 bool blocked = false;
+                if (walls != null)
+                {
+                    for (int oy = cy + 1; oy < rows; oy++)
+                        if (walls[cx, oy]) { blocked = true; break; }
+                }
                 for (int j = 0; j < blocks.Length && !blocked; j++)
                 {
                     if (j == i || s.removed[j]) continue;
@@ -561,6 +798,9 @@ namespace PuzzleGlass.Editor.Studio
 
         private static void Generate(PuzzleGlassLevelData lvl, int seed, int boxes, int colors)
         {
+            lvl.useManualBallLayout = false;
+            lvl.manualLaneWidth = 0;
+            if (lvl.manualBalls != null) lvl.manualBalls.Clear();
             PuzzleLevelGenerator.GenerateForLevelData(lvl,
                 customColorCount: colors > 0 ? colors : (int?)null,
                 customTotalBoxes: boxes > 0 ? boxes : (int?)null,
