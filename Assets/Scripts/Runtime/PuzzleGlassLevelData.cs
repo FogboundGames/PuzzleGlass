@@ -346,6 +346,11 @@ namespace PuzzleGlass
         public float trackScale = 1.0f;
         [Range(0.045f, 0.14f)]
         public float trackWallThickness = 0.082f;
+        [Tooltip("Gizli kuyruk (zorluk): topların bu oranı level başında bantta değil, girişte bekler. Bant tam dolu " +
+                 "başlar; bekleyen toplar sadece bantta boşluk açılınca girer. Slotlar bantta olmayan renklerle dolarsa " +
+                 "boşluk açılamaz ve level kaybedilir. 0 = kapalı (bütün toplar baştan bantta).")]
+        [Range(0f, 0.6f)]
+        public float trackHiddenRatio = 0f;
         public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
 
         [Header("Glass Compartments & Internal Dividers (Per-Level)")]

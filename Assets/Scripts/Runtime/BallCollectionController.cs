@@ -183,7 +183,13 @@ namespace PuzzleGlass
 
             float fixedDt = Time.fixedDeltaTime;
             bool anyAwakeMoving = false;
-            UpdateTrackFlowGating(activeBalls);
+
+            // Pist camı: toplar Bus Traffic Fever tarzı sıralı kuyruk halinde çıkışa yürür (fizik yok)
+            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            if (container != null && container.IsTrackShape && TrackCrowdQueue.Step(container, activeBalls, fixedDt))
+            {
+                anyAwakeMoving = true;
+            }
             for (int i = 0; i < activeBalls.Count; i++)
             {
                 var b = activeBalls[i];
@@ -201,92 +207,6 @@ namespace PuzzleGlass
             if (anyAwakeMoving)
             {
                 _ballFieldDirty = true;
-            }
-        }
-
-        private Vector2[] _flowGatePos = new Vector2[0];
-        private Vector2[] _flowGateDir = new Vector2[0];
-        private float[] _flowGateExit = new float[0];
-        private readonly List<int> _flowGateOrder = new List<int>();
-        private Comparison<int> _flowGateCmp;
-        private int _flowGateLastBallCount;
-        private float _flowGateSettleUntil;
-        private int _flowGateZoneCapacity = -1;
-        [Tooltip("Level başında (ya da yeni toplar gelince) tüm topların önce dibe yerleşmesi için süre (sn).")]
-        public float trackSettleSeconds = 2.0f;
-        [Tooltip("Pist camında çıkışa doğru itilen öndeki en az top sayısı (toplama alanı daha çok alıyorsa o kadar). Arkadakiler sıraları gelene kadar hareketsiz bekler.")]
-        public int trackFrontGroupSize = 14;
-
-        /// <summary>
-        /// Pist camında akış kuvvetini sadece çıkışa en yakın trackFrontGroupSize topa verir; arkadakiler durur.
-        /// Böylece top toplanırken bütün yığın tren gibi kaymaz, sadece öndekiler hareket eder.
-        /// </summary>
-        private void UpdateTrackFlowGating(List<BallPhysicsController> activeBalls)
-        {
-            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
-            int count = activeBalls.Count;
-            if (container == null || !container.IsTrackShape)
-            {
-                for (int i = 0; i < count; i++) if (activeBalls[i] != null) activeBalls[i].trackFlowScale = 1f;
-                return;
-            }
-            if (_flowGatePos.Length < count)
-            {
-                int cap = Mathf.NextPowerOfTwo(count);
-                _flowGatePos = new Vector2[cap];
-                _flowGateDir = new Vector2[cap];
-                _flowGateExit = new float[cap];
-            }
-
-            Transform ct = container.transform;
-            for (int i = 0; i < count; i++)
-            {
-                var b = activeBalls[i];
-                _flowGateExit[i] = -1f;
-                if (b == null || b.state != BallState.InContainer || b.rb == null || b.rb.isKinematic) continue;
-                Vector2 lp = ct.InverseTransformPoint(b.transform.position);
-                if (!container.SampleTrackField(lp, out _, out Vector2 fDir, out float exDist, out _)) { b.trackFlowScale = 1f; continue; }
-                _flowGatePos[i] = lp;
-                _flowGateDir[i] = fDir;
-                _flowGateExit[i] = Mathf.Max(0f, exDist);
-            }
-
-            // Level başı / yeni top geldiğinde yerleşme süresi hesapla
-            int ballCount = 0;
-            for (int i = 0; i < count; i++) if (_flowGateExit[i] >= 0f) ballCount++;
-            if (ballCount > _flowGateLastBallCount + 3)
-            {
-                _flowGateSettleUntil = Time.time + trackSettleSeconds;
-                _flowGateZoneCapacity = -1;
-            }
-            _flowGateLastBallCount = ballCount;
-
-            // Yerleşme faktörü: süre doldukça 1'den 0'a yumuşakça söner (ani kesilmeyi / yay gibi geri tepmeyi önler)
-            float settleFactor = Mathf.Clamp01((_flowGateSettleUntil - Time.time) / 0.8f);
-
-            // Çıkışa olan mesafeye göre pürüzsüz ve homojen akış kuvveti:
-            // Çıkışa en yakın bölge (~8 satır) tam kuvvetle (1.0) çekilir.
-            // Gerideki sıralar ise şeritler arası burulma veya akordeon etkisi olmadan pürüzsüz bir gradyanla (1.0 -> 0.60) takip eder.
-            float rowDist = Mathf.Max(0.05f, container.particleSize);
-            float frontZoneDist = rowDist * 8.5f;
-
-            for (int i = 0; i < count; i++)
-            {
-                var ball = activeBalls[i];
-                if (ball == null) continue;
-                float exDist = _flowGateExit[i];
-                if (exDist < 0f) { ball.trackFlowScale = 1f; continue; }
-
-                if (exDist <= frontZoneDist)
-                {
-                    ball.trackFlowScale = Mathf.Lerp(0.62f, 1.0f, settleFactor);
-                }
-                else
-                {
-                    float t = Mathf.Clamp01((exDist - frontZoneDist) / (frontZoneDist * 2.2f));
-                    float targetScale = Mathf.Lerp(0.62f, 0.55f, t);
-                    ball.trackFlowScale = Mathf.Lerp(targetScale, 1f, settleFactor);
-                }
             }
         }
 
@@ -436,6 +356,14 @@ namespace PuzzleGlass
 
             float effectiveInterval = (isFever || isVipCollecting) ? (collectionInterval * 0.55f) : collectionInterval;
             int effectiveMaxInSpout = (isFever || isVipCollecting) ? (maxBallsInSpout + 2) : maxBallsInSpout;
+
+            // Bant çıkışın önünden sürekli top geçirir: uyan topları kaçırmamak için daha sık ve çok top al
+            var beltContainer = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            if (beltContainer != null && TrackCrowdQueue.HasLoop(beltContainer))
+            {
+                effectiveInterval = Mathf.Min(effectiveInterval, 0.035f);
+                effectiveMaxInSpout = Mathf.Max(effectiveMaxInSpout, 14);
+            }
 
             float now = Time.time;
             if (now - _lastGlobalCollectionTime < effectiveInterval) return;
@@ -615,6 +543,20 @@ namespace PuzzleGlass
             if (hasContainer && container.IsTrackShape)
             {
                 if (container.compiledTrack == null) container.RebuildTrackCompiledData();
+
+                // Döngülü pist: banttaki her top er geç çıkışın önünden geçer, hepsi ulaşılabilir sayılır.
+                // (Gerçek toplama FindNextCollectableBall'da sadece çıkışın önündeki toplarla yapılır.)
+                if (TrackCrowdQueue.HasLoop(container))
+                {
+                    for (int i = 0; i < activeCount; i++)
+                    {
+                        var b = activeBalls[i];
+                        if (b != null && b.state == BallState.InContainer && b.trackLoopSlot >= 0 && b.gameObject.activeInHierarchy)
+                            _bottomCandidatesCache.Add(b);
+                    }
+                    return _bottomCandidatesCache;
+                }
+
                 float maxExitZoneDist = ballDiam * 5.0f;
                 float blockDistSq = (ballDiam * 1.18f) * (ballDiam * 1.18f);
 
@@ -781,6 +723,7 @@ namespace PuzzleGlass
                 ? BallContainerManager.Instance.glassContainer
                 : null;
             bool isTrack = trackContainer != null && trackContainer.IsTrackShape;
+            bool isBelt = isTrack && TrackCrowdQueue.HasLoop(trackContainer);
 
             foreach (var kvp in _activeStreams)
             {
@@ -790,7 +733,8 @@ namespace PuzzleGlass
 
                 int needed = monster.remainingCount - stream.inTransitBalls.Count;
                 if (needed <= 0) continue;
-                if (stream.inTransitBalls.Count >= maxBallsInTransitPerMonster) continue;
+                int maxInTransit = isBelt ? Mathf.Max(maxBallsInTransitPerMonster, 16) : maxBallsInTransitPerMonster;
+                if (stream.inTransitBalls.Count >= maxInTransit) continue;
 
                 float monsterWorldX = monster.transform.position.x;
 
@@ -798,6 +742,8 @@ namespace PuzzleGlass
                 {
                     var cand = bottomCandidates[i];
                     if (cand.colorType != monster.colorType) continue;
+                    // Bant: sadece o an çıkışın önünden geçen top ayrılabilir; diğerleri tura devam eder
+                    if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
                     // Pist modunda çıkış ağzına en yakın top önce gelir; kutu modunda bloğa yatay en yakın top
@@ -936,9 +882,6 @@ namespace PuzzleGlass
 
             Vector3 exitPos = GetExitWorldPosForBall(container, ball);
 
-            // Top toplandığında tüm kanal boyunca hafif yerleşme dalgası tetikle (referans videodaki gibi doğal kayma)
-            _flowGateSettleUntil = Mathf.Max(_flowGateSettleUntil, Time.time + 0.55f);
-
             ball.BeginAttraction(monster, exitPos);
 
             if (BallContainerManager.Instance != null && BallContainerManager.Instance.bottomSpoutStopper != null)
@@ -1040,7 +983,8 @@ namespace PuzzleGlass
 
         public void CheckLevelCompletion()
         {
-            bool hasPendingTubeBalls = BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.HasPendingBalls;
+            bool hasPendingTubeBalls = (BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.HasPendingBalls)
+                || TrackCrowdQueue.PendingCount > 0;
             if (!hasPendingTubeBalls && BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls.Count == 0)
             {
                 OnAllMatchingBallsCollected?.Invoke();
@@ -1055,6 +999,8 @@ namespace PuzzleGlass
         public bool HasAnyBallInTransitOrAttracting()
         {
             if (_attractingBalls.Count > 0) return true;
+            // Pist kuyruğu hâlâ çıkışa doğru yürüyorsa öndeki top henüz ağza ulaşmamış olabilir
+            if (TrackCrowdQueue.IsMoving) return true;
             foreach (var kvp in _activeStreams)
             {
                 if (kvp.Value != null && kvp.Value.inTransitBalls != null && kvp.Value.inTransitBalls.Count > 0)
@@ -1077,11 +1023,55 @@ namespace PuzzleGlass
 
         public bool HasAnyCollectableMoveForSlottedMonsters()
         {
-            return FindNextCollectableBall(out _) != null;
+            if (FindNextCollectableBall(out _) != null) return true;
+
+            // Bantlı pist: toplar dönmeye devam eder; eşleşen top şu an çıkışın önünde olmasa da tur atıp gelecektir.
+            // Bu yüzden slottaki (ya da toplamakta olan) bloğun rengi bantta/kuyrukta varsa hamle var sayılır.
+            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            if (container != null && container.IsTrackShape && TrackCrowdQueue.HasLoop(container))
+            {
+                if (HasBeltBallForWaitingMonster()) return true;
+                // Gizli kuyrukta top var ve bantta yer varsa yeni toplar girmeye devam eder; henüz kilitlenme yok.
+                // Bant doluysa ve slotlardaki renklerin hiçbiri bantta değilse boşluk açılamaz: gerçek kilitlenme.
+                // (Giriş yolundaki ya da henüz gelmemiş toplar da bu durumda sırayla banda girer.)
+                return (TrackCrowdQueue.PendingCount > 0 || TrackCrowdQueue.RoadQueueCount > 0)
+                    && TrackCrowdQueue.HasFreeBeltSlot(container);
+            }
+            return false;
+        }
+
+        private bool HasBeltBallForWaitingMonster()
+        {
+            var gm = PuzzleGlassGameManager.Instance;
+            if (gm == null || gm.activeMonsters == null || BallObjectPool.Instance == null) return false;
+            var balls = BallObjectPool.Instance.ActiveBalls;
+
+            for (int i = 0; i < gm.activeMonsters.Count; i++)
+            {
+                var m = gm.activeMonsters[i];
+                if (m == null || m.IsCompleted || m.remainingCount <= 0) continue;
+                if (m.assignedSlot == null && !m.IsActivelyCollecting) continue;
+
+                int inTransit = 0;
+                if (!string.IsNullOrEmpty(m.monsterId) && _activeStreams.TryGetValue(m.monsterId, out var stream))
+                    inTransit = stream.inTransitBalls.Count;
+                if (m.remainingCount - inTransit <= 0) continue;
+
+                for (int b = 0; b < balls.Count; b++)
+                {
+                    var ball = balls[b];
+                    if (ball == null || ball.state != BallState.InContainer || !ball.gameObject.activeInHierarchy) continue;
+                    if (ball.colorType != m.colorType) continue;
+                    // Sadece banttaki toplar; giriş yolundakiler bant doluyken giremez (ayrıca kontrol edilir)
+                    if (ball.trackLoopSlot >= 0) return true;
+                }
+            }
+            return false;
         }
 
         public void ClearAll()
         {
+            TrackCrowdQueue.ClearPending();
             _attractingBalls.Clear();
             _activeStreams.Clear();
             _squashingBalls.Clear();

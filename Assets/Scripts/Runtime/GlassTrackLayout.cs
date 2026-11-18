@@ -12,7 +12,8 @@ namespace PuzzleGlass
         ORing = 3,       // Kapalı Halka (O-Pist)
         SCurve = 4,      // Kıvrımlı S-Kanal
         DoubleArch = 5,  // Çift Kemerli Pist
-        Custom = 6       // Cam Stüdyosu'nda Serbest Düzenlenen Pist
+        Custom = 6,      // Cam Stüdyosu'nda Serbest Düzenlenen Pist
+        OvalRing = 7     // Sabit genişlikli kapalı oval halka (bant) + sağ üstten giriş kolu
     }
 
     [Serializable]
@@ -76,6 +77,8 @@ namespace PuzzleGlass
             public float ballDiameter;
             public int lanesAcross;
             public Vector2 exitPoint;
+            /// <summary>Kapalı halka (yürüyen bant) olarak tanımlanmış kolun indeksi; yoksa -1.</summary>
+            public int closedLoopBranch = -1;
             public Rect innerBounds;
             public Rect outerBounds;
 
@@ -206,6 +209,21 @@ namespace PuzzleGlass
                 return segs;
             }
 
+            /// <summary>Noktanın kapalı halka (bant) orta çizgisine uzaklığı; halka yoksa çok büyük.</summary>
+            public float SampleDistToRingCenter(Vector2 p)
+            {
+                if (closedLoopBranch < 0 || closedLoopBranch >= polylines.Count) return float.MaxValue;
+                var poly = polylines[closedLoopBranch];
+                float best = float.MaxValue;
+                for (int i = 0; i < poly.Count - 1; i++)
+                {
+                    Vector2 a = poly[i], ab = poly[i + 1] - a;
+                    float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(1e-8f, ab.sqrMagnitude));
+                    best = Mathf.Min(best, (a + ab * t - p).sqrMagnitude);
+                }
+                return Mathf.Sqrt(best);
+            }
+
             public Vector2 EstimateSdfGradient(Vector2 p)
             {
                 const float eps = 0.015f;
@@ -220,141 +238,166 @@ namespace PuzzleGlass
 
         // ==================== Hazır Pist Şekilleri ====================
 
+        /// <summary>
+        /// Hazır pist şekilleri. Hepsi aynı yapıdadır: dış şekil ile ortadaki boşluk aynı biçimdedir ve arada
+        /// sabit genişlikli kapalı bir yol (yürüyen bant) döner. Ayrı giriş kolu / boş kalan çıkıntı yoktur.
+        /// Yol alttaki çıkıştan başlar, saat yönünde döner ve çıkışa kapanır. Tek kapalı kol olduğu için cam her
+        /// yerde aynı kalınlıkta ve pürüzsüz çizilir; bant şeritleri camın içine birebir oturur.
+        /// </summary>
         public static List<GlassTrackBranch> BuildPresetBranches(GlassTrackPreset preset)
         {
+            return BuildPresetBranches(preset, 0.5f);
+        }
+
+        /// <summary>
+        /// stretch (0..1): şeklin uzayabilen kısmının oranı (U'da kolların boyu). Top sayısına göre
+        /// BuildForLevel seçer ki yol topla dolu olsun, boş kalmasın.
+        /// </summary>
+        public static List<GlassTrackBranch> BuildPresetBranches(GlassTrackPreset preset, float stretch)
+        {
             var list = new List<GlassTrackBranch>();
+            Vector2 c = new Vector2(0f, 0.06f);
             switch (preset)
             {
                 case GlassTrackPreset.ArchLoop:
                 default:
-                    // Görsel 1 / Bus Traffic Fever Tarzı: Dış U + İç Kemer Köprü + Ortada Kemerli Ada Boşluğu
-                    list.Add(new GlassTrackBranch("Sol Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(-0.56f, -0.40f),
-                        new Vector2(-0.98f, -0.02f),
-                        new Vector2(-0.98f, 0.46f),
-                        new Vector2(-0.88f, 0.94f),
-                        new Vector2(-0.64f, 1.15f)));
-                    list.Add(new GlassTrackBranch("Sağ Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(0.56f, -0.40f),
-                        new Vector2(0.98f, -0.02f),
-                        new Vector2(0.98f, 0.46f),
-                        new Vector2(0.88f, 0.94f),
-                        new Vector2(0.64f, 1.15f)));
-                    list.Add(new GlassTrackBranch("İç Kemer", true,
-                        new Vector2(-0.82f, 0.16f),
-                        new Vector2(-0.46f, 0.48f),
-                        new Vector2(0.00f, 0.58f),
-                        new Vector2(0.46f, 0.48f),
-                        new Vector2(0.82f, 0.16f)));
+                    // U: dış şekil U, ortadaki boşluk da aynı U; yol U boşluğun etrafında döner (kollar yolun parçası)
+                    list.Add(BuildULoop(Mathf.Lerp(0.0f, 0.50f, Mathf.Clamp01(stretch))));
                     break;
 
                 case GlassTrackPreset.HeartLoop:
-                    // Görsel 3: Kalp / M-Kıvrımlı Pist + Üst Ortada V-Çöküntü + Orta Kalp Ada Boşluğu
-                    list.Add(new GlassTrackBranch("Sol Kalp Kolu", false,
-                        new Vector2(0.00f, -0.56f),
-                        new Vector2(-0.54f, -0.32f),
-                        new Vector2(-0.92f, 0.10f),
-                        new Vector2(-1.08f, 0.54f),
-                        new Vector2(-1.14f, 0.92f)));
-                    list.Add(new GlassTrackBranch("Sağ Kalp Kolu", false,
-                        new Vector2(0.00f, -0.56f),
-                        new Vector2(0.54f, -0.32f),
-                        new Vector2(0.92f, 0.10f),
-                        new Vector2(1.08f, 0.54f),
-                        new Vector2(1.14f, 0.92f)));
-                    list.Add(new GlassTrackBranch("Üst Kalp Köprüsü", true,
-                        new Vector2(-0.98f, 0.40f),
-                        new Vector2(-0.56f, 0.76f),
-                        new Vector2(-0.24f, 0.54f),
-                        new Vector2(0.00f, 0.24f),
-                        new Vector2(0.24f, 0.54f),
-                        new Vector2(0.56f, 0.76f),
-                        new Vector2(0.98f, 0.40f)));
+                    list.Add(BuildRingBranch("Kalp Halka", th => c + HeartRing(th)));
                     break;
 
                 case GlassTrackPreset.UChannel:
-                    // Düzgün U-Kanal
-                    list.Add(new GlassTrackBranch("Sol Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(-0.62f, -0.44f),
-                        new Vector2(-0.98f, -0.04f),
-                        new Vector2(-1.00f, 0.44f),
-                        new Vector2(-0.94f, 0.90f)));
-                    list.Add(new GlassTrackBranch("Sağ Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(0.62f, -0.44f),
-                        new Vector2(0.98f, -0.04f),
-                        new Vector2(1.00f, 0.44f),
-                        new Vector2(0.94f, 0.90f)));
+                    list.Add(BuildRingBranch("Stadyum Halka", th => c + SuperEllipse(th, 1.04f, 0.52f, 4.0f)));
                     break;
 
                 case GlassTrackPreset.ORing:
-                    // Referans Video Tarzı: Kapalı Oval Halka + Sağ Üstten Akış Giriş Kolu
-                    list.Add(new GlassTrackBranch("Sol Yay", false,
-                        new Vector2(0.00f, -0.56f),
-                        new Vector2(-0.78f, -0.42f),
-                        new Vector2(-1.06f, 0.08f),
-                        new Vector2(-0.74f, 0.60f),
-                        new Vector2(0.02f, 0.72f)));
-                    list.Add(new GlassTrackBranch("Sağ Yay ve Giriş", false,
-                        new Vector2(0.00f, -0.56f),
-                        new Vector2(0.76f, -0.42f),
-                        new Vector2(1.04f, 0.06f),
-                        new Vector2(0.72f, 0.58f),
-                        new Vector2(0.98f, 1.04f)));
-                    list.Add(new GlassTrackBranch("Üst Bağ", true,
-                        new Vector2(-0.18f, 0.71f),
-                        new Vector2(0.32f, 0.70f),
-                        new Vector2(0.76f, 0.56f)));
+                case GlassTrackPreset.OvalRing:
+                    list.Add(BuildRingBranch("Oval Halka", th => c + SuperEllipse(th, 0.98f, 0.62f, 2.6f)));
                     break;
 
                 case GlassTrackPreset.SCurve:
-                    // Kıvrımlı S-Kanal (tek akışlı)
-                    list.Add(new GlassTrackBranch("S-Kanal", false,
-                        new Vector2(0.00f, -0.56f),
-                        new Vector2(0.74f, -0.36f),
-                        new Vector2(0.84f, 0.04f),
-                        new Vector2(0.00f, 0.22f),
-                        new Vector2(-0.78f, 0.42f),
-                        new Vector2(-0.68f, 0.84f),
-                        new Vector2(0.18f, 0.96f)));
+                    list.Add(BuildRingBranch("Fasulye Halka", th => c + BeanRing(th)));
                     break;
 
                 case GlassTrackPreset.DoubleArch:
-                    // Çift Kemerli Pist (2 iç ada boşluğu: Alt Kemer ve Üst Kemer köprüleri):
-                    // Sol Kol ve Sağ Kol alt çıkıştan yukarı uzanır.
-                    // Alt Kemer (isBridge = true) alt köprüyü oluşturur.
-                    // Üst Kemer (isBridge = true) üst köprüyü oluşturur.
-                    // Sol Kol ve Sağ Kol, Üst Kemer'in başladığı seviyede temizce birleşir; üst üste binen çift boru olmaz!
-                    list.Add(new GlassTrackBranch("Sol Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(-0.62f, -0.40f),
-                        new Vector2(-1.02f, 0.04f),
-                        new Vector2(-1.02f, 0.52f),
-                        new Vector2(-0.88f, 0.82f)));
-                    list.Add(new GlassTrackBranch("Sağ Kol", false,
-                        new Vector2(0.00f, -0.54f),
-                        new Vector2(0.62f, -0.40f),
-                        new Vector2(1.02f, 0.04f),
-                        new Vector2(1.02f, 0.52f),
-                        new Vector2(0.88f, 0.82f)));
-                    list.Add(new GlassTrackBranch("Alt Kemer", true,
-                        new Vector2(-0.98f, -0.02f),
-                        new Vector2(-0.48f, 0.22f),
-                        new Vector2(0.00f, 0.28f),
-                        new Vector2(0.48f, 0.22f),
-                        new Vector2(0.98f, -0.02f)));
-                    list.Add(new GlassTrackBranch("Üst Kemer", true,
-                        new Vector2(-0.88f, 0.82f),
-                        new Vector2(-0.46f, 1.08f),
-                        new Vector2(0.00f, 1.15f),
-                        new Vector2(0.46f, 1.08f),
-                        new Vector2(0.88f, 0.82f)));
+                    list.Add(BuildRingBranch("Kare Halka", th => c + SuperEllipse(th, 0.92f, 0.66f, 4.5f)));
                     break;
             }
             return list;
+        }
+
+        /// <summary>U şeklinin omurgası ile yol ortası arasındaki mesafe (boşluğun yarı kalınlığı + yolun yarı genişliği).</summary>
+        private const float ULoopOffset = 0.38f;
+        /// <summary>U omurgasının yarı genişliği (alttaki yarım çemberin yarıçapı).</summary>
+        private const float ULoopHalfSpan = 0.74f;
+
+        /// <summary>
+        /// U yolu: U biçimli bir omurganın iki yanından ULoopOffset kadar uzakta geçen kapalı yol.
+        /// Böylece hem dış cam hem ortadaki boşluk aynı U biçimini alır. armH: kolların düz kısmının boyu.
+        /// Alt ortadan (çıkış) başlar: dış alt yay sola -> sol kol dışı yukarı -> sol kol tepesi -> sol kol içi aşağı
+        /// -> iç alt yay sağa -> sağ kol içi yukarı -> sağ kol tepesi -> sağ kol dışı aşağı -> dış alt yay çıkışa.
+        /// </summary>
+        private static GlassTrackBranch BuildULoop(float armH)
+        {
+            const float a = ULoopHalfSpan, w = ULoopOffset;
+            float cy = 0f;
+            float top = cy + armH;
+            float rOut = a + w, rIn = a - w;
+            var pts = new List<Vector2>();
+
+            void Arc(Vector2 center, float r, float fromDeg, float toDeg, int steps, bool includeEnd)
+            {
+                int n = includeEnd ? steps : steps - 1;
+                for (int i = 0; i <= n; i++)
+                {
+                    float ang = Mathf.Lerp(fromDeg, toDeg, (float)i / steps) * Mathf.Deg2Rad;
+                    pts.Add(center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * r);
+                }
+            }
+            void Line(Vector2 from, Vector2 to)
+            {
+                float len = Vector2.Distance(from, to);
+                int steps = Mathf.Max(1, Mathf.CeilToInt(len / 0.18f));
+                for (int i = 1; i < steps; i++) pts.Add(Vector2.Lerp(from, to, (float)i / steps));
+            }
+
+            Vector2 cBottom = new Vector2(0f, cy);
+            Arc(cBottom, rOut, -90f, -180f, 6, true);                                   // dış alt yay, sola
+            Line(new Vector2(-rOut, cy), new Vector2(-rOut, top));                       // sol kol dışı, yukarı
+            Arc(new Vector2(-a, top), w, 180f, 0f, 6, true);                              // sol kol tepesi
+            Line(new Vector2(-rIn, top), new Vector2(-rIn, cy));                          // sol kol içi, aşağı
+            Arc(cBottom, rIn, 180f, 360f, 8, true);                                       // iç alt yay, sağa
+            Line(new Vector2(rIn, cy), new Vector2(rIn, top));                            // sağ kol içi, yukarı
+            Arc(new Vector2(a, top), w, 180f, 0f, 6, true);                               // sağ kol tepesi
+            Line(new Vector2(rOut, top), new Vector2(rOut, cy));                          // sağ kol dışı, aşağı
+            Arc(cBottom, rOut, 0f, -90f, 6, false);                                       // dış alt yay, çıkışa
+
+            // Ardışık çakışan noktaları ayıkla, kapat
+            var clean = new List<Vector2>(pts.Count + 1);
+            for (int i = 0; i < pts.Count; i++)
+                if (clean.Count == 0 || (pts[i] - clean[clean.Count - 1]).sqrMagnitude > 1e-5f) clean.Add(pts[i]);
+            clean.Add(clean[0]);
+            var br = new GlassTrackBranch("U Yol", false);
+            br.points.AddRange(clean);
+            return br;
+        }
+
+        private const int RingControlPoints = 32;
+
+        /// <summary>th = -90° (alt, çıkış) noktasından başlayıp saat yönünde dönen kapalı halka kolu üretir.</summary>
+        private static GlassTrackBranch BuildRingBranch(string name, System.Func<float, Vector2> shape)
+        {
+            var ring = new GlassTrackBranch(name, false);
+            for (int i = 0; i <= RingControlPoints; i++)
+            {
+                float th = -Mathf.PI * 0.5f - (i % RingControlPoints) * (Mathf.PI * 2f / RingControlPoints);
+                ring.points.Add(shape(th));
+            }
+            return ring;
+        }
+
+        /// <summary>Yuvarlatılmış kalp: üstte iki tümsek ve ortada çukur, altta küt uç (kanal ucu sıkıştırmasın).</summary>
+        private static Vector2 HeartRing(float th)
+        {
+            float cs = Mathf.Cos(th), sn = Mathf.Sin(th);
+            // Elips taban + üstte ortada çukur (iki tümsek) + altta hafif sivrilme
+            float rx = 1.02f, ry = 0.60f;
+            float x = rx * cs;
+            float y = ry * sn;
+            float topDip = Mathf.Max(0f, sn) * Mathf.Exp(-(cs * cs) / 0.06f) * 0.20f;
+            float lobes = Mathf.Max(0f, sn) * (1f - Mathf.Exp(-(cs * cs) / 0.06f)) * 0.06f;
+            float bottomPinch = Mathf.Max(0f, -sn);
+            x *= 1f - 0.22f * bottomPinch * bottomPinch;
+            y += lobes - topDip - 0.08f * bottomPinch * bottomPinch;
+            return new Vector2(x, y);
+        }
+
+        /// <summary>Fasulye: sol yarısı dolgun, sağ yarısı daha ince, üst kenarda hafif içe kıvrım.</summary>
+        private static Vector2 BeanRing(float th)
+        {
+            float cs = Mathf.Cos(th), sn = Mathf.Sin(th);
+            float rx = 1.00f;
+            float ry = 0.62f - 0.10f * Mathf.Max(0f, cs);
+            float x = rx * Mathf.Sign(cs) * Mathf.Pow(Mathf.Abs(cs), 0.8f);
+            float y = ry * Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), 0.8f);
+            y -= Mathf.Max(0f, sn) * Mathf.Exp(-((cs - 0.15f) * (cs - 0.15f)) / 0.08f) * 0.12f;
+            return new Vector2(x, y);
+        }
+
+        private static Vector2 SuperEllipse(float theta, float rx, float ry, float exponent)
+        {
+            float cs = Mathf.Cos(theta), sn = Mathf.Sin(theta);
+            float e = 2f / Mathf.Max(1f, exponent);
+            return new Vector2(rx * Mathf.Sign(cs) * Mathf.Pow(Mathf.Abs(cs), e), ry * Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), e));
+        }
+
+        /// <summary>İlk ve son noktası çakışan (kapalı) polyline mı?</summary>
+        public static bool IsClosedPolyline(List<Vector2> pts)
+        {
+            return pts != null && pts.Count >= 4 && (pts[0] - pts[pts.Count - 1]).sqrMagnitude < 1e-6f;
         }
 
         public static List<GlassTrackBranch> CloneBranches(List<GlassTrackBranch> src)
@@ -383,22 +426,64 @@ namespace PuzzleGlass
             out CompiledTrack compiled,
             out OrderedPoolLayout.Result layout)
         {
-            List<GlassTrackBranch> sourceBranches = (preset == GlassTrackPreset.Custom && customBranches != null && customBranches.Count > 0)
+            BuildForLevel(preset, customBranches, bottomToTopGroups, manualBalls, useManualLayout, lanesAcrossSetting,
+                autoFitToBalls, manualScale, wallThickness, 0f, float.NaN, out compiled, out layout);
+        }
+
+        /// <param name="entryRoadTopLocalY">Giriş yolunun uzanacağı cam yerel Y (ekranın üst kenarı); NaN: sabit boy.</param>
+        /// <param name="hiddenRatio">Gizli kuyruk oranı: bant, toplamın (1 - oran) kadarına göre boyutlanır ve tam
+        /// dolu başlar; sığmayan toplar layout.overflowColors'ta girişte bekler.</param>
+        public static void BuildForLevel(
+            GlassTrackPreset preset,
+            List<GlassTrackBranch> customBranches,
+            List<LevelMonsterEntry> bottomToTopGroups,
+            List<ManualPoolBallEntry> manualBalls,
+            bool useManualLayout,
+            int lanesAcrossSetting,
+            bool autoFitToBalls,
+            float manualScale,
+            float wallThickness,
+            float hiddenRatio,
+            float entryRoadTopLocalY,
+            out CompiledTrack compiled,
+            out OrderedPoolLayout.Result layout)
+        {
+            // Hedef top listesi (alttan üste)
+            List<PuzzleColor> orderedColors = ExpandBallColors(bottomToTopGroups, manualBalls, useManualLayout);
+            int totalCount = orderedColors.Count;
+            // Gizli kuyruk: toplamın (1 - oran) kadarı bantta başlar, kalanı sırasıyla girişte bekler.
+            // Pist, banttaki top sayısına göre boyutlanır.
+            hiddenRatio = Mathf.Clamp(hiddenRatio, 0f, 0.6f);
+            bool useHidden = hiddenRatio > 0.001f && !useManualLayout && totalCount > 8;
+            int targetCount = useHidden
+                ? Mathf.Max(6, Mathf.RoundToInt(totalCount * (1f - hiddenRatio)))
+                : totalCount;
+
+            bool isCustom = preset == GlassTrackPreset.Custom && customBranches != null && customBranches.Count > 0;
+            int presetLanes = -1;
+            List<GlassTrackBranch> sourceBranches = isCustom
                 ? CloneBranches(customBranches)
-                : (customBranches != null && customBranches.Count > 0 && preset == GlassTrackPreset.Custom ? CloneBranches(customBranches) : BuildPresetBranches(preset));
+                : ChoosePresetForCount(preset, targetCount, lanesAcrossSetting, autoFitToBalls, out presetLanes);
 
             if (sourceBranches.Count == 0)
             {
                 sourceBranches = BuildPresetBranches(GlassTrackPreset.ArchLoop);
             }
 
-            // Hedef top listesi (alttan üste)
-            List<PuzzleColor> orderedColors = ExpandBallColors(bottomToTopGroups, manualBalls, useManualLayout);
-            int targetCount = orderedColors.Count;
+            bool addEntryRoad = useHidden && !isCustom && sourceBranches.Count > 0 && IsClosedPolyline(sourceBranches[0].points);
 
+            // Halkalı pistlerde yol, ortadaki boşluktan dar kalmalı: şerit sayısı top sayısına göre 2-4
+            bool isRing = false;
+            for (int i = 0; i < sourceBranches.Count; i++)
+                if (sourceBranches[i] != null && !sourceBranches[i].isBridge && IsClosedPolyline(sourceBranches[i].points)) { isRing = true; break; }
             int lanes = lanesAcrossSetting > 0
                 ? Mathf.Clamp(lanesAcrossSetting, 2, 6)
-                : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 22 ? 2 : (targetCount <= 78 ? 3 : 4)));
+                : presetLanes > 0 ? presetLanes
+                : (isRing
+                    ? (targetCount <= 36 ? 2 : (targetCount <= 96 ? 3 : 4))
+                    : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 22 ? 2 : (targetCount <= 78 ? 3 : 4))));
+            // Kanal yarı genişliğinin ölçeğe oranı üst sınırı (halkada ada boşluğu net görünsün)
+            float maxHalfWidthRatio = isRing ? RingHalfWidthRatio(preset) : 0.375f;
 
             float chosenScale = Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.0f, 0.55f, 1.45f);
             float chosenDiam = 0.165f;
@@ -407,19 +492,34 @@ namespace PuzzleGlass
             if (autoFitToBalls && targetCount > 0)
             {
                 ChooseBestFitParameters(
-                    preset, sourceBranches, targetCount, lanes,
+                    preset, sourceBranches, targetCount, lanes, maxHalfWidthRatio,
                     out chosenScale, out chosenDiam, out armTrim);
             }
             else
             {
-                float maxDiamForHole = (0.36f * chosenScale) / Mathf.Max(1f, lanes * 0.495f);
+                float maxDiamForHole = (Mathf.Min(0.36f, maxHalfWidthRatio) * chosenScale) / Mathf.Max(1f, lanes * 0.495f);
                 chosenDiam = Mathf.Clamp(maxDiamForHole * 0.90f, 0.115f, 0.255f);
             }
 
             float innerHalfW = lanes * chosenDiam * 0.495f + 0.012f;
             float clampedWall = Mathf.Clamp(wallThickness > 0.01f ? wallThickness : 0.082f, 0.045f, 0.14f);
 
+            // Gizli kuyruk: halkanın en üst noktasından yukarı, ekranın üst kenarına kadar çıkan giriş yolu.
+            // Bekleyen toplar bu yolda sıra halinde durur, ekranın dışından gelir ve halkada yer açıldıkça
+            // aşağı akıp banda katılır. (Pist ölçeği ve top boyu hesabına katılmaz.)
+            if (addEntryRoad) sourceBranches.Add(BuildEntryRoad(sourceBranches[0].points));
+
             List<GlassTrackBranch> fittedBranches = TransformBranches(sourceBranches, chosenScale, armTrim);
+            if (addEntryRoad && !float.IsNaN(entryRoadTopLocalY))
+            {
+                var road = fittedBranches[fittedBranches.Count - 1].points;
+                Vector2 j = road[0];
+                float topY = Mathf.Max(j.y + 0.4f, entryRoadTopLocalY);
+                road.Clear();
+                road.Add(j);
+                road.Add(new Vector2(j.x, Mathf.Lerp(j.y, topY, 0.5f)));
+                road.Add(new Vector2(j.x, topY));
+            }
             compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes);
 
             List<TrackSlot> allSlots = GeneratePackedTrackSlots(compiled);
@@ -435,7 +535,83 @@ namespace PuzzleGlass
                 }
             }
 
-            layout = BuildOrderedResultFromSlots(allSlots, orderedColors, bottomToTopGroups, useManualLayout, chosenDiam, lanes, compiled);
+            layout = BuildOrderedResultFromSlots(allSlots, orderedColors, bottomToTopGroups, useManualLayout, chosenDiam, lanes, compiled, targetCount);
+        }
+
+        /// <summary>Giriş yolunun boyu (pist ölçeği öncesi birim).</summary>
+        private const float EntryRoadLength = 0.78f;
+
+        /// <summary>Halkanın en üst noktasından dümdüz yukarı çıkan giriş yolu (ilk nokta halkada: birleşim).</summary>
+        private static GlassTrackBranch BuildEntryRoad(List<Vector2> ringPts)
+        {
+            int top = 0;
+            for (int i = 1; i < ringPts.Count; i++)
+                if (ringPts[i].y > ringPts[top].y + 1e-4f || (Mathf.Abs(ringPts[i].y - ringPts[top].y) <= 1e-4f && ringPts[i].x < ringPts[top].x))
+                    top = i;
+            Vector2 j = ringPts[top];
+            return new GlassTrackBranch("Giriş Yolu", false,
+                j, j + new Vector2(0f, EntryRoadLength * 0.5f), j + new Vector2(0f, EntryRoadLength));
+        }
+
+        private static float RingHalfWidthRatio(GlassTrackPreset preset)
+        {
+            // U'da omurgadan yol ortasına ULoopOffset var; boşluk görünür kalsın diye yol biraz daha dar
+            return preset == GlassTrackPreset.ArchLoop ? 0.18f : 0.24f;
+        }
+
+        /// <summary>
+        /// Hazır halka şekli için top sayısına en uygun şerit sayısı ve uzama oranını seçer: yol, toplarla
+        /// yaklaşık %85 dolu olsun (ne taşsın ne de boş kalsın).
+        /// </summary>
+        private static List<GlassTrackBranch> ChoosePresetForCount(GlassTrackPreset preset, int targetCount, int lanesSetting, bool autoFit, out int chosenLanes)
+        {
+            chosenLanes = -1;
+            if (!autoFit || targetCount <= 0) return BuildPresetBranches(preset);
+
+            float halfRatio = RingHalfWidthRatio(preset);
+            bool stretchable = preset == GlassTrackPreset.ArchLoop;
+            int minL = lanesSetting > 0 ? Mathf.Clamp(lanesSetting, 2, 6) : 2;
+            int maxL = lanesSetting > 0 ? minL : 4;
+
+            List<GlassTrackBranch> best = null;
+            float bestScore = float.MaxValue;
+            for (int l = minL; l <= maxL; l++)
+            {
+                // Çap / ölçek oranı (kanal yarı genişliği sınırına göre en büyük top)
+                float dPerScale = halfRatio / Mathf.Max(1f, l * 0.495f);
+                for (int k = 0; k <= (stretchable ? 10 : 0); k++)
+                {
+                    float st = stretchable ? k / 10f : 0.5f;
+                    var br = BuildPresetBranches(preset, st);
+                    float len = 0f;
+                    var pts = br[0].points;
+                    for (int i = 1; i < pts.Count; i++) len += Vector2.Distance(pts[i - 1], pts[i]);
+                    // En iri topla (kanal sınırında) doluluk. %85'in üstündeyse top biraz küçültülerek %85'e
+                    // indirilebilir (yol daralır, boşluk büyür); altındaysa yol boş kalır.
+                    float capacity = len / (dPerScale * 1.03f) * l * 0.95f;
+                    float fillAtMax = targetCount / Mathf.Max(1f, capacity);
+                    float score;
+                    if (fillAtMax >= 0.85f)
+                    {
+                        float shrink = 0.85f / fillAtMax;           // gereken çap oranı (1 = en iri)
+                        score = (1f - shrink) * 0.6f;
+                        if (shrink < 0.70f) score += (0.70f - shrink) * 4f; // toplar çok küçülmesin
+                    }
+                    else
+                    {
+                        score = (0.85f - fillAtMax) * 1.5f;          // boş yol
+                    }
+                    score += (l - 2) * 0.02f; // eşitlikte daha az şerit (daha iri top)
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                        best = br;
+                        chosenLanes = l;
+                    }
+                }
+            }
+            if (lanesSetting > 0) chosenLanes = -1;
+            return best ?? BuildPresetBranches(preset);
         }
 
         private static List<PuzzleColor> ExpandBallColors(
@@ -473,6 +649,7 @@ namespace PuzzleGlass
             List<GlassTrackBranch> branches,
             int targetCount,
             int lanes,
+            float maxHalfWidthRatio,
             out float bestScale,
             out float bestDiam,
             out float bestTrim)
@@ -481,7 +658,10 @@ namespace PuzzleGlass
             bestTrim = 1.0f;
 
             // Küçük/orta levellerde açık üst kolları top sayısına göre ayarla ki pist boş kalmasın
-            if (targetCount <= 48 && (preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop || preset == GlassTrackPreset.UChannel || preset == GlassTrackPreset.DoubleArch))
+            bool anyClosed = false;
+            for (int b = 0; b < branches.Count; b++)
+                if (branches[b] != null && IsClosedPolyline(branches[b].points)) { anyClosed = true; break; }
+            if (!anyClosed && targetCount <= 48 && (preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop || preset == GlassTrackPreset.UChannel || preset == GlassTrackPreset.DoubleArch))
             {
                 bestTrim = Mathf.Lerp(0.54f, 0.95f, Mathf.InverseLerp(12f, 48f, targetCount));
             }
@@ -491,7 +671,7 @@ namespace PuzzleGlass
             // İstenen yoğunluk: toplar pistin ~%82-96'sını sıkıca doldursun
             float desiredTotalRowSteps = Mathf.Max(3.5f, (targetCount * 1.08f) / lanes);
             // Kanal yarı genişliği iç ada boşluğunu kapatmamalı (<= 0.36 * scale)
-            float maxDiamRatioPerScale = 0.375f / Mathf.Max(1f, lanes * 0.495f);
+            float maxDiamRatioPerScale = maxHalfWidthRatio / Mathf.Max(1f, lanes * 0.495f);
 
             bestScale = 0.92f;
             bestDiam = 0.195f;
@@ -501,7 +681,7 @@ namespace PuzzleGlass
             {
                 float s = Mathf.Lerp(0.62f, 0.98f, si / 12f);
                 float maxDiamSafe = Mathf.Min(0.255f, maxDiamRatioPerScale * s);
-                float minDiamSafe = 0.108f;
+                float minDiamSafe = Mathf.Min(0.108f, maxDiamSafe);
                 float idealDiam = (effectiveLenAtUnit * s) / (desiredTotalRowSteps * 0.95f);
                 float d = Mathf.Clamp(idealDiam, minDiamSafe, maxDiamSafe);
 
@@ -562,7 +742,7 @@ namespace PuzzleGlass
                 var nb = new GlassTrackBranch(br.name, br.isBridge);
 
                 List<Vector2> srcPts = br.points;
-                if (!br.isBridge && openArmTrim < 0.99f && srcPts.Count >= 3)
+                if (!br.isBridge && openArmTrim < 0.99f && srcPts.Count >= 3 && !IsClosedPolyline(srcPts))
                 {
                     // Kolu son noktasından itibaren hafifçe kısalt (köprü birleşimini koru)
                     srcPts = TrimPolylineEnd(srcPts, openArmTrim);
@@ -631,7 +811,14 @@ namespace PuzzleGlass
 
             // Toplam segment sayısı <= MaxShaderSegments (64) kalacak şekilde her kolu örnekle
             int branchCount = branches.Count;
-            int maxPtsPerBranch = Mathf.Clamp(MaxShaderSegments / Mathf.Max(1, branchCount) + 1, 6, 18);
+            int closedCount = 0;
+            for (int b = 0; b < branchCount; b++)
+                if (branches[b] != null && IsClosedPolyline(branches[b].points)) closedCount++;
+            // Kapalı halka daha çok segment alır ki camın iç/dış kenarı köşelenmeden yuvarlak görünsün
+            int closedPts = closedCount > 0 && closedCount == branchCount ? (MaxShaderSegments / closedCount + 1) : 41;
+            int openCount = Mathf.Max(1, branchCount - closedCount);
+            int remainingSegs = Mathf.Max(openCount * 5, MaxShaderSegments - closedCount * (closedPts - 1));
+            int maxPtsPerBranch = Mathf.Clamp(remainingSegs / openCount + 1, 6, 18);
 
             float minX = float.MaxValue, maxX = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
@@ -641,7 +828,11 @@ namespace PuzzleGlass
                 var br = branches[b];
                 if (br == null || br.points == null || br.points.Count < 2) continue;
 
-                List<Vector2> smooth = SampleSmoothCatmullRom(br.points, maxPtsPerBranch);
+                bool closed = IsClosedPolyline(br.points);
+                List<Vector2> smooth = closed
+                    ? SampleClosedCatmullRom(br.points, closedPts)
+                    : SampleSmoothCatmullRom(br.points, maxPtsPerBranch);
+                if (closed && track.closedLoopBranch < 0 && !br.isBridge) track.closedLoopBranch = track.polylines.Count;
                 track.polylines.Add(smooth);
                 track.polylineIsBridge.Add(br.isBridge);
 
@@ -663,6 +854,17 @@ namespace PuzzleGlass
             if (minX > maxX)
             {
                 minX = -1f; maxX = 1f; minY = -0.56f; maxY = 0.8f;
+            }
+
+            // Halka varsa: halka üzerindeki her noktanın çıkışa bant yönünde (saat yönü) kalan yolu
+            float[] ringArc = null;
+            float ringLen = 0f;
+            List<Vector2> ringPoly = track.closedLoopBranch >= 0 ? track.polylines[track.closedLoopBranch] : null;
+            if (ringPoly != null)
+            {
+                ringArc = new float[ringPoly.Count];
+                for (int i = 1; i < ringPoly.Count; i++) ringArc[i] = ringArc[i - 1] + Vector2.Distance(ringPoly[i - 1], ringPoly[i]);
+                ringLen = ringArc[ringPoly.Count - 1];
             }
 
             // Her kol için çıkışa mesafe (arc-length) ve shader segmentleri
@@ -687,12 +889,36 @@ namespace PuzzleGlass
                     endBaseDist = EstimateDistanceToArmExit(track, poly[poly.Count - 1]);
                 }
 
+                // Halkaya bağlanan açık kol (giriş kolu): mesafe = bağlantı noktasının halka mesafesi + kol boyu
+                float feederBase = 0f;
+                if (ringPoly != null && b != track.closedLoopBranch && !isBridge)
+                {
+                    int nj = 0;
+                    float bestSq = float.MaxValue;
+                    for (int i = 0; i < ringPoly.Count; i++)
+                    {
+                        float dSq = (ringPoly[i] - poly[0]).sqrMagnitude;
+                        if (dSq < bestSq) { bestSq = dSq; nj = i; }
+                    }
+                    feederBase = ringLen - ringArc[nj];
+                }
+
                 for (int i = 0; i < poly.Count - 1; i++)
                 {
                     if (track.segments.Count >= MaxShaderSegments) break;
 
                     float dA, dB;
-                    if (!isBridge)
+                    if (b == track.closedLoopBranch)
+                    {
+                        dA = totalLen - arc[i];
+                        dB = totalLen - arc[i + 1];
+                    }
+                    else if (!isBridge && ringPoly != null)
+                    {
+                        dA = feederBase + arc[i];
+                        dB = feederBase + arc[i + 1];
+                    }
+                    else if (!isBridge)
                     {
                         dA = arc[i];
                         dB = arc[i + 1];
@@ -864,8 +1090,12 @@ namespace PuzzleGlass
             float usableSpan = Mathf.Max(d * (lanes - 1), track.innerHalfWidth * 2f - d * 1.22f);
             float laneSpacing = lanes > 1 ? usableSpan / (lanes - 1) : 0f;
 
+            // Halka: yuvalar doğrudan bant şeritlerinden gelir (toplar bandın tam yuvalarında doğar)
+            if (track.closedLoopBranch >= 0) TrackCrowdQueue.AppendRingSlots(track, slots);
+
             for (int b = 0; b < track.polylines.Count; b++)
             {
+                if (b == track.closedLoopBranch && slots.Count > 0) continue;
                 var poly = track.polylines[b];
                 if (poly == null || poly.Count < 2) continue;
                 bool isBridge = track.polylineIsBridge[b];
@@ -873,6 +1103,17 @@ namespace PuzzleGlass
                 // Çıkışa yakın uçtan başlayarak kolu ince adımlarla yürü
                 List<Vector2> dense = ResamplePolylineUniform(poly, d * 0.16f);
                 if (dense.Count < 2) continue;
+
+                // Halkaya bağlı giriş yolu: toplar halkanın şeridine taşmasın, yol halkanın kenarından başlasın
+                if (track.closedLoopBranch >= 0 && !isBridge && dense.Count > 2)
+                {
+                    Vector2 j0 = dense[0];
+                    Vector2 dir0 = (dense[Mathf.Min(2, dense.Count - 1)] - j0).normalized;
+                    float gate = track.innerHalfWidth + r * 1.05f;
+                    int cut = 0;
+                    while (cut < dense.Count - 2 && Vector2.Dot(dense[cut] - j0, dir0) < gate) cut++;
+                    if (cut > 0) dense.RemoveRange(0, cut);
+                }
 
                 // Köprüler için ortadan dışa doğru iki yarıyı sırala; ana kollar için tabandan yukarı
                 if (!isBridge)
@@ -975,14 +1216,16 @@ namespace PuzzleGlass
             bool useManual,
             float ballDiam,
             int lanes,
-            CompiledTrack track)
+            CompiledTrack track,
+            int maxOnTrack = int.MaxValue)
         {
             var res = new OrderedPoolLayout.Result
             {
                 balls = new List<OrderedPoolLayout.PoolBall>(),
                 diameter = ballDiam,
                 laneWidth = lanes,
-                totalColumns = Mathf.Max(1, lanes * 2)
+                totalColumns = Mathf.Max(1, lanes * 2),
+                overflowColors = new List<PuzzleColor>()
             };
 
             if (allSlots == null || allSlots.Count == 0 || orderedColors == null || orderedColors.Count == 0)
@@ -1051,6 +1294,15 @@ namespace PuzzleGlass
             }
             if (feederIds.Count == 0) feederIds.Add(0);
 
+            // Halkalı pist: hepsi tek bant akışı; renk blokları çıkışa bant yönünde kalan yola göre art arda dizilir
+            if (track != null && track.closedLoopBranch >= 0)
+            {
+                bridgeIds.AddRange(feederIds);
+                bridgeIds.Remove(track.closedLoopBranch);
+                feederIds.Clear();
+                feederIds.Add(track.closedLoopBranch);
+            }
+
             // Her ana akış için sıralı slot kuyruğunu oluştur
             var streamSlots = new List<List<TrackSlot>>();
             for (int f = 0; f < feederIds.Count; f++)
@@ -1082,16 +1334,36 @@ namespace PuzzleGlass
 
             // Her akışın slotlarını çıkışa olan mesafesine göre nizami sırala
             // Böylece renk blokları çıkıştan geriye doğru kesintisiz ve nizami bir şekilde akar
+            int ringId = track != null ? track.closedLoopBranch : -1;
             for (int s = 0; s < streamSlots.Count; s++)
             {
                 streamSlots[s].Sort((s1, s2) =>
                 {
+                    // Halkalı pist: önce bant (çıkışa kalan yola göre), sonra giriş kolları (banda sonra katılır)
+                    if (ringId >= 0)
+                    {
+                        bool r1 = s1.branchId == ringId, r2 = s2.branchId == ringId;
+                        if (r1 != r2) return r1 ? -1 : 1;
+                    }
                     int bandA = Mathf.RoundToInt(s1.distToExit / bandSize);
                     int bandB = Mathf.RoundToInt(s2.distToExit / bandSize);
                     if (bandA != bandB) return bandA.CompareTo(bandB);
                     if (s1.rowIndex != s2.rowIndex) return s1.rowIndex.CompareTo(s2.rowIndex);
                     return s1.laneIndex.CompareTo(s2.laneIndex);
                 });
+            }
+
+            // Gizli kuyrukta halkaya en fazla maxOnTrack top: fazla halka yuvaları boş kalır, sonraki toplar giriş
+            // yoluna, yol da dolarsa tepeden sonradan gelecek kuyruğa (overflowColors) gider.
+            if (ringId >= 0 && maxOnTrack < int.MaxValue)
+            {
+                var sl0 = streamSlots[0];
+                int ringSeen = 0;
+                for (int k = 0; k < sl0.Count; k++)
+                {
+                    if (sl0[k].branchId != ringId) continue;
+                    if (++ringSeen > maxOnTrack) { sl0.RemoveAt(k); k--; }
+                }
             }
 
             // 3. Renk bloklarını çıkar (LevelMonsterEntry gruplarından veya orderedColors akışından)
@@ -1151,7 +1423,12 @@ namespace PuzzleGlass
                     var blk = bList[bi];
                     for (int k = 0; k < blk.count; k++)
                     {
-                        if (streamSlotIndex[f] < sList.Count)
+                        if (ringId < 0 && res.balls.Count >= maxOnTrack)
+                        {
+                            // Gizli kuyruk: bu top bantta değil, girişte sırasını bekler
+                            res.overflowColors.Add(blk.color);
+                        }
+                        else if (streamSlotIndex[f] < sList.Count)
                         {
                             var sl = sList[streamSlotIndex[f]++];
                             res.balls.Add(new OrderedPoolLayout.PoolBall
@@ -1183,12 +1460,21 @@ namespace PuzzleGlass
                                     break;
                                 }
                             }
-                            if (!placed) break;
+                            // Banda sığmadı: gizli kuyrukta sırasıyla bekler (bant boşaldıkça girer)
+                            if (!placed) res.overflowColors.Add(blk.color);
                         }
                     }
                 }
             }
 
+            if (ringId >= 0)
+            {
+                // Halkadaki top sayısı (bant kapasite sınırı): giriş yolundakiler bunun altına düşünce katılır
+                int onRing = 0;
+                for (int i = 0; i < res.balls.Count; i++)
+                    if (track.SampleDistToRingCenter(res.balls[i].localPos) < track.innerHalfWidth) onRing++;
+                res.beltCount = onRing;
+            }
             return res;
         }
 
@@ -1224,6 +1510,26 @@ namespace PuzzleGlass
             }
             dense.Add(ctrl[n - 1]);
             return ResamplePolylineByCount(dense, Mathf.Max(2, targetCount));
+        }
+
+        /// <summary>Kapalı kontrol poligonu için (son nokta = ilk nokta) sarmalı Catmull-Rom; çıktı da kapalıdır.</summary>
+        public static List<Vector2> SampleClosedCatmullRom(List<Vector2> ctrlClosed, int targetCount)
+        {
+            int n = ctrlClosed.Count - 1; // son nokta tekrar
+            var dense = new List<Vector2>();
+            const int sub = 12;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 p0 = ctrlClosed[(i - 1 + n) % n];
+                Vector2 p1 = ctrlClosed[i];
+                Vector2 p2 = ctrlClosed[(i + 1) % n];
+                Vector2 p3 = ctrlClosed[(i + 2) % n];
+                for (int s = 0; s < sub; s++) dense.Add(EvalCatmullRom(p0, p1, p2, p3, (float)s / sub));
+            }
+            dense.Add(ctrlClosed[0]);
+            var res = ResamplePolylineByCount(dense, Mathf.Max(4, targetCount));
+            res[res.Count - 1] = res[0];
+            return res;
         }
 
         private static Vector2 EvalCatmullRom(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)

@@ -68,11 +68,16 @@ namespace PuzzleGlass
         private Vector3 _squashAxisLocal = Vector3.up;
         private bool _isGpuSquashing = false;
         private bool _isTrackMode = false;
-        /// <summary>
-        /// Pist akış kuvvetinin çarpanı (BallCollectionController her fizik adımında belirler): çıkışa en yakın
-        /// ön gruptaki toplara 1, arkada sırasını bekleyenlere 0. Böylece top toplanırken bütün yığın kaymaz.
-        /// </summary>
-        [System.NonSerialized] public float trackFlowScale = 1f;
+        // Pist kuyruğu durumu (TrackCrowdQueue sürer): top kinematiktir, konumunu kuyruk belirler
+        [System.NonSerialized] public bool trackQueueDriven;
+        [System.NonSerialized] public bool trackQueuePosValid;
+        [System.NonSerialized] public Vector2 trackQueueLocalPos;
+        [System.NonSerialized] public float trackQueueLocalZ;
+        [System.NonSerialized] public float trackQueueSpeed;
+        /// <summary>Boşluğun etrafında dönen banttaki yuva indeksi (-1: bantta değil, kuyrukta bekliyor).</summary>
+        [System.NonSerialized] public int trackLoopSlot = -1;
+        /// <summary>Pist fiziği: topun cam yerel düzlemdeki hızı (yay takibi + çarpışmalar).</summary>
+        [System.NonSerialized] public Vector2 trackVel;
         public bool IsGpuSquashing => _isGpuSquashing;
         public bool IsTrackMode => _isTrackMode;
 
@@ -258,26 +263,7 @@ namespace PuzzleGlass
             float ay = Mathf.Cos(t * 4.2f + p2) + 0.70f * Mathf.Sin(t * 6.9f + p1);
             Vector2 agitateAccel = new Vector2(ax, ay) * 3.85f;
 
-            // 3. Track mode vs Standard pool physical flow (strictly obeying SphereCollider & wall BoxColliders)
-            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
-            if (_isTrackMode && container != null && container.IsTrackShape)
-            {
-                Vector3 localPos = container.transform.InverseTransformPoint(pos);
-                if (container.SampleTrackField(localPos, out _, out Vector2 flowDir, out _, out _))
-                {
-                    Vector2 gravDir = new Vector2(flowDir.x, flowDir.y - 0.12f).normalized;
-                    // Yerinde dururken ağırlığı hafif tut (0.65f) ki alt sıralar ezilmeden sürekli hareket edebilsin;
-                    // boşluk açılıp kaymaya başladığında (alongSpeed) veya toplama dalgasında (trackFlowScale) akışı güçlendir.
-                    float alongSpeed = Mathf.Max(0f, vel.x * gravDir.x + vel.y * gravDir.y);
-                    float slideBoost = Mathf.Clamp01((alongSpeed - 0.12f) / 0.40f);
-                    float baseDrift = Mathf.Lerp(0.65f, 3.4f, Mathf.Clamp01((trackFlowScale - 0.60f) / 0.40f));
-                    float flowAccel = Mathf.Lerp(baseDrift, 6.2f, slideBoost);
-
-                    Vector2 totalAccel = gravDir * flowAccel + agitateAccel;
-                    rb.AddForce(new Vector3(totalAccel.x, totalAccel.y, 0f), ForceMode.Acceleration);
-                }
-            }
-            else
+            // 3. Standart havuz akışı (pist modundaki toplar kinematiktir ve TrackCrowdQueue tarafından sürülür)
             {
                 float downSpeed = Mathf.Max(0f, -vel.y);
                 float slideBoost = Mathf.Clamp01((downSpeed - 0.12f) / 0.40f);
@@ -373,6 +359,7 @@ namespace PuzzleGlass
             state = BallState.InContainer;
             _attractionStartTime = -1f;
             _isTrackMode = false;
+            ResetTrackQueueState(false);
             layerIndex = 0;
             hasHomeX = false;
 
@@ -467,12 +454,40 @@ namespace PuzzleGlass
             {
                 rb.isKinematic = true;
             }
+            ResetTrackQueueState(false);
+        }
+
+        private void ResetTrackQueueState(bool driven)
+        {
+            trackQueueDriven = driven;
+            trackQueuePosValid = false;
+            trackQueueSpeed = 0f;
+            trackLoopSlot = -1;
+            trackVel = Vector2.zero;
+        }
+
+        /// <summary>Pist modunda topu kinematik yapıp kuyruğa (TrackCrowdQueue) teslim eder.</summary>
+        private void JoinTrackQueue()
+        {
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+                rb.isKinematic = true;
+                rb.interpolation = RigidbodyInterpolation.Interpolate;
+            }
+            ResetTrackQueueState(true);
         }
 
         public void ReleaseToPhysics()
         {
             if (state != BallState.InContainer) return;
             if (rb == null) rb = GetComponent<Rigidbody>();
+            if (_isTrackMode)
+            {
+                JoinTrackQueue();
+                return;
+            }
             if (rb != null)
             {
                 rb.isKinematic = false;
@@ -514,7 +529,11 @@ namespace PuzzleGlass
                 }
             }
 
-            if (rb != null)
+            if (_isTrackMode)
+            {
+                JoinTrackQueue();
+            }
+            else if (rb != null)
             {
                 rb.isKinematic = false;
                 rb.useGravity = false;
@@ -537,6 +556,7 @@ namespace PuzzleGlass
             state = BallState.AttractingToExit;
             _attractionStartTime = Time.time;
             _targetMonster = targetMonster;
+            ResetTrackQueueState(false);
 
             BallCollectionController.Instance?.MarkBallFieldDirty();
 
@@ -755,6 +775,14 @@ namespace PuzzleGlass
             PlayVisualSquashStretch(amp, normal, isArrival: false);
 
             PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.45f) / 3.9f));
+        }
+
+        /// <summary>Pistte başka bir topa/duvara çarpınca kısa ezilme (sık tekrarlanmasın diye bekleme süreli).</summary>
+        public void PlayTrackBump(Vector3 worldAxis, float amp)
+        {
+            if (!Application.isPlaying || Time.time < _nextCollisionSquashTime) return;
+            _nextCollisionSquashTime = Time.time + 0.14f;
+            PlayVisualSquashStretch(amp, worldAxis, isArrival: false);
         }
 
         private void PlayVisualSquashStretch(float amp, Vector3 worldAxis, bool isArrival)

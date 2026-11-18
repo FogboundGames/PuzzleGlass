@@ -377,6 +377,16 @@ namespace PuzzleGlass
                 }
             }
 
+            // Pist: banda sığmayan toplar (gizli kuyruk) girişte bekler, bantta boşluk açıldıkça girer
+            if (Application.isPlaying)
+            {
+                if (glassContainer != null && glassContainer.IsTrackShape && glassContainer.cachedTrackLayout.HasValue)
+                    TrackCrowdQueue.SetPending(glassContainer.cachedTrackLayout.Value.overflowColors, ballRadius,
+                        glassContainer.cachedTrackLayout.Value.beltCount);
+                else
+                    TrackCrowdQueue.ClearPending();
+            }
+
             if (initialShapeHoldTime > 0.05f && Application.isPlaying)
             {
                 if (_releaseHoldCoroutine != null) StopCoroutine(_releaseHoldCoroutine);

@@ -696,6 +696,7 @@ namespace PuzzleGlass
                         glassContainer.trackAutoFitToBalls = levelData.trackAutoFitToBalls;
                         glassContainer.trackScale = levelData.trackScale > 0.05f ? levelData.trackScale : 1.0f;
                         glassContainer.trackWallThickness = levelData.trackWallThickness > 0.01f ? levelData.trackWallThickness : 0.082f;
+                        glassContainer.trackHiddenRatio = Mathf.Clamp(levelData.trackHiddenRatio, 0f, 0.6f);
                         glassContainer.trackBranches = GlassTrackLayout.CloneBranches(levelData.trackBranches);
                     }
                     else
@@ -707,6 +708,7 @@ namespace PuzzleGlass
                         glassContainer.trackAutoFitToBalls = true;
                         glassContainer.trackScale = 1.0f;
                         glassContainer.trackWallThickness = 0.082f;
+                        glassContainer.trackHiddenRatio = 0f;
                         glassContainer.trackBranches = GlassTrackLayout.BuildPresetBranches(GlassTrackPreset.ArchLoop);
                         glassContainer.symmetricMode = true;
                         glassContainer.curveSubdivisions = 14;

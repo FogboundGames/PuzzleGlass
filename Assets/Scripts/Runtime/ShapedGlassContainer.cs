@@ -93,6 +93,8 @@ namespace PuzzleGlass
         public float trackScale = 1.0f;
         [Range(0.045f, 0.14f)]
         public float trackWallThickness = 0.082f;
+        [Range(0f, 0.6f)]
+        public float trackHiddenRatio = 0f;
         public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
 
         [NonSerialized] public GlassTrackLayout.CompiledTrack compiledTrack;
@@ -1676,6 +1678,8 @@ namespace PuzzleGlass
                 trackAutoFitToBalls,
                 trackScale,
                 trackWallThickness,
+                trackHiddenRatio,
+                GetScreenTopLocalY(),
                 out compiledTrack,
                 out var layoutRes);
             cachedTrackLayout = layoutRes;
@@ -1683,6 +1687,19 @@ namespace PuzzleGlass
             {
                 particleSize = compiledTrack.ballDiameter;
             }
+        }
+
+        /// <summary>
+        /// Kameranın üst kenarının (biraz ötesinin) cam yerel Y'si: gizli kuyruk giriş yolu buraya kadar uzanır ki
+        /// toplar doğrudan ekranın dışından gelsin. Kamera yoksa NaN (sabit boy).
+        /// </summary>
+        private float GetScreenTopLocalY()
+        {
+            var cam = Camera.main;
+            if (cam == null || !cam.orthographic) return float.NaN;
+            float worldTop = cam.transform.position.y + cam.orthographicSize + 0.35f;
+            Vector3 local = transform.InverseTransformPoint(new Vector3(transform.position.x, worldTop, transform.position.z));
+            return local.y;
         }
 
         public bool SampleTrackField(Vector2 localPos, out float signedDist, out Vector2 flowDir, out float distToExit, out Vector2 inwardNormal)

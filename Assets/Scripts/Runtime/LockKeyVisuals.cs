@@ -130,11 +130,24 @@ namespace PuzzleGlass
         {
             if (badge == null || !Application.isPlaying) return;
             var t = badge.transform;
-            t.DOKill(true);
+
+            // Rozetin asıl boyutu/açısı ilk ipucunda kaydedilir; her ipucu buradan başlar. Aksi halde arka arkaya
+            // dokununca yeni zıplama, bir öncekinin büyümüş boyutunu taban alıp anahtarı kalıcı büyütüyordu.
+            var rest = badge.GetComponent<KeyHintRest>();
+            if (rest == null)
+            {
+                rest = badge.AddComponent<KeyHintRest>();
+                rest.scale = t.localScale;
+                rest.rotation = t.localRotation;
+            }
+            DOTween.Kill(t); // önceki ipucu (sequence hedefi = rozet) durur
+            t.localScale = rest.scale;
+            t.localRotation = rest.rotation;
+
             Sequence s = DOTween.Sequence();
-            s.Append(t.DOPunchScale(Vector3.one * 0.40f, 0.45f, 6, 0.5f));
+            s.Append(t.DOPunchScale(rest.scale * 0.40f, 0.45f, 6, 0.5f));
             s.Insert(0f, t.DOPunchRotation(new Vector3(0, 0, 22f), 0.45f, 8, 0.6f));
-            s.SetLink(badge);
+            s.SetTarget(t).SetLink(badge);
         }
 
         /// <summary>Kilitli bloğa dokununca kilit simgesi sallanır (shader'da).</summary>

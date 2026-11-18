@@ -405,12 +405,13 @@ namespace PuzzleGlass.Editor.Studio
         {
             switch (p)
             {
-                case GlassTrackPreset.ArchLoop: return "Kemer";
-                case GlassTrackPreset.HeartLoop: return "Kalp / M";
-                case GlassTrackPreset.UChannel: return "U-Kanal";
-                case GlassTrackPreset.ORing: return "Halka";
-                case GlassTrackPreset.SCurve: return "S-Kanal";
-                case GlassTrackPreset.DoubleArch: return "Çift Kemer";
+                case GlassTrackPreset.ArchLoop: return "U";
+                case GlassTrackPreset.HeartLoop: return "Kalp";
+                case GlassTrackPreset.UChannel: return "Stadyum";
+                case GlassTrackPreset.ORing: return "Oval Halka";
+                case GlassTrackPreset.SCurve: return "Fasulye";
+                case GlassTrackPreset.DoubleArch: return "Kare";
+                case GlassTrackPreset.OvalRing: return "Oval Halka";
                 default: return "Özel Pist";
             }
         }
@@ -949,17 +950,17 @@ namespace PuzzleGlass.Editor.Studio
         {
             GlassTrackPreset activePreset = m_Level.useCustomGlassShape ? m_Level.trackPreset : GlassTrackPreset.ArchLoop;
 
-            Section("Pist Şekilleri (Görsel 1 & 3)");
+            Section("Pist Şekilleri (dışı ve ortadaki boşluğu aynı biçim)");
             var presets = new VisualElement();
             presets.AddToClassList("chip-grid");
             var trackList = new (string name, GlassTrackPreset p, string tip)[]
             {
-                ("Kemer (Görsel 1)", GlassTrackPreset.ArchLoop, "Görsel 1 tarzı dış U + iç kemer köprü + orta ada"),
-                ("Kalp / M (Görsel 3)", GlassTrackPreset.HeartLoop, "Görsel 3 tarzı kalp/M kıvrımlı pist + orta ada"),
-                ("U-Kanal", GlassTrackPreset.UChannel, "Klasik kıvrımlı U-tüp"),
-                ("Halka (O-Pist)", GlassTrackPreset.ORing, "Kapalı oval halka pist"),
-                ("S-Kanal", GlassTrackPreset.SCurve, "Yılan gibi kıvrımlı S-kanal"),
-                ("Çift Kemer", GlassTrackPreset.DoubleArch, "Üst üste çift adalı kıvrımlı pist")
+                ("U", GlassTrackPreset.ArchLoop, "Dışı ve ortadaki boşluğu U biçimli yol; kol boyu top sayısına göre ayarlanır"),
+                ("Kalp", GlassTrackPreset.HeartLoop, "Kalp biçimli halka"),
+                ("Stadyum", GlassTrackPreset.UChannel, "Hap biçimli halka"),
+                ("Oval Halka", GlassTrackPreset.ORing, "Oval halka"),
+                ("Fasulye", GlassTrackPreset.SCurve, "Fasulye biçimli halka"),
+                ("Kare", GlassTrackPreset.DoubleArch, "Yuvarlatılmış kare halka")
             };
             foreach (var item in trackList)
             {

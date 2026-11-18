@@ -33,6 +33,10 @@ namespace PuzzleGlass
             public float diameter;
             public int laneWidth;
             public int totalColumns;
+            /// <summary>Pist bandına sığmayıp gizli kuyrukta bekleyecek toplar (sırasıyla).</summary>
+            public List<PuzzleColor> overflowColors;
+            /// <summary>Halkalı pistte başlangıçta bantta (halkada) olan top sayısı = bant kapasite sınırı. 0: sınırsız.</summary>
+            public int beltCount;
         }
 
         /// <summary>
