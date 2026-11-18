@@ -174,9 +174,9 @@ namespace PuzzleGlass
             {
                 _sharedPhysMaterial = new PhysicsMaterial("Mat_BallPhysical")
                 {
-                    bounciness = bounciness,
-                    dynamicFriction = dynamicFriction,
-                    staticFriction = staticFriction,
+                    bounciness = 0.28f,
+                    dynamicFriction = 0.0f,
+                    staticFriction = 0.0f,
                     bounceCombine = PhysicsMaterialCombine.Average,
                     frictionCombine = PhysicsMaterialCombine.Minimum
                 };

@@ -279,12 +279,12 @@ namespace PuzzleGlass
 
                 if (exDist <= frontZoneDist)
                 {
-                    ball.trackFlowScale = 1f;
+                    ball.trackFlowScale = Mathf.Lerp(0.62f, 1.0f, settleFactor);
                 }
                 else
                 {
                     float t = Mathf.Clamp01((exDist - frontZoneDist) / (frontZoneDist * 2.2f));
-                    float targetScale = Mathf.Lerp(1.0f, 0.60f, t);
+                    float targetScale = Mathf.Lerp(0.62f, 0.55f, t);
                     ball.trackFlowScale = Mathf.Lerp(targetScale, 1f, settleFactor);
                 }
             }
@@ -935,6 +935,9 @@ namespace PuzzleGlass
                 : FindFirstObjectByType<ShapedGlassContainer>();
 
             Vector3 exitPos = GetExitWorldPosForBall(container, ball);
+
+            // Top toplandığında tüm kanal boyunca hafif yerleşme dalgası tetikle (referans videodaki gibi doğal kayma)
+            _flowGateSettleUntil = Mathf.Max(_flowGateSettleUntil, Time.time + 0.55f);
 
             ball.BeginAttraction(monster, exitPos);
 

@@ -800,10 +800,12 @@ namespace PuzzleGlass
                                 bestSegDistSq = dSq;
                                 bestFlowExitDist = dExit;
 
-                                // Akış yönü: distToExit'in azaldığı yön (kanal boyunca saf teğet akış)
+                                // Akış yönü: distToExit'in azaldığı yön + viraj duvarlarında takılmayı önleyen hafif merkez eğilimi
                                 Vector2 segDir = abSq > 1e-8f ? ab.normalized : Vector2.up;
                                 Vector2 tangDown = (seg.distB < seg.distA) ? segDir : -segDir;
-                                bestFlow = tangDown;
+                                Vector2 toCenter = proj - p;
+                                float centerPull = Mathf.Clamp(toCenter.magnitude / Mathf.Max(0.05f, track.innerHalfWidth), 0f, 1f) * 0.16f;
+                                bestFlow = (tangDown + (toCenter.sqrMagnitude > 1e-6f ? toCenter.normalized * centerPull : Vector2.zero)).normalized;
                             }
                         }
                     }
