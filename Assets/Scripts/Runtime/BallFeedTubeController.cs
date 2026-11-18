@@ -24,6 +24,8 @@ namespace PuzzleGlass
         public Vector2 gatePoint;
         public float gateAngleDeg;
         public float gateWidth;
+        /// <summary>Kapak kapalıyken en öndeki topun merkezinin ağızdan uzaklığı (top yatay kapağın tam üstüne oturur).</summary>
+        public float restDist;
 
         public bool IsValid => centerPath != null && centerPath.Length >= 2 && arcLengths != null && arcLengths.Length == centerPath.Length;
 
@@ -206,10 +208,8 @@ namespace PuzzleGlass
                 // Right-pointing normal in 2D XY when tan points upward (+Y): (+tan.y, -tan.x)
                 Vector2 rightDir = new Vector2(tan.y, -tan.x).normalized;
 
-                // Smooth organic horn flare right at the container mouth junction
-                float mouthT = Mathf.Clamp01(accLen / Mathf.Max(0.20f, tubeInnerHalfW * 1.75f));
-                float flare = Mathf.Lerp(1.22f, 1.0f, mouthT * mouthT * (3f - 2f * mouthT));
-                float halfW = tubeInnerHalfW * flare;
+                // Tüp camın içine girmediği için ağızda huni genişlemesi yok: sabit genişlik
+                float halfW = tubeInnerHalfW;
                 float shadHalfW = halfW * padMult;
 
                 Vector2 c2 = center[i];
@@ -224,30 +224,25 @@ namespace PuzzleGlass
                 rightShad[i] = new Vector3(rs2.x, rs2.y, 0f);
             }
 
-            // Locate the barrier gate line right at the tube throat (ceilY + 0.04f)
-            float gateTargetY = ceilY + 0.04f;
-            float foundGateDist = r * 1.46f;
-            Vector2 foundGatePt = new Vector2(mouthX, gateTargetY);
-            float foundGateAngle = 0f;
-            float foundGateWidth = tubeInnerHalfW * 1.88f;
+            // Görsel kesim: tüpün duvarları camın üst kenarında (ceilY) yatay olarak biter, ana camın içine girmez.
+            // Topların izlediği merkez çizgisi (center/arc) değişmez; toplar kapaktan sonra camın içine süzülür.
+            ClipPairToHeight(ref left, ref right, ceilY);
+            ClipPairToHeight(ref leftShad, ref rightShad, ceilY);
 
-            for (int i = 1; i < totalPts; i++)
-            {
-                if (center[i].y >= gateTargetY)
-                {
-                    float y0 = center[i - 1].y;
-                    float y1 = center[i].y;
-                    float frac = Mathf.Clamp01((gateTargetY - y0) / Mathf.Max(0.0001f, y1 - y0));
-                    foundGatePt = Vector2.Lerp(center[i - 1], center[i], frac);
-                    foundGateDist = Mathf.Lerp(arc[i - 1], arc[i], frac);
-                    Vector2 gL = Vector2.Lerp(left[i - 1], left[i], frac);
-                    Vector2 gR = Vector2.Lerp(right[i - 1], right[i], frac);
-                    Vector2 span = gR - gL;
-                    foundGateWidth = Mathf.Max(tubeInnerHalfW * 1.5f, span.magnitude * 0.94f);
-                    foundGateAngle = Mathf.Atan2(span.y, span.x) * Mathf.Rad2Deg;
-                    break;
-                }
-            }
+            // Kapak: tüp hangi açıyla gelirse gelsin YATAY ve camın üst kenarı (ceilY) hizasında.
+            // Genişliği, tüpün iki duvarının bu yükseklikteki yatay kesişimi kadardır (eğik tüpte dik kesitten geniştir).
+            float gateTargetY = ceilY;
+            float foundGateDist = ArcAtHeight(center, arc, gateTargetY, r * 1.46f);
+            float centerXAtGate = XAtHeight(center, gateTargetY, mouthX);
+            float leftX = XAtHeight(left, gateTargetY, centerXAtGate - tubeInnerHalfW);
+            float rightX = XAtHeight(right, gateTargetY, centerXAtGate + tubeInnerHalfW);
+            Vector2 foundGatePt = new Vector2((leftX + rightX) * 0.5f, gateTargetY);
+            float foundGateAngle = 0f;
+            float foundGateWidth = Mathf.Max(tubeInnerHalfW * 1.5f, Mathf.Abs(rightX - leftX));
+
+            // En öndeki top kapağın üstünde durur: alt noktası kapak çizgisinin hemen üstünde
+            const float gateHalfThick = 0.029f;
+            float foundRestDist = ArcAtHeight(center, arc, gateTargetY + gateHalfThick + r + 0.008f, foundGateDist + r);
 
             return new FeedTubeCurveData
             {
@@ -264,8 +259,65 @@ namespace PuzzleGlass
                 gateDist = foundGateDist,
                 gatePoint = foundGatePt,
                 gateAngleDeg = foundGateAngle,
-                gateWidth = foundGateWidth
+                gateWidth = foundGateWidth,
+                restDist = foundRestDist
             };
+        }
+
+        /// <summary>
+        /// Eşleşmiş sol/sağ kenar çizgilerini verilen yüksekliğin altında kalan kısımdan kırpar. Altta kalan noktalar
+        /// kesim çizgisine (o kenarın y = cutY kesişimine) taşınır, böylece tüpün alt ucu düz yatay bir kesim olur.
+        /// </summary>
+        private static void ClipPairToHeight(ref Vector3[] leftPath, ref Vector3[] rightPath, float cutY)
+        {
+            int n = Mathf.Min(leftPath.Length, rightPath.Length);
+            Vector3 cutL = new Vector3(XAtHeight(leftPath, cutY, leftPath[0].x), cutY, 0f);
+            Vector3 cutR = new Vector3(XAtHeight(rightPath, cutY, rightPath[0].x), cutY, 0f);
+
+            var outL = new List<Vector3>(n + 1);
+            var outR = new List<Vector3>(n + 1);
+            outL.Add(cutL);
+            outR.Add(cutR);
+            for (int i = 0; i < n; i++)
+            {
+                bool lBelow = leftPath[i].y <= cutY;
+                bool rBelow = rightPath[i].y <= cutY;
+                if (lBelow && rBelow) continue; // tamamen camın içinde: çizilmez
+                outL.Add(lBelow ? cutL : leftPath[i]);
+                outR.Add(rBelow ? cutR : rightPath[i]);
+            }
+            leftPath = outL.ToArray();
+            rightPath = outR.ToArray();
+        }
+
+        /// <summary>Çoklu çizginin verilen yüksekliği ilk kestiği noktadaki X (alttan yukarı).</summary>
+        private static float XAtHeight(Vector3[] path, float y, float fallback)
+        {
+            for (int i = 1; i < path.Length; i++)
+            {
+                float y0 = path[i - 1].y, y1 = path[i].y;
+                if ((y0 <= y && y1 >= y) || (y0 >= y && y1 <= y))
+                {
+                    float frac = Mathf.Abs(y1 - y0) > 0.0001f ? (y - y0) / (y1 - y0) : 0f;
+                    return Mathf.Lerp(path[i - 1].x, path[i].x, frac);
+                }
+            }
+            return fallback;
+        }
+
+        /// <summary>Merkez çizgisinin verilen yüksekliğe ulaştığı noktanın ağızdan uzaklığı.</summary>
+        private static float ArcAtHeight(Vector3[] center, float[] arc, float y, float fallback)
+        {
+            for (int i = 1; i < center.Length; i++)
+            {
+                if (center[i].y >= y)
+                {
+                    float y0 = center[i - 1].y, y1 = center[i].y;
+                    float frac = Mathf.Clamp01((y - y0) / Mathf.Max(0.0001f, y1 - y0));
+                    return Mathf.Lerp(arc[i - 1], arc[i], frac);
+                }
+            }
+            return fallback;
         }
 
         private static Vector3 EvalCubicBezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
@@ -328,6 +380,13 @@ namespace PuzzleGlass
         private float _elapsedSinceLoad = 0f;
         private float _pourSettleTimer = 0f;
         private float _postOpenElapsed = 0f;
+        private float _stuckTimer = 0f;
+
+        /// <summary>
+        /// Camda top kaldığı hâlde hiçbiri toplanamıyorsa (rafa/köşeye sıkışmış, hepsi duruyor) kapak bu süre sonra açılır.
+        /// Yoksa kapak hiç açılmaz ve level ne biter ne de "hamle kalmadı" der.
+        /// </summary>
+        private const float StuckGateOpenDelay = 1.5f;
 
         public bool IsActive => _isEnabled;
         public bool GatesOpened => _gatesOpened;
@@ -370,6 +429,7 @@ namespace PuzzleGlass
             _elapsedSinceLoad = 0f;
             _pourSettleTimer = 0f;
             _postOpenElapsed = 0f;
+            _stuckTimer = 0f;
             _leftLane.Clear();
             _rightLane.Clear();
             _preferLeftNext = true;
@@ -470,7 +530,7 @@ namespace PuzzleGlass
 
             float spacing = _ballRadius * 2.15f;
             // While barrier gate is closed, first ball rests cleanly right on top of the gate line
-            float firstDist = _gatesOpened ? 0f : (lane.curve.gateDist + _ballRadius + 0.036f);
+            float firstDist = _gatesOpened ? 0f : lane.curve.restDist;
             float targetDist = Mathf.Min(lane.curve.totalLength - _ballRadius, firstDist + slotIndex * spacing);
             float startDist = fromTopSpawn
                 ? Mathf.Min(lane.curve.totalLength - _ballRadius * 0.5f, Mathf.Max(targetDist + spacing * 1.35f, targetDist))
@@ -511,7 +571,33 @@ namespace PuzzleGlass
             // Keep barrier closed until EVERY ball inside the main glass bottle has been collected
             if (!_gatesOpened)
             {
-                if (_elapsedSinceLoad >= 0.30f && CountContainerBallsForGate() == 0)
+                bool openGate = false;
+                if (_elapsedSinceLoad >= 0.30f)
+                {
+                    int inGlass = CountContainerBallsForGate();
+                    if (inGlass == 0)
+                    {
+                        openGate = true;
+                    }
+                    else
+                    {
+                        // Camda top var ama hiçbiri toplanamıyor ve hiçbiri hareket etmiyor: sıkışma. Kısa bir
+                        // bekleme sonra kapağı yine de aç ki oyun kilitlenmesin.
+                        bool stuck = !HasBallBeingCollected()
+                                     && !HasHeldContainerBall()
+                                     && !HasFastFallingContainerBall()
+                                     && BallCollectionController.Instance != null
+                                     && !BallCollectionController.Instance.HasAnyCollectableBottomBall();
+                        _stuckTimer = stuck ? _stuckTimer + dt : 0f;
+                        if (_stuckTimer >= StuckGateOpenDelay)
+                        {
+                            openGate = true;
+                            Debug.LogWarning($"[BallFeedTube] Camda {inGlass} top toplanamaz durumda kaldı; kilitlenmeyi önlemek için tüp kapakları açıldı.");
+                        }
+                    }
+                }
+
+                if (openGate)
                 {
                     _gatesOpened = true;
                     _pourSettleTimer = 0.42f;
@@ -575,7 +661,7 @@ namespace PuzzleGlass
             if (lane.dropCooldown > 0f) lane.dropCooldown = Mathf.Max(0f, lane.dropCooldown - dt);
 
             float spacing = _ballRadius * 2.15f;
-            float firstDist = _gatesOpened ? 0f : (lane.curve.gateDist + _ballRadius + 0.036f);
+            float firstDist = _gatesOpened ? 0f : lane.curve.restDist;
             float slideSpeed = Mathf.Max(3.6f, _ballRadius * 38f);
 
             for (int i = 0; i < lane.visibleSlots.Count; i++)
@@ -678,6 +764,35 @@ namespace PuzzleGlass
                 }
             }
             return count;
+        }
+
+        /// <summary>Level başındaki şekil tutma süresinde camdaki toplar kinematik bekler; bu sırada sıkışma sayılmaz.</summary>
+        private static bool HasHeldContainerBall()
+        {
+            var pool = BallObjectPool.Instance;
+            if (pool == null || pool.ActiveBalls == null) return false;
+            var active = pool.ActiveBalls;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var b = active[i];
+                if (b != null && b.gameObject.activeInHierarchy && b.state == BallState.InContainer && b.rb != null && b.rb.isKinematic)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Şu an bir bloğa doğru çekilen (toplanmakta olan) top var mı?</summary>
+        private static bool HasBallBeingCollected()
+        {
+            var pool = BallObjectPool.Instance;
+            if (pool == null || pool.ActiveBalls == null) return false;
+            var active = pool.ActiveBalls;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var b = active[i];
+                if (b != null && b.gameObject.activeInHierarchy && b.state == BallState.AttractingToExit) return true;
+            }
+            return false;
         }
 
         private static bool HasFastFallingContainerBall()

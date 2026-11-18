@@ -1578,7 +1578,7 @@ namespace PuzzleGlass.Editor.Studio
                 if (leftTube.HasValue && split.leftTubeColors != null)
                 {
                     int vis = Mathf.Min(maxPerTube, split.leftTubeColors.Count);
-                    float firstDist = leftTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                    float firstDist = leftTube.Value.restDist;
                     for (int i = 0; i < vis; i++)
                     {
                         float d = Mathf.Min(leftTube.Value.totalLength - ballRadiusWorld, firstDist + i * spacing);
@@ -1589,7 +1589,7 @@ namespace PuzzleGlass.Editor.Studio
                 if (rightTube.HasValue && split.rightTubeColors != null)
                 {
                     int vis = Mathf.Min(maxPerTube, split.rightTubeColors.Count);
-                    float firstDist = rightTube.Value.gateDist + ballRadiusWorld + 0.036f;
+                    float firstDist = rightTube.Value.restDist;
                     for (int i = 0; i < vis; i++)
                     {
                         float d = Mathf.Min(rightTube.Value.totalLength - ballRadiusWorld, firstDist + i * spacing);

@@ -324,20 +324,21 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float outerMask = 1.0 - smoothstep(-0.008, 0.008, dOuter);
                 float dFromOuter = max(0.0, -dOuter);
 
-                // Cleanly open top border right where curved feed tubes attach
+                // Cleanly open top border right where curved feed tubes attach: fully open between the tube's inner
+                // walls, the short fade sits under the tube's own wall so no blurry band shows
                 float topClipMask = 1.0;
                 if (_FeedTubeOpeningL.x > 0.5)
                 {
                     float dxL = abs(p.x - _FeedTubeOpeningL.y);
                     float yZoneL = smoothstep(_FeedTubeOpeningL.w - frameThick * 0.85, _FeedTubeOpeningL.w + 0.015, p.y);
-                    float gapL = 1.0 - smoothstep(_FeedTubeOpeningL.z * 0.82, _FeedTubeOpeningL.z * 1.05, dxL);
+                    float gapL = 1.0 - smoothstep(_FeedTubeOpeningL.z * 0.97, _FeedTubeOpeningL.z * 1.03, dxL);
                     topClipMask *= (1.0 - gapL * yZoneL);
                 }
                 if (_FeedTubeOpeningR.x > 0.5)
                 {
                     float dxR = abs(p.x - _FeedTubeOpeningR.y);
                     float yZoneR = smoothstep(_FeedTubeOpeningR.w - frameThick * 0.85, _FeedTubeOpeningR.w + 0.015, p.y);
-                    float gapR = 1.0 - smoothstep(_FeedTubeOpeningR.z * 0.82, _FeedTubeOpeningR.z * 1.05, dxR);
+                    float gapR = 1.0 - smoothstep(_FeedTubeOpeningR.z * 0.97, _FeedTubeOpeningR.z * 1.03, dxR);
                     topClipMask *= (1.0 - gapR * yZoneR);
                 }
                 outerMask *= topClipMask;
