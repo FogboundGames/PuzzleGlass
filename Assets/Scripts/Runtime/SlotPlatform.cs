@@ -25,6 +25,11 @@ namespace PuzzleGlass
         public MonsterCharacter currentMonster;
         public float visualQuadScale = 0.74f;
 
+        /// <summary>Her slot kendi çerçevesinde mi (true) yoksa tüm sıra tek çerçevede mi (false)?</summary>
+        public static readonly bool UseIndividualFrames = true;
+        /// <summary>Tek slot çerçevesinin hücre aralığına oranı (aradaki boşluk = 1 - FrameRatio).</summary>
+        public const float FrameRatio = 0.80f;
+
         public bool isLocked => slotType == SlotType.Locked;
         public bool isVip => slotType == SlotType.VIP;
 
@@ -116,6 +121,18 @@ namespace PuzzleGlass
             float tileInner = cell * TrayTileVisuals.TileInnerRatio;
             float tileRad = cell * TrayTileVisuals.TileRadiusRatio;
             TrayTileVisuals.GetTileMaterials(slotType, out Material bevelMat, out Material bodyMat);
+
+            if (UseIndividualFrames)
+            {
+                // 3 katman: 1) koyu mor alt dudak (gölge)  2) açık mor çerçeve  3) içte lavanta hücre (kenar + iç)
+                float frame = cell * FrameRatio;
+                float frameRad = frame * 0.20f;
+                TrayTileVisuals.Part("SlotLip", transform, new Vector3(0f, -TrayTileVisuals.FrameLowerLip, 0.08f), frame, frame, 0.045f, frameRad, TrayTileVisuals.FrameDark);
+                TrayTileVisuals.Part("SlotFrame", transform, new Vector3(0f, 0f, 0.05f), frame, frame, 0.048f, frameRad, TrayTileVisuals.FrameFront);
+                tileOuter = frame * 0.82f;
+                tileInner = frame * 0.77f;
+                tileRad = tileOuter * 0.18f;
+            }
             TrayTileVisuals.Part("CellBevel", transform, new Vector3(0f, 0.007f, 0.005f), tileOuter, tileOuter, 0.02f, tileRad, bevelMat);
             _tileBodyRenderer = TrayTileVisuals.Part("CellTile", transform, new Vector3(0f, 0f, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.88f, bodyMat);
 

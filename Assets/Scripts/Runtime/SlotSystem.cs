@@ -181,7 +181,8 @@ namespace PuzzleGlass
                 if (Application.isPlaying) Destroy(_trayFrameObj); else DestroyImmediate(_trayFrameObj);
                 _trayFrameObj = null;
             }
-            if (cellCount <= 0) return;
+            // Ezgi: slotlar toplu bir çerçevede değil, her biri kendi 3 katmanlı mor çerçevesinde (SlotPlatform kuruyor)
+            if (cellCount <= 0 || SlotPlatform.UseIndividualFrames) return;
 
             _trayFrameObj = new GameObject("SlotTrayFrame");
             _trayFrameObj.transform.SetParent(transform, false);
@@ -202,6 +203,7 @@ namespace PuzzleGlass
         {
             get
             {
+                if (SlotPlatform.UseIndividualFrames) return Mathf.Max(0.1f, slotSpacing) * SlotPlatform.FrameRatio * 0.5f;
                 TrayTileVisuals.GetFrameSize(Mathf.Max(0.1f, slotSpacing), 1, out _, out _, out _, out float outerH);
                 return outerH * 0.5f;
             }
