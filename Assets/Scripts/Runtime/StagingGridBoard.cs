@@ -586,7 +586,7 @@ namespace PuzzleGlass
                 // ölçek başına yaklaşık (maxDim - 0.08). Sıra ekrana sığmak için küçülürse RowFitScale ayrıca uygulanır.
                 // Blok, slotun kendi çerçevesine göre boyutlanır (slotlar arası boşluk bloğu büyütmez)
                 float cell = Mathf.Max(0.1f, SlotSystem.Instance.slotSpacing);
-                float frame = SlotPlatform.UseIndividualFrames ? cell * SlotPlatform.FrameRatio : cell * 0.90f;
+                float frame = cell * SlotPlatform.FrameRatio;
                 return frame * 0.89f / Mathf.Max(0.5f, maxDim - 0.08f);
             }
             // Legacy non-slot mode

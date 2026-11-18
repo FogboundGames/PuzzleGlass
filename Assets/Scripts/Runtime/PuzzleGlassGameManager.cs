@@ -56,18 +56,31 @@ namespace PuzzleGlass
 
         [Header("Blok Görünümü")]
         [Tooltip("Puzzle With Sockets: puzzle parçası, toplarla dolan gri delikler (en fazla 16 delik).\n" +
-                 "Puzzle With Number: puzzle parçası, deliksiz, ortada kalan top sayısı.\n" +
+                 "Puzzle With Number: boşluklu kare kutu, ortada kalan top sayısı (varsayılan).\n" +
                  "Crate: kasa görünümü.")]
-        public BlockVisualStyle blockVisualStyle = BlockVisualStyle.PuzzleWithSockets;
+        public BlockVisualStyle blockVisualStyle = BlockVisualStyle.PuzzleWithNumber;
 
-        /// <summary>Blok görünümünü değiştirir; oyun sırasında sahnedeki blokları da hemen yeniden çizer.</summary>
+        [SerializeField, HideInInspector] private int _hollowBlockStyleMigrated = 0;
+
+        public void EnsureHollowBlockStyleMigrated()
+        {
+            if (_hollowBlockStyleMigrated < 2)
+            {
+                _hollowBlockStyleMigrated = 2;
+                blockVisualStyle = BlockVisualStyle.PuzzleWithNumber;
+            }
+        }
+
+        /// <summary>Blok görünümünü değiştirir; sahnedeki blokları da hemen yeniden çizer.</summary>
         public void ApplyBlockVisualStyle(BlockVisualStyle style)
         {
+            _hollowBlockStyleMigrated = 2;
             blockVisualStyle = style;
-            if (!Application.isPlaying || activeMonsters == null) return;
-            foreach (var m in activeMonsters)
+            var monsters = FindObjectsByType<MonsterCharacter>(FindObjectsSortMode.None);
+            if (monsters == null) return;
+            foreach (var m in monsters)
             {
-                if (m == null || m.visualStyle == style) continue;
+                if (m == null) continue;
                 m.SetVisualStyle(style);
                 m.RebuildMonsterVisuals();
             }
@@ -84,8 +97,7 @@ namespace PuzzleGlass
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            // Oyun modunda VIP / "+" anahtarları değişince slot sırasına hemen uygula
-            if (!Application.isPlaying) return;
+            EnsureHollowBlockStyleMigrated();
             UnityEditor.EditorApplication.delayCall += () =>
             {
                 // Blok görünümü değiştiyse sahnedeki blokları yeni görünümle yeniden çiz
@@ -115,6 +127,7 @@ namespace PuzzleGlass
         private void Awake()
         {
             Instance = this;
+            EnsureHollowBlockStyleMigrated();
             SetupCamera();
             EnsureGameplayControllers();
         }
@@ -122,7 +135,9 @@ namespace PuzzleGlass
         private void OnEnable()
         {
             Instance = this;
+            EnsureHollowBlockStyleMigrated();
             EnsureGameplayControllers();
+            ApplyBlockVisualStyle(blockVisualStyle);
             if (glassContainer != null && (BallObjectPool.Instance == null || BallObjectPool.Instance.ActiveBalls.Count == 0))
             {
                 RebuildContainerPhysics();

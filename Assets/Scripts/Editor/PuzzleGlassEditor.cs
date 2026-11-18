@@ -159,8 +159,8 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("Blok Görünümü", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
+            DrawStyleButton(manager, BlockVisualStyle.PuzzleWithNumber, "🔢 Boşluklu + Sayı");
             DrawStyleButton(manager, BlockVisualStyle.PuzzleWithSockets, "🧩 Puzzle + Delik");
-            DrawStyleButton(manager, BlockVisualStyle.PuzzleWithNumber, "🔢 Puzzle + Sayı");
             DrawStyleButton(manager, BlockVisualStyle.Crate, "📦 Kasa");
             EditorGUILayout.EndHorizontal();
         }

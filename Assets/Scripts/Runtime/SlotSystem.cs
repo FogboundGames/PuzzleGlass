@@ -171,8 +171,8 @@ namespace PuzzleGlass
         private GameObject _trayFrameObj;
 
         /// <summary>
-        /// Slot sırasının arkasına eski alt tahtadaki gibi çerçeve: koyu alt dudak, ön çerçeve ve gömülü taban.
-        /// Hücre boyu = slotlar arası mesafe; slot sayısı değişince yeniden boyutlanır.
+        /// Slot sırasının arkasına 2. görseldeki gibi perspektifli yamuk (trapezoid), çok katmanlı ve
+        /// SDF tabanlı (pikselleşmesiz, pürüzsüz kenarlı) tema uyumlu 3D dok tablası oluşturur.
         /// </summary>
         private void BuildTrayFrame(int cellCount)
         {
@@ -181,21 +181,30 @@ namespace PuzzleGlass
                 if (Application.isPlaying) Destroy(_trayFrameObj); else DestroyImmediate(_trayFrameObj);
                 _trayFrameObj = null;
             }
-            // Ezgi: slotlar toplu bir çerçevede değil, her biri kendi 3 katmanlı mor çerçevesinde (SlotPlatform kuruyor)
             if (cellCount <= 0 || SlotPlatform.UseIndividualFrames) return;
 
             _trayFrameObj = new GameObject("SlotTrayFrame");
             _trayFrameObj.transform.SetParent(transform, false);
-            _trayFrameObj.transform.localPosition = Vector3.zero;
+            _trayFrameObj.transform.localPosition = new Vector3(0f, -0.015f, 0.06f);
 
             float cell = Mathf.Max(0.1f, slotSpacing);
-            TrayTileVisuals.GetFrameSize(cell, cellCount, out float innerW, out float innerH, out float outerW, out float outerH);
-            float cornerR = TrayTileVisuals.FrameCornerRadius;
-            float innerCornerR = Mathf.Max(0.03f, cornerR - TrayTileVisuals.FramePadding * 0.55f);
-            var t = _trayFrameObj.transform;
-            TrayTileVisuals.Part("FrameLowerBevel", t, new Vector3(0f, -TrayTileVisuals.FrameLowerLip, 0.08f), outerW, outerH, 0.045f, cornerR, TrayTileVisuals.FrameDark);
-            TrayTileVisuals.Part("FrameMain", t, new Vector3(0f, 0f, 0.05f), outerW, outerH, 0.048f, cornerR, TrayTileVisuals.FrameFront);
-            TrayTileVisuals.Part("TrayRecessedBed", t, new Vector3(0f, 0f, 0.02f), innerW, innerH, 0.04f, innerCornerR, TrayTileVisuals.Floor);
+            Material dockMat = TrayTileVisuals.GetConfiguredTrapezoidDockMaterial(cell, cellCount, out float quadW, out float quadH);
+
+            GameObject dockQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            dockQuad.name = "TrapezoidDockSDFQuad";
+            dockQuad.transform.SetParent(_trayFrameObj.transform, false);
+            dockQuad.transform.localPosition = Vector3.zero;
+            dockQuad.transform.localScale = new Vector3(quadW, quadH, 1f);
+            Collider col = dockQuad.GetComponent<Collider>();
+            if (col != null)
+            {
+                if (Application.isPlaying) Destroy(col); else DestroyImmediate(col);
+            }
+
+            var mr = dockQuad.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = dockMat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
         }
 
         /// <summary>Çerçeve dahil slot sırasının yarı yüksekliği (merkezden üst kenara).</summary>

@@ -25,10 +25,10 @@ namespace PuzzleGlass
         public MonsterCharacter currentMonster;
         public float visualQuadScale = 0.74f;
 
-        /// <summary>Her slot kendi çerçevesinde mi (true) yoksa tüm sıra tek çerçevede mi (false)?</summary>
-        public static readonly bool UseIndividualFrames = true;
+        /// <summary>Her slot kendi çerçevesinde mi (true) yoksa tüm sıra ortak çok katmanlı dok tablasında mı (false)?</summary>
+        public static readonly bool UseIndividualFrames = false;
         /// <summary>Tek slot çerçevesinin hücre aralığına oranı (aradaki boşluk = 1 - FrameRatio).</summary>
-        public const float FrameRatio = 0.80f;
+        public const float FrameRatio = 0.82f;
 
         public bool isLocked => slotType == SlotType.Locked;
         public bool isVip => slotType == SlotType.VIP;
@@ -115,28 +115,27 @@ namespace PuzzleGlass
                     DestroyImmediate(transform.GetChild(i).gameObject);
             }
 
-            // Eski alt tahtanın hücresi gibi: açık mor kenar (bevel) + içte koyu, gömülü zemin (3D, tahtayla aynı malzeme)
+            // Pikselleşmeyi tamamen önlemek için her slot yüksek çözünürlüklü SDF shader (PuzzleGlass/SlotSquircleUI) ile tek bir Quad üzerinde çizilir
             float cell = CellSize;
-            float tileOuter = cell * TrayTileVisuals.TileOuterRatio;
-            float tileInner = cell * TrayTileVisuals.TileInnerRatio;
-            float tileRad = cell * TrayTileVisuals.TileRadiusRatio;
-            TrayTileVisuals.GetTileMaterials(slotType, out Material bevelMat, out Material bodyMat);
+            float quadSize = cell * 0.94f;
 
-            if (UseIndividualFrames)
+            GameObject slotQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            slotQuad.name = "SlotSDFQuad";
+            slotQuad.transform.SetParent(transform, false);
+            slotQuad.transform.localPosition = Vector3.zero;
+            slotQuad.transform.localScale = new Vector3(quadSize, quadSize, 1f);
+            Collider qCol = slotQuad.GetComponent<Collider>();
+            if (qCol != null)
             {
-                // 3 katman: 1) koyu mor alt dudak (gölge)  2) açık mor çerçeve  3) içte lavanta hücre (kenar + iç)
-                float frame = cell * FrameRatio;
-                float frameRad = frame * 0.20f;
-                TrayTileVisuals.Part("SlotLip", transform, new Vector3(0f, -TrayTileVisuals.FrameLowerLip, 0.08f), frame, frame, 0.045f, frameRad, TrayTileVisuals.FrameDark);
-                TrayTileVisuals.Part("SlotFrame", transform, new Vector3(0f, 0f, 0.05f), frame, frame, 0.048f, frameRad, TrayTileVisuals.FrameFront);
-                tileOuter = frame * 0.82f;
-                tileInner = frame * 0.77f;
-                tileRad = tileOuter * 0.18f;
+                if (Application.isPlaying) Destroy(qCol); else DestroyImmediate(qCol);
             }
-            TrayTileVisuals.Part("CellBevel", transform, new Vector3(0f, 0.007f, 0.005f), tileOuter, tileOuter, 0.02f, tileRad, bevelMat);
-            _tileBodyRenderer = TrayTileVisuals.Part("CellTile", transform, new Vector3(0f, 0f, -0.005f), tileInner, tileInner, 0.02f, tileRad * 0.88f, bodyMat);
 
-            // VIP / "+" rozetleri için dünya uzayı canvas (hücrenin önünde)
+            _tileBodyRenderer = slotQuad.GetComponent<MeshRenderer>();
+            _tileBodyRenderer.sharedMaterial = TrayTileVisuals.GetSdfSlotMaterial(slotType, isHighlighted);
+            _tileBodyRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _tileBodyRenderer.receiveShadows = false;
+
+            // VIP rozeti için dünya uzayı canvas (hücrenin önünde; '+' ikonu doğrudan SDF shader içinde pürüzsüz çizilir)
             _uiCanvasObj = new GameObject("SlotUICanvas");
             _uiCanvasObj.transform.SetParent(transform, false);
             _uiCanvasObj.transform.localPosition = new Vector3(0f, 0f, -0.04f);
@@ -151,16 +150,10 @@ namespace PuzzleGlass
             RectTransform canvasRect = _uiCanvasObj.GetComponent<RectTransform>();
             canvasRect.sizeDelta = new Vector2(92f, 92f);
 
-            // 1. VIP Slot Badge ("VIP" gold text on empty slot)
+            // VIP Slot Badge ("VIP" gold text on empty slot)
             if (isVip)
             {
                 BuildVipBadge();
-            }
-
-            // 2. Locked Slot Badge (Green "+" circular button)
-            if (isLocked)
-            {
-                BuildLockedBadge();
             }
         }
 
@@ -173,54 +166,43 @@ namespace PuzzleGlass
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = new Vector2(0f, 3.5f);
+            rect.anchoredPosition = new Vector2(0f, 2.0f);
             rect.sizeDelta = new Vector2(76f, 34f);
 
             var tmp = _vipBadgeObj.AddComponent<TextMeshProUGUI>();
             tmp.text = "VIP";
-            tmp.fontSize = 24;
+            tmp.fontSize = 23;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = new Color(0.88f, 0.58f, 0.05f, 0.95f); // Rich golden bronze
+            tmp.color = new Color(1.00f, 0.84f, 0.28f, 0.98f);
             tmp.raycastTarget = false;
 
             _vipBadgeObj.SetActive(currentMonster == null);
         }
 
-        private void BuildLockedBadge()
+        private void BuildLockedBadge(float cell)
         {
-            _lockedBadgeObj = new GameObject("Locked_PlusBadge");
-            _lockedBadgeObj.transform.SetParent(_uiCanvasObj.transform, false);
+            _lockedBadgeObj = new GameObject("Locked_PlusBadge3D");
+            _lockedBadgeObj.transform.SetParent(transform, false);
+            _lockedBadgeObj.transform.localPosition = new Vector3(0f, -0.005f, -0.018f);
 
-            RectTransform rect = _lockedBadgeObj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = new Vector2(0f, 3.5f);
-            rect.sizeDelta = new Vector2(38f, 38f);
+            float armLen = cell * 0.31f;
+            float armThick = cell * 0.105f;
+            float shadowPad = cell * 0.032f;
+            float armRad = armThick * 0.46f;
+            float shadowRad = (armThick + shadowPad) * 0.46f;
 
-            // Circular Green Background
-            var bgImg = _lockedBadgeObj.AddComponent<Image>();
-            bgImg.color = new Color(0.20f, 0.85f, 0.42f, 1f); // Vibrant emerald-lime green #33D96B
-            bgImg.raycastTarget = false;
+            // Koyu dış kontur / alt gölge artısı
+            TrayTileVisuals.Part("PlusShadowH", _lockedBadgeObj.transform, new Vector3(0f, -0.006f, 0.006f), armLen + shadowPad, armThick + shadowPad, 0.010f, shadowRad, TrayTileVisuals.PlusShadowMat);
+            TrayTileVisuals.Part("PlusShadowV", _lockedBadgeObj.transform, new Vector3(0f, -0.006f, 0.006f), armThick + shadowPad, armLen + shadowPad, 0.010f, shadowRad, TrayTileVisuals.PlusShadowMat);
 
-            // Plus Sign "+" Text
-            GameObject plusTxtObj = new GameObject("Plus_Text");
-            plusTxtObj.transform.SetParent(_lockedBadgeObj.transform, false);
+            // 3D koyu yeşil alt dudak
+            TrayTileVisuals.Part("PlusBaseH", _lockedBadgeObj.transform, new Vector3(0f, -0.004f, 0.003f), armLen, armThick, 0.010f, armRad, TrayTileVisuals.PlusBaseMat);
+            TrayTileVisuals.Part("PlusBaseV", _lockedBadgeObj.transform, new Vector3(0f, -0.004f, 0.003f), armThick, armLen, 0.010f, armRad, TrayTileVisuals.PlusBaseMat);
 
-            RectTransform txtRect = plusTxtObj.AddComponent<RectTransform>();
-            txtRect.anchorMin = Vector2.zero;
-            txtRect.anchorMax = Vector2.one;
-            txtRect.sizeDelta = Vector2.zero;
-            txtRect.anchoredPosition = new Vector2(0f, 1f);
-
-            var tmp = plusTxtObj.AddComponent<TextMeshProUGUI>();
-            tmp.text = "+";
-            tmp.fontSize = 30;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.raycastTarget = false;
+            // Parlak yeşil ön "+" yüzeyi
+            TrayTileVisuals.Part("PlusFrontH", _lockedBadgeObj.transform, Vector3.zero, armLen, armThick, 0.010f, armRad, TrayTileVisuals.PlusFrontMat);
+            TrayTileVisuals.Part("PlusFrontV", _lockedBadgeObj.transform, Vector3.zero, armThick, armLen, 0.010f, armRad, TrayTileVisuals.PlusFrontMat);
         }
 
         public Vector3 GetPlacementPosition()
@@ -293,10 +275,10 @@ namespace PuzzleGlass
             Vector3 targetScale = highlight ? Vector3.one * 1.12f : Vector3.one;
             _highlightScaleTween = transform.DOScale(targetScale, 0.15f).SetEase(highlight ? Ease.OutBack : Ease.OutQuad);
 
-            // Üzerine blok getirilince iç zemin tahtanın açık tonuna döner
+            // Üzerine blok getirilince SDF slot malzemesi parlak vurgulu varyanta geçer
             if (_tileBodyRenderer != null)
             {
-                _tileBodyRenderer.sharedMaterial = highlight ? TrayTileVisuals.TileBodyHighlight : TrayTileVisuals.TileBody(slotType);
+                _tileBodyRenderer.sharedMaterial = TrayTileVisuals.GetSdfSlotMaterial(slotType, highlight);
             }
         }
 

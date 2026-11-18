@@ -10,8 +10,8 @@ namespace PuzzleGlass
     public enum BlockVisualStyle
     {
         PuzzleWithSockets = 0, // Puzzle parçası: beyaz plaka, toplarla dolan gri delikler
-        PuzzleWithNumber = 1,  // Puzzle parçası, deliksiz; ortada kalan top sayısı
-        Crate = 2              // Kasa görünümü (yeni sistem)
+        PuzzleWithNumber = 1,  // Boşluklu kare kutu + ortada kalan top sayısı (varsayılan)
+        Crate = 2              // Kasa görünümü
     }
 
     [ExecuteAlways]
@@ -20,20 +20,39 @@ namespace PuzzleGlass
         public const int MaxVisualSockets = 16;
 
         [Tooltip("Bloğun görünümü. Oyunda GameManager'daki 'Block Visual Style' ayarından gelir.")]
-        public BlockVisualStyle visualStyle = BlockVisualStyle.PuzzleWithSockets;
+        public BlockVisualStyle visualStyle = BlockVisualStyle.PuzzleWithNumber;
+
+        [SerializeField, HideInInspector] private int _hollowStyleMigrated = 0;
+        private BlockVisualStyle _builtVisualStyle = (BlockVisualStyle)(-1);
 
         /// <summary>Görünümü ayarlar (görselleri yeniden kurmaz; ardından RebuildMonsterVisuals ya da Initialize çağrılmalı).</summary>
         public void SetVisualStyle(BlockVisualStyle style)
         {
+            _hollowStyleMigrated = 2;
             visualStyle = style;
             // useCrateVisuals = "sayaçlı" davranış: toplar ortaya uçar, ortada kalan sayı yazar (delik yok)
             useCrateVisuals = style != BlockVisualStyle.PuzzleWithSockets;
         }
 
+        private void EnsureHollowVisualStyleSync()
+        {
+            if (_hollowStyleMigrated < 2)
+            {
+                _hollowStyleMigrated = 2;
+                visualStyle = BlockVisualStyle.PuzzleWithNumber;
+            }
+            if (PuzzleGlassGameManager.Instance != null)
+            {
+                PuzzleGlassGameManager.Instance.EnsureHollowBlockStyleMigrated();
+                visualStyle = PuzzleGlassGameManager.Instance.blockVisualStyle;
+            }
+            useCrateVisuals = visualStyle != BlockVisualStyle.PuzzleWithSockets;
+        }
+
         [Header("Crate Presentation")]
-        [Tooltip("Açık: yeni kasa görünümü (ortada büyük sayı). Kapalı (varsayılan): eski puzzle parçası görünümü " +
+        [Tooltip("Açık: sayaçlı görünüm (ortada büyük sayı). Kapalı: eski puzzle parçası görünümü " +
                  "(beyaz plaka + renkli çerçeve + toplarla dolan gri delikler). Oyunda GameManager'daki ayar kullanılır.")]
-        public bool useCrateVisuals = false;
+        public bool useCrateVisuals = true;
 
         private float _socketBallLocalDiameter = 0.188f;
 
@@ -349,6 +368,7 @@ namespace PuzzleGlass
                 monsterId = $"Monster_{colorType}_{Guid.NewGuid().ToString().Substring(0, 4)}";
             }
 
+            EnsureHollowVisualStyleSync();
             EnsureCollider();
 
             if (NeedsVisualRebuild())
@@ -359,6 +379,7 @@ namespace PuzzleGlass
 
         private void OnEnable()
         {
+            EnsureHollowVisualStyleSync();
             EnsureCollider();
 
             if (NeedsVisualRebuild())
@@ -368,6 +389,7 @@ namespace PuzzleGlass
             else
             {
                 ApplySocketLayoutToMaterial();
+                UpdateBadgeText();
             }
 
             if (Application.isPlaying)
@@ -383,6 +405,7 @@ namespace PuzzleGlass
             UnityEditor.EditorApplication.delayCall += () =>
             {
                 if (this == null || Application.isPlaying) return;
+                EnsureHollowVisualStyleSync();
                 remainingLockKeys = Mathf.Max(0, lockKeyCount);
                 remainingIceCount = Mathf.Max(0, iceCount);
                 if (NeedsVisualRebuild())
@@ -403,6 +426,7 @@ namespace PuzzleGlass
         {
             int expectedSockets = GetVisibleSocketCount();
             if (_builtShape != blockShape) return true;
+            if (_builtVisualStyle != visualStyle) return true;
             if (_builtSocketCount != expectedSockets) return true;
             if (transform.childCount == 0 || bodyPivot == null) return true;
             if (transform.Find("BodyPivot/CarrierBoxVisual") == null) return true;
@@ -604,6 +628,7 @@ namespace PuzzleGlass
         [ContextMenu("Rebuild Monster Visuals")]
         public void RebuildMonsterVisuals()
         {
+            EnsureHollowVisualStyleSync();
             for (int i = transform.childCount - 1; i >= 0; i--)
             {
                 if (Application.isPlaying)
@@ -621,6 +646,7 @@ namespace PuzzleGlass
             _nextIncomingSocketCounter = 0;
             _settledSocketCount = 0;
             _builtShape = blockShape;
+            _builtVisualStyle = visualStyle;
 
             EnsureMaterials();
             BuildCarrierBoxHierarchy();
@@ -1021,9 +1047,10 @@ namespace PuzzleGlass
         private void BuildHiddenBadge(Transform parent)
         {
             Vector2 center = GetMechanicAnchorLocal();
+            float yOffset = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? -0.032f : 0.01f;
             GameObject badge = new GameObject("BellyBadge");
             badge.transform.SetParent(parent, false);
-            badge.transform.localPosition = new Vector3(center.x, center.y + 0.01f, -0.26f);
+            badge.transform.localPosition = new Vector3(center.x, center.y + yOffset, -0.26f);
             badgeTransform = badge.transform;
 
             GameObject textObj = new GameObject("CountText");
@@ -1032,7 +1059,7 @@ namespace PuzzleGlass
 
             counterText = textObj.AddComponent<TextMeshPro>();
             counterText.alignment = TextAlignmentOptions.Center;
-            counterText.fontSize = 4.6f;
+            counterText.fontSize = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? 3.8f : 4.6f;
             counterText.fontStyle = FontStyles.Bold;
             counterText.color = Color.white;
             counterText.text = remainingCount.ToString();
@@ -1040,9 +1067,11 @@ namespace PuzzleGlass
             counterText.sortingOrder = 10;
             if (visualStyle == BlockVisualStyle.PuzzleWithNumber)
             {
-                // Beyaz plaka üstünde: bloğun koyu renginde sayı, ince beyaz kontur
-                counterText.color = GetCarrierDarkColor(colorType);
-                ApplyTmpOutline(counterText, new Color(1f, 1f, 1f, 0.9f), 0.12f);
+                // Boşluklu koyu iç hazne üstünde: parlak beyaz sayı + bloğun koyu tonunda kontur
+                counterText.color = Color.white;
+                Color darkOutline = Color.Lerp(GetCarrierDarkColor(colorType) * 0.35f, new Color(0.03f, 0.04f, 0.08f, 1f), 0.45f);
+                darkOutline.a = 0.95f;
+                ApplyTmpOutline(counterText, darkOutline, 0.22f);
             }
             else
             {
@@ -1057,16 +1086,22 @@ namespace PuzzleGlass
             if (counterText != null)
             {
                 counterText.text = Mathf.Max(0, remainingCount).ToString();
-                counterText.color = visualStyle == BlockVisualStyle.PuzzleWithNumber
-                    ? GetCarrierDarkColor(colorType)
-                    : (useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType));
-                if (useCrateVisuals)
+                counterText.color = useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType);
+                if (visualStyle == BlockVisualStyle.PuzzleWithNumber)
+                {
+                    counterText.fontSize = (remainingCount >= 100) ? 3.1f : 3.8f;
+                }
+                else if (useCrateVisuals)
                 {
                     counterText.fontSize = (remainingCount >= 100) ? 3.8f : 4.6f;
                 }
             }
             if (badgeTransform != null)
             {
+                Vector2 center = GetMechanicAnchorLocal();
+                float yOffset = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? -0.032f : 0.01f;
+                badgeTransform.localPosition = new Vector3(center.x, center.y + yOffset, -0.26f);
+
                 bool showBadge = useCrateVisuals
                     ? (!IsFrozenByIce && !IsLockedByKey && remainingCount > 0)
                     : (!IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0));
@@ -1142,8 +1177,9 @@ namespace PuzzleGlass
             if (useCrateVisuals)
             {
                 Vector2 c = GetMechanicAnchorLocal();
+                float yOffset = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? -0.032f : 0.01f;
                 Transform t = bodyPivot != null ? bodyPivot : transform;
-                return t.TransformPoint(new Vector3(c.x, c.y + 0.01f, -0.18f));
+                return t.TransformPoint(new Vector3(c.x, c.y + yOffset, -0.18f));
             }
             if (socketTransforms != null && socketTransforms.Length > 0)
             {

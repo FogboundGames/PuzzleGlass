@@ -362,136 +362,198 @@ Shader "PuzzleGlass/CarrierBox"
                     return half4(col * IN.color.rgb, totalAlpha * IN.color.a);
                 }
 
-                // Complete Silhouette (Legacy socket plate mode)
+                // Complete Silhouette (Hollow Square mode when sockCount == 0, or Legacy socket plate mode when sockCount > 0)
                 float totalAlpha = 1.0 - smoothstep(-aa, aa, dTotal);
                 if (totalAlpha < 0.002) discard;
 
-                // Sharper outer edge silhouette (brightens cleanly when exit-ready or actively dragged)
+                int sockCount = clamp((int)round(socketCountF), 0, 16);
                 float activeGlow = saturate(dragHighlight); // çıkış (tıklanabilir) vurgusu kaldırıldı; sadece sürüklerken parlar
-                float3 activeOutline = lerp(outlineColor, float3(0.99, 0.995, 1.0), activeGlow * 0.96);
-                // Vurgu sadece kenar rengini açar; kalınlaşırsa renkli gövde içeri doğru yenir ve öndeki bloklar küçük görünür
                 float outlineWidth = _OutlineThickness;
-                float innerSilhouetteMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dTotal);
-                float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
-                float3 skirtCol = lerp(bodyDarkColor * 0.98, bodyDarkColor * 0.76, saturate(1.0 - skirtDepth));
-                float3 col = lerp(activeOutline, skirtCol, innerSilhouetteMask);
+                float innerSilhouetteMask = 1.0;
+                float frontOuterMask = 1.0;
+                float frontRimMask = 0.0;
+                float plateMask = 0.0;
+                float plateShadowMask = 0.0;
+                float3 col = float3(0.0, 0.0, 0.0);
 
-                // Front Box Frame (chunky bright colored rim above the 3D lower skirt + crisp specular top bevel)
-                float frontOuterMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dFrontBox);
-                float frontRimMask = frontOuterMask - (1.0 - smoothstep(-outlineWidth - 0.024 - aa, -outlineWidth - 0.024 + aa, dFrontBox));
-                float3 topFrameRGB = lerp(bodyColor * 0.96, bodyColor * 1.04, saturate(q.y * 0.35 + 0.55));
-                col = lerp(col, topFrameRGB, frontOuterMask);
-                col = lerp(col, highlightColor, saturate(frontRimMask) * (0.56 + activeGlow * 0.34));
-
-                // 3. Deep 3D Recessed Tray Cavity with Sunken White Plate
-                float  dPlate    = sdPolyomino(q, _WallInset, _InnerRad, rectCount, rect0, rect1);
-                float  plateMask = 1.0 - smoothstep(-aa, aa, dPlate);
-
-                // Crisp inner wall rim catchlight just outside the cavity opening
-                float plateOuterRim = (1.0 - smoothstep(0.0, 0.020, dPlate)) * (1.0 - plateMask);
-                col = lerp(col, highlightColor, plateOuterRim * (0.44 + activeGlow * 0.24));
-
-                // Visible colored 3D back (top) and side inner walls descending down to the sunken white floor
-                float  dCavityFloor = sdPolyomino(q + float2(0.0, 0.044), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
-                float  floorMask    = (1.0 - smoothstep(-aa, aa, dCavityFloor)) * plateMask;
-
-                float  wallDropGrad = saturate(-dPlate / 0.052);
-                float  sideSlope    = saturate((dCavityFloor - dPlate) * 10.0);
-                float3 innerWallCol = lerp(bodyDarkColor * 0.88, bodyDarkColor * 0.62, wallDropGrad);
-                innerWallCol = lerp(innerWallCol, bodyColor * 0.80, sideSlope * 0.24);
-
-                // Deep cast shadow across the upper & edge parts of the white floor so it feels deeply sunken inside the box
-                float  dDeepShadow  = sdPolyomino(q - float2(0.0, -0.056), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
-                float  castBandMask = smoothstep(-0.024, 0.018, dDeepShadow);
-                float  edgeAO       = 1.0 - smoothstep(0.0, 0.075, -dCavityFloor);
-                float  floorShadowMix = saturate(max(castBandMask * 0.85, edgeAO * 0.72));
-                float3 sunkenWhiteRGB = lerp(_PlateColor.rgb, _PlateShadowColor.rgb, floorShadowMix);
-
-                // Subtle contact crease right where the colored inner walls meet the sunken white plate
-                float  wallFloorCrease = (1.0 - smoothstep(-0.012, 0.006, dCavityFloor)) * floorMask;
-                sunkenWhiteRGB = lerp(sunkenWhiteRGB, _PlateShadowColor.rgb * 0.78, wallFloorCrease * 0.45);
-
-                float3 cavityRGB = lerp(innerWallCol, sunkenWhiteRGB, floorMask);
-                col = lerp(col, cavityRGB, plateMask);
-
-                // Keep plateShadowMask alias for lock/ice overlays below
-                float plateShadowMask = floorShadowMix;
-
-                // 4. Dynamic Gray Circular Sockets (1 to 16 sockets packed in _SockPair0.._SockPair7)
-                float4 sp0 = GET_BOX_PROP(_SockPair0);
-                float4 sp1 = GET_BOX_PROP(_SockPair1);
-                float4 sp2 = GET_BOX_PROP(_SockPair2);
-                float4 sp3 = GET_BOX_PROP(_SockPair3);
-                float4 sp4 = GET_BOX_PROP(_SockPair4);
-                float4 sp5 = GET_BOX_PROP(_SockPair5);
-                float4 sp6 = GET_BOX_PROP(_SockPair6);
-                float4 sp7 = GET_BOX_PROP(_SockPair7);
-
-                float2 socks[16];
-                socks[0]  = sp0.xy; socks[1]  = sp0.zw;
-                socks[2]  = sp1.xy; socks[3]  = sp1.zw;
-                socks[4]  = sp2.xy; socks[5]  = sp2.zw;
-                socks[6]  = sp3.xy; socks[7]  = sp3.zw;
-                socks[8]  = sp4.xy; socks[9]  = sp4.zw;
-                socks[10] = sp5.xy; socks[11] = sp5.zw;
-                socks[12] = sp6.xy; socks[13] = sp6.zw;
-                socks[14] = sp7.xy; socks[15] = sp7.zw;
-
-                // 0 = deliksiz plaka (puzzle parçası + ortada sayı görünümü)
-                int   sockCount   = clamp((int)round(socketCountF), 0, 16);
-                float sockRad     = max(0.018, socketRadF);
-                float dSock       = 1e5;
-                float2 nearestSockPos = float2(0.0, 0.0);
-
-                for (int i = 0; i < 16; i++)
+                if (sockCount == 0)
                 {
-                    if (i < sockCount)
+                    // Image-2 Style: Clean vibrant square frame (no dark outer border) + 3D lower skirt + deep hollow 3D cavity in the block's own color
+                    float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
+                    float3 skirtTopCol = lerp(bodyDarkColor, bodyColor, 0.16);
+                    float3 skirtBotCol = bodyDarkColor * 0.64;
+                    float3 skirtCol = lerp(skirtTopCol, skirtBotCol, saturate(1.0 - skirtDepth));
+                    float baseEdgeMask = 1.0 - smoothstep(-0.012, 0.0, dTotal);
+                    skirtCol = lerp(skirtCol, bodyDarkColor * 0.50, baseEdgeMask * 0.40);
+
+                    frontOuterMask = 1.0 - smoothstep(-aa, aa, dFrontBox);
+                    frontRimMask = frontOuterMask - (1.0 - smoothstep(-0.022 - aa, -0.022 + aa, dFrontBox));
+                    float3 topFrameRGB = lerp(bodyColor * 0.98, bodyColor * 1.04, saturate(q.y * 0.35 + 0.55));
+                    topFrameRGB = lerp(topFrameRGB, highlightColor, saturate(frontRimMask) * (0.28 + activeGlow * 0.42));
+                    col = lerp(skirtCol, topFrameRGB, frontOuterMask);
+
+                    // Symmetric rounded-square inner hollow opening
+                    float hollowInset = 0.118;
+                    float hollowInnerRad = 0.056;
+                    float dPlate = sdPolyomino(q, hollowInset, hollowInnerRad, rectCount, rect0, rect1);
+                    plateMask = (1.0 - smoothstep(-aa, aa, dPlate)) * frontOuterMask;
+
+                    // Subtle inner rim catchlight on the front frame just outside the hollow opening
+                    float plateOuterRim = (1.0 - smoothstep(0.0, 0.016, dPlate)) * (1.0 - plateMask) * frontOuterMask;
+                    col = lerp(col, highlightColor, plateOuterRim * (0.26 + activeGlow * 0.24));
+
+                    // 3D inner top & side walls descending into the hollow cavity (same 3D depth family as the lower lip)
+                    float hollowWallDepth = _LipOffset * 1.12;
+                    float dDeepVoid = sdPolyomino(q + float2(0.0, hollowWallDepth), hollowInset + 0.012, max(0.016, hollowInnerRad - 0.008), rectCount, rect0, rect1);
+                    float voidMask = (1.0 - smoothstep(-aa, aa, dDeepVoid)) * plateMask;
+
+                    float innerWallT = saturate(dDeepVoid / max(0.02, hollowWallDepth));
+                    float3 innerWallTop = lerp(bodyDarkColor, bodyColor, 0.14);
+                    float3 innerWallBot = bodyDarkColor * 0.62;
+                    float3 innerWallCol = lerp(innerWallBot, innerWallTop, innerWallT);
+                    float topInnerCrease = (1.0 - smoothstep(-0.014, 0.0, dPlate)) * saturate((q.y - rect0.y) * 4.0);
+                    innerWallCol = lerp(innerWallCol, bodyDarkColor * 0.48, topInnerCrease * 0.60);
+
+                    // Deep recessed hollow void floor in a rich dark shade of the block's color
+                    float3 deepVoidBase = lerp(bodyDarkColor * 0.38, bodyColor * 0.26, 0.35);
+                    float3 deepVoidShadow = lerp(bodyDarkColor * 0.25, bodyColor * 0.16, 0.35);
+                    float overhangShadow = 1.0 - smoothstep(-0.042, 0.0, dDeepVoid);
+                    float voidEdgeAO = 1.0 - smoothstep(0.0, 0.080, -dDeepVoid);
+                    plateShadowMask = saturate(max(overhangShadow * 0.78, voidEdgeAO * 0.48));
+                    float3 hollowVoidRGB = lerp(deepVoidBase, deepVoidShadow, plateShadowMask);
+
+                    // Crisp bottom inner lip bevel where the bottom front wall meets the hollow pit
+                    float botInnerLip = (1.0 - smoothstep(-0.018, 0.0, dPlate)) * saturate(-(q.y - rect0.y) * 3.0);
+                    hollowVoidRGB = lerp(hollowVoidRGB, lerp(bodyDarkColor, bodyColor, 0.10), botInnerLip * 0.85);
+
+                    float3 cavityRGB = lerp(innerWallCol, hollowVoidRGB, voidMask);
+                    col = lerp(col, cavityRGB, plateMask);
+                }
+                else
+                {
+                    // Sharper outer edge silhouette (brightens cleanly when exit-ready or actively dragged)
+                    float3 activeOutline = lerp(outlineColor, float3(0.99, 0.995, 1.0), activeGlow * 0.96);
+                    // Vurgu sadece kenar rengini açar; kalınlaşırsa renkli gövde içeri doğru yenir ve öndeki bloklar küçük görünür
+                    innerSilhouetteMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dTotal);
+                    float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
+                    float3 skirtCol = lerp(bodyDarkColor * 0.98, bodyDarkColor * 0.76, saturate(1.0 - skirtDepth));
+                    col = lerp(activeOutline, skirtCol, innerSilhouetteMask);
+
+                    // Front Box Frame (chunky bright colored rim above the 3D lower skirt + crisp specular top bevel)
+                    frontOuterMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dFrontBox);
+                    frontRimMask = frontOuterMask - (1.0 - smoothstep(-outlineWidth - 0.024 - aa, -outlineWidth - 0.024 + aa, dFrontBox));
+                    float3 topFrameRGB = lerp(bodyColor * 0.96, bodyColor * 1.04, saturate(q.y * 0.35 + 0.55));
+                    col = lerp(col, topFrameRGB, frontOuterMask);
+                    col = lerp(col, highlightColor, saturate(frontRimMask) * (0.56 + activeGlow * 0.34));
+
+                    // 3. Deep 3D Recessed Tray Cavity with Sunken White Plate
+                    float dPlate = sdPolyomino(q, _WallInset, _InnerRad, rectCount, rect0, rect1);
+                    plateMask = 1.0 - smoothstep(-aa, aa, dPlate);
+
+                    // Crisp inner wall rim catchlight just outside the cavity opening
+                    float plateOuterRim = (1.0 - smoothstep(0.0, 0.020, dPlate)) * (1.0 - plateMask);
+                    col = lerp(col, highlightColor, plateOuterRim * (0.44 + activeGlow * 0.24));
+
+                    // Visible colored 3D back (top) and side inner walls descending down to the sunken white floor
+                    float dCavityFloor = sdPolyomino(q + float2(0.0, 0.044), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
+                    float floorMask = (1.0 - smoothstep(-aa, aa, dCavityFloor)) * plateMask;
+
+                    float wallDropGrad = saturate(-dPlate / 0.052);
+                    float sideSlope = saturate((dCavityFloor - dPlate) * 10.0);
+                    float3 innerWallCol = lerp(bodyDarkColor * 0.88, bodyDarkColor * 0.62, wallDropGrad);
+                    innerWallCol = lerp(innerWallCol, bodyColor * 0.80, sideSlope * 0.24);
+
+                    // Deep cast shadow across the upper & edge parts of the white floor so it feels deeply sunken inside the box
+                    float dDeepShadow = sdPolyomino(q - float2(0.0, -0.056), _WallInset + 0.014, max(0.016, _InnerRad - 0.012), rectCount, rect0, rect1);
+                    float castBandMask = smoothstep(-0.024, 0.018, dDeepShadow);
+                    float edgeAO = 1.0 - smoothstep(0.0, 0.075, -dCavityFloor);
+                    float floorShadowMix = saturate(max(castBandMask * 0.85, edgeAO * 0.72));
+                    float3 sunkenWhiteRGB = lerp(_PlateColor.rgb, _PlateShadowColor.rgb, floorShadowMix);
+
+                    // Subtle contact crease right where the colored inner walls meet the sunken white plate
+                    float wallFloorCrease = (1.0 - smoothstep(-0.012, 0.006, dCavityFloor)) * floorMask;
+                    sunkenWhiteRGB = lerp(sunkenWhiteRGB, _PlateShadowColor.rgb * 0.78, wallFloorCrease * 0.45);
+
+                    float3 cavityRGB = lerp(innerWallCol, sunkenWhiteRGB, floorMask);
+                    col = lerp(col, cavityRGB, plateMask);
+
+                    // Keep plateShadowMask alias for lock/ice overlays below
+                    plateShadowMask = floorShadowMix;
+
+                    // 4. Dynamic Gray Circular Sockets (1 to 16 sockets packed in _SockPair0.._SockPair7)
+                    float4 sp0 = GET_BOX_PROP(_SockPair0);
+                    float4 sp1 = GET_BOX_PROP(_SockPair1);
+                    float4 sp2 = GET_BOX_PROP(_SockPair2);
+                    float4 sp3 = GET_BOX_PROP(_SockPair3);
+                    float4 sp4 = GET_BOX_PROP(_SockPair4);
+                    float4 sp5 = GET_BOX_PROP(_SockPair5);
+                    float4 sp6 = GET_BOX_PROP(_SockPair6);
+                    float4 sp7 = GET_BOX_PROP(_SockPair7);
+
+                    float2 socks[16];
+                    socks[0]  = sp0.xy; socks[1]  = sp0.zw;
+                    socks[2]  = sp1.xy; socks[3]  = sp1.zw;
+                    socks[4]  = sp2.xy; socks[5]  = sp2.zw;
+                    socks[6]  = sp3.xy; socks[7]  = sp3.zw;
+                    socks[8]  = sp4.xy; socks[9]  = sp4.zw;
+                    socks[10] = sp5.xy; socks[11] = sp5.zw;
+                    socks[12] = sp6.xy; socks[13] = sp6.zw;
+                    socks[14] = sp7.xy; socks[15] = sp7.zw;
+
+                    float sockRad = max(0.018, socketRadF);
+                    float dSock = 1e5;
+                    float2 nearestSockPos = float2(0.0, 0.0);
+
+                    for (int i = 0; i < 16; i++)
                     {
-                        float2 sPos = socks[i];
-                        float d = length(q - sPos) - sockRad;
-                        if (d < dSock)
+                        if (i < sockCount)
                         {
-                            dSock = d;
-                            nearestSockPos = sPos;
+                            float2 sPos = socks[i];
+                            float d = length(q - sPos) - sockRad;
+                            if (d < dSock)
+                            {
+                                dSock = d;
+                                nearestSockPos = sPos;
+                            }
                         }
                     }
+
+                    // True recessed 3D socket well shading (outer plate lip bevel + inner overhanging cast shadow + deep pit AO)
+                    float2 sockDelta = (q - nearestSockPos) / sockRad;
+                    float rNorm = length(sockDelta);
+
+                    // Outer chamfer ring right around the hole on the white plate: bottom lip catches light, top lip dips into hole
+                    float lipDist = saturate(dSock / max(0.008, sockRad * 0.24));
+                    float outerLipMask = (1.0 - lipDist) * step(0.0, dSock) * floorMask;
+                    float bottomCatch = saturate(-sockDelta.y * 0.85 + 0.15);
+                    float topDip = saturate(sockDelta.y * 0.90 + 0.10);
+                    col = lerp(col, _PlateShadowColor.rgb * 0.92, outerLipMask * topDip * 0.55);
+                    col = lerp(col, float3(1.0, 1.0, 1.0), outerLipMask * bottomCatch * 0.58);
+
+                    // Inside the recessed cylindrical socket pit
+                    float sockMask = 1.0 - smoothstep(-aa, aa, dSock);
+                    float wallDepth = smoothstep(1.0, 0.68, rNorm); // 0 at outer hole edge -> 1 inside pit bottom
+
+                    // Soft crescent cast shadow under the top overhang (simulating recessed hole depth lit from above)
+                    float dInnerRim = length(sockDelta - float2(0.0, -0.34));
+                    float overhangShadow = smoothstep(0.68, 1.12, dInnerRim);
+                    float topWallMask = smoothstep(0.10, 0.85, sockDelta.y);
+
+                    // Smooth shaded well colors: darker deep ceiling shadow, soft radial ambient occlusion, gentle lower bowl bounce light
+                    float3 pitFloorDark  = _SocketShadowColor.rgb * 0.58;
+                    float3 pitWallShadow = _SocketShadowColor.rgb * 0.72;
+                    float3 pitWallBounce = lerp(_SocketColor.rgb, _PlateColor.rgb, 0.18);
+                    float3 pitWellMid    = lerp(_SocketShadowColor.rgb * 0.86, _SocketColor.rgb * 0.94, saturate(-sockDelta.y * 0.55 + 0.45));
+
+                    float3 sockRGB = lerp(pitWallShadow, pitWellMid, wallDepth);
+                    sockRGB = lerp(sockRGB, pitFloorDark, overhangShadow * 0.82);
+                    // Crisp subtle dark inner rim contact occlusion + gentle bottom inner wall catchlight
+                    float innerEdgeAO = smoothstep(0.76, 1.0, rNorm);
+                    sockRGB = lerp(sockRGB, pitFloorDark * 0.82, innerEdgeAO * topWallMask * 0.65);
+                    sockRGB = lerp(sockRGB, pitWallBounce, innerEdgeAO * saturate(-sockDelta.y) * 0.42);
+
+                    col = lerp(col, sockRGB, sockMask * plateMask);
                 }
-
-                // True recessed 3D socket well shading (outer plate lip bevel + inner overhanging cast shadow + deep pit AO)
-                float2 sockDelta = (q - nearestSockPos) / sockRad;
-                float rNorm = length(sockDelta);
-
-                // Outer chamfer ring right around the hole on the white plate: bottom lip catches light, top lip dips into hole
-                float lipDist = saturate(dSock / max(0.008, sockRad * 0.24));
-                float outerLipMask = (1.0 - lipDist) * step(0.0, dSock) * floorMask;
-                float bottomCatch = saturate(-sockDelta.y * 0.85 + 0.15);
-                float topDip      = saturate(sockDelta.y * 0.90 + 0.10);
-                col = lerp(col, _PlateShadowColor.rgb * 0.92, outerLipMask * topDip * 0.55);
-                col = lerp(col, float3(1.0, 1.0, 1.0), outerLipMask * bottomCatch * 0.58);
-
-                // Inside the recessed cylindrical socket pit
-                float sockMask = 1.0 - smoothstep(-aa, aa, dSock);
-                float wallDepth = smoothstep(1.0, 0.68, rNorm); // 0 at outer hole edge -> 1 inside pit bottom
-
-                // Soft crescent cast shadow under the top overhang (simulating recessed hole depth lit from above)
-                float dInnerRim = length(sockDelta - float2(0.0, -0.34));
-                float overhangShadow = smoothstep(0.68, 1.12, dInnerRim);
-                float topWallMask = smoothstep(0.10, 0.85, sockDelta.y);
-
-                // Smooth shaded well colors: darker deep ceiling shadow, soft radial ambient occlusion, gentle lower bowl bounce light
-                float3 pitFloorDark  = _SocketShadowColor.rgb * 0.58;
-                float3 pitWallShadow = _SocketShadowColor.rgb * 0.72;
-                float3 pitWallBounce = lerp(_SocketColor.rgb, _PlateColor.rgb, 0.18);
-                float3 pitWellMid    = lerp(_SocketShadowColor.rgb * 0.86, _SocketColor.rgb * 0.94, saturate(-sockDelta.y * 0.55 + 0.45));
-
-                float3 sockRGB = lerp(pitWallShadow, pitWellMid, wallDepth);
-                sockRGB = lerp(sockRGB, pitFloorDark, overhangShadow * 0.82);
-                // Crisp subtle dark inner rim contact occlusion + gentle bottom inner wall catchlight
-                float innerEdgeAO = smoothstep(0.76, 1.0, rNorm);
-                sockRGB = lerp(sockRGB, pitFloorDark * 0.82, innerEdgeAO * topWallMask * 0.65);
-                sockRGB = lerp(sockRGB, pitWallBounce, innerEdgeAO * saturate(-sockDelta.y) * 0.42);
-
-                col = lerp(col, sockRGB, sockMask * plateMask);
 
                 // 4b. Kilitli blok: beyaz plaka bloğun kendi renginde bir kapakla kapanır, ortasında düz beyaz asma kilit
                 if (lockAmount > 0.001)
