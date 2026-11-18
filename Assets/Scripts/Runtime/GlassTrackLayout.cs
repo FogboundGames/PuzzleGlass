@@ -323,31 +323,35 @@ namespace PuzzleGlass
                     break;
 
                 case GlassTrackPreset.DoubleArch:
-                    // Çift Kemerli Pist
+                    // Çift Kemerli Pist (2 iç ada boşluğu: Alt Kemer ve Üst Kemer köprüleri):
+                    // Sol Kol ve Sağ Kol alt çıkıştan yukarı uzanır.
+                    // Alt Kemer (isBridge = true) alt köprüyü oluşturur.
+                    // Üst Kemer (isBridge = true) üst köprüyü oluşturur.
+                    // Sol Kol ve Sağ Kol, Üst Kemer'in başladığı seviyede temizce birleşir; üst üste binen çift boru olmaz!
                     list.Add(new GlassTrackBranch("Sol Kol", false,
-                        new Vector2(0.00f, -0.58f),
-                        new Vector2(-0.62f, -0.44f),
-                        new Vector2(-1.02f, 0.00f),
-                        new Vector2(-1.02f, 0.56f),
-                        new Vector2(-0.76f, 1.02f)));
+                        new Vector2(0.00f, -0.54f),
+                        new Vector2(-0.62f, -0.40f),
+                        new Vector2(-1.02f, 0.04f),
+                        new Vector2(-1.02f, 0.52f),
+                        new Vector2(-0.88f, 0.82f)));
                     list.Add(new GlassTrackBranch("Sağ Kol", false,
-                        new Vector2(0.00f, -0.58f),
-                        new Vector2(0.62f, -0.44f),
-                        new Vector2(1.02f, 0.00f),
-                        new Vector2(1.02f, 0.56f),
-                        new Vector2(0.76f, 1.02f)));
+                        new Vector2(0.00f, -0.54f),
+                        new Vector2(0.62f, -0.40f),
+                        new Vector2(1.02f, 0.04f),
+                        new Vector2(1.02f, 0.52f),
+                        new Vector2(0.88f, 0.82f)));
                     list.Add(new GlassTrackBranch("Alt Kemer", true,
                         new Vector2(-0.98f, -0.02f),
-                        new Vector2(-0.48f, 0.24f),
-                        new Vector2(0.00f, 0.30f),
-                        new Vector2(0.48f, 0.24f),
+                        new Vector2(-0.48f, 0.22f),
+                        new Vector2(0.00f, 0.28f),
+                        new Vector2(0.48f, 0.22f),
                         new Vector2(0.98f, -0.02f)));
                     list.Add(new GlassTrackBranch("Üst Kemer", true,
-                        new Vector2(-0.92f, 0.70f),
-                        new Vector2(-0.46f, 0.98f),
-                        new Vector2(0.00f, 1.06f),
-                        new Vector2(0.46f, 0.98f),
-                        new Vector2(0.92f, 0.70f)));
+                        new Vector2(-0.88f, 0.82f),
+                        new Vector2(-0.46f, 1.08f),
+                        new Vector2(0.00f, 1.15f),
+                        new Vector2(0.46f, 1.08f),
+                        new Vector2(0.88f, 0.82f)));
                     break;
             }
             return list;
@@ -796,13 +800,10 @@ namespace PuzzleGlass
                                 bestSegDistSq = dSq;
                                 bestFlowExitDist = dExit;
 
-                                // Akış yönü: distToExit'in azaldığı yön
+                                // Akış yönü: distToExit'in azaldığı yön (kanal boyunca saf teğet akış)
                                 Vector2 segDir = abSq > 1e-8f ? ab.normalized : Vector2.up;
                                 Vector2 tangDown = (seg.distB < seg.distA) ? segDir : -segDir;
-                                // Merkeze hafif çekim ekle ki virajlarda duvar sürtünmesi azalsın
-                                Vector2 toCenter = proj - p;
-                                float centerPull = Mathf.Clamp(toCenter.magnitude / Mathf.Max(0.05f, track.innerHalfWidth), 0f, 1f) * 0.35f;
-                                bestFlow = (tangDown + (toCenter.sqrMagnitude > 1e-6f ? toCenter.normalized * centerPull : Vector2.zero)).normalized;
+                                bestFlow = tangDown;
                             }
                         }
                     }
@@ -853,12 +854,12 @@ namespace PuzzleGlass
             float d = track.ballDiameter;
             float r = d * 0.5f;
             int lanes = track.lanesAcross;
-            float step = d * 0.96f;
-            float minDistOther = d * 0.895f;
+            float step = d * 1.02f;
+            float minDistOther = d * 1.01f;
             float minDistOtherSq = minDistOther * minDistOther;
 
-            // Şerit genişliğini kanal içine sıkıca oturt (kenarlara taşmadan tam 4 top yan yana)
-            float usableSpan = Mathf.Max(d * (lanes - 1), track.innerHalfWidth * 2f - d * 1.04f);
+            // Şerit genişliğini kanal içine sıkıca oturt (duvar köşe ve kutu çarpıştırıcılarına çarpmayacak emniyetli yayılım)
+            float usableSpan = Mathf.Max(d * (lanes - 1), track.innerHalfWidth * 2f - d * 1.22f);
             float laneSpacing = lanes > 1 ? usableSpan / (lanes - 1) : 0f;
 
             for (int b = 0; b < track.polylines.Count; b++)
@@ -928,8 +929,13 @@ namespace PuzzleGlass
                         continue;
 
                     track.SampleField(cand, out float sDist, out _, out float exitDist, out _);
-                    // Duvar içine gömülmesin
-                    if (sDist > -ballR * 0.84f)
+                    // Duvar içine gömülmesin: köşeli BoxCollider geometrisi ve grid hatasını tolere edecek emniyetli hava payı (~8mm)
+                    if (sDist > -ballR * 1.10f)
+                        continue;
+
+                    // Çıkış durdurucu kapısının içine gömülmesin
+                    float exitStopperTop = (track.exitPoint.y - track.innerHalfWidth) - 0.045f + 0.04f;
+                    if (cand.y - ballR < exitStopperTop + 0.012f)
                         continue;
 
                     // Diğer tüm toplarla (özellikle kavşak ve iç virajlarda) çakışmasın
@@ -1070,6 +1076,20 @@ namespace PuzzleGlass
                 {
                     streamSlots[0].AddRange(branchSlots[bridgeIds[bi]]);
                 }
+            }
+
+            // Her akışın slotlarını çıkışa olan mesafesine göre nizami sırala
+            // Böylece renk blokları çıkıştan geriye doğru kesintisiz ve nizami bir şekilde akar
+            for (int s = 0; s < streamSlots.Count; s++)
+            {
+                streamSlots[s].Sort((s1, s2) =>
+                {
+                    int bandA = Mathf.RoundToInt(s1.distToExit / bandSize);
+                    int bandB = Mathf.RoundToInt(s2.distToExit / bandSize);
+                    if (bandA != bandB) return bandA.CompareTo(bandB);
+                    if (s1.rowIndex != s2.rowIndex) return s1.rowIndex.CompareTo(s2.rowIndex);
+                    return s1.laneIndex.CompareTo(s2.laneIndex);
+                });
             }
 
             // 3. Renk bloklarını çıkar (LevelMonsterEntry gruplarından veya orderedColors akışından)

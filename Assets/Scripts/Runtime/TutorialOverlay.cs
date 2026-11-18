@@ -33,6 +33,8 @@ namespace PuzzleGlass
         private MonsterCharacter _hintBlock;
         private Vector2Int _hintFrom, _hintTarget;
         private bool _hintActive;
+        private bool _hintToSlot; // yeni sistem: blok tepsiden slota gönderilir
+        private Text _hintLabel;
         private float _hintTime;
 
         private readonly Queue<(string title, string body)> _cards = new Queue<(string, string)>();
@@ -66,7 +68,20 @@ namespace PuzzleGlass
             if (lvl == null) return;
 
             // 1) El ipucu
-            if (lvl.tutorialHint && blocks != null && lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
+            if (lvl.tutorialHint && blocks != null && SlotSystem.IsActive)
+            {
+                // Yeni sistem: bloğu tepside kaydırmak yerine slota gönderme gösterilir
+                _hintBlock = PickSlotHintBlock(lvl, blocks);
+                if (_hintBlock != null)
+                {
+                    _hintFrom = _hintBlock.gridAnchor;
+                    _hintToSlot = true;
+                    _hintActive = true;
+                    _hintTime = -0.8f;
+                    if (_hintLabel != null) _hintLabel.text = "Tap to send it up";
+                }
+            }
+            else if (lvl.tutorialHint && blocks != null && lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
             {
                 var entry = lvl.monsters[lvl.tutorialBlockIndex];
                 foreach (var b in blocks)
@@ -81,8 +96,10 @@ namespace PuzzleGlass
                 {
                     _hintFrom = lvl.tutorialFromAnchor;
                     _hintTarget = lvl.tutorialTargetAnchor;
+                    _hintToSlot = false;
                     _hintActive = true;
                     _hintTime = -0.8f; // yükleme sonrası kısa bekleme
+                    if (_hintLabel != null) _hintLabel.text = "Drag the block here";
                 }
             }
 
@@ -111,6 +128,34 @@ namespace PuzzleGlass
             ShowNextCard();
         }
 
+        /// <summary>
+        /// Slot ipucu için blok: Level Stüdyosu'nda seçilen blok (çıkışı açıksa), yoksa çıkışı açık bloklar arasından
+        /// raydaki ilk topun rengiyle eşleşen; o da yoksa çıkışı açık herhangi biri.
+        /// </summary>
+        private static MonsterCharacter PickSlotHintBlock(PuzzleGlassLevelData lvl, List<MonsterCharacter> blocks)
+        {
+            var grid = StagingGridBoard.Instance;
+            System.Func<MonsterCharacter, bool> clear = b =>
+                b != null && !b.IsCompleted && b.assignedSlot == null && !b.IsMovementOrCollectionBlocked
+                && (grid == null || grid.IsBlockExitClearToSlots(b, blocks));
+
+            if (lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
+            {
+                var entry = lvl.monsters[lvl.tutorialBlockIndex];
+                foreach (var b in blocks)
+                    if (clear(b) && b.gridAnchor == lvl.tutorialFromAnchor && b.colorType == entry.color) return b;
+            }
+            if (lvl.bottomToTopGroups != null && lvl.bottomToTopGroups.Count > 0 && lvl.bottomToTopGroups[0] != null)
+            {
+                var first = lvl.bottomToTopGroups[0].color;
+                foreach (var b in blocks)
+                    if (clear(b) && b.colorType == first) return b;
+            }
+            foreach (var b in blocks)
+                if (clear(b)) return b;
+            return null;
+        }
+
         public void StopHint()
         {
             _hintActive = false;
@@ -133,7 +178,8 @@ namespace PuzzleGlass
             var grid = StagingGridBoard.Instance;
             var cam = Camera.main;
             if (_hintBlock == null || grid == null || cam == null || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed))
-                || _hintBlock.gridAnchor != _hintFrom || _hintBlock.isCollectingInGrid || LevelTransitionController.IsTransitioning)
+                || _hintBlock.gridAnchor != _hintFrom || _hintBlock.isCollectingInGrid || _hintBlock.assignedSlot != null
+                || LevelTransitionController.IsTransitioning)
             {
                 StopHint();
                 return;
@@ -146,7 +192,18 @@ namespace PuzzleGlass
             float t = Mathf.Repeat(Mathf.Max(0f, _hintTime), CycleSeconds);
 
             Vector3 fromW = grid.GetWorldPositionForAnchor(_hintFrom, _hintBlock.blockShape);
-            Vector3 toW = grid.GetWorldPositionForAnchor(_hintTarget, _hintBlock.blockShape);
+            Vector3 toW;
+            if (_hintToSlot)
+            {
+                // Hedef: ilk boş slot (slot yoksa / doluysa ipucu kapanır)
+                var slot = SlotSystem.IsActive ? SlotSystem.Instance.GetFirstEmptySlot() : null;
+                if (slot == null) { StopHint(); return; }
+                toW = slot.transform.position;
+            }
+            else
+            {
+                toW = grid.GetWorldPositionForAnchor(_hintTarget, _hintBlock.blockShape);
+            }
             Vector2 from = WorldToCanvas(cam, fromW), to = WorldToCanvas(cam, toW);
 
             // 0-0.35 belir + bas, 0.35-1.45 sürükle, 1.45-1.85 bırak + sön, kalan bekle
@@ -165,7 +222,18 @@ namespace PuzzleGlass
             float ringScale = Mathf.Lerp(0.6f, 1.25f, press);
             _ring.localScale = Vector3.one * ringScale;
             _ringImg.color = new Color(1f, 1f, 1f, 0.55f * press);
-            _bubble.anchoredPosition = Vector2.Lerp(from, to, 0.5f) + new Vector2(0f, 120f);
+            // Slot ipucunda balon slotların ve blokların üstüne binmesin: tepsinin altında dursun
+            Vector2 bubblePos;
+            if (_hintToSlot)
+            {
+                Vector3 trayBottomW = grid.GetWorldPositionForAnchor(new Vector2Int(_hintFrom.x, 0), _hintBlock.blockShape)
+                                      - new Vector3(0f, grid.cellSize * 0.5f + 0.32f, 0f);
+                bubblePos = new Vector2(0f, WorldToCanvas(cam, trayBottomW).y);
+            }
+            else bubblePos = Vector2.Lerp(from, to, 0.5f) + new Vector2(0f, 120f);
+            float halfW = _root.rect.width * 0.5f - _bubble.sizeDelta.x * 0.5f - 16f;
+            if (halfW > 0f) bubblePos.x = Mathf.Clamp(bubblePos.x, -halfW, halfW);
+            _bubble.anchoredPosition = bubblePos;
         }
 
         private Vector2 WorldToCanvas(Camera cam, Vector3 world)
@@ -269,7 +337,7 @@ namespace PuzzleGlass
             bImg.type = Image.Type.Sliced;
             bImg.color = new Color(0.27f, 0.24f, 0.62f, 0.92f);
             bImg.raycastTarget = false;
-            var label = AddText(_bubble, "Drag the block here", 38, FontStyle.Bold, Color.white, Vector2.zero, _bubble.sizeDelta);
+            var label = _hintLabel = AddText(_bubble, "Drag the block here", 38, FontStyle.Bold, Color.white, Vector2.zero, _bubble.sizeDelta);
             ((RectTransform)label.transform).anchorMin = ((RectTransform)label.transform).anchorMax = new Vector2(0.5f, 0.5f);
             ((RectTransform)label.transform).pivot = new Vector2(0.5f, 0.5f);
             label.raycastTarget = false;

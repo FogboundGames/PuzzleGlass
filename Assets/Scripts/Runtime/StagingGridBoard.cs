@@ -99,6 +99,7 @@ namespace PuzzleGlass
         {
             cols = Mathf.Clamp(gridCols, 2, 9);
             rows = Mathf.Clamp(gridRows, 2, 10);
+            ResetColumnLayout();
 
             _wallCells.Clear();
             if (wallCells != null)
@@ -139,9 +140,10 @@ namespace PuzzleGlass
                         }
                         float camBottom = cam.transform.position.y - cam.orthographicSize;
                         float availH = trayTopLimitY - (camBottom + 0.32f);
-                        if (rows >= 5 && availH > effectiveMaxHeight)
+                        if (availH > effectiveMaxHeight)
                         {
-                            effectiveMaxHeight = Mathf.Min(availH, 5.2f);
+                            // Ekranın altındaki boş alanı kullan: tepsi aşağıya kadar büyüyebilir
+                            effectiveMaxHeight = Mathf.Min(availH, rows >= 5 ? 5.2f : 3.4f);
                         }
                         else if (availH > 1.20f && availH < effectiveMaxHeight)
                         {
@@ -153,7 +155,7 @@ namespace PuzzleGlass
                 float frameOverhead = innerMargin + framePadding * 2f;
                 float usableW = Mathf.Max(0.8f, targetBoardWidth - frameOverhead);
                 float usableH = Mathf.Max(0.8f, effectiveMaxHeight - frameOverhead);
-                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.22f, 0.78f);
+                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.22f, 0.90f);
             }
 
             if (autoAlignBelowGlass && glass != null)
@@ -459,10 +461,82 @@ namespace PuzzleGlass
 
         // ==================== COORDINATE & OCCUPANCY HELPERS ====================
 
+        // ---- Görsel sütun yerleşimi (tepsisiz kuyruk modu) ----
+        // Mantıksal ızgara (anchor) değişmez; bir sütun tamamen boşalınca o sütun görünümden düşer ve
+        // kalan sütunlar ortalanarak yan yana kayar. _colVisualX: sütun merkezinin ızgara solundan hücre cinsinden konumu.
+        private float[] _colVisualX;
+        private bool[] _colHidden;
+
+        private void ResetColumnLayout()
+        {
+            _colVisualX = new float[cols];
+            _colHidden = new bool[cols];
+            for (int c = 0; c < cols; c++) _colVisualX[c] = c + 0.5f;
+        }
+
+        private float ColumnVisualX(int c)
+        {
+            if (_colVisualX == null || _colVisualX.Length != cols) ResetColumnLayout();
+            return _colVisualX[Mathf.Clamp(c, 0, cols - 1)];
+        }
+
+        /// <summary>Boş sütunları gizler, dolu sütunları ortalar ve kayan blokları yeni yerlerine kaydırır.</summary>
+        public void RecenterColumns(List<MonsterCharacter> allMonsters, bool animate = true)
+        {
+            if (showTrayVisuals || allMonsters == null) return;
+            if (_colVisualX == null || _colVisualX.Length != cols) ResetColumnLayout();
+            MarkGridDirty();
+            EnsureFlowFieldUpdated(allMonsters);
+
+            var nonEmpty = new List<int>();
+            for (int c = 0; c < cols; c++)
+            {
+                bool any = false;
+                for (int r = 0; r < rows && !any; r++) any = _cellOccupancy[r * cols + c] != null;
+                _colHidden[c] = !any;
+                if (any) nonEmpty.Add(c);
+            }
+            if (nonEmpty.Count == 0) return;
+
+            bool changed = false;
+            float start = (cols - nonEmpty.Count) * 0.5f;
+            for (int i = 0; i < nonEmpty.Count; i++)
+            {
+                float vx = start + i + 0.5f;
+                if (!Mathf.Approximately(_colVisualX[nonEmpty[i]], vx)) changed = true;
+                _colVisualX[nonEmpty[i]] = vx;
+            }
+            // Gizli sütunlar en yakın soldaki dolu sütunun hemen sağına (sadece hesap için; içlerinde blok yok)
+            for (int c = 0; c < cols; c++)
+            {
+                if (!_colHidden[c]) continue;
+                float left = start;
+                for (int k = c - 1; k >= 0; k--) if (!_colHidden[k]) { left = _colVisualX[k] + 0.5f; break; }
+                _colVisualX[c] = left;
+            }
+            if (!changed) return;
+
+            var seen = new HashSet<MonsterCharacter>();
+            for (int i = 0; i < _cellOccupancy.Length; i++)
+            {
+                var m = _cellOccupancy[i];
+                if (m == null || !seen.Add(m) || m.assignedSlot != null) continue;
+                Vector3 newPos = GetWorldPositionForAnchor(m.gridAnchor, m.blockShape);
+                Vector3 baseScale = (m.stagingHomeScale.sqrMagnitude > 0.001f) ? m.stagingHomeScale : Vector3.one * cellSize;
+                Vector3 slotFit = Vector3.one * GetSlotFitScaleForShape(m.blockShape);
+                m.SetGridState(m.gridAnchor, newPos, baseScale, slotFit, false, animateMove: animate);
+            }
+            RefreshAllGridBlockHighlightStates(allMonsters);
+        }
+
         public Vector3 GetWorldPositionForAnchor(Vector2Int anchor, CarrierBlockShape shape)
         {
             CarrierBlockShapeUtility.GetBounds(shape, out int w, out int h);
-            float cx = GridOriginX + (anchor.x + w * 0.5f) * cellSize;
+            float cx;
+            if (showTrayVisuals)
+                cx = GridOriginX + (anchor.x + w * 0.5f) * cellSize;
+            else
+                cx = GridOriginX + (ColumnVisualX(anchor.x) + ColumnVisualX(anchor.x + w - 1)) * 0.5f * cellSize;
             float cy = GridOriginY + (anchor.y + h * 0.5f) * cellSize;
             return new Vector3(cx, cy, 0f);
         }
@@ -470,10 +544,35 @@ namespace PuzzleGlass
         public Vector2Int WorldCenterToNearestAnchor(Vector3 worldCenter, CarrierBlockShape shape)
         {
             CarrierBlockShapeUtility.GetBounds(shape, out int w, out int h);
-            float rawX = (worldCenter.x - GridOriginX) / cellSize - w * 0.5f;
             float rawY = (worldCenter.y - GridOriginY) / cellSize - h * 0.5f;
-            int ax = Mathf.Clamp(Mathf.RoundToInt(rawX), 0, Mathf.Max(0, cols - w));
             int ay = Mathf.Clamp(Mathf.RoundToInt(rawY), 0, Mathf.Max(0, rows - h));
+            int ax;
+            if (showTrayVisuals || _colHidden == null || _colHidden.Length != cols)
+            {
+                float rawX = (worldCenter.x - GridOriginX) / cellSize - w * 0.5f;
+                ax = Mathf.Clamp(Mathf.RoundToInt(rawX), 0, Mathf.Max(0, cols - w));
+            }
+            else
+            {
+                // Görünen (gizli olmayan) sütunlar arasından en yakını
+                float px = (worldCenter.x - GridOriginX) / cellSize;
+                ax = -1;
+                float best = float.MaxValue;
+                for (int c = 0; c <= cols - w; c++)
+                {
+                    bool hidden = false;
+                    for (int k = 0; k < w; k++) if (_colHidden[c + k]) { hidden = true; break; }
+                    if (hidden) continue;
+                    float center = (ColumnVisualX(c) + ColumnVisualX(c + w - 1)) * 0.5f;
+                    float d = Mathf.Abs(center - px);
+                    if (d < best) { best = d; ax = c; }
+                }
+                if (ax < 0)
+                {
+                    float rawX = px - w * 0.5f;
+                    ax = Mathf.Clamp(Mathf.RoundToInt(rawX), 0, Mathf.Max(0, cols - w));
+                }
+            }
             return new Vector2Int(ax, ay);
         }
 
@@ -485,8 +584,10 @@ namespace PuzzleGlass
             {
                 // Blok, slot hücresinin karosunu (hücre boyunun ~%80'i) dolduracak kadar büyük: görünen gövde genişliği
                 // ölçek başına yaklaşık (maxDim - 0.08). Sıra ekrana sığmak için küçülürse RowFitScale ayrıca uygulanır.
+                // Blok, slotun kendi çerçevesine göre boyutlanır (slotlar arası boşluk bloğu büyütmez)
                 float cell = Mathf.Max(0.1f, SlotSystem.Instance.slotSpacing);
-                return cell * 0.80f / Mathf.Max(0.5f, maxDim - 0.08f);
+                float frame = SlotPlatform.UseIndividualFrames ? cell * SlotPlatform.FrameRatio : cell * 0.90f;
+                return frame * 0.89f / Mathf.Max(0.5f, maxDim - 0.08f);
             }
             // Legacy non-slot mode
             if (maxDim <= 1) return 0.68f;
@@ -890,6 +991,9 @@ namespace PuzzleGlass
             {
                 RefreshAllGridBlockHighlightStates(allMonsters);
             }
+
+            // Tamamen boşalan sütun varsa kalan sütunlar ortaya kaysın
+            RecenterColumns(allMonsters);
         }
 
         public bool TryFindEmptyPlacement(CarrierBlockShape shape, List<MonsterCharacter> allMonsters, out Vector2Int foundAnchor)

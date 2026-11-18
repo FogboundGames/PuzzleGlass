@@ -183,6 +183,7 @@ namespace PuzzleGlass
 
             float fixedDt = Time.fixedDeltaTime;
             bool anyAwakeMoving = false;
+            UpdateTrackFlowGating(activeBalls);
             for (int i = 0; i < activeBalls.Count; i++)
             {
                 var b = activeBalls[i];
@@ -200,6 +201,92 @@ namespace PuzzleGlass
             if (anyAwakeMoving)
             {
                 _ballFieldDirty = true;
+            }
+        }
+
+        private Vector2[] _flowGatePos = new Vector2[0];
+        private Vector2[] _flowGateDir = new Vector2[0];
+        private float[] _flowGateExit = new float[0];
+        private readonly List<int> _flowGateOrder = new List<int>();
+        private Comparison<int> _flowGateCmp;
+        private int _flowGateLastBallCount;
+        private float _flowGateSettleUntil;
+        private int _flowGateZoneCapacity = -1;
+        [Tooltip("Level başında (ya da yeni toplar gelince) tüm topların önce dibe yerleşmesi için süre (sn).")]
+        public float trackSettleSeconds = 2.0f;
+        [Tooltip("Pist camında çıkışa doğru itilen öndeki en az top sayısı (toplama alanı daha çok alıyorsa o kadar). Arkadakiler sıraları gelene kadar hareketsiz bekler.")]
+        public int trackFrontGroupSize = 14;
+
+        /// <summary>
+        /// Pist camında akış kuvvetini sadece çıkışa en yakın trackFrontGroupSize topa verir; arkadakiler durur.
+        /// Böylece top toplanırken bütün yığın tren gibi kaymaz, sadece öndekiler hareket eder.
+        /// </summary>
+        private void UpdateTrackFlowGating(List<BallPhysicsController> activeBalls)
+        {
+            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            int count = activeBalls.Count;
+            if (container == null || !container.IsTrackShape)
+            {
+                for (int i = 0; i < count; i++) if (activeBalls[i] != null) activeBalls[i].trackFlowScale = 1f;
+                return;
+            }
+            if (_flowGatePos.Length < count)
+            {
+                int cap = Mathf.NextPowerOfTwo(count);
+                _flowGatePos = new Vector2[cap];
+                _flowGateDir = new Vector2[cap];
+                _flowGateExit = new float[cap];
+            }
+
+            Transform ct = container.transform;
+            for (int i = 0; i < count; i++)
+            {
+                var b = activeBalls[i];
+                _flowGateExit[i] = -1f;
+                if (b == null || b.state != BallState.InContainer || b.rb == null || b.rb.isKinematic) continue;
+                Vector2 lp = ct.InverseTransformPoint(b.transform.position);
+                if (!container.SampleTrackField(lp, out _, out Vector2 fDir, out float exDist, out _)) { b.trackFlowScale = 1f; continue; }
+                _flowGatePos[i] = lp;
+                _flowGateDir[i] = fDir;
+                _flowGateExit[i] = Mathf.Max(0f, exDist);
+            }
+
+            // Level başı / yeni top geldiğinde yerleşme süresi hesapla
+            int ballCount = 0;
+            for (int i = 0; i < count; i++) if (_flowGateExit[i] >= 0f) ballCount++;
+            if (ballCount > _flowGateLastBallCount + 3)
+            {
+                _flowGateSettleUntil = Time.time + trackSettleSeconds;
+                _flowGateZoneCapacity = -1;
+            }
+            _flowGateLastBallCount = ballCount;
+
+            // Yerleşme faktörü: süre doldukça 1'den 0'a yumuşakça söner (ani kesilmeyi / yay gibi geri tepmeyi önler)
+            float settleFactor = Mathf.Clamp01((_flowGateSettleUntil - Time.time) / 0.8f);
+
+            // Çıkışa olan mesafeye göre pürüzsüz ve homojen akış kuvveti:
+            // Çıkışa en yakın bölge (~8 satır) tam kuvvetle (1.0) çekilir.
+            // Gerideki sıralar ise şeritler arası burulma veya akordeon etkisi olmadan pürüzsüz bir gradyanla (1.0 -> 0.60) takip eder.
+            float rowDist = Mathf.Max(0.05f, container.particleSize);
+            float frontZoneDist = rowDist * 8.5f;
+
+            for (int i = 0; i < count; i++)
+            {
+                var ball = activeBalls[i];
+                if (ball == null) continue;
+                float exDist = _flowGateExit[i];
+                if (exDist < 0f) { ball.trackFlowScale = 1f; continue; }
+
+                if (exDist <= frontZoneDist)
+                {
+                    ball.trackFlowScale = 1f;
+                }
+                else
+                {
+                    float t = Mathf.Clamp01((exDist - frontZoneDist) / (frontZoneDist * 2.2f));
+                    float targetScale = Mathf.Lerp(1.0f, 0.60f, t);
+                    ball.trackFlowScale = Mathf.Lerp(targetScale, 1f, settleFactor);
+                }
             }
         }
 

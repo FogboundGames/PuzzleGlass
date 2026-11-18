@@ -358,10 +358,7 @@ namespace PuzzleGlass
                 if (ball != null)
                 {
                     ball.ConfigurePoolLayer(layerIdx, worldPos.x, worldFloorY, worldRowStepY);
-                    if (isTrack)
-                    {
-                        ball.ConfigureForTrackMode(true);
-                    }
+                    ball.ConfigureForTrackMode(isTrack);
                     if (hasSlopedDivider)
                     {
                         // Allow balls to roll sideways along sloped shelves/ramps

@@ -626,7 +626,7 @@ namespace PuzzleGlass
                 else
                 {
                     slotSystem.regularSlotCount = 4;
-                    slotSystem.slotSpacing = 0.52f;
+                    slotSystem.slotSpacing = 0.80f; // alttaki boş alanı kullanmak için biraz daha büyük slotlar
                 }
                 slotSystem.enableVipSlot = enableVipSlot;
                 slotSystem.showAddSlotButton = enableAddSlotButton;
@@ -838,7 +838,7 @@ namespace PuzzleGlass
                     else
                     {
                         stagingGridBoard.matchGlassWidth = false;
-                        stagingGridBoard.maxBoardWidth = 2.74f;
+                        stagingGridBoard.maxBoardWidth = 3.20f;
                         stagingGridBoard.maxBoardHeight = 2.15f;
                         stagingGridBoard.framePadding = 0.02f;
                         stagingGridBoard.innerMargin = 0.02f;

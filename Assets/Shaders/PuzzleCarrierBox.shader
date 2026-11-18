@@ -272,7 +272,7 @@ Shader "PuzzleGlass/CarrierBox"
                     float totalAlpha = 1.0 - smoothstep(-aa, aa, dSticker);
                     if (totalAlpha < 0.002) discard;
 
-                    float activeGlow = saturate(max(exitHighlight, dragHighlight));
+                    float activeGlow = saturate(dragHighlight); // çıkış (tıklanabilir) vurgusu kaldırıldı; sadece sürüklerken parlar
                     float3 col = _StickerOutlineColor.rgb;
 
                     // Case silhouette inside the white sticker border
@@ -367,9 +367,10 @@ Shader "PuzzleGlass/CarrierBox"
                 if (totalAlpha < 0.002) discard;
 
                 // Sharper outer edge silhouette (brightens cleanly when exit-ready or actively dragged)
-                float activeGlow = saturate(max(exitHighlight, dragHighlight));
+                float activeGlow = saturate(dragHighlight); // çıkış (tıklanabilir) vurgusu kaldırıldı; sadece sürüklerken parlar
                 float3 activeOutline = lerp(outlineColor, float3(0.99, 0.995, 1.0), activeGlow * 0.96);
-                float outlineWidth = _OutlineThickness + activeGlow * 0.018;
+                // Vurgu sadece kenar rengini açar; kalınlaşırsa renkli gövde içeri doğru yenir ve öndeki bloklar küçük görünür
+                float outlineWidth = _OutlineThickness;
                 float innerSilhouetteMask = 1.0 - smoothstep(-outlineWidth - aa, -outlineWidth + aa, dTotal);
                 float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
                 float3 skirtCol = lerp(bodyDarkColor * 0.98, bodyDarkColor * 0.76, saturate(1.0 - skirtDepth));
