@@ -481,12 +481,12 @@ namespace PuzzleGlass
         {
             CarrierBlockShapeUtility.GetBounds(shape, out int w, out int h);
             int maxDim = Mathf.Max(w, h);
-            float scaleRatio = SlotSystem.IsActive ? Mathf.Clamp(SlotSystem.Instance.slotScale / 0.74f, 0.55f, 1.5f) : 1.0f;
             if (SlotSystem.IsActive)
             {
-                if (maxDim <= 1) return 0.38f * scaleRatio;
-                if (maxDim == 2) return 0.22f * scaleRatio;
-                return 0.16f * scaleRatio;
+                // Blok, slot hücresinin karosunu (hücre boyunun ~%80'i) dolduracak kadar büyük: görünen gövde genişliği
+                // ölçek başına yaklaşık (maxDim - 0.08). Sıra ekrana sığmak için küçülürse RowFitScale ayrıca uygulanır.
+                float cell = Mathf.Max(0.1f, SlotSystem.Instance.slotSpacing);
+                return cell * 0.80f / Mathf.Max(0.5f, maxDim - 0.08f);
             }
             // Legacy non-slot mode
             if (maxDim <= 1) return 0.68f;

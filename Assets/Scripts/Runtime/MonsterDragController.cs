@@ -100,6 +100,17 @@ namespace PuzzleGlass
             RaycastHit[] allHits = Physics.RaycastAll(ray, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
             Vector3 worldTouch = ScreenToWorldOnPlane(screenPos, 0f);
 
+            // 0. Check if a locked "+" slot platform was tapped directly
+            for (int i = 0; i < allHits.Length; i++)
+            {
+                var hitSlot = allHits[i].collider.GetComponentInParent<SlotPlatform>();
+                if (hitSlot != null && hitSlot.isLocked)
+                {
+                    hitSlot.TryUnlockSlot();
+                    return;
+                }
+            }
+
             MonsterCharacter selectedMonster = null;
 
             // 1. Raycast for Monster BoxCollider (includes both staging monsters AND slotted monsters!)
@@ -516,7 +527,7 @@ namespace PuzzleGlass
             for (int i = 0; i < slotSys.slots.Count; i++)
             {
                 var slot = slotSys.slots[i];
-                if (slot == null || slot.isOccupied || slot.currentMonster != null) continue;
+                if (slot == null || slot.isLocked || slot.isOccupied || slot.currentMonster != null) continue;
 
                 float dist = Vector2.Distance(
                     new Vector2(monsterPos.x, monsterPos.y),

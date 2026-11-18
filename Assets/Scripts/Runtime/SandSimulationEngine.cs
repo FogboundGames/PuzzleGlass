@@ -82,6 +82,9 @@ namespace PuzzleGlass
         [Tooltip("Her desen pikselinin bir kenarındaki kum tanesi sayısı")]
         [Range(1, 4)]
         public int grainsPerPixel = 3;
+
+        // Enum.GetValues her çağrıda yeni bir Array + boxing üretir; kare başına çöp olmasın diye önbelleğe alındı.
+        private static readonly PuzzleColor[] AllPuzzleColors = (PuzzleColor[])Enum.GetValues(typeof(PuzzleColor));
         public bool fillBackground = true;
         public Color backgroundSandColor = new Color(0.90f, 0.78f, 0.50f, 1f);
         public float settleStepInterval = 0.03f;
@@ -180,7 +183,7 @@ namespace PuzzleGlass
                 _particleMesh = ProceduralMeshUtils.CreateRoundedCube(0.16f, 0.045f, 3);
             }
 
-            foreach (PuzzleColor col in Enum.GetValues(typeof(PuzzleColor)))
+            foreach (PuzzleColor col in AllPuzzleColors)
             {
                 if (!_materials.ContainsKey(col) || _materials[col] == null)
                 {
@@ -784,6 +787,9 @@ namespace PuzzleGlass
 
             List<int> drainedIndices = null;
 
+            // Yatay sönümleme katsayısı alt-adım başına sabittir; Mathf.Pow'u parçacık döngüsünden çıkar.
+            float horizontalDamping = Mathf.Pow(0.88f, subDt * 60f);
+
             for (int step = 0; step < subSteps; step++)
             {
                 // 1. Dış Kuvvetler (Yerçekimi, Hız İntegrasyonu)
@@ -796,7 +802,7 @@ namespace PuzzleGlass
                     p.velocity.y += (gravity * sandDensity) * subDt;
 
                     // Yatay sönümleme (doğal kum sürtünmesi)
-                    p.velocity.x *= Mathf.Pow(0.88f, subDt * 60f);
+                    p.velocity.x *= horizontalDamping;
 
                     // Konum güncellemesi
                     p.prevPosition = p.position;

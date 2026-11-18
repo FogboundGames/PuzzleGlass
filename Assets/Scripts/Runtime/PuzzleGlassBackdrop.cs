@@ -133,23 +133,25 @@ namespace PuzzleGlass
                 }
             }
 
-            EnsureBackdropTexture();
-
-            Shader shader = Shader.Find("PuzzleGlass/SoftBackdrop") ?? Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader != null && (_backdropMaterial == null || _backdropMaterial.shader != shader))
+            // Materyal yalnızca bir kez oluşturulur; her karede Shader.Find + GetComponent +
+            // HasProperty/Set* çağrıları yapmak (LateUpdate her karede çalışıyor) gereksiz CPU maliyetiydi.
+            if (_backdropMaterial == null)
             {
-                _backdropMaterial = new Material(shader) { name = "Mat_PuzzleGlassBackdrop" };
-            }
+                EnsureBackdropTexture();
 
-            if (_backdropMaterial != null)
-            {
-                ApplyMaterialProperties(_lastAspect > 0f ? _lastAspect : 0.5625f);
-                var mr = _quadTransform.GetComponent<MeshRenderer>();
-                if (mr != null)
+                Shader shader = Shader.Find("PuzzleGlass/SoftBackdrop") ?? Shader.Find("Universal Render Pipeline/Unlit");
+                if (shader != null)
                 {
-                    mr.sharedMaterial = _backdropMaterial;
-                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    mr.receiveShadows = false;
+                    _backdropMaterial = new Material(shader) { name = "Mat_PuzzleGlassBackdrop" };
+                    ApplyMaterialProperties(_lastAspect > 0f ? _lastAspect : 0.5625f);
+
+                    var mr = _quadTransform.GetComponent<MeshRenderer>();
+                    if (mr != null)
+                    {
+                        mr.sharedMaterial = _backdropMaterial;
+                        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                        mr.receiveShadows = false;
+                    }
                 }
             }
         }

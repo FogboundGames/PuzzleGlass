@@ -625,24 +625,69 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return length(pa - ba * h);
             }
 
-            // Çoklu-kollu pist için iç kanal işaretli mesafesi (içeride negatif, duvar sınırı = 0)
-            float sdTrackChannel(float2 p)
+            // Çoklu-kollu pist için iç kanal işaretli mesafesi (içeride negatif, duvar sınırı = 0).
+            // Tek geçişte hem mesafeyi hem de en yakın segmenti döndürür; gradyan ve gölge örnekleri
+            // bu segment üzerinden analitik hesaplanır (eskiden 4-6 ek tam SDF geçişi vardı).
+            // Bir noktadan segmente dışa doğru birim normal (segment üzerindeki en yakın noktadan p'ye)
+            float2 SegOutwardNormal(float2 p, float2 a, float2 b)
+            {
+                float2 ab = b - a;
+                float h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+                float2 v = p - (a + ab * h);
+                float len = length(v);
+                return len > 1e-5 ? v / len : float2(0.0, 1.0);
+            }
+
+            // smoothGrad: en yakın iki segmentin normallerinin yumuşak karışımı. Tek segmentten alınan normal,
+            // segmentlerin birleştiği yerde aniden döndüğü için ışık/gölgede "kırılma" görünüyordu.
+            float sdTrackChannelNearest(float2 p, out float2 nearestA, out float2 nearestB, out float2 smoothGrad)
             {
                 int n = clamp((int)_TrackSegCount, 0, 64);
+                nearestA = p;
+                nearestB = p;
+                smoothGrad = float2(0.0, 1.0);
                 if (n <= 0) return 10.0;
 
+                // Aynı koldaki ardışık düz parçalar sert min yerine yumuşak birleşir: kıvrımların iç tarafındaki
+                // keskin köşeler yuvarlanır, cam kenarı eğri gibi akar.
+                float kSeg = max(_TrackFillet * 1.6, 0.02);
                 float branchMin[6] = { 10.0, 10.0, 10.0, 10.0, 10.0, 10.0 };
+                float bestDist = 1e9, secondDist = 1e9;
+                float2 secondA = p, secondB = p;
                 [loop]
                 for (int i = 0; i < 64; i++)
                 {
                     if (i >= n) break;
                     float4 seg = _TrackSegs[i];
                     float d = sdSegment2D(p, seg.xy, seg.zw) - _TrackHalfWidth;
+                    if (d < bestDist)
+                    {
+                        secondDist = bestDist; secondA = nearestA; secondB = nearestB;
+                        bestDist = d;
+                        nearestA = seg.xy;
+                        nearestB = seg.zw;
+                    }
+                    else if (d < secondDist)
+                    {
+                        secondDist = d; secondA = seg.xy; secondB = seg.zw;
+                    }
                     int bId = clamp((int)TrackBranchId(i), 0, 5);
-                    branchMin[bId] = min(branchMin[bId], d);
+                    branchMin[bId] = opSmoothUnion(branchMin[bId], d, kSeg);
                 }
 
-                float k = max(_TrackFillet, 0.005);
+                float2 g1 = SegOutwardNormal(p, nearestA, nearestB);
+                if (secondDist < 1e8)
+                {
+                    float2 g2 = SegOutwardNormal(p, secondA, secondB);
+                    // İki segment eşit uzaklıktayken yarı yarıya, uzaklaştıkça en yakının normali
+                    float w = 0.5 * (1.0 - saturate((secondDist - bestDist) / max(kSeg * 1.5, 1e-4)));
+                    float2 g = lerp(g1, g2, w);
+                    smoothGrad = dot(g, g) > 1e-8 ? normalize(g) : g1;
+                }
+                else smoothGrad = g1;
+
+                // Kollar arası (kulak ↔ köprü gibi) birleşim köşesi de belirgin şekilde yuvarlansın
+                float k = max(_TrackFillet * 2.5, 0.04);
                 float combined = branchMin[0];
                 for (int b = 1; b < 6; b++)
                 {
@@ -655,6 +700,12 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return combined;
             }
 
+            float sdTrackChannel(float2 p)
+            {
+                float2 nearestA, nearestB, g;
+                return sdTrackChannelNearest(p, nearestA, nearestB, g);
+            }
+
             half4 EvaluateTrackChannel(Varyings IN)
             {
                 float aspect = max(_BoxAspect, 0.25);
@@ -665,17 +716,30 @@ Shader "PuzzleGlass/GlassChamberLit"
                                    * smoothstep(0.0, 0.04, IN.uv.y) * smoothstep(1.0, 0.96, IN.uv.y);
 
                 float wallThick = max(_TrackWallThick, 0.025);
-                float dInner = sdTrackChannel(p);
+                float2 nearA, nearB, smoothGrad;
+                float dInner = sdTrackChannelNearest(p, nearA, nearB, smoothGrad);
+
+                // Işık yönü (duvarın dışa normali) doğrudan yumuşatılmış mesafenin piksel türevlerinden: mesafe alanı
+                // sürekli olduğu için normal de sürekli, segment birleşimlerinde sıçrama olmaz. p'nin türevleriyle
+                // çözüldüğü için ekranın y yönünün platforma göre ters olması sonucu etkilemez.
+                // (Türevler discard'dan ÖNCE alınmalı.)
+                float2 dpx = ddx(p), dpy = ddy(p);
+                float ddxD = ddx(dInner), ddyD = ddy(dInner);
+                float det = dpx.x * dpy.y - dpx.y * dpy.x;
+                float2 derivGrad = abs(det) > 1e-10
+                    ? float2(ddxD * dpy.y - ddyD * dpx.y, dpx.x * ddyD - dpy.x * ddxD) / det
+                    : smoothGrad;
+                if (dot(derivGrad, derivGrad) > 1e-10) smoothGrad = normalize(derivGrad);
+
+                // Kanal + gölge bandının tamamen dışındaysa hiçbir piksel üretilmez.
+                // Not: segment döngüsü yukarıda zaten bir kez çalıştı (tek geçiş), bu erken çıkış
+                // ondan sonraki gradyan/renklendirme/gölge matematiğini ve blend yazımını atlar.
+                if (dInner > wallThick + 0.30) discard;
+
                 float dOuter = dInner - wallThick;
 
-                // Duvar eğimi (dışa doğru normal)
-                const float eps = 0.008;
-                float2 grad = float2(
-                    sdTrackChannel(p + float2(eps, 0.0)) - sdTrackChannel(p - float2(eps, 0.0)),
-                    sdTrackChannel(p + float2(0.0, eps)) - sdTrackChannel(p - float2(0.0, eps))
-                );
-                float gLen = length(grad);
-                grad = gLen > 1e-5 ? (grad / gLen) : float2(0.0, 1.0);
+                // Duvar eğimi (dışa doğru normal): en yakın iki segmentin yumuşak karışımı (birleşimlerde kırılma yok)
+                float2 grad = smoothGrad;
 
                 // Alt çıkış ağzı açıklığı (topla temas eden alt çıkış yakasına temiz geçiş)
                 float exitCut = 0.0;
@@ -734,8 +798,9 @@ Shader "PuzzleGlass/GlassChamberLit"
                     // Yumuşak zemin gölgesi + iç kanal tabanı + iç duvar gölge derinliği (AO)
                     float2 pShadFar  = p - float2(0.018, -0.056);
                     float2 pShadNear = p - float2(0.008, -0.024);
-                    float dShadFar   = sdTrackChannel(pShadFar) - wallThick - 0.014;
-                    float dShadNear  = sdTrackChannel(pShadNear) - wallThick;
+                    // Kaydırılmış gölge, yumuşatılmış mesafeden birinci dereceden yaklaşımla (tek segmente bağlı değil)
+                    float dShadFar   = dInner - dot(grad, p - pShadFar) - wallThick - 0.014;
+                    float dShadNear  = dInner - dot(grad, p - pShadNear) - wallThick;
                     float aFar  = (1.0 - smoothstep(-0.03, 0.145, dShadFar)) * (_FakeShadowColor.a * 0.92);
                     float aNear = (1.0 - smoothstep(-0.02, 0.065, dShadNear)) * (_FakeShadowColor.a * 0.58);
                     float shadowAlpha = saturate(aFar + aNear) * quadEdgeFade;

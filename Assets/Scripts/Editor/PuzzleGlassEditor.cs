@@ -12,6 +12,8 @@ namespace PuzzleGlass.Editor
 
             PuzzleGlassGameManager manager = (PuzzleGlassGameManager)target;
 
+            DrawBlockStyleButtons(manager);
+
             EditorGUILayout.Space(12);
             EditorGUILayout.LabelField("Interactive Game Controls", EditorStyles.boldLabel);
 
@@ -149,6 +151,32 @@ namespace PuzzleGlass.Editor
             {
                 PuzzleGlassPrefabGenerator.GenerateAllAssets();
             }
+        }
+
+        /// <summary>Blok görünümü için tek tıkla seçim butonları (seçili olan vurgulu). Oyun sırasında bloklar hemen değişir.</summary>
+        private static void DrawBlockStyleButtons(PuzzleGlassGameManager manager)
+        {
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Blok Görünümü", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            DrawStyleButton(manager, BlockVisualStyle.PuzzleWithSockets, "🧩 Puzzle + Delik");
+            DrawStyleButton(manager, BlockVisualStyle.PuzzleWithNumber, "🔢 Puzzle + Sayı");
+            DrawStyleButton(manager, BlockVisualStyle.Crate, "📦 Kasa");
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private static void DrawStyleButton(PuzzleGlassGameManager manager, BlockVisualStyle style, string label)
+        {
+            bool selected = manager.blockVisualStyle == style;
+            Color prev = GUI.backgroundColor;
+            GUI.backgroundColor = selected ? new Color(0.45f, 0.85f, 0.55f) : prev;
+            if (GUILayout.Button(label, GUILayout.Height(30)) && !selected)
+            {
+                Undo.RecordObject(manager, "Blok Görünümü");
+                manager.ApplyBlockVisualStyle(style);
+                EditorUtility.SetDirty(manager);
+            }
+            GUI.backgroundColor = prev;
         }
     }
 

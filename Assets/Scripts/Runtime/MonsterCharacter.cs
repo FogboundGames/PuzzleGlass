@@ -6,13 +6,34 @@ using DG.Tweening;
 
 namespace PuzzleGlass
 {
+    /// <summary>Blok (taşıyıcı kutu) görünümü.</summary>
+    public enum BlockVisualStyle
+    {
+        PuzzleWithSockets = 0, // Puzzle parçası: beyaz plaka, toplarla dolan gri delikler
+        PuzzleWithNumber = 1,  // Puzzle parçası, deliksiz; ortada kalan top sayısı
+        Crate = 2              // Kasa görünümü (yeni sistem)
+    }
+
     [ExecuteAlways]
     public class MonsterCharacter : MonoBehaviour
     {
         public const int MaxVisualSockets = 16;
 
+        [Tooltip("Bloğun görünümü. Oyunda GameManager'daki 'Block Visual Style' ayarından gelir.")]
+        public BlockVisualStyle visualStyle = BlockVisualStyle.PuzzleWithSockets;
+
+        /// <summary>Görünümü ayarlar (görselleri yeniden kurmaz; ardından RebuildMonsterVisuals ya da Initialize çağrılmalı).</summary>
+        public void SetVisualStyle(BlockVisualStyle style)
+        {
+            visualStyle = style;
+            // useCrateVisuals = "sayaçlı" davranış: toplar ortaya uçar, ortada kalan sayı yazar (delik yok)
+            useCrateVisuals = style != BlockVisualStyle.PuzzleWithSockets;
+        }
+
         [Header("Crate Presentation")]
-        public bool useCrateVisuals = true;
+        [Tooltip("Açık: yeni kasa görünümü (ortada büyük sayı). Kapalı (varsayılan): eski puzzle parçası görünümü " +
+                 "(beyaz plaka + renkli çerçeve + toplarla dolan gri delikler). Oyunda GameManager'daki ayar kullanılır.")]
+        public bool useCrateVisuals = false;
 
         private float _socketBallLocalDiameter = 0.188f;
 
@@ -481,7 +502,10 @@ namespace PuzzleGlass
 
         public Vector3 GetSlotFitScale()
         {
-            return (slotFitScale.sqrMagnitude > 0.001f) ? slotFitScale : transform.localScale;
+            if (slotFitScale.sqrMagnitude <= 0.001f) return transform.localScale;
+            // Slot sırası ekrana sığmak için küçüldüyse slottaki blok da aynı oranda küçülür
+            float rowFit = SlotSystem.IsActive ? SlotSystem.Instance.RowFitScale : 1f;
+            return slotFitScale * rowFit;
         }
 
         public void SetStagingQueueState(
@@ -710,7 +734,7 @@ namespace PuzzleGlass
             s_BoxPropertyBlock.SetVector(Rect0PropId, _mpbRect0);
             s_BoxPropertyBlock.SetVector(Rect1PropId, _mpbRect1);
             s_BoxPropertyBlock.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
-            s_BoxPropertyBlock.SetFloat(CrateModePropId, useCrateVisuals ? 1.0f : 0.0f);
+            s_BoxPropertyBlock.SetFloat(CrateModePropId, visualStyle == BlockVisualStyle.Crate ? 1.0f : 0.0f);
             s_BoxPropertyBlock.SetFloat(ExitHighlightPropId, _mpbExitHighlight);
             s_BoxPropertyBlock.SetFloat(DragHighlightPropId, _mpbDragHighlight);
             s_BoxPropertyBlock.SetFloat(IceAmountPropId, _mpbIceAmount);
@@ -1014,7 +1038,16 @@ namespace PuzzleGlass
             counterText.text = remainingCount.ToString();
             counterText.rectTransform.sizeDelta = new Vector2(1.1f, 0.7f);
             counterText.sortingOrder = 10;
-            ApplyTmpOutline(counterText, new Color(0.06f, 0.08f, 0.14f, 1f), 0.28f);
+            if (visualStyle == BlockVisualStyle.PuzzleWithNumber)
+            {
+                // Beyaz plaka üstünde: bloğun koyu renginde sayı, ince beyaz kontur
+                counterText.color = GetCarrierDarkColor(colorType);
+                ApplyTmpOutline(counterText, new Color(1f, 1f, 1f, 0.9f), 0.12f);
+            }
+            else
+            {
+                ApplyTmpOutline(counterText, new Color(0.06f, 0.08f, 0.14f, 1f), 0.28f);
+            }
 
             badge.SetActive(useCrateVisuals && !IsLockedByKey && !IsFrozenByIce && remainingCount > 0);
         }
@@ -1024,7 +1057,9 @@ namespace PuzzleGlass
             if (counterText != null)
             {
                 counterText.text = Mathf.Max(0, remainingCount).ToString();
-                counterText.color = useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType);
+                counterText.color = visualStyle == BlockVisualStyle.PuzzleWithNumber
+                    ? GetCarrierDarkColor(colorType)
+                    : (useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType));
                 if (useCrateVisuals)
                 {
                     counterText.fontSize = (remainingCount >= 100) ? 3.8f : 4.6f;
@@ -1078,7 +1113,8 @@ namespace PuzzleGlass
 
         private void ApplySocketLayoutToMaterial(int count, Vector2[] positions, float radius)
         {
-            _mpbSocketCount = count;
+            // Sayılı puzzle görünümünde plaka deliksiz çizilir
+            _mpbSocketCount = visualStyle == BlockVisualStyle.PuzzleWithNumber ? 0 : count;
             _mpbSocketRadius = radius;
             for (int p = 0; p < SockPairPropIds.Length; p++)
             {

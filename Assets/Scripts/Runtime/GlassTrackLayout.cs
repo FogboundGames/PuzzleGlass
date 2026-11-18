@@ -227,25 +227,27 @@ namespace PuzzleGlass
             {
                 case GlassTrackPreset.ArchLoop:
                 default:
-                    // Görsel 1: Dış U + İç Kemer Köprü + Ortada Kemerli Ada Boşluğu
+                    // Görsel 1 / Bus Traffic Fever Tarzı: Dış U + İç Kemer Köprü + Ortada Kemerli Ada Boşluğu
                     list.Add(new GlassTrackBranch("Sol Kol", false,
                         new Vector2(0.00f, -0.54f),
                         new Vector2(-0.56f, -0.40f),
                         new Vector2(-0.98f, -0.02f),
                         new Vector2(-0.98f, 0.46f),
-                        new Vector2(-0.88f, 0.94f)));
+                        new Vector2(-0.88f, 0.94f),
+                        new Vector2(-0.64f, 1.15f)));
                     list.Add(new GlassTrackBranch("Sağ Kol", false,
                         new Vector2(0.00f, -0.54f),
                         new Vector2(0.56f, -0.40f),
                         new Vector2(0.98f, -0.02f),
                         new Vector2(0.98f, 0.46f),
-                        new Vector2(0.88f, 0.94f)));
+                        new Vector2(0.88f, 0.94f),
+                        new Vector2(0.64f, 1.15f)));
                     list.Add(new GlassTrackBranch("İç Kemer", true,
-                        new Vector2(-0.82f, 0.14f),
-                        new Vector2(-0.46f, 0.44f),
-                        new Vector2(0.00f, 0.54f),
-                        new Vector2(0.46f, 0.44f),
-                        new Vector2(0.82f, 0.14f)));
+                        new Vector2(-0.82f, 0.16f),
+                        new Vector2(-0.46f, 0.48f),
+                        new Vector2(0.00f, 0.58f),
+                        new Vector2(0.46f, 0.48f),
+                        new Vector2(0.82f, 0.16f)));
                     break;
 
                 case GlassTrackPreset.HeartLoop:
@@ -392,7 +394,7 @@ namespace PuzzleGlass
 
             int lanes = lanesAcrossSetting > 0
                 ? Mathf.Clamp(lanesAcrossSetting, 2, 6)
-                : (targetCount <= 22 ? 2 : (targetCount <= 78 ? 3 : 4));
+                : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 22 ? 2 : (targetCount <= 78 ? 3 : 4)));
 
             float chosenScale = Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.0f, 0.55f, 1.45f);
             float chosenDiam = 0.165f;
@@ -429,7 +431,7 @@ namespace PuzzleGlass
                 }
             }
 
-            layout = BuildOrderedResultFromSlots(allSlots, orderedColors, chosenDiam, lanes);
+            layout = BuildOrderedResultFromSlots(allSlots, orderedColors, bottomToTopGroups, useManualLayout, chosenDiam, lanes, compiled);
         }
 
         private static List<PuzzleColor> ExpandBallColors(
@@ -961,47 +963,208 @@ namespace PuzzleGlass
         private static OrderedPoolLayout.Result BuildOrderedResultFromSlots(
             List<TrackSlot> allSlots,
             List<PuzzleColor> orderedColors,
+            List<LevelMonsterEntry> groups,
+            bool useManual,
             float ballDiam,
-            int lanes)
+            int lanes,
+            CompiledTrack track)
         {
             var res = new OrderedPoolLayout.Result
             {
                 balls = new List<OrderedPoolLayout.PoolBall>(),
                 diameter = ballDiam,
                 laneWidth = lanes,
-                totalColumns = lanes
+                totalColumns = Mathf.Max(1, lanes * 2)
             };
 
             if (allSlots == null || allSlots.Count == 0 || orderedColors == null || orderedColors.Count == 0)
                 return res;
 
-            // Çıkışa en yakın satırlardan başlayarak sırala (renk grupları kanal boyunca blok blok dizilsin)
             float bandSize = Mathf.Max(0.05f, ballDiam * 0.98f);
-            var sorted = new List<TrackSlot>(allSlots);
-            sorted.Sort((a, b) =>
-            {
-                int bandA = Mathf.RoundToInt(a.distToExit / bandSize);
-                int bandB = Mathf.RoundToInt(b.distToExit / bandSize);
-                // Her 2 satırlık bantta aynı kolu grupla ki küçük renk grupları iki kola bölünmesin
-                int groupBandA = bandA / 2;
-                int groupBandB = bandB / 2;
-                if (groupBandA != groupBandB) return groupBandA.CompareTo(groupBandB);
-                if (a.branchId != b.branchId) return a.branchId.CompareTo(b.branchId);
-                if (bandA != bandB) return bandA.CompareTo(bandB);
-                return a.laneIndex.CompareTo(b.laneIndex);
-            });
 
-            int count = Mathf.Min(sorted.Count, orderedColors.Count);
-            for (int i = 0; i < count; i++)
+            // Manuel serbest dizilim istenmişse, çıkışa olan mesafeyi baz alan sıralamayı kullan
+            if (useManual)
             {
-                var sl = sorted[i];
-                res.balls.Add(new OrderedPoolLayout.PoolBall
+                var sorted = new List<TrackSlot>(allSlots);
+                sorted.Sort((a, b) =>
                 {
-                    color = orderedColors[i],
-                    ballColumn = sl.laneIndex,
-                    row = Mathf.Max(0, Mathf.RoundToInt(sl.distToExit / bandSize)),
-                    localPos = sl.localPos
+                    int bandA = Mathf.RoundToInt(a.distToExit / bandSize);
+                    int bandB = Mathf.RoundToInt(b.distToExit / bandSize);
+                    if (bandA != bandB) return bandA.CompareTo(bandB);
+                    if (a.branchId != b.branchId) return a.branchId.CompareTo(b.branchId);
+                    return a.laneIndex.CompareTo(b.laneIndex);
                 });
+
+                int manualCount = Mathf.Min(sorted.Count, orderedColors.Count);
+                for (int i = 0; i < manualCount; i++)
+                {
+                    var sl = sorted[i];
+                    res.balls.Add(new OrderedPoolLayout.PoolBall
+                    {
+                        color = orderedColors[i],
+                        ballColumn = sl.laneIndex,
+                        row = Mathf.Max(0, Mathf.RoundToInt(sl.distToExit / bandSize)),
+                        localPos = sl.localPos
+                    });
+                }
+                return res;
+            }
+
+            // ==================== Bus Traffic Fever Tarzı Nizami Blok Sıralaması ====================
+            // 1. Slotları ait oldukları kollara (branch) göre ayır ve her kolu satır-satır, şerit-şerit sırala
+            int branchCount = track != null && track.polylines != null ? track.polylines.Count : 1;
+            var branchSlots = new List<TrackSlot>[branchCount];
+            for (int b = 0; b < branchCount; b++) branchSlots[b] = new List<TrackSlot>();
+
+            for (int i = 0; i < allSlots.Count; i++)
+            {
+                int bid = Mathf.Clamp(allSlots[i].branchId, 0, branchCount - 1);
+                branchSlots[bid].Add(allSlots[i]);
+            }
+
+            for (int b = 0; b < branchCount; b++)
+            {
+                branchSlots[b].Sort((s1, s2) =>
+                {
+                    if (s1.rowIndex != s2.rowIndex) return s1.rowIndex.CompareTo(s2.rowIndex);
+                    return s1.laneIndex.CompareTo(s2.laneIndex);
+                });
+            }
+
+            // 2. Çıkışa açılan ana kolları (feeder) ve üst bağ/köprüleri (bridge) tespit et
+            var feederIds = new List<int>();
+            var bridgeIds = new List<int>();
+
+            for (int b = 0; b < branchCount; b++)
+            {
+                bool isBridge = track != null && track.polylineIsBridge != null && b < track.polylineIsBridge.Count && track.polylineIsBridge[b];
+                if (isBridge) bridgeIds.Add(b);
+                else feederIds.Add(b);
+            }
+            if (feederIds.Count == 0) feederIds.Add(0);
+
+            // Her ana akış için sıralı slot kuyruğunu oluştur
+            var streamSlots = new List<List<TrackSlot>>();
+            for (int f = 0; f < feederIds.Count; f++)
+            {
+                streamSlots.Add(new List<TrackSlot>(branchSlots[feederIds[f]]));
+            }
+
+            // ArchLoop gibi çift kollu ve iç kemerli pistlerde köprünün sol yarısını sol kola, sağ yarısını sağ kola bağla
+            if (feederIds.Count == 2 && bridgeIds.Count > 0)
+            {
+                for (int bi = 0; bi < bridgeIds.Count; bi++)
+                {
+                    int bridgeId = bridgeIds[bi];
+                    var bSlots = branchSlots[bridgeId];
+                    for (int k = 0; k < bSlots.Count; k++)
+                    {
+                        if (bSlots[k].localPos.x <= 0f) streamSlots[0].Add(bSlots[k]);
+                        else streamSlots[1].Add(bSlots[k]);
+                    }
+                }
+            }
+            else if (bridgeIds.Count > 0)
+            {
+                for (int bi = 0; bi < bridgeIds.Count; bi++)
+                {
+                    streamSlots[0].AddRange(branchSlots[bridgeIds[bi]]);
+                }
+            }
+
+            // 3. Renk bloklarını çıkar (LevelMonsterEntry gruplarından veya orderedColors akışından)
+            var blocks = new List<(PuzzleColor color, int count)>();
+            if (groups != null && groups.Count > 0)
+            {
+                for (int i = 0; i < groups.Count; i++)
+                {
+                    if (groups[i] != null && groups[i].count > 0)
+                        blocks.Add((groups[i].color, groups[i].count));
+                }
+            }
+            else
+            {
+                for (int i = 0; i < orderedColors.Count; i++)
+                {
+                    PuzzleColor c = orderedColors[i];
+                    if (blocks.Count > 0 && blocks[blocks.Count - 1].color == c)
+                    {
+                        var last = blocks[blocks.Count - 1];
+                        blocks[blocks.Count - 1] = (last.color, last.count + 1);
+                    }
+                    else
+                    {
+                        blocks.Add((c, 1));
+                    }
+                }
+            }
+
+            // 4. Renk bloklarını kollara (Sol Kol & Sağ Kol) sırayla dağıt (bölünmeden monolitik bloklar)
+            var streamBlocks = new List<List<(PuzzleColor color, int count)>>();
+            for (int f = 0; f < streamSlots.Count; f++) streamBlocks.Add(new List<(PuzzleColor, int)>());
+
+            if (streamSlots.Count >= 2)
+            {
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    int targetStream = i % streamSlots.Count;
+                    streamBlocks[targetStream].Add(blocks[i]);
+                }
+            }
+            else
+            {
+                streamBlocks[0].AddRange(blocks);
+            }
+
+            // 5. Her kola ait blokları o kolun slotlarına kesintisiz tam şeritler halinde yerleştir
+            int[] streamSlotIndex = new int[streamSlots.Count];
+
+            for (int f = 0; f < streamSlots.Count; f++)
+            {
+                var sList = streamSlots[f];
+                var bList = streamBlocks[f];
+
+                for (int bi = 0; bi < bList.Count; bi++)
+                {
+                    var blk = bList[bi];
+                    for (int k = 0; k < blk.count; k++)
+                    {
+                        if (streamSlotIndex[f] < sList.Count)
+                        {
+                            var sl = sList[streamSlotIndex[f]++];
+                            res.balls.Add(new OrderedPoolLayout.PoolBall
+                            {
+                                color = blk.color,
+                                ballColumn = f * lanes + sl.laneIndex,
+                                row = Mathf.Max(0, Mathf.RoundToInt(sl.distToExit / bandSize)),
+                                localPos = sl.localPos
+                            });
+                        }
+                        else
+                        {
+                            // Kol kapasitesi dolarsa diğer kola taşır
+                            bool placed = false;
+                            for (int otherF = 0; otherF < streamSlots.Count; otherF++)
+                            {
+                                if (otherF == f) continue;
+                                if (streamSlotIndex[otherF] < streamSlots[otherF].Count)
+                                {
+                                    var sl = streamSlots[otherF][streamSlotIndex[otherF]++];
+                                    res.balls.Add(new OrderedPoolLayout.PoolBall
+                                    {
+                                        color = blk.color,
+                                        ballColumn = otherF * lanes + sl.laneIndex,
+                                        row = Mathf.Max(0, Mathf.RoundToInt(sl.distToExit / bandSize)),
+                                        localPos = sl.localPos
+                                    });
+                                    placed = true;
+                                    break;
+                                }
+                            }
+                            if (!placed) break;
+                        }
+                    }
+                }
             }
 
             return res;

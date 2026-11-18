@@ -54,6 +54,53 @@ namespace PuzzleGlass
         public float feverRemainingTime = 0f;
         public bool IsFeverActive => feverRemainingTime > 0f;
 
+        [Header("Blok Görünümü")]
+        [Tooltip("Puzzle With Sockets: puzzle parçası, toplarla dolan gri delikler (en fazla 16 delik).\n" +
+                 "Puzzle With Number: puzzle parçası, deliksiz, ortada kalan top sayısı.\n" +
+                 "Crate: kasa görünümü.")]
+        public BlockVisualStyle blockVisualStyle = BlockVisualStyle.PuzzleWithSockets;
+
+        /// <summary>Blok görünümünü değiştirir; oyun sırasında sahnedeki blokları da hemen yeniden çizer.</summary>
+        public void ApplyBlockVisualStyle(BlockVisualStyle style)
+        {
+            blockVisualStyle = style;
+            if (!Application.isPlaying || activeMonsters == null) return;
+            foreach (var m in activeMonsters)
+            {
+                if (m == null || m.visualStyle == style) continue;
+                m.SetVisualStyle(style);
+                m.RebuildMonsterVisuals();
+            }
+        }
+
+        [Header("Slot Sırası (VIP / + Mekaniği)")]
+        [Tooltip("Açıkken slot sırasının en solunda VIP slot olur (normal slotlar dolunca kullanılır).")]
+        public bool enableVipSlot = false;
+        [Tooltip("Açıkken en sağda '+' slotu olur; basınca yeni bir slot açılır.")]
+        public bool enableAddSlotButton = true;
+        [Tooltip("'+' ile açılabilecek en fazla normal slot sayısı.")]
+        [Range(4, 9)] public int maxSlotsWithAdd = 7;
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            // Oyun modunda VIP / "+" anahtarları değişince slot sırasına hemen uygula
+            if (!Application.isPlaying) return;
+            UnityEditor.EditorApplication.delayCall += () =>
+            {
+                // Blok görünümü değiştiyse sahnedeki blokları yeni görünümle yeniden çiz
+                if (this != null) ApplyBlockVisualStyle(blockVisualStyle);
+                if (this == null || slotSystem == null || !Application.isPlaying) return;
+                if (slotSystem.enableVipSlot == enableVipSlot && slotSystem.showAddSlotButton == enableAddSlotButton
+                    && slotSystem.maxRegularSlotCount == Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd)) return;
+                slotSystem.enableVipSlot = enableVipSlot;
+                slotSystem.showAddSlotButton = enableAddSlotButton;
+                slotSystem.maxRegularSlotCount = Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd);
+                slotSystem.RebuildSlots();
+            };
+        }
+#endif
+
         [Tooltip("Bu levelde yapılan hamle sayısı (blok başka hücreye taşındığında artar). HUD'da gösterilir.")]
         public int moveCount = 0;
 
@@ -566,22 +613,25 @@ namespace PuzzleGlass
             EnsureGameplayControllers();
             ClearMonsters();
 
-            // 1. Configure upper icy-blue Slot Row (default 5 slots right beneath glass container)
+            // 1. Configure upper Slot Row Dock (4 Active Slots + 1 '+' Slot dynamically sliding)
             if (slotSystem != null)
             {
                 slotSystem.gameObject.SetActive(true);
                 slotSystem.slotsEnabled = true;
-                int targetSlots = levelData.useCustomSlotSettings ? Mathf.Clamp(levelData.slotCount, 1, 6) : 5;
-                slotSystem.slotCount = targetSlots;
                 if (levelData.useCustomSlotSettings)
                 {
-                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.50f, 1.05f);
+                    slotSystem.regularSlotCount = Mathf.Clamp(levelData.slotCount, 1, 6);
+                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.42f, 0.90f);
                 }
                 else
                 {
-                    slotSystem.slotSpacing = targetSlots >= 6 ? 0.50f : (targetSlots == 5 ? 0.59f : 0.72f);
+                    slotSystem.regularSlotCount = 4;
+                    slotSystem.slotSpacing = 0.52f;
                 }
-                slotSystem.slotScale = targetSlots >= 6 ? 0.64f : (targetSlots == 5 ? 0.74f : 0.82f);
+                slotSystem.enableVipSlot = enableVipSlot;
+                slotSystem.showAddSlotButton = enableAddSlotButton;
+                slotSystem.maxRegularSlotCount = Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd);
+                slotSystem.slotScale = 0.68f;
                 slotSystem.RebuildSlots();
             }
 
@@ -862,6 +912,7 @@ namespace PuzzleGlass
                 monObj.transform.localScale = gridScale;
 
                 MonsterCharacter mon = monObj.AddComponent<MonsterCharacter>();
+                mon.SetVisualStyle(blockVisualStyle);
                 mon.Initialize(
                     entry.color,
                     entry.count,
@@ -1369,6 +1420,15 @@ namespace PuzzleGlass
         public void UnlockOneExtraSlotAndContinue()
         {
             if (slotSystem == null || slotSystem.slots == null) return;
+
+            // Try to unlock the next locked "+" slot directly
+            if (slotSystem.UnlockNextLockedSlot())
+            {
+                isLevelFailed = false;
+                _deadlockTimer = 0f;
+                return;
+            }
+
             if (slotSystem.slotCount >= 6) return;
 
             List<MonsterCharacter> currentlySlotted = new List<MonsterCharacter>();

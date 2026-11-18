@@ -436,7 +436,8 @@ Shader "PuzzleGlass/CarrierBox"
                 socks[12] = sp6.xy; socks[13] = sp6.zw;
                 socks[14] = sp7.xy; socks[15] = sp7.zw;
 
-                int   sockCount   = clamp((int)round(socketCountF), 1, 16);
+                // 0 = deliksiz plaka (puzzle parçası + ortada sayı görünümü)
+                int   sockCount   = clamp((int)round(socketCountF), 0, 16);
                 float sockRad     = max(0.018, socketRadF);
                 float dSock       = 1e5;
                 float2 nearestSockPos = float2(0.0, 0.0);

@@ -335,10 +335,20 @@ namespace PuzzleGlass
             }
 
             // Pacing & congestion limit: ensure smooth, readable flow without overcrowding
-            // During Fever Mode (Streak >= 3), vacuum speed is 2x faster!
+            // During Fever Mode (Streak >= 3) or when a VIP Slot is actively collecting, vacuum speed is 2x faster!
             bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
-            float effectiveInterval = isFever ? (collectionInterval * 0.55f) : collectionInterval;
-            int effectiveMaxInSpout = isFever ? (maxBallsInSpout + 2) : maxBallsInSpout;
+            bool isVipCollecting = false;
+            foreach (var s in _activeStreams.Values)
+            {
+                if (s.monster != null && s.monster.assignedSlot != null && s.monster.assignedSlot.isVip && (s.monster.remainingCount - s.inTransitBalls.Count > 0))
+                {
+                    isVipCollecting = true;
+                    break;
+                }
+            }
+
+            float effectiveInterval = (isFever || isVipCollecting) ? (collectionInterval * 0.55f) : collectionInterval;
+            int effectiveMaxInSpout = (isFever || isVipCollecting) ? (maxBallsInSpout + 2) : maxBallsInSpout;
 
             float now = Time.time;
             if (now - _lastGlobalCollectionTime < effectiveInterval) return;
@@ -715,6 +725,13 @@ namespace PuzzleGlass
                     {
                         score = Mathf.Abs(cand.transform.position.x - monsterWorldX);
                     }
+
+                    // VIP Slot priority boost: collects before regular slots
+                    if (monster.assignedSlot != null && monster.assignedSlot.isVip)
+                    {
+                        score -= 50f;
+                    }
+
                     if (score < bestOverallScore)
                     {
                         bestOverallScore = score;
