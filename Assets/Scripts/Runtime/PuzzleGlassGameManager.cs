@@ -131,6 +131,10 @@ namespace PuzzleGlass
 
         private PuzzleGlassLevelData GetGlassShapeSource(PuzzleGlassLevelData levelData)
         {
+            if (levelData != null && (levelData.useCustomGlassShape || levelData.glassPreset == GlassShapePreset.TrackChannel))
+            {
+                return levelData;
+            }
             int index = levels != null ? levels.IndexOf(levelData) : -1;
             if (index < 0 || levelsPerGlassShape <= 1) return levelData;
 
@@ -273,11 +277,20 @@ namespace PuzzleGlass
 
             if (slotSystem == null)
             {
-                slotSystem = FindFirstObjectByType<SlotSystem>();
+                slotSystem = FindFirstObjectByType<SlotSystem>(FindObjectsInactive.Include);
+                if (slotSystem == null)
+                {
+                    GameObject slotObj = new GameObject("SlotSystem");
+                    slotSystem = slotObj.AddComponent<SlotSystem>();
+                }
             }
-            if (slotSystem != null && slotSystem.gameObject.activeSelf)
+            if (slotSystem != null)
             {
-                slotSystem.gameObject.SetActive(false);
+                if (!slotSystem.gameObject.activeSelf)
+                {
+                    slotSystem.gameObject.SetActive(true);
+                }
+                slotSystem.slotsEnabled = true;
             }
 
             if (stagingGridBoard == null)
@@ -553,10 +566,23 @@ namespace PuzzleGlass
             EnsureGameplayControllers();
             ClearMonsters();
 
-            // 1. Upper 4 square slots are disabled — direct in-grid collection is used
+            // 1. Configure upper icy-blue Slot Row (default 5 slots right beneath glass container)
             if (slotSystem != null)
             {
-                slotSystem.gameObject.SetActive(false);
+                slotSystem.gameObject.SetActive(true);
+                slotSystem.slotsEnabled = true;
+                int targetSlots = levelData.useCustomSlotSettings ? Mathf.Clamp(levelData.slotCount, 1, 6) : 5;
+                slotSystem.slotCount = targetSlots;
+                if (levelData.useCustomSlotSettings)
+                {
+                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.50f, 1.05f);
+                }
+                else
+                {
+                    slotSystem.slotSpacing = targetSlots >= 6 ? 0.50f : (targetSlots == 5 ? 0.59f : 0.72f);
+                }
+                slotSystem.slotScale = targetSlots >= 6 ? 0.64f : (targetSlots == 5 ? 0.74f : 0.82f);
+                slotSystem.RebuildSlots();
             }
 
             // 2. Configure & Rebuild ShapedGlassContainer FIRST so StagingGridBoard aligns snugly right underneath it!
@@ -599,11 +625,24 @@ namespace PuzzleGlass
                         glassContainer.widthScale = Mathf.Clamp(levelData.widthScale, 0.5f, 1.8f);
                         glassContainer.heightScale = Mathf.Clamp(levelData.heightScale, 0.6f, 1.6f);
                         glassContainer.showShoulderHandles = levelData.showShoulderHandles;
+
+                        glassContainer.trackPreset = levelData.trackPreset;
+                        glassContainer.trackLanesAcross = levelData.trackLanesAcross;
+                        glassContainer.trackAutoFitToBalls = levelData.trackAutoFitToBalls;
+                        glassContainer.trackScale = levelData.trackScale > 0.05f ? levelData.trackScale : 1.0f;
+                        glassContainer.trackWallThickness = levelData.trackWallThickness > 0.01f ? levelData.trackWallThickness : 0.082f;
+                        glassContainer.trackBranches = GlassTrackLayout.CloneBranches(levelData.trackBranches);
                     }
                     else
                     {
-                        // Varsayılan üst cam: şişe tabanlı (düz tabanlı özel şekil olarak oynanır)
-                        glassContainer.shapePreset = GlassShapePreset.CustomFreeform;
+                        // Varsayılan üst camsı yapı: Görsel 1 tarzı sıkı toplu eğrisel cam pist (ArchLoop)
+                        glassContainer.shapePreset = GlassShapePreset.TrackChannel;
+                        glassContainer.trackPreset = GlassTrackPreset.ArchLoop;
+                        glassContainer.trackLanesAcross = 0;
+                        glassContainer.trackAutoFitToBalls = true;
+                        glassContainer.trackScale = 1.0f;
+                        glassContainer.trackWallThickness = 0.082f;
+                        glassContainer.trackBranches = GlassTrackLayout.BuildPresetBranches(GlassTrackPreset.ArchLoop);
                         glassContainer.symmetricMode = true;
                         glassContainer.curveSubdivisions = 14;
                         glassContainer.widthScale = 1.0f;
@@ -656,7 +695,11 @@ namespace PuzzleGlass
 
                 if (!preserveSceneGlassInPlayMode)
                 {
-                    if (levelData.useCustomGlassShape && levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
+                    if (glassContainer.IsTrackShape)
+                    {
+                        glassContainer.RebuildTrackCompiledData();
+                    }
+                    else if (levelData.useCustomGlassShape && levelData.contourPoints != null && levelData.contourPoints.Count >= 3)
                     {
                         glassContainer.contourPoints = new List<GlassContourPoint>(levelData.contourPoints);
                         glassContainer.SyncBoundsFromContour();
@@ -674,11 +717,11 @@ namespace PuzzleGlass
                         glassContainer.ApplyShapePreset(glassContainer.shapePreset, false);
                     }
                     // Havuz camlarında şişe kulpları çizilmez
-                    if (glassContainer.IsPoolShape) glassContainer.showShoulderHandles = false;
+                    if (glassContainer.IsPoolShape || glassContainer.IsTrackShape) glassContainer.showShoulderHandles = false;
                 }
 
-                // Per-level top curved glass feed tubes (controlled from Cam Stüdyosu / Level Stüdyosu)
-                glassContainer.useBallFeedTubes = levelData.useBallFeedTubes;
+                // Eğrisel cam pistlerde harici üst besleme tüpü kapalıdır — tüm toplar doğrudan kanal içinde başlar
+                glassContainer.useBallFeedTubes = glassContainer.IsTrackShape ? false : levelData.useBallFeedTubes;
                 glassContainer.feedTubeMode = levelData.feedTubeMode;
                 glassContainer.feedTubeContainerLimit = levelData.feedTubeContainerLimit;
                 glassContainer.feedTubeQueueVisibleCount = levelData.feedTubeQueueVisibleCount;
@@ -697,7 +740,11 @@ namespace PuzzleGlass
                         _baseGlassLocalPos = glassContainer.transform.localPosition;
                     }
                     float glassH = 1.18f;
-                    if (glassContainer.contourPoints != null && glassContainer.contourPoints.Count >= 2)
+                    if (glassContainer.IsTrackShape && glassContainer.compiledTrack != null)
+                    {
+                        glassH = glassContainer.compiledTrack.outerBounds.height;
+                    }
+                    else if (glassContainer.contourPoints != null && glassContainer.contourPoints.Count >= 2)
                     {
                         glassH = (glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y - glassContainer.contourPoints[0].y) * Mathf.Max(0.5f, glassContainer.heightScale);
                     }
@@ -714,7 +761,13 @@ namespace PuzzleGlass
                 }
             }
 
-            // 4. Configure framed bottom StagingGridBoard right beneath ShapedGlassContainer & spawn blocks inside it
+            // Align slot row right below glass container BEFORE configuring StagingGridBoard so tray fits below slots
+            if (slotSystem != null && slotSystem.slotsEnabled && slotSystem.gameObject.activeInHierarchy)
+            {
+                slotSystem.AlignBelowGlass(glassContainer);
+            }
+
+            // 4. Configure framed bottom StagingGridBoard right beneath SlotSystem (or glass) & spawn blocks inside it
             if (stagingGridBoard != null)
             {
                 if (!preserveSceneTrayInPlayMode)
@@ -734,16 +787,17 @@ namespace PuzzleGlass
                     }
                     else
                     {
-                        stagingGridBoard.matchGlassWidth = true;
-                        stagingGridBoard.maxBoardWidth = 2.822f;
-                        stagingGridBoard.maxBoardHeight = 3.20f;
-                        stagingGridBoard.framePadding = 0.068f;
-                        stagingGridBoard.innerMargin = 0.048f;
+                        stagingGridBoard.matchGlassWidth = false;
+                        stagingGridBoard.maxBoardWidth = 2.74f;
+                        stagingGridBoard.maxBoardHeight = 2.15f;
+                        stagingGridBoard.framePadding = 0.02f;
+                        stagingGridBoard.innerMargin = 0.02f;
                         stagingGridBoard.frameCornerRadius = 0.135f;
-                        stagingGridBoard.gapBelowGlass = 0.11f;
+                        stagingGridBoard.gapBelowGlass = 0.14f;
                         stagingGridBoard.useManualCellSize = false;
-                        stagingGridBoard.manualCellSize = 0.506f;
-                        stagingGridBoard.showOuterGlassJar = true;
+                        stagingGridBoard.manualCellSize = 0.56f;
+                        stagingGridBoard.showOuterGlassJar = false;
+                        stagingGridBoard.showTrayVisuals = false;
                     }
                     stagingGridBoard.Configure(levelData.stagingGridCols, levelData.stagingGridRows, glassContainer, levelData.gridWalls);
                 }
@@ -874,6 +928,7 @@ namespace PuzzleGlass
 
             if (stagingGridBoard != null)
             {
+                stagingGridBoard.AdvanceColumnQueues(activeMonsters);
                 stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
             }
         }
@@ -1314,7 +1369,7 @@ namespace PuzzleGlass
         public void UnlockOneExtraSlotAndContinue()
         {
             if (slotSystem == null || slotSystem.slots == null) return;
-            if (slotSystem.slotCount >= 5) return;
+            if (slotSystem.slotCount >= 6) return;
 
             List<MonsterCharacter> currentlySlotted = new List<MonsterCharacter>();
             for (int i = 0; i < slotSystem.slots.Count; i++)
@@ -1325,8 +1380,9 @@ namespace PuzzleGlass
                 }
             }
 
-            slotSystem.slotCount = Mathf.Min(5, slotSystem.slotCount + 1);
-            slotSystem.slotSpacing = (slotSystem.slotCount >= 4) ? 0.78f : 0.86f;
+            slotSystem.slotCount = Mathf.Min(6, slotSystem.slotCount + 1);
+            slotSystem.slotSpacing = slotSystem.slotCount >= 6 ? 0.50f : (slotSystem.slotCount == 5 ? 0.59f : 0.72f);
+            slotSystem.slotScale = slotSystem.slotCount >= 6 ? 0.64f : (slotSystem.slotCount == 5 ? 0.74f : 0.82f);
             slotSystem.RebuildSlots();
 
             for (int i = 0; i < currentlySlotted.Count && i < slotSystem.slots.Count; i++)

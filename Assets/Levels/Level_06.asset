@@ -13,13 +13,14 @@ MonoBehaviour:
   m_Name: Level_06
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 6
-  levelName: "Level 6 - Geni\u015F Panorama"
-  difficulty: 0
-  slotCount: 4
-  slotSpacing: 0.8
+  levelName: Level 6 - Orta
+  difficulty: 1
+  useCustomSlotSettings: 0
+  slotCount: 5
+  slotSpacing: 0.59
   useCustomGlassShape: 1
-  glassIsBottle: 1
-  glassPreset: 9
+  glassIsBottle: 0
+  glassPreset: 15
   colorTheme: 2
   layerPattern: 0
   symmetricMode: 1
@@ -60,36 +61,18 @@ MonoBehaviour:
   fillEmptyWithColor: 0
   emptyCellColor: 0
   lockedSectionRatio: 0.3
-  contourPoints:
-  - y: -0.56
-    halfWidth: 0.8176
-    centerX: 0
-    cornerTension: 0
-  - y: -0.4885
-    halfWidth: 1.1388
-    centerX: 0
-    cornerTension: 0
-  - y: -0.362
-    halfWidth: 1.3286
-    centerX: 0
-    cornerTension: 0
-  - y: -0.2025
-    halfWidth: 1.4308001
-    centerX: 0
-    cornerTension: 0
-  - y: -0.00999999
-    halfWidth: 1.46
-    centerX: 0
-    cornerTension: 0
-  - y: 0.54
-    halfWidth: 1.46
-    centerX: 0
-    cornerTension: 0
+  contourPoints: []
+  trackPreset: 0
+  trackLanesAcross: 0
+  trackAutoFitToBalls: 1
+  trackScale: 1
+  trackWallThickness: 0.082
+  trackBranches: []
   compartmentPreset: 7
   dividers: []
   compartmentZones: []
   stagingGridCols: 4
-  stagingGridRows: 4
+  stagingGridRows: 3
   useCustomTraySettings: 0
   trayMatchGlassWidth: 1
   trayMaxBoardWidth: 2.822
@@ -100,8 +83,9 @@ MonoBehaviour:
   trayGapBelowGlass: 0.11
   trayUseManualCellSize: 0
   trayManualCellSize: 0.506
+  trayShowOuterGlassJar: 0
   ballsPerBox: 3
-  carrierBoxFormatVersion: 3
+  carrierBoxFormatVersion: 4
   puzzleLayerStyle: 0
   stagingColumns: 3
   useStagingColumnQueue: 0
@@ -110,34 +94,98 @@ MonoBehaviour:
   tutorialFromAnchor: {x: 0, y: 0}
   tutorialTargetAnchor: {x: 0, y: 0}
   iceMeltMode: 0
-  bottomToTopTriplets: 05000000050000000500000000000000
+  bottomToTopTriplets: 030000000000000004000000020000000100000002000000000000000300000004000000010000000300000002000000
   bottomToTopGroups:
-  - color: 5
-    count: 2
+  - color: 3
+    count: 8
     blockShape: 0
-    gridAnchor: {x: 1, y: 3}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 3, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 2, y: 0}
+    gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 0
-    count: 2
+    count: 10
+    blockShape: 0
+    gridAnchor: {x: 1, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 4
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 1, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 3
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 3, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 4
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 3
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 2, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 6
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1
@@ -145,32 +193,96 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   monsters:
-  - color: 5
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 3, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 4
-    blockShape: 2
-    gridAnchor: {x: 2, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-  - color: 5
-    count: 2
+  - color: 3
+    count: 8
     blockShape: 0
-    gridAnchor: {x: 1, y: 3}
+    gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
   - color: 0
-    count: 2
+    count: 10
+    blockShape: 0
+    gridAnchor: {x: 1, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 4
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 1, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 0
+    count: 8
+    blockShape: 0
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 3
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 3, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 4
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 3
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 2, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+  - color: 2
+    count: 6
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1

@@ -261,10 +261,12 @@ namespace PuzzleGlass
         public LevelDifficulty difficulty = LevelDifficulty.Easy;
 
         [Header("Slot Configuration")]
-        [Range(1, 5)]
-        public int slotCount = 4;
-        [Range(0.60f, 1.10f)]
-        public float slotSpacing = 0.84f;
+        [Tooltip("True ise level asset'indeki özel slotCount/slotSpacing değerleri uygulanır; false iken standart 5 slotlu sistem kullanılır.")]
+        public bool useCustomSlotSettings = false;
+        [Range(1, 6)]
+        public int slotCount = 5;
+        [Range(0.50f, 1.10f)]
+        public float slotSpacing = 0.59f;
 
         [Header("Glass Shape & Aesthetics")]
         [Tooltip("True ise bölüm yüklendiğinde bu level asset'indeki cam şekli ve kontur noktaları uygulanır.")]
@@ -332,6 +334,19 @@ namespace PuzzleGlass
 
         [Header("Custom Glass Contour Points")]
         public List<GlassContourPoint> contourPoints = new List<GlassContourPoint>();
+
+        [Header("Curved Glass Track / Channel (Görsel 1 & 3 Tarzı Pist)")]
+        public GlassTrackPreset trackPreset = GlassTrackPreset.ArchLoop;
+        [Tooltip("0 = Top sayısına göre otomatik (3-5 şerit), 2..6 = Sabit yan yana şerit sayısı")]
+        [Range(0, 6)]
+        public int trackLanesAcross = 0;
+        [Tooltip("Açıkken pist ölçeği ve top çapı toplar sıkı sıkıya dolduracak şekilde otomatik ayarlanır.")]
+        public bool trackAutoFitToBalls = true;
+        [Range(0.55f, 1.45f)]
+        public float trackScale = 1.0f;
+        [Range(0.045f, 0.14f)]
+        public float trackWallThickness = 0.082f;
+        public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
 
         [Header("Glass Compartments & Internal Dividers (Per-Level)")]
         public GlassCompartmentPreset compartmentPreset = GlassCompartmentPreset.None_OrderedPool;
@@ -528,13 +543,13 @@ namespace PuzzleGlass
             if (bottomToTopTriplets == null) bottomToTopTriplets = new List<PuzzleColor>();
             if (bottomToTopGroups == null) bottomToTopGroups = new List<LevelMonsterEntry>();
 
-            // Legacy migration for old assets saved before shaped grid format (v3)
+            // Legacy migration for old assets saved before shaped grid format (v3/v4)
             if (carrierBoxFormatVersion < 3 || !HasValidGridLayout())
             {
                 bool hasLegacyMegaCounts = false;
                 for (int i = 0; i < monsters.Count; i++)
                 {
-                    if (monsters[i] != null && monsters[i].count > 16)
+                    if (monsters[i] != null && monsters[i].count > 99)
                     {
                         hasLegacyMegaCounts = true;
                         break;
@@ -547,14 +562,14 @@ namespace PuzzleGlass
                     return;
                 }
 
-                carrierBoxFormatVersion = 3;
+                carrierBoxFormatVersion = 4;
             }
 
             for (int i = 0; i < monsters.Count; i++)
             {
                 if (monsters[i] != null)
                 {
-                    monsters[i].count = Mathf.Clamp(monsters[i].count, 1, 16);
+                    monsters[i].count = Mathf.Clamp(monsters[i].count, 1, 99);
                     monsters[i].lockKeyCount = Mathf.Max(0, monsters[i].lockKeyCount);
                     monsters[i].iceCount = Mathf.Max(0, monsters[i].iceCount);
                 }

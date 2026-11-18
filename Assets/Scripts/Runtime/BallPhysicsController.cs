@@ -67,7 +67,9 @@ namespace PuzzleGlass
         private float _squashAmp = 0f;
         private Vector3 _squashAxisLocal = Vector3.up;
         private bool _isGpuSquashing = false;
+        private bool _isTrackMode = false;
         public bool IsGpuSquashing => _isGpuSquashing;
+        public bool IsTrackMode => _isTrackMode;
 
         public float AttractionTime => (_attractionStartTime > 0f) ? (Time.time - _attractionStartTime) : 0f;
         public MonsterCharacter TargetMonster => _targetMonster;
@@ -190,6 +192,23 @@ namespace PuzzleGlass
             _flightTrail.emitting = true;
         }
 
+        public void ConfigureForTrackMode(bool isTrack)
+        {
+            _isTrackMode = isTrack;
+            if (sphereCollider != null)
+            {
+                sphereCollider.radius = isTrack ? 0.482f : 0.496f;
+            }
+            if (rb != null)
+            {
+                rb.useGravity = !isTrack;
+                rb.linearDamping = isTrack ? 2.8f : defaultDrag;
+                rb.angularDamping = isTrack ? 0.9f : defaultAngularDrag;
+                rb.sleepThreshold = isTrack ? 0f : 0.005f;
+                if (isTrack && !rb.isKinematic) rb.WakeUp();
+            }
+        }
+
         public void ConfigurePoolLayer(int layerIdx, float worldX, float floorWorldY, float stepWorldY)
         {
             layerIndex = layerIdx;
@@ -206,11 +225,50 @@ namespace PuzzleGlass
         /// </summary>
         public void StepBallPhysics(float fixedDt)
         {
-            if (state != BallState.InContainer || rb == null || rb.isKinematic || rb.IsSleeping()) return;
+            if (state != BallState.InContainer || rb == null || rb.isKinematic) return;
+            if (!_isTrackMode && rb.IsSleeping()) return;
 
             Vector3 pos = transform.position;
             Vector3 vel = rb.linearVelocity;
             float speedSq = vel.x * vel.x + vel.y * vel.y;
+
+            if (_isTrackMode)
+            {
+                if (rb.IsSleeping()) rb.WakeUp();
+                var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+                if (container != null && container.IsTrackShape)
+                {
+                    Vector3 localPos = container.transform.InverseTransformPoint(pos);
+                    if (container.SampleTrackField(localPos, out float sDist, out Vector2 flowDir, out _, out Vector2 inward))
+                    {
+                        rb.AddForce(new Vector3(flowDir.x, flowDir.y, 0f) * 14.5f, ForceMode.Acceleration);
+                        float wallLimit = -ballRadius * 0.85f;
+                        if (sDist > wallLimit)
+                        {
+                            float push = Mathf.Clamp((sDist - wallLimit) * 42f, 0f, 18f);
+                            rb.AddForce(new Vector3(inward.x, inward.y, 0f) * push, ForceMode.Acceleration);
+                        }
+                    }
+                }
+                if (vel.sqrMagnitude > 3.4f * 3.4f || Mathf.Abs(vel.z) > 0.0001f)
+                {
+                    vel.z = 0f;
+                    if (vel.sqrMagnitude > 3.4f * 3.4f) vel = vel.normalized * 3.4f;
+                    rb.linearVelocity = vel;
+                }
+                if (speedSq > 0.04f)
+                {
+                    float r = Mathf.Max(0.05f, ballRadius);
+                    Vector3 targetAngVel = new Vector3(-vel.y / r, vel.x / r, 0f) * 0.55f;
+                    rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 10f * fixedDt);
+                }
+                if (Mathf.Abs(pos.z - (-0.10f)) > 0.001f)
+                {
+                    pos.z = -0.10f;
+                    transform.position = pos;
+                }
+                return;
+            }
 
             // Extra downward gravity while actively falling/rolling; once settled, let PhysX sleep naturally
             if (extraGravity > 0.01f && speedSq > 0.0025f)
@@ -308,6 +366,7 @@ namespace PuzzleGlass
             ballRadius = Mathf.Max(0.04f, radius);
             state = BallState.InContainer;
             _attractionStartTime = -1f;
+            _isTrackMode = false;
             layerIndex = 0;
             hasHomeX = false;
 
@@ -408,7 +467,7 @@ namespace PuzzleGlass
             if (rb != null)
             {
                 rb.isKinematic = false;
-                rb.useGravity = true;
+                rb.useGravity = !_isTrackMode;
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
                 rb.WakeUp();
             }
@@ -446,7 +505,7 @@ namespace PuzzleGlass
             if (rb != null)
             {
                 rb.isKinematic = false;
-                rb.useGravity = true;
+                rb.useGravity = !_isTrackMode;
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
                 rb.linearVelocity = new Vector3(0f, -1.2f, 0f);
                 rb.WakeUp();
@@ -513,7 +572,7 @@ namespace PuzzleGlass
                         Vector3 op = other.transform.position;
                         float dx = vacatedPos.x - op.x;
                         float dy = op.y - vacatedPos.y;
-                        if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
+                        if (!_isTrackMode && dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
                         {
                             float inwardVx = Mathf.Clamp(dx * 1.45f, -0.45f, 0.45f);
                             other.rb.linearVelocity += new Vector3(inwardVx, -0.24f, 0f);

@@ -26,7 +26,7 @@ namespace PuzzleGlass.Editor.Studio
         private const string LiveKey = "PuzzleGlass_Studio_LiveSync";
         private const float HandleRadius = 7f;
 
-        private enum Handle { None, Width, Height, Corner, Point }
+        private enum Handle { None, Width, Height, Corner, Point, TrackPoint }
 
         private readonly List<PuzzleGlassLevelData> m_All = new List<PuzzleGlassLevelData>();
         private readonly List<PuzzleGlassLevelData> m_Visible = new List<PuzzleGlassLevelData>();
@@ -42,8 +42,11 @@ namespace PuzzleGlass.Editor.Studio
 
         private Handle m_Drag = Handle.None;
         private int m_DragPoint = -1;
+        private int m_DragBranch = -1;
         private Handle m_Hover = Handle.None;
         private int m_HoverPoint = -1;
+        private int m_HoverBranch = -1;
+        private bool m_TrackSymmetricEdit = true;
 
         private ListView m_List;
         private Label m_Title, m_State, m_Readout;
@@ -251,7 +254,8 @@ namespace PuzzleGlass.Editor.Studio
             if (paren > 0 && name.Contains("Izgara")) name = name.Substring(0, paren);
             row.Q<Label>("title").text = name;
             string kind;
-            if (!lvl.useCustomGlassShape) kind = "Varsayılan havuz";
+            if (!lvl.useCustomGlassShape) kind = "Varsayılan pist";
+            else if (GlassShapeData.IsTrack(lvl)) kind = $"Pist ({TrackPresetLabel(lvl.trackPreset)})";
             else if (GlassShapeData.IsBoxPreset(lvl.glassPreset))
             {
                 GlassShapeData.GetBox(lvl, out float w, out float h, out _);
@@ -397,17 +401,69 @@ namespace PuzzleGlass.Editor.Studio
             OnEdited(syncScene);
         }
 
+        private static string TrackPresetLabel(GlassTrackPreset p)
+        {
+            switch (p)
+            {
+                case GlassTrackPreset.ArchLoop: return "Kemer";
+                case GlassTrackPreset.HeartLoop: return "Kalp / M";
+                case GlassTrackPreset.UChannel: return "U-Kanal";
+                case GlassTrackPreset.ORing: return "Halka";
+                case GlassTrackPreset.SCurve: return "S-Kanal";
+                case GlassTrackPreset.DoubleArch: return "Çift Kemer";
+                default: return "Özel Pist";
+            }
+        }
+
+        private void SetTrackPreset(GlassTrackPreset preset, string undo = "Pist şekli")
+        {
+            Record(undo);
+            m_Level.useCustomGlassShape = true;
+            m_Level.glassIsBottle = false;
+            m_Level.glassPreset = GlassShapePreset.TrackChannel;
+            m_Level.trackPreset = preset;
+            if (preset != GlassTrackPreset.Custom)
+            {
+                m_Level.trackBranches = GlassTrackLayout.BuildPresetBranches(preset);
+            }
+            else if (m_Level.trackBranches == null || m_Level.trackBranches.Count == 0)
+            {
+                m_Level.trackBranches = GlassTrackLayout.BuildPresetBranches(GlassTrackPreset.ArchLoop);
+            }
+            if (m_Level.trackWallThickness < 0.04f) m_Level.trackWallThickness = 0.082f;
+            if (m_Level.trackScale < 0.5f) m_Level.trackScale = 1.0f;
+            OnEdited();
+        }
+
+        private void EnsureEditableTrackBranches()
+        {
+            if (m_Level.useCustomGlassShape && m_Level.glassPreset == GlassShapePreset.TrackChannel &&
+                m_Level.trackBranches != null && m_Level.trackBranches.Count > 0)
+                return;
+            m_Level.useCustomGlassShape = true;
+            m_Level.glassIsBottle = false;
+            m_Level.glassPreset = GlassShapePreset.TrackChannel;
+            GlassTrackPreset srcPreset = m_Level.trackPreset == GlassTrackPreset.Custom ? GlassTrackPreset.ArchLoop : m_Level.trackPreset;
+            m_Level.trackBranches = GlassTrackLayout.BuildPresetBranches(srcPreset);
+        }
+
         private void ResetToDefault()
         {
             Record("Varsayılan cam");
             m_Level.useCustomGlassShape = false;
             m_Level.glassIsBottle = false;
-            m_Level.glassPreset = GlassShapePreset.RectangleBox;
+            m_Level.glassPreset = GlassShapePreset.TrackChannel;
+            m_Level.trackPreset = GlassTrackPreset.ArchLoop;
+            m_Level.trackLanesAcross = 0;
+            m_Level.trackAutoFitToBalls = true;
+            m_Level.trackScale = 1.0f;
+            m_Level.trackWallThickness = 0.082f;
+            m_Level.trackBranches = new List<GlassTrackBranch>();
             m_Level.contourPoints = new List<GlassContourPoint>();
             m_Level.boxCornerRadius = 0.28f;
             m_Level.boxFrameThickness = 0.055f;
             OnEdited();
-            ShowNotification(new GUIContent("Level varsayılan kristal camına döndü"));
+            ShowNotification(new GUIContent("Level varsayılan cam pistine (Kemer) döndü"));
         }
 
         private void ConvertBoxToContour()
@@ -502,7 +558,13 @@ namespace PuzzleGlass.Editor.Studio
 
             var dims = GlassShapeData.GetDims(m_Level);
             var layout = GlassShapeData.BuildLayout(m_Level);
-            if (GlassShapeData.IsBottle(m_Level))
+            if (GlassShapeData.IsTrack(m_Level))
+            {
+                GlassShapeData.BuildTrack(m_Level, out var compiled, out _);
+                int lanes = compiled != null ? compiled.lanesAcross : 4;
+                m_Readout.text = $"Pist ({TrackPresetLabel(m_Level.useCustomGlassShape ? m_Level.trackPreset : GlassTrackPreset.ArchLoop)})   ·   {lanes} şerit   ·   {layout.balls.Count} top, çap {layout.diameter:0.000}" + (m_Level.useCustomGlassShape ? "" : "   ·   varsayılan");
+            }
+            else if (GlassShapeData.IsBottle(m_Level))
             {
                 GlassShapeData.GetBottle(m_Level, out float bw, out float bh);
                 m_Readout.text = $"Şişe  {bw:0.00} × {bh:0.00}   ·   köşe {m_Level.boxCornerRadius:0.00}   ·   {layout.balls.Count} top, çap {layout.diameter:0.000}" + (m_Level.useCustomGlassShape ? "" : "   ·   varsayılan");
@@ -524,38 +586,50 @@ namespace PuzzleGlass.Editor.Studio
         {
             m_Inspector.Clear();
             if (m_Level == null) return;
-            bool bottle = GlassShapeData.IsBottle(m_Level);
-            bool box = !bottle && GlassShapeData.IsBox(m_Level);
+            bool track = GlassShapeData.IsTrack(m_Level);
+            bool bottle = !track && GlassShapeData.IsBottle(m_Level);
+            bool box = !track && !bottle && GlassShapeData.IsBox(m_Level);
 
             Section("Cam türü");
             var kinds = new VisualElement();
             kinds.AddToClassList("segmented");
+
+            var trackBtn = new Button(() =>
+            {
+                if (GlassShapeData.IsTrack(m_Level)) return;
+                SetTrackPreset(m_Level.trackPreset == GlassTrackPreset.Custom ? GlassTrackPreset.ArchLoop : m_Level.trackPreset, "Cam pistine geç");
+            }) { text = "Pist (önerilen)", tooltip = "Görsel 1 & 3 tarzı eğrisel cam kanal/pist; toplar sıkı şeritler halinde akar." };
+            trackBtn.AddToClassList("segmented__item");
+            trackBtn.EnableInClassList("segmented__item--active", track);
+            kinds.Add(trackBtn);
+
             var bottleBtn = new Button(() =>
             {
                 if (GlassShapeData.IsBottle(m_Level)) return;
                 float w = ShapedGlassContainer.DefaultBottleWidth, h = ShapedGlassContainer.ComputeAutoBottleHeight(m_Level.bottomToTopGroups);
                 if (GlassShapeData.IsBox(m_Level)) GlassShapeData.GetBox(m_Level, out w, out h, out _);
                 SetBottle(Mathf.Clamp(w, BottleMinW, BottleMaxW), Mathf.Clamp(h, BottleMinH, BottleMaxH), "Şişeye geç");
-            }) { text = "Şişe (önerilen)", tooltip = "Taban şişe gibi yuvarlak omuzlarla yakaya iner; yanları ve üstü ayarlanır." };
+            }) { text = "Şişe", tooltip = "Taban şişe gibi yuvarlak omuzlarla yakaya iner; yanları ve üstü ayarlanır." };
             bottleBtn.AddToClassList("segmented__item");
             bottleBtn.EnableInClassList("segmented__item--active", bottle);
             kinds.Add(bottleBtn);
-            var boxBtn = new Button(() => { if (!GlassShapeData.IsBox(m_Level) || bottle) { SetBox(2.64f, 1.18f, undo: "Havuza geç"); } }) { text = "Havuz" };
+            var boxBtn = new Button(() => { if (!GlassShapeData.IsBox(m_Level) || bottle || track) { SetBox(2.64f, 1.18f, undo: "Havuza geç"); } }) { text = "Havuz" };
             boxBtn.AddToClassList("segmented__item");
             boxBtn.EnableInClassList("segmented__item--active", box);
             kinds.Add(boxBtn);
             var freeBtn = new Button(() =>
             {
                 if (GlassShapeData.IsBox(m_Level) && !bottle) ConvertBoxToContour();
-                else if (bottle) SetContour(new List<GlassContourPoint>(GlassShapeData.GetContour(m_Level)), "Özel şekle geç");
+                else if (bottle || track) SetContour(new List<GlassContourPoint>(GlassShapeData.GetContour(m_Level)), "Özel şekle geç");
             }) { text = "Özel şekil" };
             freeBtn.tooltip = "Yamuk, altıgen, kapsül gibi şekiller. Taban düz ve geniş olduğu sürece oyunda havuz gibi oynanır.";
             freeBtn.AddToClassList("segmented__item");
-            freeBtn.EnableInClassList("segmented__item--active", !box && !bottle);
+            freeBtn.EnableInClassList("segmented__item--active", !track && !box && !bottle);
             kinds.Add(freeBtn);
             m_Inspector.Add(kinds);
 
-            if (bottle) BuildBottleInspector();
+            if (track) BuildTrackInspector();
+            else if (bottle) BuildBottleInspector();
             else if (box) BuildBoxInspector();
             else BuildContourInspector();
 
@@ -871,6 +945,159 @@ namespace PuzzleGlass.Editor.Studio
             parent.Add(btn);
         }
 
+        private void BuildTrackInspector()
+        {
+            GlassTrackPreset activePreset = m_Level.useCustomGlassShape ? m_Level.trackPreset : GlassTrackPreset.ArchLoop;
+
+            Section("Pist Şekilleri (Görsel 1 & 3)");
+            var presets = new VisualElement();
+            presets.AddToClassList("chip-grid");
+            var trackList = new (string name, GlassTrackPreset p, string tip)[]
+            {
+                ("Kemer (Görsel 1)", GlassTrackPreset.ArchLoop, "Görsel 1 tarzı dış U + iç kemer köprü + orta ada"),
+                ("Kalp / M (Görsel 3)", GlassTrackPreset.HeartLoop, "Görsel 3 tarzı kalp/M kıvrımlı pist + orta ada"),
+                ("U-Kanal", GlassTrackPreset.UChannel, "Klasik kıvrımlı U-tüp"),
+                ("Halka (O-Pist)", GlassTrackPreset.ORing, "Kapalı oval halka pist"),
+                ("S-Kanal", GlassTrackPreset.SCurve, "Yılan gibi kıvrımlı S-kanal"),
+                ("Çift Kemer", GlassTrackPreset.DoubleArch, "Üst üste çift adalı kıvrımlı pist")
+            };
+            foreach (var item in trackList)
+            {
+                var pp = item.p;
+                var chip = new Button(() => SetTrackPreset(pp, $"Pist: {item.name}")) { text = item.name, tooltip = item.tip };
+                chip.AddToClassList("chip");
+                chip.EnableInClassList("chip--active", m_Level.useCustomGlassShape && activePreset == pp);
+                presets.Add(chip);
+            }
+            m_Inspector.Add(presets);
+
+            Section("Top Sıklığı & Ölçü");
+            var laneRow = new VisualElement();
+            laneRow.AddToClassList("segmented");
+            foreach (var (lbl, lv) in new[] { ("Oto", 0), ("3 Şerit", 3), ("4 Şerit", 4), ("5 Şerit", 5) })
+            {
+                int val = lv;
+                var btn = new Button(() =>
+                {
+                    Record("Pist şerit sayısı");
+                    EnsureEditableTrackBranches();
+                    m_Level.trackLanesAcross = val;
+                    OnEdited();
+                }) { text = lbl };
+                btn.AddToClassList("segmented__item");
+                btn.EnableInClassList("segmented__item--active", (m_Level.useCustomGlassShape ? m_Level.trackLanesAcross : 0) == val);
+                laneRow.Add(btn);
+            }
+            m_Inspector.Add(laneRow);
+
+            var autoFit = new Toggle("Topların miktarına göre otomatik sığdır")
+            {
+                value = !m_Level.useCustomGlassShape || m_Level.trackAutoFitToBalls,
+                tooltip = "Açıkken pist ölçeği ve top çapı, toplar pisti sıkı sıkıya dolduracak şekilde ayarlanır."
+            };
+            autoFit.RegisterValueChangedCallback(e =>
+            {
+                Record("Pist otomatik sığdır");
+                EnsureEditableTrackBranches();
+                m_Level.trackAutoFitToBalls = e.newValue;
+                OnEdited();
+            });
+            m_Inspector.Add(autoFit);
+
+            if (m_Level.useCustomGlassShape && !m_Level.trackAutoFitToBalls)
+            {
+                AddSlider("Pist ölçeği", m_Level.trackScale > 0.05f ? m_Level.trackScale : 1.0f, 0.55f, 1.45f, v =>
+                {
+                    Record("Pist ölçeği");
+                    EnsureEditableTrackBranches();
+                    m_Level.trackScale = v;
+                    OnEdited();
+                });
+            }
+
+            AddSlider("Duvar kalınlığı", m_Level.trackWallThickness > 0.01f ? m_Level.trackWallThickness : 0.082f, 0.045f, 0.14f, v =>
+            {
+                Record("Pist duvar kalınlığı");
+                EnsureEditableTrackBranches();
+                m_Level.trackWallThickness = v;
+                OnEdited();
+            });
+
+            var symToggle = new Toggle("Simetrik düzenle (Sol ↔ Sağ)")
+            {
+                value = m_TrackSymmetricEdit,
+                tooltip = "Açıkken bir kolun noktasını sürüklediğinde karşı kolun simetrik noktası da birlikte hareket eder."
+            };
+            symToggle.RegisterValueChangedCallback(e => m_TrackSymmetricEdit = e.newValue);
+            m_Inspector.Add(symToggle);
+
+            Section("Pist Kolları / Şekillendirme");
+            var branchActions = new VisualElement();
+            branchActions.AddToClassList("create-zone");
+            branchActions.Add(new Button(() =>
+            {
+                Record("Kemer köprü ekle");
+                EnsureEditableTrackBranches();
+                m_Level.trackPreset = GlassTrackPreset.Custom;
+                m_Level.trackBranches.Add(new GlassTrackBranch($"Kemer {m_Level.trackBranches.Count + 1}", true,
+                    new Vector2(-0.85f, 0.25f), new Vector2(0f, 0.58f), new Vector2(0.85f, 0.25f)));
+                OnEdited();
+            }) { text = "+ Kemer / Köprü" });
+            branchActions.Add(new Button(() =>
+            {
+                Record("Yeni kol ekle");
+                EnsureEditableTrackBranches();
+                m_Level.trackPreset = GlassTrackPreset.Custom;
+                m_Level.trackBranches.Add(new GlassTrackBranch($"Kol {m_Level.trackBranches.Count + 1}", false,
+                    new Vector2(0f, -0.54f), new Vector2(0.45f, 0.0f), new Vector2(0.55f, 0.65f)));
+                OnEdited();
+            }) { text = "+ Kol Ekle" });
+            m_Inspector.Add(branchActions);
+
+            var branches = (m_Level.useCustomGlassShape && m_Level.trackBranches != null && m_Level.trackBranches.Count > 0)
+                ? m_Level.trackBranches
+                : GlassTrackLayout.BuildPresetBranches(activePreset);
+            for (int b = 0; b < branches.Count; b++)
+            {
+                int bIdx = b;
+                var br = branches[b];
+                if (br == null) continue;
+                var row = new VisualElement();
+                row.AddToClassList("inspector__row");
+                var lbl = new Label($"{br.name} ({br.points?.Count ?? 0} nokta)");
+                lbl.AddToClassList("inspector__row-label");
+                row.Add(lbl);
+                var bridgeTog = new Toggle("Köprü") { value = br.isBridge };
+                bridgeTog.RegisterValueChangedCallback(e =>
+                {
+                    Record("Kol türü");
+                    EnsureEditableTrackBranches();
+                    if (bIdx < m_Level.trackBranches.Count) m_Level.trackBranches[bIdx].isBridge = e.newValue;
+                    m_Level.trackPreset = GlassTrackPreset.Custom;
+                    OnEdited();
+                });
+                row.Add(bridgeTog);
+                if (branches.Count > 1)
+                {
+                    var del = new Button(() =>
+                    {
+                        Record("Kolu sil");
+                        EnsureEditableTrackBranches();
+                        if (bIdx < m_Level.trackBranches.Count && m_Level.trackBranches.Count > 1)
+                            m_Level.trackBranches.RemoveAt(bIdx);
+                        m_Level.trackPreset = GlassTrackPreset.Custom;
+                        OnEdited();
+                    }) { text = "×", tooltip = "Bu kolu sil" };
+                    row.Add(del);
+                }
+                m_Inspector.Add(row);
+            }
+
+            var hint = new Label("Önizlemedeki beyaz noktaları sürükleyerek pisti istediğin gibi eğip bükebilirsin. Kol çizgisine çift tıkla = nokta ekle, noktaya sağ tıkla = sil.");
+            hint.AddToClassList("inspector__hint");
+            m_Inspector.Add(hint);
+        }
+
         private void BuildBottleInspector()
         {
             GlassShapeData.GetBottle(m_Level, out float w, out float h);
@@ -1068,6 +1295,29 @@ namespace PuzzleGlass.Editor.Studio
             var dims = GlassShapeData.GetDims(m_Level);
             var layout = GlassShapeData.BuildLayout(m_Level);
 
+            if (GlassShapeData.IsTrack(m_Level))
+            {
+                if (!m_Level.useCustomGlassShape)
+                    findings.Add((FindingSeverity.Info, "Bu level varsayılan Kemer (Görsel 1) cam pistini kullanıyor. Bir şekil seçtiğinde veya nokta sürüklediğinde levele özel kaydedilir."));
+                if (m_Level.monsters == null || m_Level.monsters.Count == 0)
+                    findings.Add((FindingSeverity.Info, "Levelde blok yok; önizlemede top görünmez. Blokları Level Stüdyosu'nda ekle."));
+                if (findings.Count == 0) { m_Issues.Add(new Label("Bu cam pisti için bulgu yok.")); return; }
+                foreach (var (sev, text) in findings)
+                {
+                    var row = new VisualElement();
+                    row.AddToClassList("issue");
+                    row.AddToClassList(sev == FindingSeverity.Critical ? "issue--critical" : sev == FindingSeverity.Warning ? "issue--warning" : "issue--info");
+                    var tag = new Label(sev == FindingSeverity.Critical ? "KRİTİK" : sev == FindingSeverity.Warning ? "UYARI" : "BİLGİ");
+                    tag.AddToClassList("issue__tag");
+                    row.Add(tag);
+                    var t = new Label(text);
+                    t.AddToClassList("issue__text");
+                    row.Add(t);
+                    m_Issues.Add(row);
+                }
+                return;
+            }
+
             if (!GlassShapeData.IsPlayablePool(m_Level))
                 findings.Add((FindingSeverity.Critical, "Camın tabanı çok dar: oyun bunu huni ağızlı şişe gibi işler, toplar deliğin üstünden dümdüz inmez. En alttaki noktanın genişliğini 0.60'ın üstüne çıkar."));
 
@@ -1115,14 +1365,28 @@ namespace PuzzleGlass.Editor.Studio
         private void FitView(Rect rect, PuzzleGlassLevelData lvl)
         {
             if (m_ViewFrozen) return;
-            var contour = GlassShapeData.GetContour(lvl);
-            float maxHw = 0f;
-            foreach (var p in contour) maxHw = Mathf.Max(maxHw, p.halfWidth);
+            float maxHw, top, bottom;
             float frame = lvl.boxFrameThickness;
-            float top = contour[contour.Count - 1].y + frame;
-            float bottom = contour[0].y - frame - 0.14f;
+            if (GlassShapeData.IsTrack(lvl))
+            {
+                GlassShapeData.BuildTrack(lvl, out var compiled, out _);
+                Rect ob = compiled != null ? compiled.outerBounds : Rect.MinMaxRect(-1.35f, -0.82f, 1.35f, 1.08f);
+                maxHw = Mathf.Max(Mathf.Abs(ob.xMin), Mathf.Abs(ob.xMax));
+                top = ob.yMax;
+                bottom = ob.yMin - 0.14f;
+                frame = compiled != null ? compiled.wallThickness : 0.082f;
+            }
+            else
+            {
+                var contour = GlassShapeData.GetContour(lvl);
+                maxHw = 0f;
+                foreach (var p in contour) maxHw = Mathf.Max(maxHw, p.halfWidth);
+                top = contour[contour.Count - 1].y + frame;
+                bottom = contour[0].y - frame - 0.14f;
+            }
             ComputeTrayPreviewMetrics(lvl, maxHw, out _, out float trayHalfW, out float trayH, out float trayGap, out _, out _);
-            float viewBottom = bottom - trayGap - trayH - 0.22f;
+            float slotReserve = 0.76f;
+            float viewBottom = bottom - slotReserve - trayGap - trayH - 0.22f;
             float viewTop = top + (lvl.useBallFeedTubes ? 1.48f : 0.25f);
             float viewHalfW = Mathf.Max(Mathf.Max(maxHw, trayHalfW) + frame + (lvl.useBallFeedTubes ? 0.58f : 0.42f), 1.30f);
             float sx = rect.width / (viewHalfW * 2f);
@@ -1216,8 +1480,25 @@ namespace PuzzleGlass.Editor.Studio
             float maxHw = 0f;
             foreach (var c in contour) maxHw = Mathf.Max(maxHw, c.halfWidth);
 
+            bool isTrack = GlassShapeData.IsTrack(lvl);
+            GlassTrackLayout.CompiledTrack compiledTrack = null;
+            OrderedPoolLayout.Result layout;
+            if (isTrack)
+            {
+                GlassShapeData.BuildTrack(lvl, out compiledTrack, out layout);
+                if (compiledTrack != null)
+                {
+                    maxHw = Mathf.Max(Mathf.Abs(compiledTrack.outerBounds.xMin), Mathf.Abs(compiledTrack.outerBounds.xMax));
+                    DrawTrackPreview2D(p, compiledTrack);
+                }
+            }
+            else
+            {
+                layout = GlassShapeData.BuildLayout(lvl);
+            }
+
             // Üst kristal cam çizimi (İnce parlak 3D şişe camı duvar + yumuşak saydamlık)
-            if (box)
+            if (!isTrack && box)
             {
                 float hw = contour[0].halfWidth;
                 float bottom = contour[0].y, top = contour[contour.Count - 1].y;
@@ -1231,7 +1512,7 @@ namespace PuzzleGlass.Editor.Studio
                 RoundedRect(p, -hw + 0.04f, bottom + r * 0.45f, -hw + 0.11f, top - r * 0.45f, 0.03f, new Color(1f, 1f, 1f, 0.48f));
                 RoundedRect(p, hw - 0.12f, bottom + r * 0.65f, hw - 0.04f, top - r * 0.35f, 0.035f, new Color(1f, 1f, 1f, 0.68f));
             }
-            else
+            if (!isTrack && !box)
             {
                 float strokePx = Mathf.Max(2.5f, frame * m_Scale);
                 TraceContourPath(p, contour);
@@ -1257,7 +1538,6 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             // Toplar + opsiyonel üst cam besleme tüpleri (bu levele özel)
-            var layout = GlassShapeData.BuildLayout(lvl);
             var split = GlassShapeData.SplitForFeedTubes(lvl, layout);
             float ballRadiusWorld = Mathf.Max(0.05f, layout.diameter * 0.5f);
             float rad = ballRadiusWorld * m_Scale;
@@ -1321,8 +1601,9 @@ namespace PuzzleGlass.Editor.Studio
 
             // Üst camın altındaki 3D mor çıkış yakası + alt açık ağızlı cam kavanoz + mor tepsi
             {
-                float glassBottomY = contour[0].y - frame;
-                float collarW = Mathf.Clamp(contour[0].halfWidth * 0.94f, 0.72f, 1.14f);
+                float glassBottomY = isTrack && compiledTrack != null ? compiledTrack.outerBounds.yMin : (contour[0].y - frame);
+                float collarBaseW = isTrack && compiledTrack != null ? (compiledTrack.innerHalfWidth * 3.2f) : (contour[0].halfWidth * 2f);
+                float collarW = Mathf.Clamp(collarBaseW * 0.48f, 0.72f, 1.14f);
                 float collarH = 0.23f;
                 float collarTop = glassBottomY + 0.03f;
                 float collarBottom = collarTop - collarH;
@@ -1332,12 +1613,33 @@ namespace PuzzleGlass.Editor.Studio
                 RoundedRect(p, -collarW * 0.44f, collarTop - 0.055f, collarW * 0.44f, collarTop - 0.01f, 0.025f, new Color(0.86f, 0.84f, 1.00f, 0.82f));
                 RoundedRect(p, -collarW * 0.48f, collarBottom, collarW * 0.48f, collarBottom + 0.05f, 0.03f, new Color(0.28f, 0.22f, 0.64f, 0.72f));
 
+                // 5'li buz mavisi slot sırası (cam çıkışı ile alt tepsi arasında)
+                int previewSlotCount = lvl.useCustomSlotSettings ? Mathf.Clamp(lvl.slotCount, 1, 6) : 5;
+                float slotSpacing = lvl.useCustomSlotSettings
+                    ? Mathf.Clamp(lvl.slotSpacing, 0.50f, 1.05f)
+                    : (previewSlotCount >= 6 ? 0.50f : (previewSlotCount == 5 ? 0.59f : 0.72f));
+                float slotScaleRatio = previewSlotCount >= 6 ? 0.64f / 0.74f : (previewSlotCount == 5 ? 1f : 0.82f / 0.74f);
+                float slotHalf = 0.21f * slotScaleRatio;
+                float slotCenterY = collarBottom - 0.20f - slotHalf;
+                float slotStartX = -(previewSlotCount - 1) * slotSpacing * 0.5f;
+                for (int si = 0; si < previewSlotCount; si++)
+                {
+                    float sx = slotStartX + si * slotSpacing;
+                    // Soft cool shadow beneath each tile
+                    RoundedRect(p, sx - slotHalf, slotCenterY - slotHalf - 0.055f, sx + slotHalf, slotCenterY + slotHalf - 0.02f, 0.08f * slotScaleRatio, new Color(0.18f, 0.23f, 0.35f, 0.28f));
+                    // 3D sky-blue lower lip + perimeter outline
+                    RoundedRect(p, sx - slotHalf - 0.01f, slotCenterY - slotHalf - 0.032f, sx + slotHalf + 0.01f, slotCenterY + slotHalf + 0.01f, 0.075f * slotScaleRatio, new Color(0.25f, 0.66f, 1.00f, 1f));
+                    // Frosted icy pale-blue top face + crisp white rim
+                    RoundedRect(p, sx - slotHalf, slotCenterY - slotHalf + 0.012f, sx + slotHalf, slotCenterY + slotHalf + 0.01f, 0.07f * slotScaleRatio, new Color(0.87f, 0.94f, 1.00f, 1f));
+                    RoundedRectStroke(p, sx - slotHalf + 0.008f, slotCenterY - slotHalf + 0.02f, sx + slotHalf - 0.008f, slotCenterY + slotHalf + 0.004f, 0.066f * slotScaleRatio, 1.2f, new Color(0.99f, 1.00f, 1.00f, 0.92f));
+                }
+
                 ComputeTrayPreviewMetrics(lvl, maxHw, out float cell, out float trayHalfW, out float trayH, out float trayGap, out float jarPad, out float trayCornerR);
-                float trayTop = collarBottom - trayGap;
+                float trayTop = slotCenterY - slotHalf - Mathf.Max(0.24f, trayGap * 0.85f);
                 float trayBottom = trayTop - trayH;
                 float neckW = Mathf.Clamp(trayHalfW * 0.43f, 0.38f, 0.64f);
-                float neckTop = collarBottom - Mathf.Min(0.14f, trayGap * 0.40f);
-                bool showJar = !lvl.useCustomTraySettings || lvl.trayShowOuterGlassJar;
+                float neckTop = Mathf.Min(slotCenterY - slotHalf - 0.08f, trayTop + jarPad + 0.14f);
+                bool showJar = lvl.useCustomTraySettings && lvl.trayShowOuterGlassJar;
 
                 if (showJar)
                 {
@@ -1356,21 +1658,46 @@ namespace PuzzleGlass.Editor.Studio
                     RoundedRect(p, -neckW * 0.82f, neckTop - 0.032f, neckW * 0.82f, neckTop + 0.006f, 0.02f, new Color(0.66f, 0.64f, 0.96f, 0.52f));
                 }
 
-                // Mor yumuşak tepsi ve yuvalar (+ varsa sabit bölmeler)
-                RoundedRect(p, -trayHalfW - 0.05f, trayBottom - 0.05f, trayHalfW + 0.05f, trayTop + 0.05f, Mathf.Min(trayCornerR, 0.22f), new Color(0.32f, 0.27f, 0.62f, 0.94f));
+                // Düzenli kutu konum önizlemeleri (mor tepsi kaldırıldı)
                 var wallSet = lvl.gridWalls != null ? new HashSet<Vector2Int>(lvl.gridWalls) : null;
                 for (int x = 0; x < lvl.stagingGridCols; x++)
                     for (int y = 0; y < lvl.stagingGridRows; y++)
                     {
-                        float x0 = -trayHalfW + x * cell + 0.03f, y0 = trayBottom + y * cell + 0.03f;
+                        float x0 = -trayHalfW + x * cell + 0.04f, y0 = trayBottom + y * cell + 0.04f;
                         bool isWall = wallSet != null && wallSet.Contains(new Vector2Int(x, y));
-                        RoundedRect(p, x0, y0, x0 + cell - 0.06f, y0 + cell - 0.06f, 0.05f,
-                            isWall ? new Color(0.68f, 0.66f, 0.94f, 0.96f) : new Color(0.42f, 0.37f, 0.74f, 0.96f));
+                        RoundedRect(p, x0, y0, x0 + cell - 0.08f, y0 + cell - 0.08f, 0.07f,
+                            isWall ? new Color(0.68f, 0.66f, 0.94f, 0.55f) : new Color(0.84f, 0.87f, 0.96f, 0.55f));
+                        RoundedRectStroke(p, x0, y0, x0 + cell - 0.08f, y0 + cell - 0.08f, 0.07f, 1.0f, new Color(1f, 1f, 1f, 0.72f));
                     }
             }
 
             // Tutamaçlar
-            if (GlassShapeData.IsBottle(lvl))
+            if (isTrack)
+            {
+                var branches = GetEditableTrackBranches(lvl);
+                // İskelet çizgileri
+                p.strokeColor = new Color(0.28f, 0.34f, 0.72f, 0.35f);
+                p.lineWidth = 1.5f;
+                for (int b = 0; b < branches.Count; b++)
+                {
+                    var pts = branches[b]?.points;
+                    if (pts == null || pts.Count < 2) continue;
+                    p.BeginPath();
+                    p.MoveTo(ToPx(pts[0].x, pts[0].y));
+                    for (int i = 1; i < pts.Count; i++) p.LineTo(ToPx(pts[i].x, pts[i].y));
+                    p.Stroke();
+                }
+                for (int b = 0; b < branches.Count; b++)
+                {
+                    var pts = branches[b]?.points;
+                    if (pts == null) continue;
+                    for (int i = 0; i < pts.Count; i++)
+                    {
+                        DrawTrackHandle(p, ToPx(pts[i].x, pts[i].y), b, i);
+                    }
+                }
+            }
+            else if (GlassShapeData.IsBottle(lvl))
             {
                 DrawHandle(p, HandlePos(Handle.Width, -1), Handle.Width, -1);
                 DrawHandle(p, HandlePos(Handle.Height, -1), Handle.Height, -1);
@@ -1391,6 +1718,64 @@ namespace PuzzleGlass.Editor.Studio
             {
                 for (int i = 0; i < contour.Count; i++) DrawHandle(p, HandlePos(Handle.Point, i), Handle.Point, i);
             }
+        }
+
+        private void DrawTrackPreview2D(Painter2D p, GlassTrackLayout.CompiledTrack track)
+        {
+            if (track == null || track.polylines.Count == 0) return;
+            float outerStroke = (track.innerHalfWidth + track.wallThickness) * 2f * m_Scale;
+            float rimStroke = (track.innerHalfWidth + track.wallThickness * 0.85f) * 2f * m_Scale;
+            float innerStroke = track.innerHalfWidth * 2f * m_Scale;
+
+            void StrokeAll(float widthPx, Color col, Vector2 offsetWorld)
+            {
+                p.strokeColor = col;
+                p.lineWidth = Mathf.Max(2f, widthPx);
+                p.lineCap = LineCap.Round;
+                p.lineJoin = LineJoin.Round;
+                for (int b = 0; b < track.polylines.Count; b++)
+                {
+                    var poly = track.polylines[b];
+                    if (poly == null || poly.Count < 2) continue;
+                    p.BeginPath();
+                    p.MoveTo(ToPx(poly[0].x + offsetWorld.x, poly[0].y + offsetWorld.y));
+                    for (int i = 1; i < poly.Count; i++)
+                        p.LineTo(ToPx(poly[i].x + offsetWorld.x, poly[i].y + offsetWorld.y));
+                    p.Stroke();
+                }
+            }
+
+            // 1. Yumuşak gölge
+            StrokeAll(outerStroke + 6f, new Color(0.54f, 0.50f, 0.82f, 0.22f), new Vector2(0.02f, -0.06f));
+            // 2. Dış kontur kenarı (koyu periwinkle / gümüş kenarlık)
+            StrokeAll(outerStroke, new Color(0.52f, 0.54f, 0.84f, 0.92f), Vector2.zero);
+            // 3. Parlak beyaz yükseltilmiş cam/seramik duvar rayları
+            StrokeAll(rimStroke, new Color(0.98f, 0.99f, 1.00f, 0.96f), Vector2.zero);
+            // 4. İç oluk gölgesi
+            StrokeAll(innerStroke + 3f, new Color(0.76f, 0.79f, 0.93f, 0.90f), Vector2.zero);
+            // 5. Temiz buzlu kanal zemini
+            StrokeAll(Mathf.Max(2f, innerStroke - 2f), new Color(0.94f, 0.95f, 0.99f, 0.94f), Vector2.zero);
+        }
+
+        private List<GlassTrackBranch> GetEditableTrackBranches(PuzzleGlassLevelData lvl)
+        {
+            if (lvl != null && lvl.useCustomGlassShape && lvl.trackBranches != null && lvl.trackBranches.Count > 0)
+                return lvl.trackBranches;
+            GlassTrackPreset p = (lvl != null && lvl.useCustomGlassShape) ? lvl.trackPreset : GlassTrackPreset.ArchLoop;
+            return GlassTrackLayout.BuildPresetBranches(p);
+        }
+
+        private void DrawTrackHandle(Painter2D p, Vector2 pos, int branchIdx, int ptIdx)
+        {
+            bool active = m_Drag == Handle.TrackPoint && m_DragBranch == branchIdx && m_DragPoint == ptIdx;
+            bool hover = m_Hover == Handle.TrackPoint && m_HoverBranch == branchIdx && m_HoverPoint == ptIdx;
+            p.fillColor = active ? new Color(0.35f, 0.66f, 0.94f) : (hover ? Color.white : new Color(0.96f, 0.97f, 1.00f));
+            p.strokeColor = new Color(0.24f, 0.28f, 0.62f);
+            p.lineWidth = 2f;
+            p.BeginPath();
+            p.Arc(pos, active || hover ? HandleRadius + 1.5f : HandleRadius - 0.5f, 0f, 360f);
+            p.Fill();
+            p.Stroke();
         }
 
         private void DrawPreviewBall2D(Painter2D p, Vector2 c, float rad, PuzzleColor color)
@@ -1556,17 +1941,32 @@ namespace PuzzleGlass.Editor.Studio
             return Vector2.zero;
         }
 
-        private (Handle, int) HitTest(Vector2 local)
+        private (Handle, int, int) HitTest(Vector2 local)
         {
-            if (m_Level == null) return (Handle.None, -1);
+            if (m_Level == null) return (Handle.None, -1, -1);
             float best = HandleRadius + 6f;
-            var result = (Handle.None, -1);
+            var result = (Handle.None, -1, -1);
+            if (GlassShapeData.IsTrack(m_Level))
+            {
+                var branches = GetEditableTrackBranches(m_Level);
+                for (int b = 0; b < branches.Count; b++)
+                {
+                    var pts = branches[b]?.points;
+                    if (pts == null) continue;
+                    for (int i = 0; i < pts.Count; i++)
+                    {
+                        float d = Vector2.Distance(local, ToPx(pts[i].x, pts[i].y));
+                        if (d < best) { best = d; result = (Handle.TrackPoint, b, i); }
+                    }
+                }
+                return result;
+            }
             if (GlassShapeData.IsBottle(m_Level))
             {
                 foreach (var h in new[] { Handle.Height, Handle.Width })
                 {
                     float d = Vector2.Distance(local, HandlePos(h, -1));
-                    if (d < best) { best = d; result = (h, -1); }
+                    if (d < best) { best = d; result = (h, -1, -1); }
                 }
             }
             else if (GlassShapeData.IsBox(m_Level))
@@ -1574,7 +1974,7 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (var h in new[] { Handle.Corner, Handle.Height, Handle.Width })
                 {
                     float d = Vector2.Distance(local, HandlePos(h, -1));
-                    if (d < best) { best = d; result = (h, -1); }
+                    if (d < best) { best = d; result = (h, -1, -1); }
                 }
             }
             else
@@ -1583,7 +1983,7 @@ namespace PuzzleGlass.Editor.Studio
                 for (int i = 0; i < contour.Count; i++)
                 {
                     float d = Vector2.Distance(local, HandlePos(Handle.Point, i));
-                    if (d < best) { best = d; result = (Handle.Point, i); }
+                    if (d < best) { best = d; result = (Handle.Point, -1, i); }
                 }
             }
             return result;
@@ -1595,8 +1995,14 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_Level == null) return;
             Vector2 local = e.localPosition;
-            var (h, pt) = HitTest(local);
+            var (h, br, pt) = HitTest(local);
 
+            if (e.button == 1 && h == Handle.TrackPoint)
+            {
+                RemoveTrackPoint(br, pt);
+                e.StopPropagation();
+                return;
+            }
             if (e.button == 1 && h == Handle.Point)
             {
                 RemovePoint(pt);
@@ -1607,15 +2013,17 @@ namespace PuzzleGlass.Editor.Studio
 
             if (h == Handle.None)
             {
-                // Özel şekilde çift tık: o yüksekliğe nokta ekle
-                if (e.clickCount == 2 && !GlassShapeData.IsBox(m_Level) && !GlassShapeData.IsBottle(m_Level)) AddPointAt(ToWorld(local));
+                if (e.clickCount == 2 && GlassShapeData.IsTrack(m_Level)) AddTrackPointAt(ToWorld(local));
+                else if (e.clickCount == 2 && !GlassShapeData.IsBox(m_Level) && !GlassShapeData.IsBottle(m_Level)) AddPointAt(ToWorld(local));
                 return;
             }
             m_Drag = h;
+            m_DragBranch = br;
             m_DragPoint = pt;
             m_ViewFrozen = true;
             Record("Cam tutamacı");
-            EnsureCustom();
+            if (h == Handle.TrackPoint) EnsureEditableTrackBranches();
+            else EnsureCustom();
             m_Canvas.CapturePointer(e.pointerId);
             m_Canvas.MarkDirtyRepaint();
             e.StopPropagation();
@@ -1627,10 +2035,11 @@ namespace PuzzleGlass.Editor.Studio
             Vector2 local = e.localPosition;
             if (m_Drag == Handle.None)
             {
-                var (h, pt) = HitTest(local);
-                if (h != m_Hover || pt != m_HoverPoint)
+                var (h, br, pt) = HitTest(local);
+                if (h != m_Hover || br != m_HoverBranch || pt != m_HoverPoint)
                 {
                     m_Hover = h;
+                    m_HoverBranch = br;
                     m_HoverPoint = pt;
                     m_Canvas.MarkDirtyRepaint();
                 }
@@ -1638,7 +2047,29 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             var w = ToWorld(local);
-            if (m_Drag == Handle.Point)
+            if (m_Drag == Handle.TrackPoint)
+            {
+                EnsureEditableTrackBranches();
+                if (m_DragBranch >= 0 && m_DragBranch < m_Level.trackBranches.Count)
+                {
+                    var pts = m_Level.trackBranches[m_DragBranch].points;
+                    if (m_DragPoint >= 0 && m_DragPoint < pts.Count)
+                    {
+                        Vector2 prevPt = pts[m_DragPoint];
+                        Vector2 nextPt = new Vector2(
+                            Mathf.Clamp(Snap(w.x, e.shiftKey), -1.85f, 1.85f),
+                            Mathf.Clamp(Snap(w.y, e.shiftKey), -1.20f, 1.60f));
+                        pts[m_DragPoint] = nextPt;
+                        if (m_TrackSymmetricEdit)
+                        {
+                            MirrorTrackPointEdit(m_DragBranch, m_DragPoint, prevPt, nextPt);
+                        }
+                        m_Level.trackPreset = GlassTrackPreset.Custom;
+                        m_Level.trackAutoFitToBalls = false;
+                    }
+                }
+            }
+            else if (m_Drag == Handle.Point)
             {
                 var pts = new List<GlassContourPoint>(m_Level.contourPoints);
                 if (m_DragPoint < 0 || m_DragPoint >= pts.Count) return;
@@ -1689,9 +2120,75 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_Drag == Handle.None) return;
             m_Drag = Handle.None;
+            m_DragBranch = -1;
             m_DragPoint = -1;
             m_ViewFrozen = false;
             if (m_Canvas.HasPointerCapture(e.pointerId)) m_Canvas.ReleasePointer(e.pointerId);
+            OnEdited();
+        }
+
+        private void MirrorTrackPointEdit(int branchIdx, int ptIdx, Vector2 prevPt, Vector2 nextPt)
+        {
+            Vector2 mirroredPrev = new Vector2(-prevPt.x, prevPt.y);
+            Vector2 mirroredNext = new Vector2(-nextPt.x, nextPt.y);
+            for (int b = 0; b < m_Level.trackBranches.Count; b++)
+            {
+                var pts = m_Level.trackBranches[b]?.points;
+                if (pts == null) continue;
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    if (b == branchIdx && i == ptIdx) continue;
+                    if (Vector2.Distance(pts[i], mirroredPrev) < 0.08f)
+                    {
+                        pts[i] = mirroredNext;
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void AddTrackPointAt(Vector2 world)
+        {
+            Record("Pist noktası ekle");
+            EnsureEditableTrackBranches();
+            int bestB = -1, bestInsert = -1;
+            float bestDistSq = 0.08f;
+            for (int b = 0; b < m_Level.trackBranches.Count; b++)
+            {
+                var pts = m_Level.trackBranches[b]?.points;
+                if (pts == null || pts.Count < 2) continue;
+                for (int i = 0; i < pts.Count - 1; i++)
+                {
+                    Vector2 ab = pts[i + 1] - pts[i];
+                    float abSq = ab.sqrMagnitude;
+                    float t = abSq > 1e-6f ? Mathf.Clamp01(Vector2.Dot(world - pts[i], ab) / abSq) : 0f;
+                    Vector2 proj = pts[i] + ab * t;
+                    float dSq = (world - proj).sqrMagnitude;
+                    if (dSq < bestDistSq)
+                    {
+                        bestDistSq = dSq;
+                        bestB = b;
+                        bestInsert = i + 1;
+                    }
+                }
+            }
+            if (bestB >= 0)
+            {
+                m_Level.trackBranches[bestB].points.Insert(bestInsert, world);
+                m_Level.trackPreset = GlassTrackPreset.Custom;
+                OnEdited();
+            }
+        }
+
+        private void RemoveTrackPoint(int branchIdx, int ptIdx)
+        {
+            Record("Pist noktası sil");
+            EnsureEditableTrackBranches();
+            if (branchIdx < 0 || branchIdx >= m_Level.trackBranches.Count) return;
+            var pts = m_Level.trackBranches[branchIdx].points;
+            if (pts == null || pts.Count <= 2 || ptIdx < 0 || ptIdx >= pts.Count) return;
+            pts.RemoveAt(ptIdx);
+            m_Level.trackPreset = GlassTrackPreset.Custom;
             OnEdited();
         }
 

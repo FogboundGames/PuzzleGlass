@@ -8,10 +8,15 @@ namespace PuzzleGlass
     {
         public static SlotSystem Instance { get; private set; }
 
+        public static bool IsActive =>
+            Instance != null && Instance.slotsEnabled && Instance.gameObject.activeInHierarchy && Instance.slots != null && Instance.slots.Count > 0;
+
         [Header("Slot Configuration")]
-        public bool slotsEnabled = false;
-        public int slotCount = 4;
-        public float slotSpacing = 0.84f;
+        public bool slotsEnabled = true;
+        [Range(1, 6)] public int slotCount = 5;
+        public float slotSpacing = 0.59f;
+        [Range(0.45f, 1.25f)] public float slotScale = 0.74f;
+        public float gapBelowGlass = 0.22f;
 
         [Header("Materials")]
         public Material frameMaterial;
@@ -52,7 +57,7 @@ namespace PuzzleGlass
 
             EnsureMaterials();
 
-            // Center the slots around X = 0 with distinct clean spacing matching Photo 2
+            // Center the slots around X = 0 with balanced clean spacing
             float totalWidth = (slotCount - 1) * slotSpacing;
             float startX = -totalWidth * 0.5f;
 
@@ -63,9 +68,46 @@ namespace PuzzleGlass
                 slotObj.transform.localPosition = new Vector3(startX + i * slotSpacing, 0f, 0f);
 
                 SlotPlatform platform = slotObj.AddComponent<SlotPlatform>();
-                platform.Initialize(i, frameMaterial, cavityMaterial, shadowMaterial);
+                platform.Initialize(i, frameMaterial, cavityMaterial, shadowMaterial, slotScale);
                 slots.Add(platform);
             }
+        }
+
+        /// <summary>Visible vertical world bounds (including lower drop shadow margin) of the slot row.</summary>
+        public bool TryGetVisibleVerticalBounds(out float minY, out float maxY)
+        {
+            if (!slotsEnabled || !gameObject.activeInHierarchy || slots == null || slots.Count == 0)
+            {
+                minY = transform.position.y;
+                maxY = transform.position.y;
+                return false;
+            }
+            float halfH = 0.46f * 0.68f * Mathf.Clamp(slotScale, 0.35f, 1.5f);
+            float cy = transform.position.y;
+            maxY = cy + halfH + 0.03f;
+            minY = cy - halfH - 0.09f; // include soft bottom drop shadow
+            return true;
+        }
+
+        /// <summary>Positions the horizontal slot row cleanly beneath the upper glass container / track collar.</summary>
+        public void AlignBelowGlass(ShapedGlassContainer glass)
+        {
+            if (glass == null) return;
+
+            float glassCenterX = 0f;
+            float glassBottomY = glass.transform.position.y - 0.82f;
+            if (glass.TryGetVisibleFrameWorldBounds(out float gMinX, out float gMaxX, out float gMinY, out _))
+            {
+                glassCenterX = (gMinX + gMaxX) * 0.5f;
+                glassBottomY = gMinY;
+            }
+
+            float halfH = 0.46f * 0.68f * Mathf.Clamp(slotScale, 0.35f, 1.5f);
+            float minCollarGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.28f : 0.16f;
+            float topGap = Mathf.Max(minCollarGap, gapBelowGlass);
+            float targetY = glassBottomY - topGap - halfH;
+
+            transform.position = new Vector3(glassCenterX, targetY, 0.05f);
         }
 
         private void EnsureMaterials()

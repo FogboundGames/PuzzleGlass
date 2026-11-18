@@ -22,7 +22,8 @@ namespace PuzzleGlass
         RectangleFlask = 11,     // Hunili Dikey Dikdörtgen Cam Şişe
         WideRectangleFlask = 12, // Hunili Yatay Dikdörtgen Cam Şişe
         SquareBox = 13,          // Düz Tabanlı Tam Kare Cam Kutu
-        RectangleBox = 14        // Düz Tabanlı Tam Dikdörtgen Cam Kutu
+        RectangleBox = 14,       // Düz Tabanlı Tam Dikdörtgen Cam Kutu
+        TrackChannel = 15        // Görsel 1 & 3 Tarzı Eğrisel Cam Pist / Kanal
     }
 
     public enum GlassColorTheme
@@ -79,8 +80,23 @@ namespace PuzzleGlass
     public class ShapedGlassContainer : MonoBehaviour
     {
         [Header("Shape Preset & Symmetry")]
-        public GlassShapePreset shapePreset = GlassShapePreset.RectangleBox;
+        public GlassShapePreset shapePreset = GlassShapePreset.TrackChannel;
         public bool IsFlatBottomBox => shapePreset == GlassShapePreset.SquareBox || shapePreset == GlassShapePreset.RectangleBox;
+        public bool IsTrackShape => shapePreset == GlassShapePreset.TrackChannel;
+
+        [Header("Curved Glass Track / Channel Settings")]
+        public GlassTrackPreset trackPreset = GlassTrackPreset.ArchLoop;
+        [Range(0, 6)]
+        public int trackLanesAcross = 0;
+        public bool trackAutoFitToBalls = true;
+        [Range(0.55f, 1.45f)]
+        public float trackScale = 1.0f;
+        [Range(0.045f, 0.14f)]
+        public float trackWallThickness = 0.082f;
+        public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
+
+        [NonSerialized] public GlassTrackLayout.CompiledTrack compiledTrack;
+        [NonSerialized] public OrderedPoolLayout.Result? cachedTrackLayout;
 
         public const float DefaultBottleWidth = 2.64f;
         public const float DefaultBottleHeight = 1.18f;
@@ -605,6 +621,18 @@ namespace PuzzleGlass
 
         public void EnsureContourInitialized()
         {
+            if (IsTrackShape)
+            {
+                if (trackPreset != GlassTrackPreset.Custom && (trackBranches == null || trackBranches.Count == 0))
+                {
+                    trackBranches = GlassTrackLayout.BuildPresetBranches(trackPreset);
+                }
+                else if (trackBranches == null || trackBranches.Count == 0)
+                {
+                    trackBranches = GlassTrackLayout.BuildPresetBranches(GlassTrackPreset.ArchLoop);
+                }
+            }
+
             if (contourPoints == null || contourPoints.Count < 3)
             {
                 ApplyShapePreset(shapePreset, false);
@@ -848,6 +876,7 @@ namespace PuzzleGlass
 
                 case GlassShapePreset.SquareBox:
                 case GlassShapePreset.RectangleBox:
+                case GlassShapePreset.TrackChannel:
                     // Reference Image 2: Wide Rounded-Rectangle Periwinkle-Framed Sky-Blue Glass Ball Pool (11*D = 2.64m inner width)
                     symmetricMode = true;
                     showShoulderHandles = false;
@@ -855,6 +884,10 @@ namespace PuzzleGlass
                     contourPoints.Add(new GlassContourPoint(-0.52f, 1.320f, 0f, 1.00f));
                     contourPoints.Add(new GlassContourPoint( 0.58f, 1.320f, 0f, 1.00f));
                     contourPoints.Add(new GlassContourPoint( 0.62f, 1.320f, 0f, 1.00f));
+                    if (preset == GlassShapePreset.TrackChannel && (trackBranches == null || trackBranches.Count == 0))
+                    {
+                        trackBranches = GlassTrackLayout.BuildPresetBranches(trackPreset);
+                    }
                     break;
             }
 
@@ -1172,6 +1205,7 @@ namespace PuzzleGlass
             if (mat.HasProperty("_CenterGlassAlpha")) mat.SetFloat("_CenterGlassAlpha", 0.08f);
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
             if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
+            if (mat.HasProperty("_IsTrackChannel")) mat.SetFloat("_IsTrackChannel", 0f);
 
             // Feed tube mouth openings on the container's upper glass wall (flares smoothly into curved tubes)
             Vector4 openL = Vector4.zero;
@@ -1596,8 +1630,199 @@ namespace PuzzleGlass
             return Mathf.Max(0.06f, (rightX - leftX) * 0.5f);
         }
 
+        private static readonly Vector4[] _trackSegBuffer = new Vector4[GlassTrackLayout.MaxShaderSegments];
+        private static readonly Vector4[] _trackBranchBuffer = new Vector4[16];
+
+        public void RebuildTrackCompiledData()
+        {
+            if (!IsTrackShape) return;
+
+            var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
+            List<LevelMonsterEntry> groups = null;
+            List<ManualPoolBallEntry> manualBalls = null;
+            bool useManual = false;
+
+            if (gm != null && gm.currentLevel != null)
+            {
+                gm.currentLevel.EnsureCarrierBoxPuzzleFormat();
+                useManual = gm.currentLevel.useManualBallLayout;
+                manualBalls = gm.currentLevel.manualBalls;
+                groups = gm.currentLevel.bottomToTopGroups;
+                if ((groups == null || groups.Count == 0) && gm.currentLevel.monsters != null && gm.currentLevel.monsters.Count > 0)
+                {
+                    groups = gm.currentLevel.monsters;
+                }
+            }
+            if ((groups == null || groups.Count == 0) && !useManual)
+            {
+                groups = new List<LevelMonsterEntry>
+                {
+                    new LevelMonsterEntry(PuzzleColor.Blue, 6),
+                    new LevelMonsterEntry(PuzzleColor.Yellow, 6),
+                    new LevelMonsterEntry(PuzzleColor.Red, 6),
+                    new LevelMonsterEntry(PuzzleColor.Green, 6),
+                    new LevelMonsterEntry(PuzzleColor.Purple, 6)
+                };
+            }
+
+            GlassTrackLayout.BuildForLevel(
+                trackPreset,
+                trackBranches,
+                groups,
+                manualBalls,
+                useManual,
+                trackLanesAcross,
+                trackAutoFitToBalls,
+                trackScale,
+                trackWallThickness,
+                out compiledTrack,
+                out var layoutRes);
+            cachedTrackLayout = layoutRes;
+            if (compiledTrack != null)
+            {
+                particleSize = compiledTrack.ballDiameter;
+            }
+        }
+
+        public bool SampleTrackField(Vector2 localPos, out float signedDist, out Vector2 flowDir, out float distToExit, out Vector2 inwardNormal)
+        {
+            if (compiledTrack == null && IsTrackShape) RebuildTrackCompiledData();
+            if (compiledTrack == null)
+            {
+                signedDist = 0f;
+                flowDir = Vector2.down;
+                distToExit = 0f;
+                inwardNormal = Vector2.up;
+                return false;
+            }
+            compiledTrack.SampleField(localPos, out signedDist, out flowDir, out distToExit, out inwardNormal);
+            return true;
+        }
+
+        private void GetTrackQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH)
+        {
+            if (compiledTrack == null) RebuildTrackCompiledData();
+            Rect ob = compiledTrack != null ? compiledTrack.outerBounds : Rect.MinMaxRect(-1.4f, -0.7f, 1.4f, 1.1f);
+            const float shadowPad = 0.26f;
+            quadCenter = ob.center;
+            quadHalfW = Mathf.Max(0.45f, ob.width * 0.5f + shadowPad);
+            quadHalfH = Mathf.Max(0.45f, ob.height * 0.5f + shadowPad);
+        }
+
+        private void ApplyTrackShaderProperties(Material mat, Vector2 quadCenter, float quadHalfW, float quadHalfH)
+        {
+            if (mat == null || compiledTrack == null) return;
+            if (enforceUnifiedCrystalTheme) ApplyCrystalLavenderThemeColors();
+
+            float qh = Mathf.Max(0.01f, quadHalfH);
+            float boxAspect = quadHalfW / qh;
+
+            mat.SetFloat("_IsRoundedBoxPool", 0f);
+            mat.SetFloat("_IsCollar", 0f);
+            mat.SetFloat("_IsFeedTube", 0f);
+            if (mat.HasProperty("_PolyCount")) mat.SetFloat("_PolyCount", 0f);
+            if (mat.HasProperty("_IsTrackChannel")) mat.SetFloat("_IsTrackChannel", 1f);
+            mat.SetFloat("_BoxAspect", boxAspect);
+            if (mat.HasProperty("_FrameColor")) mat.SetColor("_FrameColor", boxFrameColor);
+            if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
+
+            int count = Mathf.Min(compiledTrack.segments.Count, GlassTrackLayout.MaxShaderSegments);
+            System.Array.Clear(_trackSegBuffer, 0, _trackSegBuffer.Length);
+            System.Array.Clear(_trackBranchBuffer, 0, _trackBranchBuffer.Length);
+
+            for (int i = 0; i < count; i++)
+            {
+                var seg = compiledTrack.segments[i];
+                Vector2 a = (seg.a - quadCenter) / qh;
+                Vector2 b = (seg.b - quadCenter) / qh;
+                _trackSegBuffer[i] = new Vector4(a.x, a.y, b.x, b.y);
+
+                int packIdx = i >> 2;
+                int lane = i & 3;
+                Vector4 v = _trackBranchBuffer[packIdx];
+                float bid = Mathf.Clamp(seg.branchId, 0, 5);
+                if (lane == 0) v.x = bid;
+                else if (lane == 1) v.y = bid;
+                else if (lane == 2) v.z = bid;
+                else v.w = bid;
+                _trackBranchBuffer[packIdx] = v;
+            }
+
+            mat.SetVectorArray("_TrackSegs", _trackSegBuffer);
+            Shader.SetGlobalVectorArray("_TrackSegs", _trackSegBuffer);
+            mat.SetVectorArray("_TrackBranchPacked", _trackBranchBuffer);
+            Shader.SetGlobalVectorArray("_TrackBranchPacked", _trackBranchBuffer);
+
+            mat.SetFloat("_TrackSegCount", count);
+            mat.SetFloat("_TrackHalfWidth", compiledTrack.innerHalfWidth / qh);
+            mat.SetFloat("_TrackWallThick", compiledTrack.wallThickness / qh);
+            mat.SetFloat("_TrackFillet", Mathf.Min(0.055f, compiledTrack.innerHalfWidth * 0.20f) / qh);
+
+            Vector2 exitP = (compiledTrack.exitPoint - quadCenter) / qh;
+            float exitMouthP = (compiledTrack.innerHalfWidth * 0.85f) / qh;
+            mat.SetVector("_TrackExitPos", new Vector4(exitP.x, exitP.y - compiledTrack.innerHalfWidth / qh, exitMouthP, showBottomExitCollar ? 1f : 0f));
+        }
+
+        private static Mesh CreateTrackQuadMesh(Vector2 center, float halfW, float halfH)
+        {
+            Mesh m = new Mesh { name = "GlassTrackQuad" };
+            m.vertices = new Vector3[]
+            {
+                new Vector3(center.x - halfW, center.y - halfH, 0f),
+                new Vector3(center.x + halfW, center.y - halfH, 0f),
+                new Vector3(center.x - halfW, center.y + halfH, 0f),
+                new Vector3(center.x + halfW, center.y + halfH, 0f)
+            };
+            m.uv = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0f),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f)
+            };
+            m.normals = new Vector3[] { Vector3.back, Vector3.back, Vector3.back, Vector3.back };
+            m.triangles = new int[] { 0, 2, 1, 2, 3, 1 };
+            m.RecalculateBounds();
+            return m;
+        }
+
         private void BuildFlaskGeometry()
         {
+            if (IsTrackShape)
+            {
+                RebuildTrackCompiledData();
+                GetTrackQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH);
+
+                if (_chamberInnerGlowMat != null) ApplyTrackShaderProperties(_chamberInnerGlowMat, quadCenter, quadHalfW, quadHalfH);
+                if (_frontGlassLensMat != null) ApplyTrackShaderProperties(_frontGlassLensMat, quadCenter, quadHalfW, quadHalfH);
+
+                Mesh trackQuadMesh = CreateTrackQuadMesh(quadCenter, quadHalfW, quadHalfH);
+
+                GameObject trackBackObj = new GameObject("FlaskInnerCenterGlow");
+                trackBackObj.transform.SetParent(_glassWallsObj.transform, false);
+                trackBackObj.transform.localPosition = new Vector3(0f, 0f, 0.08f);
+                trackBackObj.AddComponent<MeshFilter>().sharedMesh = trackQuadMesh;
+                var trackBackMr = trackBackObj.AddComponent<MeshRenderer>();
+                trackBackMr.sharedMaterial = _chamberInnerGlowMat;
+                trackBackMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                trackBackMr.receiveShadows = false;
+
+                GameObject trackFrontObj = new GameObject("FlaskFrontGlassLens");
+                trackFrontObj.transform.SetParent(_glassWallsObj.transform, false);
+                trackFrontObj.transform.localPosition = new Vector3(0f, 0f, -0.24f);
+                trackFrontObj.AddComponent<MeshFilter>().sharedMesh = trackQuadMesh;
+                var trackFrontMr = trackFrontObj.AddComponent<MeshRenderer>();
+                trackFrontMr.sharedMaterial = _frontGlassLensMat;
+                trackFrontMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                trackFrontMr.receiveShadows = false;
+
+                if (showBottomExitCollar && compiledTrack != null)
+                {
+                    BuildBottomExitCollar(compiledTrack.outerBounds.yMin);
+                }
+                return;
+            }
+
             GenerateFlaskPaths(
                 out Vector3[] leftPath,
                 out Vector3[] rightPath,
@@ -1941,14 +2166,18 @@ namespace PuzzleGlass
         {
             if (_glassWallsObj == null) return;
 
-            float bottomW = (contourPoints != null && contourPoints.Count > 0)
-                ? contourPoints[0].halfWidth * 2f * widthScale
-                : 2.2f;
-            float collarX = (contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
-                ? contourPoints[0].centerX * widthScale
-                : 0f;
+            float bottomW = (IsTrackShape && compiledTrack != null)
+                ? compiledTrack.innerHalfWidth * 3.2f
+                : ((contourPoints != null && contourPoints.Count > 0)
+                    ? contourPoints[0].halfWidth * 2f * widthScale
+                    : 2.2f);
+            float collarX = (IsTrackShape && compiledTrack != null)
+                ? compiledTrack.exitPoint.x
+                : ((contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
+                    ? contourPoints[0].centerX * widthScale
+                    : 0f);
 
-            float visibleCollarW = Mathf.Clamp(bottomW * 0.48f, 0.84f, 1.22f);
+            float visibleCollarW = Mathf.Clamp(bottomW * 0.48f, 0.72f, 1.22f);
             float visibleCollarH = 0.25f;
             float quadW = visibleCollarW / 0.78f;
             float quadH = visibleCollarH / 0.56f;
@@ -2713,13 +2942,24 @@ namespace PuzzleGlass
                 else gen = gameObject.AddComponent<BallPatternGenerator>();
             }
 
+            if (IsTrackShape && compiledTrack == null)
+            {
+                RebuildTrackCompiledData();
+            }
+
             if (IsFlatBottomBox)
             {
                 particleSize = 0.265f;
             }
+            else if (IsTrackShape && compiledTrack != null)
+            {
+                particleSize = compiledTrack.ballDiameter;
+            }
 
             gen.glassContainer = this;
-            gen.ballDiameter = IsFlatBottomBox ? 0.265f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.265f);
+            gen.ballDiameter = IsTrackShape && compiledTrack != null
+                ? compiledTrack.ballDiameter
+                : (IsFlatBottomBox ? 0.265f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.265f));
             gen.patternVerticalOffset = patternVerticalOffset;
             gen.initialShapeHoldTime = 0f;
 
@@ -2763,6 +3003,12 @@ namespace PuzzleGlass
 
         public float GetChamberFloorY()
         {
+            if (IsTrackShape)
+            {
+                if (compiledTrack != null)
+                    return compiledTrack.exitPoint.y - compiledTrack.innerHalfWidth;
+                return -0.80f;
+            }
             if (IsPoolShape)
             {
                 if (contourPoints != null && contourPoints.Count > 0)
@@ -2793,12 +3039,21 @@ namespace PuzzleGlass
         {
             EnsureContourInitialized();
 
-            float collarX = (contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
-                ? contourPoints[0].centerX * widthScale
-                : 0f;
+            float collarX = (IsTrackShape && compiledTrack != null)
+                ? compiledTrack.exitPoint.x
+                : ((contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
+                    ? contourPoints[0].centerX * widthScale
+                    : 0f);
 
             float exitLocalY;
-            if (IsPoolShape)
+            if (IsTrackShape)
+            {
+                if (compiledTrack == null) RebuildTrackCompiledData();
+                float bottomEdgeY = compiledTrack != null ? compiledTrack.outerBounds.yMin : -0.85f;
+                const float visibleCollarH = 0.25f;
+                exitLocalY = bottomEdgeY - visibleCollarH * 0.28f;
+            }
+            else if (IsPoolShape)
             {
                 GetRoundedBoxPoolExtents(out float centerY, out _, out _, out _, out float visibleHalfH);
                 float bottomEdgeY = centerY - visibleHalfH;
@@ -2853,6 +3108,20 @@ namespace PuzzleGlass
         public bool TryGetVisibleFrameWorldBounds(out float minX, out float maxX, out float minY, out float maxY)
         {
             EnsureContourInitialized();
+
+            if (IsTrackShape)
+            {
+                if (compiledTrack == null) RebuildTrackCompiledData();
+                Rect ob = compiledTrack != null ? compiledTrack.outerBounds : Rect.MinMaxRect(-1.35f, -0.82f, 1.35f, 1.08f);
+                float collarPad = showBottomExitCollar ? 0.15f : 0f;
+                Vector3 worldMin = transform.TransformPoint(new Vector3(ob.xMin, ob.yMin - collarPad, 0f));
+                Vector3 worldMax = transform.TransformPoint(new Vector3(ob.xMax, ob.yMax, 0f));
+                minX = Mathf.Min(worldMin.x, worldMax.x);
+                maxX = Mathf.Max(worldMin.x, worldMax.x);
+                minY = Mathf.Min(worldMin.y, worldMax.y);
+                maxY = Mathf.Max(worldMin.y, worldMax.y);
+                return true;
+            }
 
             if (IsPoolShape)
             {

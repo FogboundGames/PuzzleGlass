@@ -14,6 +14,10 @@ namespace PuzzleGlass
         public bool isOccupied;
         public bool isHighlighted;
         public MonsterCharacter currentMonster;
+        public float visualQuadScale = 0.74f;
+
+        /// <summary>Half-width/height (world units) of the visible 3D tile + bottom lip.</summary>
+        public float VisibleHalfExtent => 0.46f * 0.68f * Mathf.Clamp(visualQuadScale, 0.35f, 1.5f);
 
         [Header("Materials")]
         public Material frameMaterial;
@@ -34,12 +38,13 @@ namespace PuzzleGlass
             }
         }
 
-        public void Initialize(int index, Material frameMat, Material cavityMat, Material shadowMat = null)
+        public void Initialize(int index, Material frameMat, Material cavityMat, Material shadowMat = null, float quadScale = 0.74f)
         {
             slotIndex = index;
             frameMaterial = frameMat;
             cavityMaterial = cavityMat;
             shadowMaterial = shadowMat;
+            visualQuadScale = Mathf.Clamp(quadScale, 0.35f, 1.5f);
             BuildSlotMesh();
         }
 
@@ -57,12 +62,13 @@ namespace PuzzleGlass
 
             EnsureMaterials();
 
-            // World-Space UI Canvas + RawImage rendering the analytic Image-2 Periwinkle Squircle Slot + Fake Drop Shadow
+            // World-Space UI Canvas + RawImage rendering the icy sky-blue 3D rounded-square slot + soft drop shadow
             _uiCanvasObj = new GameObject("SlotUICanvas");
             _uiCanvasObj.transform.SetParent(transform, false);
             _uiCanvasObj.transform.localPosition = new Vector3(0f, 0f, 0.04f);
             _uiCanvasObj.transform.localRotation = Quaternion.identity;
-            _uiCanvasObj.transform.localScale = new Vector3(0.01f, 0.01f, 0.01f);
+            float s = 0.01f * Mathf.Clamp(visualQuadScale, 0.35f, 1.5f);
+            _uiCanvasObj.transform.localScale = new Vector3(s, s, s);
 
             Canvas canvas = _uiCanvasObj.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
@@ -100,19 +106,19 @@ namespace PuzzleGlass
                 slotUiMaterial.name = "Mat_SlotSquircleUI_Image2";
             }
 
-            // Image 2 Reference Periwinkle-Lavender UI Palette + Warm Feathered Fake Drop Shadow
-            slotUiMaterial.SetColor("_FrameColor", new Color(0.62f, 0.67f, 0.98f, 1.0f));      // #9EABFA soft periwinkle-lavender
-            slotUiMaterial.SetColor("_FrameHighlight", new Color(0.86f, 0.89f, 1.00f, 1.0f));  // #DBE3FF icy-lavender top-left catchlight
-            slotUiMaterial.SetColor("_FrameEdgeShade", new Color(0.49f, 0.55f, 0.89f, 1.0f));  // #7D8CE3 3D lower-left lip shade
-            slotUiMaterial.SetColor("_CavityColor", new Color(0.42f, 0.49f, 0.88f, 1.0f));     // #6B7DE0 rich periwinkle inner well
-            slotUiMaterial.SetColor("_CavityShadow", new Color(0.28f, 0.35f, 0.75f, 1.0f));    // #4759BF top-left inner cast shadow
-            slotUiMaterial.SetColor("_FakeShadowColor", new Color(0.74f, 0.58f, 0.44f, 0.44f));// Warm caramel-peach fake drop shadow
+            // Frosted Icy Sky-Blue + Crisp White Top Cushion + Vivid Sky-Blue 3D Lower Lip
+            slotUiMaterial.SetColor("_FrameColor", new Color(0.83f, 0.92f, 1.00f, 1.0f));      // #D4EBFF pale icy lower face
+            slotUiMaterial.SetColor("_FrameHighlight", new Color(0.98f, 0.99f, 1.00f, 1.0f));  // #FAFCFF crisp white top bevel
+            slotUiMaterial.SetColor("_FrameEdgeShade", new Color(0.25f, 0.66f, 1.00f, 1.0f));  // #40A8FF vivid sky-blue 3D bottom lip
+            slotUiMaterial.SetColor("_CavityColor", new Color(0.91f, 0.96f, 1.00f, 1.0f));     // #E8F5FF frosty upper face
+            slotUiMaterial.SetColor("_CavityShadow", new Color(0.16f, 0.53f, 0.94f, 1.0f));    // #2987F0 deeper sky-blue side lip
+            slotUiMaterial.SetColor("_FakeShadowColor", new Color(0.18f, 0.23f, 0.35f, 0.34f));// Soft cool slate drop shadow
         }
 
         public Vector3 GetPlacementPosition()
         {
-            // Center of the slot tray, resting directly in the recessed socket in front of the UI slot
-            return transform.position + new Vector3(0f, 0.03f, -0.15f);
+            // Center of the slot pad face, resting cleanly in front of the frosted UI slot
+            return transform.position + new Vector3(0f, 0.018f * Mathf.Clamp(visualQuadScale, 0.35f, 1.5f), -0.15f);
         }
 
         public void ReserveSlot(MonsterCharacter monster)

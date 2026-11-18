@@ -48,9 +48,9 @@ namespace PuzzleGlass
             {
                 _glassPhysMaterial = new PhysicsMaterial("Mat_GlassContainerWall")
                 {
-                    bounciness = 0.16f,
-                    dynamicFriction = 0.03f,
-                    staticFriction = 0.04f,
+                    bounciness = 0.06f,
+                    dynamicFriction = 0.0f,
+                    staticFriction = 0.0f,
                     bounceCombine = PhysicsMaterialCombine.Average,
                     frictionCombine = PhysicsMaterialCombine.Minimum
                 };
@@ -84,6 +84,75 @@ namespace PuzzleGlass
             _collidersRoot.transform.SetParent(transform, false);
             _collidersRoot.transform.localPosition = Vector3.zero;
             _collidersRoot.transform.localRotation = Quaternion.identity;
+
+            if (glassContainer.IsTrackShape)
+            {
+                if (glassContainer.compiledTrack == null) glassContainer.RebuildTrackCompiledData();
+                var track = glassContainer.compiledTrack;
+                if (track == null) return;
+
+                var wallSegs = track.ExtractWallSegments();
+                float trackW = Mathf.Max(1.0f, track.outerBounds.width + 1.5f);
+                float trackH = Mathf.Max(1.0f, track.outerBounds.height + 1.5f);
+                Vector2 trackCenter = track.outerBounds.center;
+
+                for (int i = 0; i < wallSegs.Count; i++)
+                {
+                    Vector2 pA = wallSegs[i].a;
+                    Vector2 pB = wallSegs[i].b;
+                    float segLen = Vector2.Distance(pA, pB);
+                    if (segLen < 0.004f) continue;
+
+                    Vector2 mid = (pA + pB) * 0.5f;
+                    Vector2 dir = (pB - pA) / segLen;
+                    float angleZ = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                    // ExtractWallSegments garanti eder ki (dir.y, -dir.x) dışarı (duvar içine, sdf > 0) bakar
+                    Vector2 outNorm = new Vector2(dir.y, -dir.x);
+                    Vector2 colPos = mid + outNorm * (wallThickness * 0.5f);
+
+                    GameObject segObj = new GameObject($"Track_WallSeg_{i}");
+                    segObj.transform.SetParent(_collidersRoot.transform, false);
+                    segObj.transform.localPosition = new Vector3(colPos.x, colPos.y, -0.10f);
+                    segObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
+                    var box = segObj.AddComponent<BoxCollider>();
+                    box.size = new Vector3(segLen + 0.025f, wallThickness, wallDepth);
+                    box.sharedMaterial = _glassPhysMaterial;
+                }
+
+                // Front & Back Z containment walls
+                GameObject frontTrackWall = new GameObject("FrontGlassWallCollider");
+                frontTrackWall.transform.SetParent(_collidersRoot.transform, false);
+                frontTrackWall.transform.localPosition = new Vector3(trackCenter.x, trackCenter.y, frontPlaneZ);
+                var frontTrackCol = frontTrackWall.AddComponent<BoxCollider>();
+                frontTrackCol.size = new Vector3(trackW, trackH, 0.08f);
+                frontTrackCol.sharedMaterial = _glassPhysMaterial;
+
+                GameObject backTrackWall = new GameObject("BackGlassWallCollider");
+                backTrackWall.transform.SetParent(_collidersRoot.transform, false);
+                backTrackWall.transform.localPosition = new Vector3(trackCenter.x, trackCenter.y, backPlaneZ);
+                var backTrackCol = backTrackWall.AddComponent<BoxCollider>();
+                backTrackCol.size = new Vector3(trackW, trackH, 0.08f);
+                backTrackCol.sharedMaterial = _glassPhysMaterial;
+
+                // Bottom Exit Stopper & Trigger at track exit mouth
+                float exitY = track.exitPoint.y - track.innerHalfWidth;
+                float exitW = Mathf.Max(0.45f, track.innerHalfWidth * 2.4f);
+
+                GameObject trackStopper = new GameObject("BottomSpoutStopperGate");
+                trackStopper.transform.SetParent(_collidersRoot.transform, false);
+                trackStopper.transform.localPosition = new Vector3(track.exitPoint.x, exitY - 0.045f, -0.10f);
+                bottomSpoutStopper = trackStopper.AddComponent<BoxCollider>();
+                bottomSpoutStopper.size = new Vector3(exitW, 0.08f, wallDepth);
+                bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
+
+                GameObject trackTrigger = new GameObject("SpoutExitTrigger");
+                trackTrigger.transform.SetParent(_collidersRoot.transform, false);
+                trackTrigger.transform.localPosition = new Vector3(track.exitPoint.x, exitY - 0.14f, -0.10f);
+                spoutExitTrigger = trackTrigger.AddComponent<BoxCollider>();
+                spoutExitTrigger.isTrigger = true;
+                spoutExitTrigger.size = new Vector3(exitW, 0.16f, wallDepth);
+                return;
+            }
 
             if (glassContainer.IsFlatBottomBox)
             {

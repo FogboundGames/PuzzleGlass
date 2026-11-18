@@ -17,14 +17,14 @@ namespace PuzzleGlass
         public float maxBallSpeed = 2.05f;
 
         [Tooltip("Interval between initiating collection of successive balls from the spout.")]
-        [Range(0.10f, 0.60f)]
-        public float collectionInterval = 0.24f;
+        [Range(0.08f, 0.60f)]
+        public float collectionInterval = 0.14f;
 
         [Tooltip("Maximum balls simultaneously traveling through the spout neck.")]
-        public int maxBallsInSpout = 3;
+        public int maxBallsInSpout = 5;
 
         [Tooltip("Maximum balls currently traveling in air per monster.")]
-        public int maxBallsInTransitPerMonster = 4;
+        public int maxBallsInTransitPerMonster = 6;
 
         [Tooltip("Vertical tolerance around bottom exit cap to trigger mouth launch.")]
         public float exitTriggerYOffset = 0.10f;
@@ -140,6 +140,7 @@ namespace PuzzleGlass
         /// </summary>
         private void AutoActivateMatchingTopEdgeBlocks()
         {
+            if (SlotSystem.IsActive) return;
             if (LevelTransitionController.IsTransitioning)
             {
                 _levelStartTime = Time.time;
@@ -395,6 +396,9 @@ namespace PuzzleGlass
             return false;
         }
 
+        private readonly float[] _cachedTrackExitDist = new float[512];
+        private readonly Vector2[] _cachedTrackFlowDir = new Vector2[512];
+
         private bool IsBallInMonsterCollectionZone(MonsterCharacter monster, BallPhysicsController ball)
         {
             if (monster == null || ball == null) return false;
@@ -406,10 +410,16 @@ namespace PuzzleGlass
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
+            var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
+
+            if (container != null && container.IsTrackShape)
+            {
+                return grid.HasAnyOpenTopColumn(monster, allMonsters);
+            }
+
             float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;
             float edgeTolerance = Mathf.Max(0.06f, ballDiam * 0.32f);
 
-            var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
             return grid.IsWorldXAlignedWithBlockTopColumns(monster, ball.transform.position.x, edgeTolerance, allMonsters);
         }
 
@@ -495,6 +505,68 @@ namespace PuzzleGlass
             float cellW = Mathf.Max(0.05f, ballDiam * 0.90f);
             bool hasContainer = container != null;
             Transform containerTr = hasContainer ? container.transform : null;
+
+            if (hasContainer && container.IsTrackShape)
+            {
+                if (container.compiledTrack == null) container.RebuildTrackCompiledData();
+                float maxExitZoneDist = ballDiam * 5.0f;
+                float blockDistSq = (ballDiam * 1.18f) * (ballDiam * 1.18f);
+
+                for (int i = 0; i < activeCount; i++)
+                {
+                    var b = activeBalls[i];
+                    if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                    Vector3 bLocal = containerTr.InverseTransformPoint(b.transform.position);
+                    _cachedLocalPos[i] = bLocal;
+                    if (i < _cachedTrackExitDist.Length)
+                    {
+                        container.SampleTrackField(bLocal, out _, out Vector2 fDir, out float exDist, out _);
+                        _cachedTrackExitDist[i] = exDist;
+                        _cachedTrackFlowDir[i] = fDir;
+                    }
+                }
+
+                for (int i = 0; i < activeCount; i++)
+                {
+                    var b = activeBalls[i];
+                    if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                    if (b.rb != null && !b.rb.isKinematic && b.rb.linearVelocity.sqrMagnitude > 3.8f * 3.8f) continue;
+
+                    float myExitDist = i < _cachedTrackExitDist.Length ? _cachedTrackExitDist[i] : 0f;
+                    if (myExitDist > maxExitZoneDist) continue;
+
+                    Vector2 myPos = _cachedLocalPos[i];
+                    Vector2 myFlow = i < _cachedTrackFlowDir.Length ? _cachedTrackFlowDir[i] : Vector2.down;
+                    bool blockedAhead = false;
+
+                    for (int j = 0; j < activeCount; j++)
+                    {
+                        if (j == i) continue;
+                        var o = activeBalls[j];
+                        if (o == null || o.state != BallState.InContainer || !o.gameObject.activeInHierarchy) continue;
+                        float oExitDist = j < _cachedTrackExitDist.Length ? _cachedTrackExitDist[j] : 99f;
+                        if (oExitDist >= myExitDist - ballRad * 0.25f) continue;
+
+                        Vector2 diff = (Vector2)_cachedLocalPos[j] - myPos;
+                        float dSq = diff.sqrMagnitude;
+                        if (dSq > 1e-6f && dSq < blockDistSq)
+                        {
+                            float aheadDot = Vector2.Dot(diff / Mathf.Sqrt(dSq), myFlow);
+                            if (aheadDot > 0.25f)
+                            {
+                                blockedAhead = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!blockedAhead)
+                    {
+                        _bottomCandidatesCache.Add(b);
+                    }
+                }
+                return _bottomCandidatesCache;
+            }
 
             // Pass 1 (O(N)): Transform & bucket ONLY balls inside the bottom floor band into 1D spatial X-columns
             for (int i = 0; i < activeCount; i++)
@@ -599,6 +671,11 @@ namespace PuzzleGlass
             ActiveMonsterStream bestOverallStream = null;
             float bestOverallScore = float.MaxValue;
 
+            ShapedGlassContainer trackContainer = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : null;
+            bool isTrack = trackContainer != null && trackContainer.IsTrackShape;
+
             foreach (var kvp in _activeStreams)
             {
                 var stream = kvp.Value;
@@ -617,9 +694,18 @@ namespace PuzzleGlass
                     if (cand.colorType != monster.colorType) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
-                    // Deliğe (kutunun üstündeki çıkışa) en yakın top gelir
-                    float distX = Mathf.Abs(cand.transform.position.x - monsterWorldX);
-                    float score = distX;
+                    // Pist modunda çıkış ağzına en yakın top önce gelir; kutu modunda bloğa yatay en yakın top
+                    float score;
+                    if (isTrack)
+                    {
+                        Vector3 lp = trackContainer.transform.InverseTransformPoint(cand.transform.position);
+                        trackContainer.SampleTrackField(lp, out _, out _, out float exDist, out _);
+                        score = exDist;
+                    }
+                    else
+                    {
+                        score = Mathf.Abs(cand.transform.position.x - monsterWorldX);
+                    }
                     if (score < bestOverallScore)
                     {
                         bestOverallScore = score;

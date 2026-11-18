@@ -37,7 +37,8 @@ namespace PuzzleGlass
         public Color tileBevelColor = new Color(0.30f, 0.27f, 0.54f, 1f);
         public Color tileBodyColor = new Color(0.22f, 0.19f, 0.43f, 1f);
         public Color exitRimColor = new Color(0.50f, 0.50f, 0.76f, 1f);
-        public bool showOuterGlassJar = true;
+        public bool showOuterGlassJar = false;
+        public bool showTrayVisuals = false;
 
         [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
@@ -128,12 +129,24 @@ namespace PuzzleGlass
                         if (glassOuterW > 1.0f) targetBoardWidth = Mathf.Min(glassOuterW * 1.06f, maxBoardWidth);
                     }
                     Camera cam = Camera.main;
-                    if (cam != null && cam.orthographic && rows >= 5)
+                    if (cam != null && cam.orthographic)
                     {
-                        float minGap = (glass.showBottomExitCollar && glass.IsPoolShape) ? 0.36f : 0.14f;
+                        float minGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.36f : 0.14f;
+                        float trayTopLimitY = gMinY - Mathf.Max(minGap, gapBelowGlass * 1.18f);
+                        if (SlotSystem.IsActive && SlotSystem.Instance.TryGetVisibleVerticalBounds(out float slotMinY, out _))
+                        {
+                            trayTopLimitY = Mathf.Min(trayTopLimitY, slotMinY - 0.14f);
+                        }
                         float camBottom = cam.transform.position.y - cam.orthographicSize;
-                        float availH = (gMinY - Mathf.Max(minGap, gapBelowGlass * 1.18f)) - (camBottom + 0.36f);
-                        if (availH > effectiveMaxHeight) effectiveMaxHeight = Mathf.Min(availH, 5.2f);
+                        float availH = trayTopLimitY - (camBottom + 0.32f);
+                        if (rows >= 5 && availH > effectiveMaxHeight)
+                        {
+                            effectiveMaxHeight = Mathf.Min(availH, 5.2f);
+                        }
+                        else if (availH > 1.20f && availH < effectiveMaxHeight)
+                        {
+                            effectiveMaxHeight = availH;
+                        }
                     }
                 }
 
@@ -218,9 +231,14 @@ namespace PuzzleGlass
                 botExtent = outerH * 0.5f;
             }
 
-            // Camın altında çıkış yakası varsa kavanoz ağzıyla arasında boşluk kalsın
-            float minGap = (glass.showBottomExitCollar && glass.IsPoolShape) ? 0.36f : 0.14f;
-            float targetCenterY = glassBottomY - Mathf.Max(minGap, gapBelowGlass * 1.18f) - topExtent;
+            // Camın altında çıkış yakası ve aktif slot satırı varsa onların altında kalsın
+            float minGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.36f : 0.14f;
+            float targetTopY = glassBottomY - Mathf.Max(minGap, gapBelowGlass * 1.18f);
+            if (SlotSystem.IsActive && SlotSystem.Instance.TryGetVisibleVerticalBounds(out float slotMinY, out _))
+            {
+                targetTopY = Mathf.Min(targetTopY, slotMinY - 0.14f);
+            }
+            float targetCenterY = targetTopY - topExtent;
 
             // Keep well inside the bottom edge of orthographic portrait view
             Camera cam = Camera.main;
@@ -261,12 +279,16 @@ namespace PuzzleGlass
             float outerW = innerW + framePadding * 2f;
             float outerH = innerH + framePadding * 2f;
 
-            // 0. Surrounding Lower Glass Jar Envelope (thin, understated rim)
+            // 0. Surrounding Lower Glass Jar Envelope (only when legacy jar enabled)
             if (showOuterGlassJar)
             {
                 BuildOuterGlassJar(outerW, outerH);
             }
-            else
+            if (!showTrayVisuals)
+            {
+                return;
+            }
+            if (!showOuterGlassJar)
             {
                 Shader shadowShader = Shader.Find("PuzzleGlass/FakeDropShadow");
                 if (shadowShader != null)
@@ -459,7 +481,14 @@ namespace PuzzleGlass
         {
             CarrierBlockShapeUtility.GetBounds(shape, out int w, out int h);
             int maxDim = Mathf.Max(w, h);
-            // Scales 1x1 cleanly inside 0.70, 2x1 / L shapes cleanly inside ~0.72, 3-wide shapes cleanly inside ~0.78
+            float scaleRatio = SlotSystem.IsActive ? Mathf.Clamp(SlotSystem.Instance.slotScale / 0.74f, 0.55f, 1.5f) : 1.0f;
+            if (SlotSystem.IsActive)
+            {
+                if (maxDim <= 1) return 0.38f * scaleRatio;
+                if (maxDim == 2) return 0.22f * scaleRatio;
+                return 0.16f * scaleRatio;
+            }
+            // Legacy non-slot mode
             if (maxDim <= 1) return 0.68f;
             if (maxDim == 2) return 0.37f;
             return 0.265f;
@@ -511,7 +540,7 @@ namespace PuzzleGlass
                 for (int m = 0; m < allMonsters.Count; m++)
                 {
                     var other = allMonsters[m];
-                    if (other == null || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0 || !other.gameObject.activeInHierarchy)
+                    if (other == null || other.assignedSlot != null || other.IsMovingToSlot || other.IsCompleted || other.remainingCount <= 0 || !other.gameObject.activeInHierarchy)
                         continue;
 
                     Vector2Int[] cells = CarrierBlockShapeUtility.GetCells(other.blockShape);
@@ -777,18 +806,89 @@ namespace PuzzleGlass
             return false;
         }
 
+        public bool HasAnyOpenTopColumn(MonsterCharacter block, List<MonsterCharacter> allMonsters)
+        {
+            if (block == null || !IsBlockAtTopExit(block)) return false;
+            EnsureFlowFieldUpdated(allMonsters);
+            for (int cx = 0; cx < cols; cx++)
+            {
+                if (_topExitColumnOwner[cx] == block) return true;
+            }
+            return false;
+        }
+
         public void RefreshAllGridBlockHighlightStates(List<MonsterCharacter> allMonsters)
         {
             MarkGridDirty();
             EnsureFlowFieldUpdated(allMonsters);
             if (allMonsters == null) return;
+            bool slotsActive = SlotSystem.IsActive;
             for (int i = 0; i < allMonsters.Count; i++)
             {
                 var m = allMonsters[i];
-                if (m == null || m.assignedSlot != null || m.IsCompleted || m.remainingCount <= 0) continue;
+                if (m == null || m.assignedSlot != null || m.IsMovingToSlot || m.IsCompleted || m.remainingCount <= 0) continue;
                 bool atTopExit = IsBlockAtTopExit(m);
-                m.SetExitClearHighlight(atTopExit);
+                bool exitClear = slotsActive ? IsBlockExitClearToSlots(m, allMonsters) : atTopExit;
+                m.SetExitClearHighlight(exitClear);
                 m.armedAtTopEdge = atTopExit;
+            }
+        }
+
+        /// <summary>
+        /// Tray olmayan düzenli kutu diziliminde bir kutu slota gittiğinde aynı sütundaki arka kutuları yukarı öne kaydırır.
+        /// </summary>
+        public void AdvanceColumnQueues(List<MonsterCharacter> allMonsters)
+        {
+            if (showTrayVisuals || allMonsters == null || allMonsters.Count == 0) return;
+
+            bool movedAny = false;
+            MarkGridDirty();
+            EnsureFlowFieldUpdated(allMonsters);
+
+            for (int c = 0; c < cols; c++)
+            {
+                // Sütundaki yerleşik (1x1) aktif kutuları yukarıdan aşağıya toplayıp üst boşluklara kaydır
+                for (int r = rows - 1; r >= 0; r--)
+                {
+                    if (IsWallCell(c, r)) continue;
+                    var occTop = _cellOccupancy[r * cols + c];
+                    if (occTop != null) continue;
+
+                    // Bu boş hücrenin altındaki ilk 1x1 kutuyu bul (arada duvar veya çok hücreli blok yoksa)
+                    MonsterCharacter pullUp = null;
+                    for (int below = r - 1; below >= 0; below--)
+                    {
+                        if (IsWallCell(c, below)) break;
+                        var occBelow = _cellOccupancy[below * cols + c];
+                        if (occBelow != null)
+                        {
+                            if (occBelow.blockShape == CarrierBlockShape.Rect1x1)
+                            {
+                                pullUp = occBelow;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (pullUp != null)
+                    {
+                        Vector2Int oldA = pullUp.gridAnchor;
+                        Vector2Int newA = new Vector2Int(c, r);
+                        _cellOccupancy[oldA.y * cols + oldA.x] = null;
+                        _cellOccupancy[newA.y * cols + newA.x] = pullUp;
+
+                        Vector3 newPos = GetWorldPositionForAnchor(newA, pullUp.blockShape);
+                        Vector3 baseScale = (pullUp.stagingHomeScale.sqrMagnitude > 0.001f) ? pullUp.stagingHomeScale : Vector3.one * cellSize;
+                        Vector3 slotFit = Vector3.one * GetSlotFitScaleForShape(pullUp.blockShape);
+                        pullUp.SetGridState(newA, newPos, baseScale, slotFit, r == rows - 1, animateMove: true);
+                        movedAny = true;
+                    }
+                }
+            }
+
+            if (movedAny)
+            {
+                RefreshAllGridBlockHighlightStates(allMonsters);
             }
         }
 
@@ -825,7 +925,7 @@ namespace PuzzleGlass
             for (int m = 0; m < allMonsters.Count; m++)
             {
                 var other = allMonsters[m];
-                if (other == null || other.assignedSlot != null || other.IsCompleted || other.remainingCount <= 0)
+                if (other == null || other.assignedSlot != null || other.IsMovingToSlot || other.IsCompleted || other.remainingCount <= 0)
                     continue;
 
                 Vector2Int[] otherCells = CarrierBlockShapeUtility.GetCells(other.blockShape);

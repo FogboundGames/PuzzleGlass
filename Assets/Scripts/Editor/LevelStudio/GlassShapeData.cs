@@ -17,11 +17,16 @@ namespace PuzzleGlass.Editor.Studio
 
         public static bool IsBoxPreset(GlassShapePreset p) => p == GlassShapePreset.SquareBox || p == GlassShapePreset.RectangleBox;
 
-        /// <summary>Level oyunda havuz kutusu olarak mı yüklenecek? (özel cam yoksa varsayılan kutu)</summary>
+        /// <summary>Eğrisel cam pist / kanal mı? (Varsayılan üst cam artık Görsel 1 tarzı pisttir.)</summary>
+        public static bool IsTrack(PuzzleGlassLevelData lvl) =>
+            lvl == null || !lvl.useCustomGlassShape || lvl.glassPreset == GlassShapePreset.TrackChannel;
+
+        /// <summary>Level oyunda havuz kutusu olarak mı yüklenecek?</summary>
         public static bool IsBox(PuzzleGlassLevelData lvl) => lvl != null && lvl.useCustomGlassShape && IsBoxPreset(lvl.glassPreset);
 
-        /// <summary>Şişe tabanlı cam mı? (varsayılan cam da şişedir)</summary>
-        public static bool IsBottle(PuzzleGlassLevelData lvl) => lvl == null || !lvl.useCustomGlassShape || lvl.glassIsBottle;
+        /// <summary>Şişe tabanlı cam mı?</summary>
+        public static bool IsBottle(PuzzleGlassLevelData lvl) =>
+            lvl != null && lvl.useCustomGlassShape && lvl.glassIsBottle && lvl.glassPreset != GlassShapePreset.TrackChannel;
 
         /// <summary>Şişenin genişliği ve yüksekliği (konturdan).</summary>
         public static void GetBottle(PuzzleGlassLevelData lvl, out float width, out float height)
@@ -37,17 +42,49 @@ namespace PuzzleGlass.Editor.Studio
         /// </summary>
         public static bool IsShapedPool(PuzzleGlassLevelData lvl)
         {
-            if (lvl == null || !lvl.useCustomGlassShape) return true; // varsayılan şişe
+            if (lvl == null || !lvl.useCustomGlassShape || lvl.glassPreset == GlassShapePreset.TrackChannel) return false;
             return lvl.glassPreset == GlassShapePreset.CustomFreeform
                 && lvl.contourPoints != null && lvl.contourPoints.Count >= 2 && lvl.contourPoints[0].halfWidth >= 0.30f;
         }
 
-        /// <summary>Oyunda havuz mantığıyla oynanır mı? (kutu ya da düz tabanlı özel şekil)</summary>
-        public static bool IsPlayablePool(PuzzleGlassLevelData lvl) => IsBox(lvl) || IsShapedPool(lvl);
+        /// <summary>Oyunda oynanabilir cam mı? (pist, kutu ya da düz tabanlı özel şekil)</summary>
+        public static bool IsPlayablePool(PuzzleGlassLevelData lvl) => IsTrack(lvl) || IsBox(lvl) || IsShapedPool(lvl);
 
-        /// <summary>Oyundaki top dizilimi (kutu ya da düz tabanlı özel şekil için oyunla aynı hesap).</summary>
+        public static void BuildTrack(PuzzleGlassLevelData lvl, out GlassTrackLayout.CompiledTrack compiled, out OrderedPoolLayout.Result layout)
+        {
+            GlassTrackPreset preset = (lvl != null && lvl.useCustomGlassShape) ? lvl.trackPreset : GlassTrackPreset.ArchLoop;
+            var branches = (lvl != null && lvl.useCustomGlassShape) ? lvl.trackBranches : null;
+            int lanes = (lvl != null && lvl.useCustomGlassShape) ? lvl.trackLanesAcross : 0;
+            bool autoFit = lvl == null || !lvl.useCustomGlassShape || lvl.trackAutoFitToBalls;
+            float scale = (lvl != null && lvl.useCustomGlassShape && lvl.trackScale > 0.05f) ? lvl.trackScale : 1.0f;
+            float wallThick = (lvl != null && lvl.useCustomGlassShape && lvl.trackWallThickness > 0.01f) ? lvl.trackWallThickness : 0.082f;
+
+            List<LevelMonsterEntry> groups = lvl?.bottomToTopGroups;
+            if ((groups == null || groups.Count == 0) && lvl?.monsters != null && lvl.monsters.Count > 0)
+                groups = lvl.monsters;
+
+            GlassTrackLayout.BuildForLevel(
+                preset,
+                branches,
+                groups,
+                lvl?.manualBalls,
+                lvl != null && lvl.useManualBallLayout,
+                lanes,
+                autoFit,
+                scale,
+                wallThick,
+                out compiled,
+                out layout);
+        }
+
+        /// <summary>Oyundaki top dizilimi (pist, kutu ya da düz tabanlı özel şekil için oyunla aynı hesap).</summary>
         public static OrderedPoolLayout.Result BuildLayout(PuzzleGlassLevelData lvl)
         {
+            if (IsTrack(lvl))
+            {
+                BuildTrack(lvl, out _, out var trackLayout);
+                return trackLayout;
+            }
             if (lvl != null && lvl.useManualBallLayout)
             {
                 if (IsShapedPool(lvl))
@@ -162,6 +199,19 @@ namespace PuzzleGlass.Editor.Studio
         /// <summary>Top dizilimi ve çözücü için camın iç ölçüleri (kutu ise tam; özel şekilde en geniş yerden tahmini).</summary>
         public static PuzzleLevelSolver.GlassDims GetDims(PuzzleGlassLevelData lvl)
         {
+            if (IsTrack(lvl))
+            {
+                BuildTrack(lvl, out var compiled, out _);
+                if (compiled != null)
+                {
+                    return new PuzzleLevelSolver.GlassDims
+                    {
+                        innerHalfW = Mathf.Max(0.6f, compiled.outerBounds.width * 0.5f),
+                        floorY = compiled.outerBounds.yMin,
+                        ceilY = compiled.outerBounds.yMax
+                    };
+                }
+            }
             var c = GetContour(lvl);
             float w = lvl != null && lvl.useCustomGlassShape ? Mathf.Max(0.5f, lvl.widthScale) : 1f;
             float h = lvl != null && lvl.useCustomGlassShape ? Mathf.Max(0.5f, lvl.heightScale) : 1f;

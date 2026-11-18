@@ -335,14 +335,14 @@ namespace PuzzleGlass.Editor.Studio
                 }
             }
 
-            CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, RecordNewCompletions);
+            CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, GlassShapeData.IsTrack(lvl), RecordNewCompletions);
             if (solve.moves != null)
             {
                 foreach (var (blockIdx, dir) in solve.moves)
                 {
                     if (blockIdx < 0 || blockIdx >= blocks.Length) continue;
                     s.anchors[blockIdx] += dir;
-                    CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, RecordNewCompletions);
+                    CollectClosureWithTrace(s, blocks, walls, wave1, wave2, hasWave2, stackGridCol, lvl.stagingGridRows, lvl.iceMeltMode, GlassShapeData.IsTrack(lvl), RecordNewCompletions);
                 }
             }
             res.completionOrder = order;
@@ -456,6 +456,7 @@ namespace PuzzleGlass.Editor.Studio
             private readonly List<PuzzleColor>[] m_Wave1Stacks;
             private readonly List<PuzzleColor>[] m_Wave2Stacks;
             private readonly bool m_HasWave2;
+            private readonly bool m_IsTrack;
             private readonly int[] m_StackGridCol;
             private readonly HashSet<string> m_Visited = new HashSet<string>();
             private readonly Queue<(State s, int depth, int node)> m_Queue = new Queue<(State s, int depth, int node)>();
@@ -476,10 +477,11 @@ namespace PuzzleGlass.Editor.Studio
                 m_Cols = lvl.stagingGridCols;
                 m_Rows = lvl.stagingGridRows;
                 m_IceMeltMode = lvl.iceMeltMode;
+                m_IsTrack = GlassShapeData.IsTrack(lvl);
                 m_N = m_Blocks.Length;
 
                 var start = new State { anchors = anchors, removed = new bool[m_N], fill = new int[m_N], taken = new int[bc], wave = 0 };
-                CollectClosure(start, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode);
+                CollectClosure(start, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode, m_IsTrack);
                 Result.openingCollectors = CountFilledAny(start);
                 Result.status = SolveStatus.LimitReached; // bitene kadar
                 m_Visited.Add(Key(start));
@@ -523,7 +525,7 @@ namespace PuzzleGlass.Editor.Studio
                             var next = s.Clone();
                             next.anchors[i] = s.anchors[i] + d;
                             if (!IsValidPlacement(m_Blocks, next.anchors, next.removed, m_Cols, m_Rows, m_Walls)) continue;
-                            CollectClosure(next, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode);
+                            CollectClosure(next, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode, m_IsTrack);
                             if (m_Visited.Add(Key(next)))
                             {
                                 m_Nodes.Add((node, i, d));
@@ -644,14 +646,14 @@ namespace PuzzleGlass.Editor.Studio
         /// </summary>
         private static void CollectClosure(
             State s, Block[] blocks, bool[,] walls, List<PuzzleColor>[] wave1Stacks, List<PuzzleColor>[] wave2Stacks,
-            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode)
+            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode, bool isTrack)
         {
-            CollectClosureWithTrace(s, blocks, walls, wave1Stacks, wave2Stacks, hasWave2, stackGridCol, rows, iceMeltMode, null);
+            CollectClosureWithTrace(s, blocks, walls, wave1Stacks, wave2Stacks, hasWave2, stackGridCol, rows, iceMeltMode, isTrack, null);
         }
 
         private static void CollectClosureWithTrace(
             State s, Block[] blocks, bool[,] walls, List<PuzzleColor>[] wave1Stacks, List<PuzzleColor>[] wave2Stacks,
-            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode,
+            bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode, bool isTrack,
             System.Action<int, int> onStepCompleted)
         {
             bool changed = true;
@@ -677,7 +679,7 @@ namespace PuzzleGlass.Editor.Studio
 
                     for (int c = 0; c < stacks.Length && s.fill[i] < blocks[i].count; c++)
                     {
-                        if (!open.Contains(stackGridCol[c])) continue;
+                        if (!isTrack && !open.Contains(stackGridCol[c])) continue;
                         while (s.taken[c] < stacks[c].Count && stacks[c][s.taken[c]] == blocks[i].color && s.fill[i] < blocks[i].count)
                         {
                             s.taken[c]++;

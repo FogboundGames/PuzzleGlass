@@ -28,6 +28,12 @@ Shader "PuzzleGlass/GlassChamberLit"
         _FeedTubeRatio ("Feed Tube Wall Width Ratio", Range(0.25, 1.0)) = 0.64
         _FeedTubeOpeningL ("Left Feed Tube Opening (on, pX, pHalfW, pTopY)", Vector) = (0, 0, 0, 0)
         _FeedTubeOpeningR ("Right Feed Tube Opening (on, pX, pHalfW, pTopY)", Vector) = (0, 0, 0, 0)
+        _IsTrackChannel ("Curved Glass Track Mode", Float) = 0.0
+        _TrackSegCount ("Track Segment Count", Float) = 0.0
+        _TrackHalfWidth ("Track Inner Half Width (P-Space)", Float) = 0.25
+        _TrackWallThick ("Track Wall Thickness (P-Space)", Float) = 0.06
+        _TrackFillet ("Track Junction Fillet", Float) = 0.04
+        _TrackExitPos ("Track Exit (pX, pY, mouthHalfW, on)", Vector) = (0, -0.5, 0.16, 0)
     }
 
     SubShader
@@ -81,11 +87,21 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _FeedTubeRatio;
                 float4 _FeedTubeOpeningL;
                 float4 _FeedTubeOpeningR;
+                float _IsTrackChannel;
+                float _TrackSegCount;
+                float _TrackHalfWidth;
+                float _TrackWallThick;
+                float _TrackFillet;
+                float4 _TrackExitPos;
             CBUFFER_END
 
             // Özel şekilli havuz: iç hattın köşeleri (yarıçap kadar içeri alınmış), iki köşe bir float4'te.
             // Kutu modunda kullanılmaz (_PolyCount = 0).
             float4 _PolyPoints[48];
+            // Eğrisel cam pist/kanal segmentleri: (ax, ay, bx, by) P-uzayında, max 64 segment.
+            float4 _TrackSegs[64];
+            // Her segmentin kol kimliği (4 segment bir float4 içinde): aynı kol exact min, farklı kollar SmoothUnion.
+            float4 _TrackBranchPacked[16];
 
             struct Attributes
             {
@@ -590,6 +606,161 @@ Shader "PuzzleGlass/GlassChamberLit"
                 }
             }
 
+            float TrackBranchId(int i)
+            {
+                float4 v = _TrackBranchPacked[i >> 2];
+                int lane = i & 3;
+                if (lane == 0) return v.x;
+                if (lane == 1) return v.y;
+                if (lane == 2) return v.z;
+                return v.w;
+            }
+
+            float sdSegment2D(float2 p, float2 a, float2 b)
+            {
+                float2 pa = p - a;
+                float2 ba = b - a;
+                float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+                return length(pa - ba * h);
+            }
+
+            // Çoklu-kollu pist için iç kanal işaretli mesafesi (içeride negatif, duvar sınırı = 0)
+            float sdTrackChannel(float2 p)
+            {
+                int n = clamp((int)_TrackSegCount, 0, 64);
+                if (n <= 0) return 10.0;
+
+                float branchMin[6] = { 10.0, 10.0, 10.0, 10.0, 10.0, 10.0 };
+                [loop]
+                for (int i = 0; i < 64; i++)
+                {
+                    if (i >= n) break;
+                    float4 seg = _TrackSegs[i];
+                    float d = sdSegment2D(p, seg.xy, seg.zw) - _TrackHalfWidth;
+                    int bId = clamp((int)TrackBranchId(i), 0, 5);
+                    branchMin[bId] = min(branchMin[bId], d);
+                }
+
+                float k = max(_TrackFillet, 0.005);
+                float combined = branchMin[0];
+                for (int b = 1; b < 6; b++)
+                {
+                    float d2 = branchMin[b];
+                    if (d2 < 9.0)
+                    {
+                        combined = opSmoothUnion(combined, d2, k);
+                    }
+                }
+                return combined;
+            }
+
+            half4 EvaluateTrackChannel(Varyings IN)
+            {
+                float aspect = max(_BoxAspect, 0.25);
+                float2 p = (IN.uv - 0.5) * 2.0;
+                p.x *= aspect;
+
+                float quadEdgeFade = smoothstep(0.0, 0.04, IN.uv.x) * smoothstep(1.0, 0.96, IN.uv.x)
+                                   * smoothstep(0.0, 0.04, IN.uv.y) * smoothstep(1.0, 0.96, IN.uv.y);
+
+                float wallThick = max(_TrackWallThick, 0.025);
+                float dInner = sdTrackChannel(p);
+                float dOuter = dInner - wallThick;
+
+                // Duvar eğimi (dışa doğru normal)
+                const float eps = 0.008;
+                float2 grad = float2(
+                    sdTrackChannel(p + float2(eps, 0.0)) - sdTrackChannel(p - float2(eps, 0.0)),
+                    sdTrackChannel(p + float2(0.0, eps)) - sdTrackChannel(p - float2(0.0, eps))
+                );
+                float gLen = length(grad);
+                grad = gLen > 1e-5 ? (grad / gLen) : float2(0.0, 1.0);
+
+                // Alt çıkış ağzı açıklığı (topla temas eden alt çıkış yakasına temiz geçiş)
+                float exitCut = 0.0;
+                if (_TrackExitPos.w > 0.5)
+                {
+                    float dxE = abs(p.x - _TrackExitPos.x);
+                    float yZoneE = smoothstep(_TrackExitPos.y - wallThick * 0.4, _TrackExitPos.y - wallThick * 1.4, p.y);
+                    float gateX = 1.0 - smoothstep(_TrackExitPos.z * 0.65, _TrackExitPos.z * 1.15, dxE);
+                    exitCut = gateX * yZoneE;
+                }
+
+                // Renk paleti: net beyaz/buzlu cam duvar + içeride okunaklı soğuk buz-lavanta kanal oluğu
+                float3 pureWhite    = float3(1.00, 1.00, 1.00);
+                float3 wallMidWhite = lerp(float3(0.92, 0.94, 0.99), _EdgeColor.rgb, 0.14);
+                float3 wallCoolBevel = lerp(float3(0.66, 0.71, 0.88), _FrameColor.rgb, 0.34);
+                float3 wallOuterRim  = lerp(float3(0.46, 0.50, 0.76), _OuterRimColor.rgb, 0.40);
+                float3 bedTopCol    = float3(0.79, 0.82, 0.92);
+                float3 bedBotCol    = float3(0.71, 0.75, 0.87);
+                float3 bedShadowCol = float3(0.46, 0.50, 0.74);
+
+                float outerMask = (1.0 - smoothstep(-0.006, 0.006, dOuter)) * (1.0 - exitCut * 0.65);
+                float innerMask = 1.0 - smoothstep(-0.006, 0.006, dInner);
+                float wallBandMask = saturate(outerMask - innerMask);
+
+                // 3D yuvarlatılmış duvar profili: t=0 iç kenar, t=1 dış kenar
+                float tWall = clamp(dInner / wallThick, 0.0, 1.0);
+                float ridge = sin(tWall * 3.14159265);
+                float topLeftLit = saturate(-grad.x * 0.55 + grad.y * 0.75);
+                float botRightShade = saturate(grad.x * 0.45 - grad.y * 0.82);
+
+                float3 wallCol = lerp(wallCoolBevel, wallMidWhite, saturate(0.45 + ridge * 0.55));
+                wallCol = lerp(wallCol, pureWhite, saturate(ridge * (0.58 + topLeftLit * 0.42)));
+                // İnce dış kontur ve alt bevel derinliği
+                float outerLip = smoothstep(0.76, 0.98, tWall);
+                wallCol = lerp(wallCol, wallOuterRim, outerLip * (0.36 + botRightShade * 0.44));
+                // İç kenar menisküs parlaması
+                float innerEdgeShine = exp(-pow((tWall - 0.10) / 0.10, 2.0));
+                wallCol = lerp(wallCol, pureWhite, innerEdgeShine * 0.52);
+
+                if (_IsFrontLens > 0.5)
+                {
+                    // ÖN KATMAN (topların önünde):
+                    // Kanal içi tamamen saydam (toplar canlı kalsın); yalnızca 3D yükseltilmiş duvar rayları çizilir!
+                    float rimAlpha = wallBandMask * 0.96;
+                    // İç duvara komşu çok hafif yumuşak kenar anti-aliasing
+                    float innerSoftLip = exp(-pow((dInner + 0.004) / 0.009, 2.0)) * 0.28;
+                    float frontAlpha = saturate(max(rimAlpha, innerSoftLip * outerMask)) * quadEdgeFade;
+                    if (frontAlpha < 0.002) discard;
+
+                    float3 frontRgb = lerp(pureWhite, wallCol, saturate(wallBandMask * 1.15));
+                    return half4(saturate(frontRgb), frontAlpha);
+                }
+                else
+                {
+                    // ARKA KATMAN (topların arkasında):
+                    // Yumuşak zemin gölgesi + iç kanal tabanı + iç duvar gölge derinliği (AO)
+                    float2 pShadFar  = p - float2(0.018, -0.056);
+                    float2 pShadNear = p - float2(0.008, -0.024);
+                    float dShadFar   = sdTrackChannel(pShadFar) - wallThick - 0.014;
+                    float dShadNear  = sdTrackChannel(pShadNear) - wallThick;
+                    float aFar  = (1.0 - smoothstep(-0.03, 0.145, dShadFar)) * (_FakeShadowColor.a * 0.92);
+                    float aNear = (1.0 - smoothstep(-0.02, 0.065, dShadNear)) * (_FakeShadowColor.a * 0.58);
+                    float shadowAlpha = saturate(aFar + aNear) * quadEdgeFade;
+                    float3 shadowRGB = _FakeShadowColor.rgb;
+
+                    // İç kanal tabanı + iç duvarların hemen dibinde 3D derinlik gölgesi (Görsel 1 & 3'teki oluk hissi)
+                    float depthFromWall = max(0.0, -dInner);
+                    float innerWallAO = exp(-depthFromWall / max(_TrackHalfWidth * 0.42, 0.045));
+                    float vGrad = saturate(IN.uv.y);
+                    float3 bedRgb = lerp(bedBotCol, bedTopCol, vGrad);
+                    bedRgb = lerp(bedRgb, bedShadowCol, innerWallAO * 0.34);
+
+                    float bedAlpha = innerMask * 0.72;
+                    float wallBaseAlpha = wallBandMask * 0.96;
+                    float trackAlpha = saturate(max(bedAlpha, wallBaseAlpha)) * quadEdgeFade;
+                    float3 trackRgb = lerp(bedRgb, wallCol, wallBandMask);
+
+                    float finalAlpha = saturate(trackAlpha + shadowAlpha * (1.0 - trackAlpha * 0.90));
+                    if (finalAlpha < 0.002) discard;
+
+                    float3 finalRgb = lerp(shadowRGB * shadowAlpha, trackRgb, trackAlpha) / max(finalAlpha, 0.004);
+                    if (trackAlpha < 0.02) finalRgb = shadowRGB;
+                    return half4(saturate(finalRgb), finalAlpha);
+                }
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
                 if (_IsCollar > 0.5)
@@ -599,6 +770,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                 if (_IsFeedTube > 0.5)
                 {
                     return EvaluateFeedTube(IN);
+                }
+                if (_IsTrackChannel > 0.5)
+                {
+                    return EvaluateTrackChannel(IN);
                 }
                 if (_IsRoundedBoxPool > 0.5)
                 {

@@ -21,6 +21,8 @@ Shader "PuzzleGlass/CarrierBox"
         _InnerRad ("Inner Plate Corner Radius", Float) = 0.125
         _OutlineThickness ("Outer Outline Thickness", Float) = 0.032
         _LipOffset ("3D Lower Lip Offset", Float) = 0.088
+        _CrateMode ("Collector Crate Mode", Float) = 1.0
+        _StickerOutlineColor ("Sticker White Border Color", Color) = (0.985, 0.99, 1.0, 1.0)
         _ExitHighlight ("Exit-Ready Rim Highlight", Float) = 0.0
         _DragHighlight ("Active Drag / Focus Highlight", Float) = 0.0
         _IceAmount ("Ice Freeze Overlay", Float) = 0.0
@@ -88,6 +90,8 @@ Shader "PuzzleGlass/CarrierBox"
                 float _InnerRad;
                 float _OutlineThickness;
                 float _LipOffset;
+                float _CrateMode;
+                float4 _StickerOutlineColor;
                 float _ExitHighlight;
                 float _DragHighlight;
                 float _IceAmount;
@@ -248,7 +252,117 @@ Shader "PuzzleGlass/CarrierBox"
                 float dBaseBox  = sdPolyomino(q + float2(0.0, _LipOffset), 0.0, _CornerRad, rectCount, rect0, rect1);
                 float dTotal    = min(dFrontBox, dBaseBox);
 
-                // Complete Silhouette
+                if (_CrateMode > 0.5)
+                {
+                    // Twin sky-blue front latch clasps anchored at the bottom-center rim of the lowest rect
+                    float4 claspRect = (rectCount > 1.5 && (rect1.y - rect1.w) < (rect0.y - rect0.w)) ? rect1 : rect0;
+                    float2 claspAnchor = float2(claspRect.x, claspRect.y - claspRect.w - 0.012);
+                    float2 claspHalf   = float2(0.044, 0.068);
+                    float  claspRad    = 0.018;
+                    float2 qClaspL     = q - (claspAnchor + float2(-0.076, 0.0));
+                    float2 qClaspR     = q - (claspAnchor + float2( 0.076, 0.0));
+                    float  dClaspL     = sdRoundBox(qClaspL, claspHalf, claspRad);
+                    float  dClaspR     = sdRoundBox(qClaspR, claspHalf, claspRad);
+                    float  dTwinClasp  = min(dClaspL, dClaspR);
+                    float2 qLocalClasp = (dClaspL < dClaspR) ? qClaspL : qClaspR;
+
+                    // Crisp white outer sticker outline wrapping both case & front clasps
+                    float stickerPad = 0.038;
+                    float dSticker   = min(dTotal, dTwinClasp) - stickerPad;
+                    float totalAlpha = 1.0 - smoothstep(-aa, aa, dSticker);
+                    if (totalAlpha < 0.002) discard;
+
+                    float activeGlow = saturate(max(exitHighlight, dragHighlight));
+                    float3 col = _StickerOutlineColor.rgb;
+
+                    // Case silhouette inside the white sticker border
+                    float caseMask = 1.0 - smoothstep(-aa, aa, dTotal);
+                    float skirtDepth = saturate((-dFrontBox) / max(0.02, _LipOffset));
+                    float3 skirtCol = lerp(bodyDarkColor * 0.92, bodyDarkColor * 0.72, saturate(1.0 - skirtDepth));
+
+                    // Thin dark definition seam inside sticker border
+                    float caseEdgeDark = (1.0 - smoothstep(-0.014, 0.0, dTotal)) * caseMask;
+                    float3 caseCol = lerp(skirtCol, bodyDarkColor * 0.55, caseEdgeDark * 0.45);
+
+                    // Top crate lid face + subtle satin gradient + edge highlight
+                    float frontMask = 1.0 - smoothstep(-aa, aa, dFrontBox);
+                    float frontRim  = frontMask - (1.0 - smoothstep(-0.026 - aa, -0.026 + aa, dFrontBox));
+                    float lidGrad   = saturate((q.y - rect0.y) / max(0.15, rect0.w) * 0.5 + 0.55);
+                    float3 lidCol   = lerp(bodyColor * 0.93, lerp(bodyColor, highlightColor, 0.16), lidGrad);
+                    lidCol = lerp(lidCol, highlightColor, saturate(frontRim) * (0.42 + activeGlow * 0.30));
+                    caseCol = lerp(caseCol, lidCol, frontMask);
+
+                    // Stamped recessed inner square lid groove (matching uploaded collector crates)
+                    float dInnerPanel = sdPolyomino(q - float2(0.0, 0.012), _WallInset * 1.28, max(0.018, _InnerRad * 0.84), rectCount, rect0, rect1);
+                    float panelMask   = (1.0 - smoothstep(-aa, aa, dInnerPanel)) * frontMask;
+                    float grooveBand  = 1.0 - smoothstep(0.0, 0.020, abs(dInnerPanel));
+                    float upperGroove = saturate((q.y - rect0.y) * 1.4 + 0.35);
+                    float3 panelCol   = lerp(bodyColor * 0.98, lerp(bodyColor, highlightColor, 0.18), 0.55);
+                    caseCol = lerp(caseCol, panelCol, panelMask);
+                    caseCol = lerp(caseCol, bodyDarkColor * 0.62, grooveBand * upperGroove * frontMask * 0.75);
+                    caseCol = lerp(caseCol, highlightColor, grooveBand * (1.0 - upperGroove) * frontMask * 0.48);
+
+                    col = lerp(col, caseCol, caseMask);
+
+                    // Draw Twin Sky-Blue Front Latch Clasps with crisp border & glossy top band
+                    float claspSeamMask = 1.0 - smoothstep(-aa, aa, dTwinClasp - 0.014);
+                    col = lerp(col, _StickerOutlineColor.rgb, claspSeamMask * 0.85);
+
+                    float claspMask = 1.0 - smoothstep(-aa, aa, dTwinClasp);
+                    float claspYNorm = saturate((qLocalClasp.y / claspHalf.y) * 0.5 + 0.5);
+                    float3 claspBlue = lerp(float3(0.12, 0.48, 0.88), float3(0.32, 0.72, 1.00), smoothstep(0.0, 0.85, claspYNorm));
+                    float claspBand  = smoothstep(0.45, 0.85, claspYNorm) * (1.0 - smoothstep(0.85, 1.0, claspYNorm));
+                    claspBlue = lerp(claspBlue, float3(0.74, 0.92, 1.00), claspBand * 0.65);
+                    float claspDarkEdge = (1.0 - smoothstep(-0.010, 0.0, dTwinClasp)) * claspMask;
+                    claspBlue = lerp(claspBlue, float3(0.08, 0.32, 0.68), claspDarkEdge * 0.55);
+                    col = lerp(col, claspBlue, claspMask);
+
+                    // Subtle white highlight pulse when ready to tap into slot
+                    col = lerp(col, lerp(col, float3(1.0, 1.0, 1.0), 0.10), activeGlow * frontMask * 0.55);
+
+                    // Reuse plateShadowMask & plateMask for lock/ice overlays below
+                    float plateMask = panelMask;
+                    float plateShadowMask = saturate(0.5 - lidGrad * 0.5);
+
+                    if (lockAmount > 0.001)
+                    {
+                        float la = saturate(lockAmount);
+                        float3 lockLid = lerp(bodyColor, float3(1.0, 1.0, 1.0), 0.24);
+                        float gs = max(0.2, lockCenter.z);
+                        float2 p = (q - lockCenter.xy) / gs;
+                        float ca = cos(lockWiggle), sa = sin(lockWiggle);
+                        p = float2(ca * p.x + sa * p.y, -sa * p.x + ca * p.y);
+                        float2 bp = p - float2(0.0, -0.050);
+                        float dBody = sdRoundBox(bp, float2(0.135, 0.105), 0.050);
+                        float2 sp = p - float2(0.0, 0.050 + saturate(lockOpen) * 0.075);
+                        float dRing = abs(length(sp) - 0.078) - 0.026;
+                        float dLeg = max(abs(abs(sp.x) - 0.078) - 0.026, abs(sp.y + 0.05) - 0.05);
+                        float dShackle = sp.y >= 0.0 ? dRing : dLeg;
+                        float dGlyph = min(dBody, dShackle);
+                        float aaG = aa / gs;
+                        float glyphMask = 1.0 - smoothstep(-aaG, aaG, dGlyph);
+                        float dHole = min(length(bp - float2(0.0, 0.016)) - 0.030,
+                                          sdRoundBox(bp - float2(0.0, -0.028), float2(0.013, 0.036), 0.012));
+                        float holeMask = 1.0 - smoothstep(-aaG, aaG, dHole);
+                        float3 lockLayer = lerp(lockLid, float3(0.97, 0.98, 1.0), glyphMask);
+                        lockLayer = lerp(lockLayer, bodyDarkColor, holeMask);
+                        col = lerp(col, lockLayer, plateMask * la);
+                    }
+
+                    if (iceAmount > 0.001)
+                    {
+                        float iceAmt = saturate(iceAmount);
+                        float3 iceBody = float3(0.32, 0.78, 0.98);
+                        float3 iceFrost = float3(0.86, 0.97, 1.00);
+                        float snowBand = smoothstep(0.08, 0.36, q.y + 0.06 * sin(q.x * 9.0));
+                        float3 iceCol = lerp(iceBody, iceFrost, 0.25 + 0.35 * snowBand);
+                        col = lerp(col, iceCol, caseMask * iceAmt * 0.85);
+                    }
+
+                    return half4(col * IN.color.rgb, totalAlpha * IN.color.a);
+                }
+
+                // Complete Silhouette (Legacy socket plate mode)
                 float totalAlpha = 1.0 - smoothstep(-aa, aa, dTotal);
                 if (totalAlpha < 0.002) discard;
 

@@ -4,12 +4,12 @@ Shader "PuzzleGlass/SlotSquircleUI"
     {
         [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1, 1, 1, 1)
-        _FrameColor ("Outer Frame Periwinkle", Color) = (0.62, 0.67, 0.98, 1.0)
-        _FrameHighlight ("Frame Top-Left Highlight", Color) = (0.86, 0.89, 1.00, 1.0)
-        _FrameEdgeShade ("Frame Outer Lip Shade", Color) = (0.49, 0.55, 0.89, 1.0)
-        _CavityColor ("Inner Well Periwinkle", Color) = (0.42, 0.49, 0.88, 1.0)
-        _CavityShadow ("Inner Well Cast Shadow", Color) = (0.28, 0.35, 0.75, 1.0)
-        _FakeShadowColor ("Fake Drop Shadow Color", Color) = (0.74, 0.58, 0.44, 0.44)
+        _FrameColor ("Top Face Lower Gradient", Color) = (0.83, 0.92, 1.00, 1.0)
+        _FrameHighlight ("Rim & Top Specular White", Color) = (0.98, 0.99, 1.00, 1.0)
+        _FrameEdgeShade ("3D Sky-Blue Lip & Border", Color) = (0.26, 0.66, 1.00, 1.0)
+        _CavityColor ("Top Face Upper Gradient", Color) = (0.91, 0.96, 1.00, 1.0)
+        _CavityShadow ("3D Lip Deep Side Shade", Color) = (0.17, 0.54, 0.94, 1.0)
+        _FakeShadowColor ("Fake Drop Shadow Color", Color) = (0.18, 0.23, 0.35, 0.34)
 
         // Required for Unity UI Canvas (Image / RawImage) compatibility
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -97,95 +97,57 @@ Shader "PuzzleGlass/SlotSquircleUI"
 
             half4 frag(Varyings IN) : SV_Target
             {
-                // Map UV [0,1] to [-1, +1] centered coordinates (with room around the outside for the soft fake shadow)
+                // Map UV [0,1] to [-1, +1] centered coordinates (with room around the outside for the soft shadow)
                 float2 p = (IN.uv - 0.5) * 2.0;
 
-                float2 outerHalf = float2(0.67, 0.67);
-                float outerRad   = 0.245;
+                float2 faceHalf = float2(0.64, 0.59);
+                float cornerRad = 0.175;
 
-                float2 innerHalf = float2(0.455, 0.455);
-                float innerRad   = 0.140;
+                // 1. Soft Cool Drop Shadow below the 3D tile
+                float2 pShadowFar  = p - float2(0.015, -0.090);
+                float2 pShadowNear = p - float2(0.008, -0.055);
+                float dShadowFar   = sdRoundBox(pShadowFar, faceHalf + float2(0.015, 0.015), cornerRad + 0.025);
+                float dShadowNear  = sdRoundBox(pShadowNear, faceHalf + float2(0.008, 0.008), cornerRad + 0.010);
 
-                // 1. Soft Warm Fake Drop Shadow (offset down and slightly left, matching Image 2)
-                float2 pShadowFar  = p - float2(-0.048, -0.095);
-                float2 pShadowNear = p - float2(-0.022, -0.042);
-                float dShadowFar   = sdRoundBox(pShadowFar, outerHalf, outerRad + 0.02);
-                float dShadowNear  = sdRoundBox(pShadowNear, outerHalf, outerRad);
-
-                float alphaShadowFar  = (1.0 - smoothstep(-0.10, 0.26, dShadowFar)) * _FakeShadowColor.a;
-                float alphaShadowNear = (1.0 - smoothstep(-0.04, 0.11, dShadowNear)) * (_FakeShadowColor.a * 0.58);
+                float alphaShadowFar  = (1.0 - smoothstep(-0.08, 0.24, dShadowFar)) * (_FakeShadowColor.a * 0.75);
+                float alphaShadowNear = (1.0 - smoothstep(-0.04, 0.12, dShadowNear)) * (_FakeShadowColor.a * 0.65);
                 float shadowAlpha = saturate(alphaShadowFar + alphaShadowNear);
                 float3 shadowRGB = _FakeShadowColor.rgb;
 
-                // 2. Outer Pillowy Rounded-Square Frame SDF
-                float dOuter = sdRoundBox(p, outerHalf, outerRad);
-                float dInner = sdRoundBox(p, innerHalf, innerRad);
+                // 2. Extruded 3D Sky-Blue Lower Lip + Crisp Thin Blue Perimeter Outline
+                float2 pBase = p - float2(0.0, -0.038);
+                float dBase = sdRoundBox(pBase, faceHalf + float2(0.016, 0.016), cornerRad + 0.008);
+                float baseMask = 1.0 - smoothstep(-0.010, 0.010, dBase);
 
-                float outerMask = 1.0 - smoothstep(-0.008, 0.008, dOuter);
+                // Side/corner shading on the extruded blue bottom lip
+                float sideCurve = saturate(abs(p.x) / faceHalf.x);
+                float3 lipRGB = lerp(_FrameEdgeShade.rgb, _CavityShadow.rgb, smoothstep(0.55, 1.0, sideCurve) * 0.65);
+                // Slight bright highlight near the top-center transition of the lip
+                float bottomCenterGlow = (1.0 - smoothstep(0.0, 0.55, sideCurve)) * 0.22;
+                lipRGB = lerp(lipRGB, float3(0.45, 0.78, 1.0), bottomCenterGlow);
 
-                // Compute smooth 2D gradient normal of the outer rounded box for 3D pillowy frame shading
-                float eps = 0.005;
-                float2 gradOuter = normalize(float2(
-                    sdRoundBox(p + float2(eps, 0.0), outerHalf, outerRad) - sdRoundBox(p - float2(eps, 0.0), outerHalf, outerRad),
-                    sdRoundBox(p + float2(0.0, eps), outerHalf, outerRad) - sdRoundBox(p - float2(0.0, eps), outerHalf, outerRad)
-                ) + 1e-5);
+                // 3. Elevated Frosted Icy-Blue / White Rounded-Square Top Pad
+                float2 pFace = p - float2(0.0, 0.042);
+                float dFace = sdRoundBox(pFace, faceHalf, cornerRad);
+                float faceMask = 1.0 - smoothstep(-0.010, 0.010, dFace);
 
-                // Normalized position across the frame thickness (0 = outer border, 1 = inner border)
-                float ringT = saturate((-dOuter) / 0.215);
+                // Subtle top-to-bottom icy pale-blue face gradient
+                float faceY = saturate((pFace.y / faceHalf.y) * 0.5 + 0.5);
+                float3 faceRGB = lerp(_FrameColor.rgb, _CavityColor.rgb, smoothstep(0.0, 1.0, faceY));
 
-                // Arch profile across the frame rim: rises smoothly in the middle, curves down at outer & inner lips
-                float radialSlope = cos(ringT * 3.14159265);
-                float3 frameNormal = normalize(float3(gradOuter * radialSlope * 0.65, -0.76));
+                // Crisp bright white inner bevel along the top & upper sides
+                float rimMask = 1.0 - smoothstep(0.0, 0.055, -dFace);
+                float topSideWeight = saturate((pFace.y / faceHalf.y) * 0.65 + 0.55);
+                faceRGB = lerp(faceRGB, _FrameHighlight.rgb, rimMask * topSideWeight * 0.88);
 
-                float3 lightDir = normalize(float3(-0.38, 0.68, -0.62));
-                float frameLit = saturate(dot(frameNormal, lightDir) * 0.55 + 0.45);
+                // Combine extruded blue lip & frosted top face, tinted by RawImage color (hover highlight)
+                float3 slotRGB = lerp(lipRGB, faceRGB, faceMask) * IN.color.rgb;
 
-                // Base periwinkle frame shading
-                float3 frameCol = lerp(_FrameEdgeShade.rgb, _FrameColor.rgb, smoothstep(0.15, 0.68, frameLit));
-
-                // Creamy-icy top & top-left crest highlight (signature Image 2 glossy satin ridge)
-                float crestMask = sin(ringT * 3.14159265);
-                float topLeftCatch = saturate((-p.x * 0.35 + p.y * 0.75) + 0.38);
-                float specRidge = pow(crestMask, 2.1) * topLeftCatch * 0.74;
-                frameCol = lerp(frameCol, _FrameHighlight.rgb, saturate(specRidge));
-
-                // Subtle 3D outer lip shading on bottom & left outer rim
-                float outerLipMask = 1.0 - smoothstep(0.0, 0.048, -dOuter);
-                float bottomLeftBias = saturate((-p.x * 0.35 - p.y * 0.65) + 0.45);
-                frameCol = lerp(frameCol, _FrameEdgeShade.rgb * 0.88, outerLipMask * bottomLeftBias * 0.68);
-
-                // Inner chamfer highlight along bottom-right inner edge of the frame
-                float innerLipMask = 1.0 - smoothstep(0.0, 0.038, abs(dInner));
-                float bottomRightCatch = saturate((p.x * 0.45 - p.y * 0.65) + 0.28);
-                frameCol = lerp(frameCol, _FrameHighlight.rgb, innerLipMask * bottomRightCatch * 0.55);
-
-                // 3. Recessed Inner Cavity Well (Image 2 rich medium periwinkle with top-left cast shadow)
-                float innerMask = 1.0 - smoothstep(-0.008, 0.008, dInner);
-
-                // Subtle vertical gradient inside the well
-                float3 cavityCol = lerp(_CavityColor.rgb * 1.05, _CavityColor.rgb * 0.94, saturate(p.y * 0.5 + 0.5));
-
-                // Top-left inner wall cast shadow inside the recessed well
-                float dWellShadow = sdRoundBox(p - float2(0.040, -0.055), innerHalf, innerRad);
-                float wellShadowMask = smoothstep(-0.058, 0.015, dWellShadow);
-                float topLeftWellBias = saturate((-p.x * 0.42 + p.y * 0.72) + 0.38);
-                cavityCol = lerp(cavityCol, _CavityShadow.rgb, wellShadowMask * topLeftWellBias * 0.72);
-
-                // Soft ambient occlusion in the inner perimeter of the well
-                float wellRimAO = 1.0 - smoothstep(-0.05, 0.0, dInner);
-                cavityCol = lerp(cavityCol, _CavityShadow.rgb * 0.90, (1.0 - wellRimAO) * 0.34);
-
-                // Combine Cavity inside Frame
-                float3 slotRGB = lerp(frameCol, cavityCol, innerMask);
-
-                // Re-apply subtle inner bevel rim highlight over the seam
-                slotRGB = lerp(slotRGB, _FrameHighlight.rgb, innerLipMask * bottomRightCatch * 0.36);
-
-                // Composite Slot over Fake Drop Shadow
-                float finalAlpha = saturate(outerMask + shadowAlpha * (1.0 - outerMask));
+                float bodyMask = saturate(max(baseMask, faceMask));
+                float finalAlpha = saturate(bodyMask + shadowAlpha * (1.0 - bodyMask)) * IN.color.a;
                 if (finalAlpha < 0.002) discard;
 
-                float3 finalRGB = lerp(shadowRGB, slotRGB, outerMask);
+                float3 finalRGB = lerp(shadowRGB, slotRGB, bodyMask);
                 return half4(finalRGB, finalAlpha);
             }
             ENDHLSL

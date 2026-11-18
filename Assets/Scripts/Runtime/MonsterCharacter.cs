@@ -11,6 +11,9 @@ namespace PuzzleGlass
     {
         public const int MaxVisualSockets = 16;
 
+        [Header("Crate Presentation")]
+        public bool useCrateVisuals = true;
+
         private float _socketBallLocalDiameter = 0.188f;
 
         private static readonly int BodyColorPropId = Shader.PropertyToID("_BodyColor");
@@ -26,6 +29,7 @@ namespace PuzzleGlass
         private static readonly int InnerRadPropId = Shader.PropertyToID("_InnerRad");
         private static readonly int OutlineThicknessPropId = Shader.PropertyToID("_OutlineThickness");
         private static readonly int LipOffsetPropId = Shader.PropertyToID("_LipOffset");
+        private static readonly int CrateModePropId = Shader.PropertyToID("_CrateMode");
         private static readonly int ExitHighlightPropId = Shader.PropertyToID("_ExitHighlight");
         private static readonly int DragHighlightPropId = Shader.PropertyToID("_DragHighlight");
         private static readonly int IceAmountPropId = Shader.PropertyToID("_IceAmount");
@@ -261,7 +265,16 @@ namespace PuzzleGlass
         public bool IsFrozenByIce => remainingIceCount > 0;
         public bool IsMovementOrCollectionBlocked => IsLockedByKey || IsFrozenByIce;
 
-        public bool IsActivelyCollecting => (isCollectingInGrid || assignedSlot != null) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+        public bool IsActivelyCollecting => (isCollectingInGrid || (assignedSlot != null && !_isMovingToSlot)) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+
+        public bool IsMovingToSlot => _isMovingToSlot;
+
+        public void SetMovingToSlot(bool moving)
+        {
+            _isMovingToSlot = moving;
+            if (moving) SetExitClearHighlight(false);
+            StagingGridBoard.Instance?.MarkGridDirty();
+        }
 
         [Header("Visual Parts")]
         public Transform bodyPivot;
@@ -545,7 +558,7 @@ namespace PuzzleGlass
         {
             colorType = color;
             blockShape = shape;
-            initialCount = Mathf.Clamp(count, 1, MaxVisualSockets);
+            initialCount = Mathf.Max(1, count);
             remainingCount = initialCount;
             this.hasKey = hasKey;
             this.lockKeyCount = Mathf.Max(0, lockKeyCount);
@@ -622,6 +635,8 @@ namespace PuzzleGlass
                 s_SharedCarrierBoxMaterial.SetFloat(OutlineThicknessPropId, CarrierBlockShapeUtility.OutlineThickness);
             if (s_SharedCarrierBoxMaterial.HasProperty(LipOffsetPropId))
                 s_SharedCarrierBoxMaterial.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
+            if (s_SharedCarrierBoxMaterial.HasProperty(CrateModePropId))
+                s_SharedCarrierBoxMaterial.SetFloat(CrateModePropId, 1.0f);
             return s_SharedCarrierBoxMaterial;
         }
 
@@ -694,6 +709,8 @@ namespace PuzzleGlass
             s_BoxPropertyBlock.SetFloat(RectCountPropId, _mpbRectCount);
             s_BoxPropertyBlock.SetVector(Rect0PropId, _mpbRect0);
             s_BoxPropertyBlock.SetVector(Rect1PropId, _mpbRect1);
+            s_BoxPropertyBlock.SetFloat(LipOffsetPropId, CarrierBlockShapeUtility.LipDepthOffset);
+            s_BoxPropertyBlock.SetFloat(CrateModePropId, useCrateVisuals ? 1.0f : 0.0f);
             s_BoxPropertyBlock.SetFloat(ExitHighlightPropId, _mpbExitHighlight);
             s_BoxPropertyBlock.SetFloat(DragHighlightPropId, _mpbDragHighlight);
             s_BoxPropertyBlock.SetFloat(IceAmountPropId, _mpbIceAmount);
@@ -920,7 +937,7 @@ namespace PuzzleGlass
 
             // Blocks inside the dark indigo StagingGridBoard need cool deep-indigo contact shadows
             // clipped cleanly per bottom-exposed cell so polyominoes never bleed shadows into empty cells.
-            bool inGridBoard = StagingGridBoard.Instance != null || FindFirstObjectByType<StagingGridBoard>() != null;
+            bool inGridBoard = StagingGridBoard.Instance != null && StagingGridBoard.Instance.showTrayVisuals;
             Material shadowMat;
             if (inGridBoard)
             {
@@ -938,7 +955,7 @@ namespace PuzzleGlass
                 if (s_SharedShadowMatTray == null)
                 {
                     s_SharedShadowMatTray = new Material(shadowShader) { name = "Mat_MonsterFakeShadow_Tray", enableInstancing = true };
-                    s_SharedShadowMatTray.SetColor("_ShadowColor", new Color(0.75f, 0.59f, 0.44f, 0.36f));
+                    s_SharedShadowMatTray.SetColor("_ShadowColor", new Color(0.18f, 0.22f, 0.34f, 0.34f));
                     s_SharedShadowMatTray.SetFloat("_FeatherWidth", 0.52f);
                     s_SharedShadowMatTray.SetFloat("_IsRadial", 1.0f);
                 }
@@ -979,25 +996,27 @@ namespace PuzzleGlass
 
         private void BuildHiddenBadge(Transform parent)
         {
+            Vector2 center = GetMechanicAnchorLocal();
             GameObject badge = new GameObject("BellyBadge");
             badge.transform.SetParent(parent, false);
-            badge.transform.localPosition = new Vector3(0, -0.34f, -0.36f);
+            badge.transform.localPosition = new Vector3(center.x, center.y + 0.01f, -0.26f);
             badgeTransform = badge.transform;
 
             GameObject textObj = new GameObject("CountText");
             textObj.transform.SetParent(badge.transform, false);
-            textObj.transform.localPosition = new Vector3(0, 0, -0.045f);
+            textObj.transform.localPosition = new Vector3(0, 0, -0.02f);
 
             counterText = textObj.AddComponent<TextMeshPro>();
             counterText.alignment = TextAlignmentOptions.Center;
-            counterText.fontSize = 2.6f;
+            counterText.fontSize = 4.6f;
             counterText.fontStyle = FontStyles.Bold;
-            counterText.color = PuzzleColorPalette.GetTextColor(colorType);
+            counterText.color = Color.white;
             counterText.text = remainingCount.ToString();
-            counterText.rectTransform.sizeDelta = new Vector2(1.2f, 0.6f);
+            counterText.rectTransform.sizeDelta = new Vector2(1.1f, 0.7f);
+            counterText.sortingOrder = 10;
+            ApplyTmpOutline(counterText, new Color(0.06f, 0.08f, 0.14f, 1f), 0.28f);
 
-            // Hidden so the carrier box cleanly shows the 3 gray sockets just like the reference image
-            badge.SetActive(false);
+            badge.SetActive(useCrateVisuals && !IsLockedByKey && !IsFrozenByIce && remainingCount > 0);
         }
 
         public void UpdateBadgeText()
@@ -1005,12 +1024,17 @@ namespace PuzzleGlass
             if (counterText != null)
             {
                 counterText.text = Mathf.Max(0, remainingCount).ToString();
-                counterText.color = PuzzleColorPalette.GetTextColor(colorType);
+                counterText.color = useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType);
+                if (useCrateVisuals)
+                {
+                    counterText.fontSize = (remainingCount >= 100) ? 3.8f : 4.6f;
+                }
             }
             if (badgeTransform != null)
             {
-                // Up to MaxVisualSockets (16), the gray sockets inside the Carrier Box display exact capacity.
-                bool showBadge = !IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0);
+                bool showBadge = useCrateVisuals
+                    ? (!IsFrozenByIce && !IsLockedByKey && remainingCount > 0)
+                    : (!IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0));
                 badgeTransform.gameObject.SetActive(showBadge);
             }
         }
@@ -1079,6 +1103,12 @@ namespace PuzzleGlass
         /// </summary>
         public Vector3 GetSocketWorldPosition(int socketIndex)
         {
+            if (useCrateVisuals)
+            {
+                Vector2 c = GetMechanicAnchorLocal();
+                Transform t = bodyPivot != null ? bodyPivot : transform;
+                return t.TransformPoint(new Vector3(c.x, c.y + 0.01f, -0.18f));
+            }
             if (socketTransforms != null && socketTransforms.Length > 0)
             {
                 int clamped = Mathf.Clamp(socketIndex, 0, socketTransforms.Length - 1);
@@ -1103,6 +1133,20 @@ namespace PuzzleGlass
 
         private void ActivateAndPulseSocketBall(int socketIndex, bool playSeatEffect = true)
         {
+            if (useCrateVisuals)
+            {
+                if (counterText != null && Application.isPlaying)
+                {
+                    counterText.transform.DOKill(true);
+                    counterText.transform.DOPunchScale(Vector3.one * 0.24f, 0.14f, 5, 0.5f);
+                }
+                if (playSeatEffect && Application.isPlaying)
+                {
+                    float scaleFactor = (bodyPivot != null) ? bodyPivot.lossyScale.x : transform.lossyScale.x;
+                    BlockClearCelebration.PlaySocketSeatRing(GetSocketWorldPosition(socketIndex), PuzzleColorPalette.GetPrimaryColor(colorType), Mathf.Max(0.10f, 0.26f * scaleFactor), 0.72f);
+                }
+                return;
+            }
             if (socketBalls == null || socketBalls.Length == 0) return;
             int idx = Mathf.Clamp(socketIndex, 0, socketBalls.Length - 1);
             GameObject sBall = socketBalls[idx];
@@ -1252,13 +1296,16 @@ namespace PuzzleGlass
             {
                 _isCompleted = true;
                 StagingGridBoard.Instance?.MarkGridDirty();
-                // Ensure all sockets visibly hold settled balls on completion
-                int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
-                for (int i = 0; i < sockCount; i++)
+                if (!useCrateVisuals)
                 {
-                    if (socketBalls[i] != null && !socketBalls[i].activeSelf)
+                    // Ensure all sockets visibly hold settled balls on completion
+                    int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
+                    for (int i = 0; i < sockCount; i++)
                     {
-                        ActivateAndPulseSocketBall(i, playSeatEffect: false);
+                        if (socketBalls[i] != null && !socketBalls[i].activeSelf)
+                        {
+                            ActivateAndPulseSocketBall(i, playSeatEffect: false);
+                        }
                     }
                 }
                 StartCoroutine(CelebrateAndCompleteRoutine());

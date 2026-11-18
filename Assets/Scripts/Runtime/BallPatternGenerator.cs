@@ -342,7 +342,8 @@ namespace PuzzleGlass
                 }
 
                 float spawnLocalY = entry.pos.y;
-                if (Application.isPlaying && initialShapeHoldTime <= 0.05f && !hasSlopedDivider)
+                bool isTrack = glassContainer != null && glassContainer.IsTrackShape;
+                if (Application.isPlaying && initialShapeHoldTime <= 0.05f && !hasSlopedDivider && !isTrack)
                 {
                     float liftedY = entry.pos.y + 0.12f + layerIdx * 0.042f;
                     spawnLocalY = Mathf.Min(liftedY, Mathf.Max(entry.pos.y, maxSpawnLocalY));
@@ -357,6 +358,10 @@ namespace PuzzleGlass
                 if (ball != null)
                 {
                     ball.ConfigurePoolLayer(layerIdx, worldPos.x, worldFloorY, worldRowStepY);
+                    if (isTrack)
+                    {
+                        ball.ConfigureForTrackMode(true);
+                    }
                     if (hasSlopedDivider)
                     {
                         // Allow balls to roll sideways along sloped shelves/ramps
@@ -497,6 +502,26 @@ namespace PuzzleGlass
         /// </summary>
         private void GenerateOrderedBallPool(float ballDiam, List<LevelMonsterEntry> goals, List<(Vector2, PuzzleColor)> list)
         {
+            // Eğrisel cam pist/kanal modu: toplar pist kolları boyunca sıkı şeritler halinde dizilir
+            if (glassContainer != null && glassContainer.IsTrackShape)
+            {
+                glassContainer.RebuildTrackCompiledData();
+                if (glassContainer.cachedTrackLayout.HasValue)
+                {
+                    var tr = glassContainer.cachedTrackLayout.Value;
+                    this.ballDiameter = tr.diameter;
+                    glassContainer.particleSize = tr.diameter;
+                    if (tr.balls != null)
+                    {
+                        for (int i = 0; i < tr.balls.Count; i++)
+                        {
+                            list.Add((tr.balls[i].localPos, tr.balls[i].color));
+                        }
+                    }
+                    return;
+                }
+            }
+
             List<LevelMonsterEntry> groups = new List<LevelMonsterEntry>();
 
             var gm = PuzzleGlassGameManager.Instance.OrNull() ?? FindFirstObjectByType<PuzzleGlassGameManager>();
