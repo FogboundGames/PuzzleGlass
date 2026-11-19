@@ -17,14 +17,14 @@ namespace PuzzleGlass
         public float maxBallSpeed = 2.05f;
 
         [Tooltip("Interval between initiating collection of successive balls from the spout.")]
-        [Range(0.08f, 0.60f)]
-        public float collectionInterval = 0.14f;
+        [Range(0.05f, 0.50f)]
+        public float collectionInterval = 0.085f;
 
         [Tooltip("Maximum balls simultaneously traveling through the spout neck.")]
-        public int maxBallsInSpout = 5;
+        public int maxBallsInSpout = 8;
 
         [Tooltip("Maximum balls currently traveling in air per monster.")]
-        public int maxBallsInTransitPerMonster = 6;
+        public int maxBallsInTransitPerMonster = 10;
 
         [Tooltip("Vertical tolerance around bottom exit cap to trigger mouth launch.")]
         public float exitTriggerYOffset = 0.10f;

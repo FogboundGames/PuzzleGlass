@@ -312,7 +312,7 @@ namespace PuzzleGlass
 
         [Header("Particle Settings")]
         [Range(0.08f, 0.30f)]
-        public float particleSize = 0.24f;
+        public float particleSize = 0.108f;
         [Range(1, 8)]
         public int particlesPerMonsterCount = 1;
 

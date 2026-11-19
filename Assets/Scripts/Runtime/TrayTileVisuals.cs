@@ -119,8 +119,8 @@ namespace PuzzleGlass
             }
 
             ComputeTrapezoidDimensions(cellSize, cells, out float he, out float rBotWidth, out float rTopWidth, out float cornerRad);
-            quadW = rBotWidth * 2f + 0.24f;
-            quadH = he * 2f + 0.24f;
+            quadW = rBotWidth * 2f + 0.30f;
+            quadH = he * 2f + 0.30f;
 
             s_DockTrapMat.SetFloat(SlotModePropId, 3f);
             s_DockTrapMat.SetVector(QuadSizePropId, new Vector4(quadW, quadH, 0f, 0f));
@@ -133,10 +133,13 @@ namespace PuzzleGlass
             float c = Mathf.Max(0.1f, cellSize);
             int n = Mathf.Max(1, cells);
             float slotOuterHalfX = (n * 0.5f - 0.06f) * c;
-            rTopWidth = slotOuterHalfX + 0.145f;
-            rBotWidth = rTopWidth + 0.275f;
-            halfH     = c * 0.5f + 0.125f;
-            cornerRad = 0.155f;
+            rTopWidth = slotOuterHalfX + 0.28f;
+            rBotWidth = rTopWidth + 0.34f;
+            float slotVisSize = (SlotSystem.Instance != null)
+                ? Mathf.Min(c * 0.94f, Mathf.Max(0.42f, SlotSystem.Instance.slotScale * 1.18f))
+                : c;
+            halfH     = slotVisSize * 0.5f + 0.145f;
+            cornerRad = 0.24f;
         }
 
         private static void EnsureMaterials()

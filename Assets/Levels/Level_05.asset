@@ -108,7 +108,7 @@ MonoBehaviour:
   bottomToTopTriplets: 0000000002000000040000000100000003000000000000000200000004000000
   bottomToTopGroups:
   - color: 0
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
@@ -116,7 +116,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 2
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -124,7 +124,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 4
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -132,7 +132,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 1
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
@@ -140,7 +140,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 3
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
@@ -148,7 +148,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 0
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
@@ -156,7 +156,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 2
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 2, y: 0}
     hasGridAnchor: 1
@@ -164,7 +164,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 4
-    count: 8
+    count: 24
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1
@@ -173,7 +173,7 @@ MonoBehaviour:
     iceCount: 0
   monsters:
   - color: 0
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
@@ -181,7 +181,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 2
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -189,7 +189,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 4
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -197,7 +197,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 1
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
@@ -205,7 +205,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 3
-    count: 12
+    count: 36
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
@@ -213,7 +213,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 0
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
@@ -221,7 +221,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 2
-    count: 10
+    count: 30
     blockShape: 0
     gridAnchor: {x: 2, y: 0}
     hasGridAnchor: 1
@@ -229,7 +229,7 @@ MonoBehaviour:
     lockKeyCount: 0
     iceCount: 0
   - color: 4
-    count: 8
+    count: 24
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1

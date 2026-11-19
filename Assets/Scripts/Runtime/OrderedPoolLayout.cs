@@ -13,8 +13,8 @@ namespace PuzzleGlass
     public static class OrderedPoolLayout
     {
         public const float RowFactor = 0.866f;
-        public const float MaxDiameter = 0.265f;
-        public const float MinDiameter = 0.095f;
+        public const float MaxDiameter = 0.114f;
+        public const float MinDiameter = 0.068f;
 
         public struct PoolBall
         {

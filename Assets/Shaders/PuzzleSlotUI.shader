@@ -4,7 +4,7 @@ Shader "PuzzleGlass/SlotSquircleUI"
     {
         [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1, 1, 1, 1)
-        _SlotMode ("0=Regular, 1=VIP, 2=LockedPlus, 3=TrapezoidDock", Float) = 0.0
+        _SlotMode ("0=Regular, 1=VIP, 2=LockedPlus, 3=TrapezoidDock, 4=GlassBackdrop", Float) = 0.0
         _Highlight ("Hover Highlight (0..1)", Float) = 0.0
         _QuadSize ("Quad World Size (w, h)", Vector) = (1, 1, 0, 0)
         _DockParams ("Dock Trapezoid (he, rBot, rTop, flare)", Vector) = (0.38, 1.55, 1.25, 0.16)
@@ -119,7 +119,7 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 return s * sqrt(min(dot(ca, ca), dot(cb, cb)));
             }
 
-            // Rounded isosceles trapezoid with slightly larger top shoulder radius and tighter bottom corner radius (Image 2 style)
+            // Rounded isosceles trapezoid with slightly larger top shoulder radius and tighter bottom corner radius
             float sdRoundTrapezoid(float2 p, float rBotWidth, float rTopWidth, float halfH, float cornerRad)
             {
                 float y01 = saturate((p.y / max(0.05, halfH)) * 0.5 + 0.5);
@@ -130,9 +130,151 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 return sdTrapezoid(p, max(0.05, rBotWidth - rBot), max(0.05, rTopWidth - rTop), max(0.05, halfH - rAvg)) - rCur;
             }
 
+            float sdSeg2D(float2 p, float2 a, float2 b)
+            {
+                float2 pa = p - a, ba = b - a;
+                float h = clamp(dot(pa, ba) / max(1e-6, dot(ba, ba)), 0.0, 1.0);
+                return length(pa - ba * h);
+            }
+
+            // Exact Euclidean SDF for the 180-rotated broad sculpted purple dock platform:
+            // Wide full-width top edge curving smoothly down into a generous rounded bottom plateau,
+            // while keeping 3D lighting, lower base lip, and drop shadow oriented naturally downward.
+            float sdSculptedApronDock(float2 p, float rBotWidth, float rTopWidth, float halfH, float cornerRad)
+            {
+                // Flip Y by 180 degrees for silhouette orientation while preserving world-down lighting & shadows
+                float2 q = float2(abs(p.x), -p.y);
+                float topR = clamp(cornerRad * 1.35, 0.08, halfH * 0.54);
+                float botR = clamp(cornerRad * 0.40, 0.03, halfH * 0.20);
+                float shoulderY = halfH - topR;
+                float shoulderCenterX = max(0.08, rTopWidth - topR);
+                float apronStartX = shoulderCenterX + topR;
+
+                float2 pts[18];
+                pts[0] = float2(0.0, halfH);
+                // 6-step smooth rounded corner quarter-arc (zero polygonal facets)
+                [unroll]
+                for (int j = 0; j <= 6; j++)
+                {
+                    float theta = (1.0 - j / 6.0) * 1.5707963;
+                    pts[1 + j] = float2(shoulderCenterX + topR * cos(theta), shoulderY + topR * sin(theta));
+                }
+
+                // Plush sweeping S-curve widening smoothly toward the full-width top edges
+                float sideSpanY = max(0.08, shoulderY - (-halfH + botR));
+                [unroll]
+                for (int k = 1; k <= 8; k++)
+                {
+                    float t = k / 8.0;
+                    float smoothS = t * t * (3.0 - 2.0 * t);
+                    float fullArc = sin(t * 1.5707963);
+                    float flare = lerp(smoothS, fullArc, 0.28);
+                    pts[7 + k] = float2(lerp(apronStartX, rBotWidth, flare), shoulderY - t * sideSpanY);
+                }
+
+                pts[16] = float2(max(0.1, rBotWidth - botR * 0.25), -halfH);
+                pts[17] = float2(0.0, -halfH);
+
+                float minD = 1e6;
+                float boundX = 0.0;
+                [unroll]
+                for (int i = 0; i < 17; i++)
+                {
+                    float2 a = pts[i];
+                    float2 b = pts[i + 1];
+                    minD = min(minD, sdSeg2D(q, a, b));
+
+                    if (q.y <= a.y && q.y >= b.y && abs(a.y - b.y) > 1e-5)
+                    {
+                        float f = (a.y - q.y) / (a.y - b.y);
+                        boundX = lerp(a.x, b.x, f);
+                    }
+                }
+
+                bool inside = (q.y <= halfH && q.y >= -halfH && q.x <= boundX);
+                return inside ? -minD : minD;
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(IN);
+
+                // =========================================================================
+                // MODE 4: SCULPTED FROSTED SHOWCASE BACKDROP BEHIND THE GLASS CONTAINER
+                // =========================================================================
+                if (_SlotMode > 3.5)
+                {
+                    float2 quadSize = max(_QuadSize.xy, float2(0.5, 0.5));
+                    float2 p = (IN.uv - 0.5) * quadSize;
+
+                    float halfW     = max(0.25, _DockParams.x);
+                    float halfH     = max(0.25, _DockParams.y);
+                    float cornerRad = max(0.08, _DockParams.z);
+                    float rimWidth  = max(0.03, _DockParams.w);
+                    float lipOffset = 0.048;
+
+                    float2 q = p - float2(0.0, 0.022);
+                    float dFront = sdRoundBox(q, float2(halfW, halfH), cornerRad);
+                    float dBase  = sdRoundBox(q + float2(0.0, lipOffset), float2(halfW, halfH), cornerRad);
+                    float dTotal = min(dFront, dBase);
+
+                    float aa = max(fwidth(dTotal) * 1.15, 0.003);
+
+                    // Soft ambient studio shadow behind the showcase plaque
+                    float dShadow = sdRoundBox(q + float2(0.0, lipOffset + 0.038), float2(halfW + 0.015, halfH + 0.015), cornerRad + 0.02);
+                    float shadowAlpha = (1.0 - smoothstep(-0.04, 0.14, dShadow)) * 0.22;
+                    float3 shadowRGB = float3(0.16, 0.15, 0.36);
+
+                    // 3D Base Skirt
+                    float bodyMask = 1.0 - smoothstep(-aa, aa, dTotal);
+                    float skirtT = saturate((-dFront) / max(0.01, lipOffset));
+                    float3 cardRGB = lerp(float3(0.27, 0.28, 0.56), float3(0.39, 0.41, 0.72), skirtT);
+
+                    // Raised Bevelled Frame Rim (harmonized periwinkle-lavender)
+                    float frontMask = 1.0 - smoothstep(-aa, aa, dFront);
+                    float yGrad = saturate((q.y / halfH) * 0.5 + 0.5);
+                    float3 rimCol = lerp(float3(0.60, 0.63, 0.90), float3(0.73, 0.76, 0.96), yGrad);
+
+                    float topEdgeBand = frontMask - (1.0 - smoothstep(-0.020 - aa, -0.020 + aa, dFront));
+                    rimCol = lerp(rimCol, float3(0.88, 0.91, 0.99), saturate(topEdgeBand) * saturate(yGrad * 1.25) * 0.85);
+
+                    float dMidStep = dFront + rimWidth * 0.70;
+                    float midStepMask = (1.0 - smoothstep(-aa, aa, dMidStep)) * frontMask;
+                    rimCol = lerp(rimCol, float3(0.46, 0.48, 0.78), midStepMask * 0.85);
+                    cardRGB = lerp(cardRGB, rimCol, frontMask);
+
+                    // Recessed Showcase Interior Pad (twilight sky-lavender so bright glass highlights pop!)
+                    float dInner = dFront + rimWidth;
+                    float innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * frontMask;
+                    float dFloor = sdRoundBox(q + float2(0.0, 0.024), float2(halfW, halfH) - (rimWidth + 0.008), max(0.04, cornerRad - rimWidth));
+                    float floorMask = (1.0 - smoothstep(-aa, aa, dFloor)) * innerMask;
+
+                    float3 innerWallCol = lerp(float3(0.28, 0.30, 0.58), float3(0.36, 0.38, 0.68), saturate(dFloor / 0.024));
+                    float3 padCol = lerp(float3(0.44, 0.48, 0.76), float3(0.38, 0.42, 0.70), yGrad);
+
+                    // Soft radial studio spotlight in the center behind the glass curves
+                    float2 normP = q / max(float2(halfW, halfH), float2(0.2, 0.2));
+                    float radialHalo = 1.0 - smoothstep(0.08, 1.05, length(normP * float2(0.95, 1.05)));
+                    padCol = lerp(padCol, float3(0.56, 0.61, 0.88), radialHalo * 0.46);
+
+                    // Subtle diagonal satin sheen across the showcase panel
+                    float diag = -normP.x * 0.55 + normP.y * 0.85;
+                    float satinBand = exp(-pow((diag - 0.14) / 0.38, 2.0));
+                    padCol = lerp(padCol, float3(0.68, 0.74, 0.96), satinBand * 0.16);
+
+                    // Inner top recess overhang ambient shadow
+                    float innerAO = 1.0 - smoothstep(-0.14, 0.0, dFloor);
+                    padCol = lerp(padCol, float3(0.26, 0.28, 0.56), innerAO * 0.42);
+
+                    float3 cavityCombined = lerp(innerWallCol, padCol, floorMask);
+                    cardRGB = lerp(cardRGB, cavityCombined, innerMask);
+
+                    float finalAlpha = saturate(bodyMask + shadowAlpha * (1.0 - bodyMask)) * IN.color.a;
+                    if (finalAlpha < 0.002) discard;
+
+                    float3 outRGB = lerp(shadowRGB, cardRGB * IN.color.rgb, bodyMask);
+                    return half4(outRGB, finalAlpha);
+                }
 
                 // =========================================================================
                 // MODE 3: LAYERED TRAPEZOID BACKING DOCK PLATFORM (Image 2 Shape & Layers)
@@ -152,15 +294,15 @@ Shader "PuzzleGlass/SlotSquircleUI"
                     // Slight vertical centering offset so the 3D lip and bottom shadow fit inside the quad
                     float2 q = p - float2(0.0, 0.024);
 
-                    float dFront = sdRoundTrapezoid(q, rBotWidth, rTopWidth, he, cornerRad);
-                    float dBase  = sdRoundTrapezoid(q + float2(0.0, lipOffset), rBotWidth, rTopWidth, he, cornerRad);
+                    float dFront = sdSculptedApronDock(q, rBotWidth, rTopWidth, he, cornerRad);
+                    float dBase  = sdSculptedApronDock(q + float2(0.0, lipOffset), rBotWidth, rTopWidth, he, cornerRad);
                     float dTotal = min(dFront, dBase);
 
                     // Hardware derivative screen-space anti-aliasing (eliminates all pixelation!)
                     float aa = max(fwidth(dTotal) * 1.15, 0.0025);
 
-                    // 0. Soft Ambient Drop Shadow beneath the trapezoid dock
-                    float dShadow = sdRoundTrapezoid(q + float2(0.0, lipOffset + 0.032), rBotWidth + 0.015, rTopWidth + 0.015, he, cornerRad + 0.02);
+                    // 0. Soft Ambient Drop Shadow beneath the sculpted apron dock
+                    float dShadow = sdSculptedApronDock(q + float2(0.0, lipOffset + 0.032), rBotWidth + 0.015, rTopWidth + 0.015, he, cornerRad + 0.02);
                     float shadowAlpha = (1.0 - smoothstep(-0.035, 0.115, dShadow)) * 0.28;
                     float3 shadowRGB = float3(0.14, 0.12, 0.34);
 
@@ -195,9 +337,9 @@ Shader "PuzzleGlass/SlotSquircleUI"
                     float dInner = dFront + rimWidth;
                     float innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * frontMask;
 
-                    // Shifted deck floor exposes the 3D inner top & slanted side wall step under the raised rim
-                    float innerWallDrop = 0.026;
-                    float dDeckFloor = sdRoundTrapezoid(q + float2(0.0, innerWallDrop), rBotWidth, rTopWidth, he, cornerRad) + (rimWidth + 0.008);
+                    // Shifted deck floor exposes the 3D inner top & curved side wall step under the raised rim
+                    float innerWallDrop = 0.024;
+                    float dDeckFloor = sdSculptedApronDock(q + float2(0.0, innerWallDrop), rBotWidth, rTopWidth, he, cornerRad) + (rimWidth + 0.008);
                     float deckFloorMask = (1.0 - smoothstep(-aa, aa, dDeckFloor)) * innerMask;
 
                     float3 innerWallCol = lerp(float3(0.18, 0.16, 0.40), float3(0.23, 0.21, 0.47), saturate((dDeckFloor) / max(0.008, innerWallDrop)));

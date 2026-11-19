@@ -66,8 +66,8 @@ namespace PuzzleGlass
         public ShapedGlassContainer glassContainer;
 
         [Header("Spawn Settings")]
-        [Range(0.08f, 0.35f)]
-        public float ballDiameter = 0.24f; // Glossy 3D pool spheres matching Reference Image 2 (10 / 11 / 10 honeycomb rows)
+        [Range(0.06f, 0.28f)]
+        public float ballDiameter = 0.108f; // Glossy 3D pool spheres
         public float patternVerticalOffset = 0.0f;
         [Tooltip("İlk desen şeklinin serbest düşmeden önce kısaca hayranlıkla izlenmesi için kinematic bekleme süresi (0 = hemen düşer)")]
         public float initialShapeHoldTime = 0.0f; // 0 = Immediately dynamic, obeying physics from frame 0!
@@ -119,7 +119,7 @@ namespace PuzzleGlass
                 patternType == ShapePatternType.HorizontalBands ||
                 patternType == ShapePatternType.VFunnelBands)
             {
-                ballDiameter = 0.265f;
+                ballDiameter = 0.114f;
             }
 
             float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter;
@@ -646,7 +646,7 @@ namespace PuzzleGlass
             OrderedPoolLayout.ChooseLaneWidth(maxBallsInLane, safeWidth, availHeight, out int bestLaneWidth, out float bestDiam);
             float rowFactor = OrderedPoolLayout.RowFactor;
 
-            float effectiveBallDiam = Mathf.Clamp(bestDiam, 0.095f, 0.265f);
+            float effectiveBallDiam = Mathf.Clamp(bestDiam, 0.068f, 0.114f);
             this.ballDiameter = effectiveBallDiam;
             if (glassContainer != null)
             {
@@ -663,7 +663,7 @@ namespace PuzzleGlass
 
             bool hasZones = glassContainer != null && glassContainer.compartmentZones != null && glassContainer.compartmentZones.Count > 0;
             bool hasDividers = glassContainer != null && glassContainer.dividers != null && glassContainer.dividers.Count > 0;
-            float staggerScale = colSpacing / 0.265f;
+            float staggerScale = colSpacing / 0.114f;
 
             for (int r = 0; r < totalRows; r++)
             {

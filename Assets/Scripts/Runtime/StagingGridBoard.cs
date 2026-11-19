@@ -19,16 +19,16 @@ namespace PuzzleGlass
 
         [Header("World Layout")]
         public Vector3 boardCenter = new Vector3(0f, -0.82f, 0.30f);
-        public float maxBoardWidth = 2.822f;
-        public float maxBoardHeight = 3.20f;
+        public float maxBoardWidth = 3.70f;
+        public float maxBoardHeight = 2.45f;
         public float framePadding = 0.068f;
         public float innerMargin = 0.048f;
         public float frameCornerRadius = 0.135f;
-        public float gapBelowGlass = 0.11f;
-        public bool matchGlassWidth = true;
+        public float gapBelowGlass = 0.14f;
+        public bool matchGlassWidth = false;
         public bool autoAlignBelowGlass = true;
         public bool useManualCellSize = false;
-        [Range(0.22f, 0.82f)] public float manualCellSize = 0.506f;
+        [Range(0.22f, 0.96f)] public float manualCellSize = 0.72f;
 
         [Header("Tray Colors")]
         public Color frameDarkColor = new Color(0.17f, 0.15f, 0.35f, 1f);
@@ -95,6 +95,13 @@ namespace PuzzleGlass
             ResetDefaultColors();
         }
 
+        private static float GetGapBelowSlots(int gridRows)
+        {
+            if (gridRows <= 2) return 0.42f;
+            if (gridRows == 3) return 0.28f;
+            return 0.20f;
+        }
+
         public void Configure(int gridCols, int gridRows, ShapedGlassContainer alignGlass = null, List<Vector2Int> wallCells = null)
         {
             cols = Mathf.Clamp(gridCols, 2, 9);
@@ -136,7 +143,7 @@ namespace PuzzleGlass
                         float trayTopLimitY = gMinY - Mathf.Max(minGap, gapBelowGlass * 1.18f);
                         if (SlotSystem.IsActive && SlotSystem.Instance.TryGetVisibleVerticalBounds(out float slotMinY, out _))
                         {
-                            trayTopLimitY = Mathf.Min(trayTopLimitY, slotMinY - 0.14f);
+                            trayTopLimitY = Mathf.Min(trayTopLimitY, slotMinY - GetGapBelowSlots(rows));
                         }
                         float camBottom = cam.transform.position.y - cam.orthographicSize;
                         float availH = trayTopLimitY - (camBottom + 0.32f);
@@ -155,7 +162,7 @@ namespace PuzzleGlass
                 float frameOverhead = innerMargin + framePadding * 2f;
                 float usableW = Mathf.Max(0.8f, targetBoardWidth - frameOverhead);
                 float usableH = Mathf.Max(0.8f, effectiveMaxHeight - frameOverhead);
-                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.22f, 0.90f);
+                cellSize = Mathf.Clamp(Mathf.Min(usableW / cols, usableH / rows), 0.22f, 0.94f);
             }
 
             if (autoAlignBelowGlass && glass != null)
@@ -238,7 +245,7 @@ namespace PuzzleGlass
             float targetTopY = glassBottomY - Mathf.Max(minGap, gapBelowGlass * 1.18f);
             if (SlotSystem.IsActive && SlotSystem.Instance.TryGetVisibleVerticalBounds(out float slotMinY, out _))
             {
-                targetTopY = Mathf.Min(targetTopY, slotMinY - 0.14f);
+                targetTopY = Mathf.Min(targetTopY, slotMinY - GetGapBelowSlots(rows));
             }
             float targetCenterY = targetTopY - topExtent;
 
@@ -586,7 +593,7 @@ namespace PuzzleGlass
                 // ölçek başına yaklaşık (maxDim - 0.08). Sıra ekrana sığmak için küçülürse RowFitScale ayrıca uygulanır.
                 // Blok, slotun kendi çerçevesine göre boyutlanır (slotlar arası boşluk bloğu büyütmez)
                 float cell = Mathf.Max(0.1f, SlotSystem.Instance.slotSpacing);
-                float frame = cell * SlotPlatform.FrameRatio;
+                float frame = Mathf.Min(cell * SlotPlatform.FrameRatio, Mathf.Max(0.40f, SlotSystem.Instance.slotScale * 1.10f));
                 return frame * 0.89f / Mathf.Max(0.5f, maxDim - 0.08f);
             }
             // Legacy non-slot mode

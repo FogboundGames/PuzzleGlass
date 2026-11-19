@@ -66,7 +66,7 @@ namespace PuzzleGlass
         {
             BoxCollider col = GetComponent<BoxCollider>();
             if (col == null) col = gameObject.AddComponent<BoxCollider>();
-            float s = 0.54f * Mathf.Clamp(visualQuadScale, 0.35f, 1.5f);
+            float s = Mathf.Max(0.54f * Mathf.Clamp(visualQuadScale, 0.35f, 1.5f), CellSize * 0.90f);
             col.size = new Vector3(s, s, 0.5f);
             col.center = Vector3.zero;
         }
@@ -117,7 +117,7 @@ namespace PuzzleGlass
 
             // Pikselleşmeyi tamamen önlemek için her slot yüksek çözünürlüklü SDF shader (PuzzleGlass/SlotSquircleUI) ile tek bir Quad üzerinde çizilir
             float cell = CellSize;
-            float quadSize = cell * 0.94f;
+            float quadSize = Mathf.Min(cell * 0.94f, Mathf.Max(0.42f, visualQuadScale * 1.18f));
 
             GameObject slotQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             slotQuad.name = "SlotSDFQuad";

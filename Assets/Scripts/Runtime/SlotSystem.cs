@@ -27,9 +27,9 @@ namespace PuzzleGlass
             set => regularSlotCount = Mathf.Clamp(value, 1, maxRegularSlotCount);
         }
 
-        public float slotSpacing = 0.52f;
-        [Range(0.40f, 1.25f)] public float slotScale = 0.68f;
-        public float gapBelowGlass = 0.22f;
+        public float slotSpacing = 0.86f;
+        [Range(0.40f, 1.25f)] public float slotScale = 0.56f;
+        public float gapBelowGlass = 0.28f;
 
         [Header("Materials")]
         public Material frameMaterial;
@@ -153,9 +153,12 @@ namespace PuzzleGlass
             Camera cam = Camera.main;
             if (cam != null && cam.orthographic && cellCount > 0)
             {
-                TrayTileVisuals.GetFrameSize(Mathf.Max(0.1f, slotSpacing), cellCount, out _, out _, out float outerW, out _);
-                float available = cam.orthographicSize * cam.aspect * 2f - 0.24f; // her iki yanda küçük pay
-                if (outerW > available) scale = Mathf.Max(0.5f, available / outerW);
+                float cell = Mathf.Max(0.1f, slotSpacing);
+                // Sığdırma kontrolünde slotların kendi etkileşimli genişliğini baz al;
+                // yamuk dok tablasının yan kulakları 4 slotta dar ekran kenarına kadar uzanabilir.
+                float slotsWidth = (cellCount - 1) * cell + cell * 0.94f;
+                float available = cam.orthographicSize * cam.aspect * 2f - 0.22f;
+                if (slotsWidth > available) scale = Mathf.Max(0.5f, available / slotsWidth);
             }
             transform.localScale = Vector3.one * scale;
 
@@ -373,9 +376,21 @@ namespace PuzzleGlass
             }
 
             float halfH = FrameHalfHeight * RowFitScale;
-            float minCollarGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.28f : 0.16f;
+            float minCollarGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.50f : 0.30f;
             float topGap = Mathf.Max(minCollarGap, gapBelowGlass);
             float targetY = glassBottomY - topGap - halfH;
+            // Kısa cam şekillerinde slot tablası ekran ortasından yukarı fazla çıkmasın
+            const float maxDockCenterY = -0.20f;
+            if (targetY > maxDockCenterY)
+            {
+                targetY = maxDockCenterY;
+            }
+            // Çok uzun camlarda bile yaka ile dok arasında en az 0.32 birim nefes payı korunsun
+            float maxAllowedY = glassBottomY - 0.32f - halfH;
+            if (targetY > maxAllowedY)
+            {
+                targetY = maxAllowedY;
+            }
 
             transform.position = new Vector3(glassCenterX, targetY, 0.05f);
         }

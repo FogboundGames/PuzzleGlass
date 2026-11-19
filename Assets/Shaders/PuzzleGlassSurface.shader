@@ -225,51 +225,82 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float2 p = (IN.uv - 0.5) * 2.0;
                 p.x *= aspect;
 
-                float2 halfSize = float2(aspect * 0.78, 0.56);
-                float2 capCenter = float2(0.0, 0.10);
-                float dCap = sdRoundBox2D(p - capCenter, halfSize, 0.24);
-                float dShad = sdRoundBox2D(p - float2(0.0, -0.06), halfSize * float2(1.03, 1.02), 0.26);
-
                 float edgeFade = smoothstep(0.0, 0.08, IN.uv.x) * smoothstep(1.0, 0.92, IN.uv.x)
                                * smoothstep(0.0, 0.08, IN.uv.y) * smoothstep(1.0, 0.92, IN.uv.y);
 
-                float capMask = 1.0 - smoothstep(-0.010, 0.010, dCap);
-                float shadAlpha = (1.0 - smoothstep(-0.04, 0.22, dShad)) * 0.30 * edgeFade;
+                // Şekillendirilmiş 2 kademeli 3B cam çıkış yakası:
+                // 1) Üstte cam tabanı kucaklayan genişçe kavisli kelepçe halkası (flange)
+                // 2) Altta hafifçe daralan yuvarlatılmış çıkış ağzı gövdesi
+                float ringHalfW = aspect * 0.76;
+                float nxNorm = clamp(p.x / max(ringHalfW, 0.05), -1.0, 1.0);
+                float topCurve = 0.048 * (nxNorm * nxNorm); // camın alt eğrisine uyumlu yumuşak yukarı kavis
 
-                float nx = clamp(p.x / max(halfSize.x, 0.05), -1.0, 1.0);
-                float ny = clamp((p.y - capCenter.y) / max(halfSize.y, 0.05), -1.0, 1.0);
+                float2 ringCenter   = float2(0.0, 0.36 + topCurve * 0.55);
+                float2 ringHalf     = float2(ringHalfW, 0.21);
+                float2 barrelCenter = float2(0.0, 0.02);
+                float2 barrelHalf   = float2(aspect * 0.68, 0.38);
 
-                // Cylindrical 3D periwinkle crystal cap matching reference bottom exit collar
-                float3 baseCol  = float3(0.58, 0.56, 0.95);
-                float3 hiCol    = float3(0.92, 0.92, 1.00);
-                float3 shadeCol = float3(0.36, 0.32, 0.78);
+                float dRing   = sdRoundBox2D(p - ringCenter, ringHalf, 0.145);
+                float dBarrel = sdRoundBox2D(p - barrelCenter, barrelHalf, 0.215);
+                float dCap    = opSmoothUnion(dRing, dBarrel, 0.055);
+                float dShad   = opSmoothUnion(
+                    sdRoundBox2D(p - (ringCenter + float2(0.0, -0.075)), ringHalf * float2(1.03, 1.04), 0.16),
+                    sdRoundBox2D(p - (barrelCenter + float2(0.0, -0.095)), barrelHalf * float2(1.05, 1.05), 0.23),
+                    0.06
+                );
 
-                float leftSpec = exp(-pow((nx + 0.36) / 0.28, 2.0));
-                float rightRim = exp(-pow((nx - 0.78) / 0.20, 2.0)) * 0.48;
-                float cylLit = saturate(0.58 + leftSpec * 0.72 + rightRim - smoothstep(0.18, 0.95, nx) * 0.40);
-                float vertLit = saturate(0.56 + ny * 0.30);
+                float aa = 0.012;
+                float capMask = 1.0 - smoothstep(-aa, aa, dCap);
+                float shadAlpha = pow(1.0 - smoothstep(-0.02, 0.24, dShad), 1.65) * 0.36 * edgeFade;
 
-                float3 collarCol = lerp(shadeCol, baseCol, saturate(cylLit * vertLit * 1.15));
-                collarCol = lerp(collarCol, hiCol, saturate(leftSpec * 0.64 * smoothstep(-0.6, 0.5, ny)));
+                float nx = clamp(p.x / max(barrelHalf.x, 0.05), -1.0, 1.0);
+                float ny = clamp((p.y + 0.36) / 0.94, 0.0, 1.0); // 0=alt dudak, 1=üst halka tepesi
 
-                // Top glass-seat rim lip highlight
-                float topLip = smoothstep(0.52, 0.88, ny);
-                collarCol = lerp(collarCol, hiCol, topLip * 0.76);
+                // Soğuk lavanta-safir kristal gövde + temiz parlak beyaz yansıma paleti
+                float3 pureHi    = float3(0.97, 0.98, 1.00);
+                float3 lightLav  = float3(0.76, 0.77, 0.99);
+                float3 baseCol   = float3(0.57, 0.56, 0.94);
+                float3 shadeCol  = float3(0.35, 0.33, 0.77);
+                float3 grooveCol = float3(0.24, 0.22, 0.60);
 
-                // Subtle bottom collar groove & darker curved underside
-                float botGroove = exp(-pow((ny + 0.56) / 0.14, 2.0));
-                float botShade  = smoothstep(-0.48, -0.95, ny);
-                collarCol = lerp(collarCol, shadeCol * 0.76, saturate(botGroove * 0.50 + botShade * 0.58));
+                // 3B silindirik yanal ışık & speküler parlama şeridi
+                float leftSpec = exp(-pow((nx + 0.38) / 0.24, 2.0));
+                float rightRim = exp(-pow((nx - 0.80) / 0.17, 2.0)) * 0.52;
+                float cylLit   = saturate(0.52 + leftSpec * 0.62 + rightRim - smoothstep(0.14, 0.95, nx) * 0.42);
+                float vertLit  = saturate(0.46 + ny * 0.48);
 
-                // Soft outer anti-aliased edge highlight
-                float rimAA = exp(-pow((-dCap - 0.014) / 0.014, 2.0));
-                collarCol = lerp(collarCol, hiCol, rimAA * 0.42 * smoothstep(-0.3, 0.6, ny));
+                float3 collarCol = lerp(shadeCol, baseCol, saturate(cylLit * vertLit * 1.18));
+                collarCol = lerp(collarCol, lightLav, saturate(leftSpec * 0.48));
+                collarCol = lerp(collarCol, pureHi, saturate(leftSpec * 0.62 * smoothstep(0.15, 0.85, ny)));
 
-                float3 shadRgb = float3(0.54, 0.54, 0.88);
-                float outAlpha = saturate(capMask * 0.88 + shadAlpha * (1.0 - capMask * 0.88));
+                // Üst halka ile alt gövde arasındaki temiz 3B yaka oluğu (seam) ve halka üstü pahı
+                float grooveY = 0.58 + topCurve * 0.35;
+                float cuffGroove   = exp(-pow((ny - grooveY) / 0.042, 2.0));
+                float cuffOverhang = exp(-pow((ny - (grooveY + 0.065)) / 0.048, 2.0));
+                collarCol = lerp(collarCol, grooveCol, cuffGroove * 0.68);
+                collarCol = lerp(collarCol, lightLav, cuffOverhang * (0.45 + 0.35 * cylLit));
+
+                // Alt çıkış ağzında derinlik hissi veren zarif içbükey oluk & alt parlak kenar dudağı
+                float chuteX = 1.0 - smoothstep(0.30, 0.68, abs(nx));
+                float chuteY = (1.0 - smoothstep(0.06, 0.42, ny)) * smoothstep(0.02, 0.12, ny);
+                collarCol = lerp(collarCol, grooveCol * 0.92, chuteX * chuteY * 0.32);
+
+                float topLipRim = smoothstep(0.84, 0.98, ny);
+                collarCol = lerp(collarCol, pureHi, topLipRim * 0.72);
+                float botBevel  = exp(-pow((ny - 0.06) / 0.045, 2.0)) * 0.42 + smoothstep(0.04, 0.0, ny) * 0.35;
+                collarCol = lerp(collarCol, shadeCol * 0.72, saturate(botBevel));
+
+                // İnce buz-beyaz dış kontur parlaması (cam hissiyatını yakayla bütünleştirir)
+                float rimAA = exp(-pow((-dCap - 0.012) / 0.013, 2.0));
+                collarCol = lerp(collarCol, pureHi, rimAA * saturate(0.32 + ny * 0.52));
+
+                float3 shadRgb = float3(0.12, 0.14, 0.30);
+                float capSolid = capMask * 0.985;
+                float outAlpha = saturate(capSolid + shadAlpha * (1.0 - capSolid));
                 if (outAlpha < 0.002) discard;
 
-                float3 outRgb = lerp(shadRgb, collarCol, capMask);
+                float3 premul = collarCol * capSolid + shadRgb * shadAlpha * (1.0 - capSolid);
+                float3 outRgb = premul / max(outAlpha, 0.004);
                 return half4(saturate(outRgb), outAlpha);
             }
 
@@ -725,16 +756,23 @@ Shader "PuzzleGlass/GlassChamberLit"
                 // (Türevler discard'dan ÖNCE alınmalı.)
                 float2 dpx = ddx(p), dpy = ddy(p);
                 float ddxD = ddx(dInner), ddyD = ddy(dInner);
+                float aa = max((abs(ddxD) + abs(ddyD)) * 1.15, 0.0014);
                 float det = dpx.x * dpy.y - dpx.y * dpy.x;
                 float2 derivGrad = abs(det) > 1e-10
                     ? float2(ddxD * dpy.y - ddyD * dpx.y, dpx.x * ddyD - dpy.x * ddxD) / det
                     : smoothGrad;
-                if (dot(derivGrad, derivGrad) > 1e-10) smoothGrad = normalize(derivGrad);
+                float derivLenSq = dot(derivGrad, derivGrad);
+                if (derivLenSq > 1e-5)
+                {
+                    float2 normDeriv = derivGrad * rsqrt(derivLenSq);
+                    // Orta eksen / eyer noktalarında (derivLenSq küçükken) piksel türev gürültüsünü yumuşat
+                    float gradConfidence = smoothstep(0.08, 0.55, derivLenSq);
+                    float2 blendedGrad = lerp(smoothGrad, normDeriv, gradConfidence);
+                    smoothGrad = dot(blendedGrad, blendedGrad) > 1e-6 ? normalize(blendedGrad) : smoothGrad;
+                }
 
-                // Kanal + gölge bandının tamamen dışındaysa hiçbir piksel üretilmez.
-                // Not: segment döngüsü yukarıda zaten bir kez çalıştı (tek geçiş), bu erken çıkış
-                // ondan sonraki gradyan/renklendirme/gölge matematiğini ve blend yazımını atlar.
-                if (dInner > wallThick + 0.30) discard;
+                // Kanal duvarı + yumuşak dış gölge bandının tamamen dışındaysa erken çık.
+                if (dInner > wallThick + 0.34) discard;
 
                 float dOuter = dInner - wallThick;
 
@@ -751,78 +789,116 @@ Shader "PuzzleGlass/GlassChamberLit"
                     exitCut = gateX * yZoneE;
                 }
 
-                // Renk paleti: net beyaz/buzlu cam duvar + içeride okunaklı soğuk buz-lavanta kanal oluğu
-                float3 pureWhite    = float3(1.00, 1.00, 1.00);
-                float3 wallMidWhite = lerp(float3(0.92, 0.94, 0.99), _EdgeColor.rgb, 0.14);
-                float3 wallCoolBevel = lerp(float3(0.66, 0.71, 0.88), _FrameColor.rgb, 0.34);
-                float3 wallOuterRim  = lerp(float3(0.46, 0.50, 0.76), _OuterRimColor.rgb, 0.40);
-                float3 bedTopCol    = float3(0.79, 0.82, 0.92);
-                float3 bedBotCol    = float3(0.71, 0.75, 0.87);
-                float3 bedShadowCol = float3(0.46, 0.50, 0.74);
+                // Kristal cam paleti: yarı saydam buz-cam duvar gövdesi + keskin optik beyaz parlama + derin koyu cam kanal
+                float3 pureWhite       = float3(1.00, 1.00, 1.00);
+                float3 icyCrystal      = float3(0.84, 0.93, 1.00);
+                float3 glassCoreTint   = lerp(float3(0.76, 0.87, 0.99), _EdgeColor.rgb, 0.25);
+                float3 glassRefractRim = lerp(float3(0.42, 0.56, 0.90), _OuterRimColor.rgb, 0.40);
+                float3 innerDeepRim    = lerp(float3(0.32, 0.44, 0.78), _InnerGrooveColor.rgb, 0.45);
+                float3 bedTopCol       = float3(0.16, 0.19, 0.31);
+                float3 bedBotCol       = float3(0.10, 0.13, 0.22);
+                float3 bedShadowCol    = float3(0.05, 0.06, 0.13);
 
-                float outerMask = (1.0 - smoothstep(-0.006, 0.006, dOuter)) * (1.0 - exitCut * 0.65);
-                float innerMask = 1.0 - smoothstep(-0.006, 0.006, dInner);
+                float outerMask = (1.0 - smoothstep(-aa, aa, dOuter)) * (1.0 - exitCut * 0.65);
+                float innerMask = 1.0 - smoothstep(-aa, aa, dInner);
                 float wallBandMask = saturate(outerMask - innerMask);
 
-                // 3D yuvarlatılmış duvar profili: t=0 iç kenar, t=1 dış kenar
+                // Tüp kesit koordinatı: radial 0 = kanal merkezi, 1 = iç duvar sınırı
+                float halfW = max(_TrackHalfWidth, 0.04);
+                float radial = saturate(1.0 + dInner / halfW);
+                float2 lightDir = normalize(float2(-0.58, 0.81));
+                float sheenMul = max(0.45, _SheenIntensity);
+
+                // Gerçekçi içi dolu kavisli cam duvar kesiti: tWall = 0 iç kenar, 1 dış kenar
                 float tWall = clamp(dInner / wallThick, 0.0, 1.0);
                 float ridge = sin(tWall * 3.14159265);
-                float topLeftLit = saturate(-grad.x * 0.55 + grad.y * 0.75);
-                float botRightShade = saturate(grad.x * 0.45 - grad.y * 0.82);
+                float topLeftLit = saturate(-grad.x * 0.58 + grad.y * 0.82);
+                float botRightShade = saturate(grad.x * 0.48 - grad.y * 0.84);
+                float dirFresnel = saturate(0.35 + 0.65 * dot(grad, lightDir));
 
-                float3 wallCol = lerp(wallCoolBevel, wallMidWhite, saturate(0.45 + ridge * 0.55));
-                wallCol = lerp(wallCol, pureWhite, saturate(ridge * (0.58 + topLeftLit * 0.42)));
-                // İnce dış kontur ve alt bevel derinliği
-                float outerLip = smoothstep(0.76, 0.98, tWall);
-                wallCol = lerp(wallCol, wallOuterRim, outerLip * (0.36 + botRightShade * 0.44));
-                // İç kenar menisküs parlaması
-                float innerEdgeShine = exp(-pow((tWall - 0.10) / 0.10, 2.0));
-                wallCol = lerp(wallCol, pureWhite, innerEdgeShine * 0.52);
+                // 1) İç lümen kırılma çizgisi + ince parlak iç menisküs
+                float innerDarkCrease  = exp(-pow((tWall - 0.045) / 0.045, 2.0));
+                float innerMeniscusHi  = exp(-pow((tWall - 0.165) / 0.060, 2.0));
+                // 2) Kavisli tüp yüzeyindeki ana optik cam parlaması
+                float mainTubeSpecular = exp(-pow((tWall - 0.71) / 0.085, 2.0)) * (0.48 + 0.52 * topLeftLit);
+                // 3) En dış cam kalınlığı / Fresnel kırılma sınırı
+                float outerFresnelRim  = smoothstep(0.76, 0.99, tWall);
+                float outerDarkEdge    = smoothstep(0.91, 1.00, tWall);
+
+                // Cam duvar rengi: merkezde yarı saydam buz mavisi, kenarlarda soğuk safir kırılım & keskin beyaz yansıma
+                float3 wallCol = lerp(glassCoreTint, icyCrystal, saturate(ridge * 0.55 + topLeftLit * 0.30));
+                wallCol = lerp(wallCol, innerDeepRim, innerDarkCrease * 0.58);
+                wallCol = lerp(wallCol, glassRefractRim, outerFresnelRim * (0.54 + botRightShade * 0.36));
+                wallCol = lerp(wallCol, innerDeepRim * 0.72, outerDarkEdge * (0.45 + botRightShade * 0.35));
+                wallCol = lerp(wallCol, pureWhite, saturate(innerMeniscusHi * 0.78 + mainTubeSpecular * 0.92 * sheenMul));
+
+                // Optik saydamlık eğrisi: cam duvarın ortası yarı saydam (~0.42), dış Fresnel & iç menisküs daha yoğun (~0.88)
+                float wallOpacityProfile = saturate(
+                    0.34
+                    + outerFresnelRim * 0.44
+                    + innerDarkCrease * 0.26
+                    + innerMeniscusHi * 0.26
+                    + mainTubeSpecular * 0.38
+                );
 
                 if (_IsFrontLens > 0.5)
                 {
-                    // ÖN KATMAN (topların önünde):
-                    // Kanal içi tamamen saydam (toplar canlı kalsın); yalnızca 3D yükseltilmiş duvar rayları çizilir!
-                    float rimAlpha = wallBandMask * 0.96;
-                    // İç duvara komşu çok hafif yumuşak kenar anti-aliasing
-                    float innerSoftLip = exp(-pow((dInner + 0.004) / 0.009, 2.0)) * 0.28;
-                    float frontAlpha = saturate(max(rimAlpha, innerSoftLip * outerMask)) * quadEdgeFade;
+                    // ÖN / ÜST CAM KATMANI (topların üzerinde):
+                    // Duvarın üzerinde keskin speküler yansıma + iç kanalda topun üstünden geçen kristal parlama yayı (sis yok)
+                    float frontWallAlpha = wallBandMask * saturate(
+                        0.18
+                        + outerFresnelRim * 0.36
+                        + innerMeniscusHi * 0.44
+                        + mainTubeSpecular * 0.62 * sheenMul
+                    );
+                    float3 frontWallRgb = lerp(icyCrystal, pureWhite, saturate(innerMeniscusHi * 0.72 + mainTubeSpecular * 0.95));
+
+                    // Topların ön kenarından sarkan cam menisküsü + ince parlak cam boru yansıması
+                    float vLightGrad = 0.74 + 0.26 * saturate(IN.uv.y * 0.8 + 0.2);
+                    float shoulderArcGlint = exp(-pow((radial - 0.76) / 0.068, 2.0)) * dirFresnel * 0.34 * vLightGrad * sheenMul;
+                    float fineInnerRimGlint = exp(-pow((radial - 0.93) / 0.032, 2.0)) * (0.24 + 0.40 * topLeftLit) * sheenMul;
+                    float tubeEdgeFresnel = pow(smoothstep(0.80, 0.995, radial), 2.3) * 0.15;
+
+                    float glassInteriorAlpha = saturate(tubeEdgeFresnel + shoulderArcGlint + fineInnerRimGlint) * innerMask;
+                    float3 glassInteriorRgb = lerp(icyCrystal, pureWhite, saturate((shoulderArcGlint + fineInnerRimGlint) * 1.9));
+
+                    float wallWeight = smoothstep(-aa, aa, dInner);
+                    float frontAlpha = saturate(frontWallAlpha + glassInteriorAlpha) * quadEdgeFade;
                     if (frontAlpha < 0.002) discard;
 
-                    float3 frontRgb = lerp(pureWhite, wallCol, saturate(wallBandMask * 1.15));
+                    float3 frontRgb = lerp(glassInteriorRgb, frontWallRgb, wallWeight);
                     return half4(saturate(frontRgb), frontAlpha);
                 }
                 else
                 {
                     // ARKA KATMAN (topların arkasında):
-                    // Yumuşak zemin gölgesi + iç kanal tabanı + iç duvar gölge derinliği (AO)
-                    float2 pShadFar  = p - float2(0.018, -0.056);
-                    float2 pShadNear = p - float2(0.008, -0.024);
-                    // Kaydırılmış gölge, yumuşatılmış mesafeden birinci dereceden yaklaşımla (tek segmente bağlı değil)
-                    float dShadFar   = dInner - dot(grad, p - pShadFar) - wallThick - 0.014;
-                    float dShadNear  = dInner - dot(grad, p - pShadNear) - wallThick;
-                    float aFar  = (1.0 - smoothstep(-0.03, 0.145, dShadFar)) * (_FakeShadowColor.a * 0.92);
-                    float aNear = (1.0 - smoothstep(-0.02, 0.065, dShadNear)) * (_FakeShadowColor.a * 0.58);
-                    float shadowAlpha = saturate(aFar + aNear) * quadEdgeFade;
-                    float3 shadowRGB = _FakeShadowColor.rgb;
+                    // Cam pistin tam kaydırılmış SDF silüetinden 2 katmanlı 2.5D fake drop shadow
+                    float dShadNear = sdTrackChannel(p - float2(0.0, -0.040)) - wallThick;
+                    float dShadFar  = sdTrackChannel(p - float2(0.0, -0.085)) - wallThick;
+                    float contactShad = pow(1.0 - smoothstep(-0.015, 0.080, dShadNear), 1.55);
+                    float dropShad    = pow(1.0 - smoothstep(-0.025, 0.175, dShadFar), 1.80);
+                    float shadowAlpha = saturate(contactShad * 0.65 + dropShad * 0.45) * 0.38 * (1.0 - exitCut * 0.70) * quadEdgeFade;
+                    float3 shadowRGB = float3(0.12, 0.14, 0.30);
 
-                    // İç kanal tabanı + iç duvarların hemen dibinde 3D derinlik gölgesi (Görsel 1 & 3'teki oluk hissi)
+                    // Koyu kristal oluk zemini + iç cam duvar kostik yansıması
                     float depthFromWall = max(0.0, -dInner);
-                    float innerWallAO = exp(-depthFromWall / max(_TrackHalfWidth * 0.42, 0.045));
+                    float innerWallAO = exp(-depthFromWall / max(_TrackHalfWidth * 0.22, 0.022));
+                    float innerCaustic = exp(-pow((depthFromWall - max(_TrackHalfWidth * 0.14, 0.018)) / 0.016, 2.0));
                     float vGrad = saturate(IN.uv.y);
                     float3 bedRgb = lerp(bedBotCol, bedTopCol, vGrad);
-                    bedRgb = lerp(bedRgb, bedShadowCol, innerWallAO * 0.34);
+                    bedRgb = lerp(bedRgb, bedShadowCol, innerWallAO * 0.72);
+                    bedRgb = lerp(bedRgb, float3(0.44, 0.62, 0.94), innerCaustic * 0.22 * (0.5 + 0.5 * topLeftLit));
 
-                    float bedAlpha = innerMask * 0.72;
-                    float wallBaseAlpha = wallBandMask * 0.96;
-                    float trackAlpha = saturate(max(bedAlpha, wallBaseAlpha)) * quadEdgeFade;
-                    float3 trackRgb = lerp(bedRgb, wallCol, wallBandMask);
+                    float bedAlpha = innerMask * 0.94;
+                    float wallBackAlpha = wallBandMask * wallOpacityProfile;
+                    float glassAlpha = saturate(bedAlpha + wallBackAlpha) * quadEdgeFade;
+                    float3 glassRgb = lerp(bedRgb, wallCol, smoothstep(-aa, aa, dInner));
 
-                    float finalAlpha = saturate(trackAlpha + shadowAlpha * (1.0 - trackAlpha * 0.90));
+                    float finalAlpha = saturate(glassAlpha + shadowAlpha * (1.0 - glassAlpha));
                     if (finalAlpha < 0.002) discard;
 
-                    float3 finalRgb = lerp(shadowRGB * shadowAlpha, trackRgb, trackAlpha) / max(finalAlpha, 0.004);
-                    if (trackAlpha < 0.02) finalRgb = shadowRGB;
+                    float3 premul = glassRgb * glassAlpha + shadowRGB * shadowAlpha * (1.0 - glassAlpha);
+                    float3 finalRgb = premul / max(finalAlpha, 0.004);
                     return half4(saturate(finalRgb), finalAlpha);
                 }
             }

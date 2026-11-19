@@ -30,7 +30,7 @@ namespace PuzzleGlass
 
         [Header("Pool Settings")]
         public int initialPoolSize = 140;
-        public float defaultBallRadius = 0.0825f;
+        public float defaultBallRadius = 0.052f;
 
         [Header("Physics Material Settings")]
         public float bounciness = 0.24f;

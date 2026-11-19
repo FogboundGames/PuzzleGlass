@@ -257,6 +257,91 @@ namespace PuzzleGlass
             ballLocalDiameter = socketRadius * 2.0f * 0.90f;
         }
 
+        /// <summary>
+        /// Computes bottom-to-top ball landing positions and diameters centered inside the recessed dark pit
+        /// of a hollow numbered block (BlockVisualStyle.PuzzleWithNumber).
+        /// </summary>
+        public static void ComputeHollowPitBallLayout(
+            CarrierBlockShape shape,
+            int count,
+            out Vector2[] positions,
+            out float ballLocalDiameter)
+        {
+            int c = Mathf.Clamp(count, 1, MonsterCharacter.MaxVisualSockets);
+            if (shape == CarrierBlockShape.Rect1x1)
+            {
+                const float pitCenterY = -0.032f;
+                switch (c)
+                {
+                    case 1:
+                        positions = new[] { new Vector2(0f, pitCenterY) };
+                        ballLocalDiameter = 0.26f;
+                        return;
+                    case 2:
+                        positions = new[] { new Vector2(-0.135f, pitCenterY), new Vector2(0.135f, pitCenterY) };
+                        ballLocalDiameter = 0.21f;
+                        return;
+                    case 3:
+                        positions = new[]
+                        {
+                            new Vector2(-0.125f, -0.125f),
+                            new Vector2( 0.125f, -0.125f),
+                            new Vector2( 0.000f,  0.070f)
+                        };
+                        ballLocalDiameter = 0.19f;
+                        return;
+                    case 4:
+                        positions = BuildOffsetGrid(new[] { 2, 2 }, 0.225f, new[] { -0.128f, 0.064f }, 0f);
+                        ballLocalDiameter = 0.185f;
+                        return;
+                    case 5:
+                        positions = BuildOffsetGrid(new[] { 3, 2 }, 0.180f, new[] { -0.125f, 0.060f }, 0f);
+                        ballLocalDiameter = 0.160f;
+                        return;
+                    case 6:
+                        positions = BuildOffsetGrid(new[] { 3, 3 }, 0.180f, new[] { -0.125f, 0.060f }, 0f);
+                        ballLocalDiameter = 0.160f;
+                        return;
+                    case 7:
+                        positions = BuildOffsetGrid(new[] { 3, 3, 1 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
+                        ballLocalDiameter = 0.146f;
+                        return;
+                    case 8:
+                        positions = BuildOffsetGrid(new[] { 3, 3, 2 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
+                        ballLocalDiameter = 0.146f;
+                        return;
+                    case 9:
+                        positions = BuildOffsetGrid(new[] { 3, 3, 3 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
+                        ballLocalDiameter = 0.146f;
+                        return;
+                    case 10:
+                    case 11:
+                    case 12:
+                    {
+                        int[] rc = c == 10 ? new[] { 4, 3, 3 } : (c == 11 ? new[] { 4, 4, 3 } : new[] { 4, 4, 4 });
+                        positions = BuildOffsetGrid(rc, 0.140f, new[] { -0.168f, -0.032f, 0.104f }, 0f);
+                        ballLocalDiameter = 0.128f;
+                        return;
+                    }
+                    default:
+                    {
+                        int r3 = Mathf.Max(1, c - 12);
+                        int[] rc = { 4, 4, 4, r3 };
+                        positions = BuildOffsetGrid(rc, 0.136f, new[] { -0.194f, -0.086f, 0.022f, 0.130f }, 0f);
+                        ballLocalDiameter = 0.114f;
+                        return;
+                    }
+                }
+            }
+
+            ComputeSocketLayoutForShape(shape, c, out positions, out _, out ballLocalDiameter);
+            for (int i = 0; i < positions.Length; i++)
+            {
+                positions[i].y -= 0.048f;
+            }
+            ballLocalDiameter = Mathf.Min(ballLocalDiameter, 0.24f);
+        }
+
         private static Vector2[] BuildOffsetGrid(int[] countsPerRow, float xStep, float[] rowYs, float yOffset)
         {
             int total = 0;

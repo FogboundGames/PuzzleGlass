@@ -480,13 +480,13 @@ namespace PuzzleGlass
                 ? Mathf.Clamp(lanesAcrossSetting, 2, 6)
                 : presetLanes > 0 ? presetLanes
                 : (isRing
-                    ? (targetCount <= 36 ? 2 : (targetCount <= 96 ? 3 : 4))
-                    : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 22 ? 2 : (targetCount <= 78 ? 3 : 4))));
+                    ? (targetCount <= 28 ? 3 : (targetCount <= 84 ? 4 : 5))
+                    : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 20 ? 3 : (targetCount <= 72 ? 4 : 5))));
             // Kanal yarı genişliğinin ölçeğe oranı üst sınırı (halkada ada boşluğu net görünsün)
             float maxHalfWidthRatio = isRing ? RingHalfWidthRatio(preset) : 0.375f;
 
-            float chosenScale = Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.0f, 0.55f, 1.45f);
-            float chosenDiam = 0.165f;
+            float chosenScale = Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.08f, 0.65f, 1.40f);
+            float chosenDiam = 0.102f;
             float armTrim = 1.0f;
 
             if (autoFitToBalls && targetCount > 0)
@@ -498,11 +498,11 @@ namespace PuzzleGlass
             else
             {
                 float maxDiamForHole = (Mathf.Min(0.36f, maxHalfWidthRatio) * chosenScale) / Mathf.Max(1f, lanes * 0.495f);
-                chosenDiam = Mathf.Clamp(maxDiamForHole * 0.90f, 0.115f, 0.255f);
+                chosenDiam = Mathf.Clamp(maxDiamForHole * 0.60f, 0.068f, 0.114f);
             }
 
             float innerHalfW = lanes * chosenDiam * 0.495f + 0.012f;
-            float clampedWall = Mathf.Clamp(wallThickness > 0.01f ? wallThickness : 0.082f, 0.045f, 0.14f);
+            float clampedWall = Mathf.Clamp(wallThickness > 0.01f ? wallThickness : 0.092f, 0.045f, 0.14f);
 
             // Gizli kuyruk: halkanın en üst noktasından yukarı, ekranın üst kenarına kadar çıkan giriş yolu.
             // Bekleyen toplar bu yolda sıra halinde durur, ekranın dışından gelir ve halkada yer açıldıkça
@@ -528,7 +528,7 @@ namespace PuzzleGlass
                 for (int pass = 0; pass < 2 && targetCount > allSlots.Count && allSlots.Count > 0; pass++)
                 {
                     float shrink = Mathf.Sqrt(allSlots.Count / (float)(targetCount + 5));
-                    chosenDiam = Mathf.Clamp(chosenDiam * Mathf.Min(shrink, 0.94f), 0.095f, 0.245f);
+                    chosenDiam = Mathf.Clamp(chosenDiam * Mathf.Min(shrink, 0.94f), 0.068f, 0.125f);
                     innerHalfW = lanes * chosenDiam * 0.495f + 0.012f;
                     compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes);
                     allSlots = GeneratePackedTrackSlots(compiled);
@@ -570,8 +570,8 @@ namespace PuzzleGlass
 
             float halfRatio = RingHalfWidthRatio(preset);
             bool stretchable = preset == GlassTrackPreset.ArchLoop;
-            int minL = lanesSetting > 0 ? Mathf.Clamp(lanesSetting, 2, 6) : 2;
-            int maxL = lanesSetting > 0 ? minL : 4;
+            int minL = lanesSetting > 0 ? Mathf.Clamp(lanesSetting, 2, 6) : 3;
+            int maxL = lanesSetting > 0 ? minL : 5;
 
             List<GlassTrackBranch> best = null;
             float bestScore = float.MaxValue;
@@ -673,28 +673,28 @@ namespace PuzzleGlass
             // Kanal yarı genişliği iç ada boşluğunu kapatmamalı (<= 0.36 * scale)
             float maxDiamRatioPerScale = maxHalfWidthRatio / Mathf.Max(1f, lanes * 0.495f);
 
-            bestScale = 0.92f;
-            bestDiam = 0.195f;
+            bestScale = 1.08f;
+            bestDiam = 0.102f;
             float bestScore = float.MaxValue;
 
             for (int si = 0; si <= 12; si++)
             {
-                float s = Mathf.Lerp(0.62f, 0.98f, si / 12f);
-                float maxDiamSafe = Mathf.Min(0.255f, maxDiamRatioPerScale * s);
-                float minDiamSafe = Mathf.Min(0.108f, maxDiamSafe);
+                float s = Mathf.Lerp(0.94f, 1.18f, si / 12f);
+                float maxDiamSafe = Mathf.Min(0.114f, maxDiamRatioPerScale * s);
+                float minDiamSafe = Mathf.Min(0.068f, maxDiamSafe);
                 float idealDiam = (effectiveLenAtUnit * s) / (desiredTotalRowSteps * 0.95f);
                 float d = Mathf.Clamp(idealDiam, minDiamSafe, maxDiamSafe);
 
                 float capacity = (effectiveLenAtUnit * s) / (d * 0.95f) * lanes;
                 float fillRatio = targetCount / Mathf.Max(1f, capacity);
 
-                // Hedef doluluk %80..%96 arası
+                // Hedef doluluk %80..%96 arası, öne çıkan büyük hero cam pist ölçeği ve küçük zarif toplar
                 float penalty = 0f;
                 if (fillRatio > 0.97f) penalty += (fillRatio - 0.97f) * 24f;
                 if (fillRatio < 0.78f) penalty += (0.78f - fillRatio) * 8f;
                 penalty += Mathf.Abs(fillRatio - 0.88f) * 2.2f;
-                penalty += Mathf.Abs(s - 0.88f) * 0.40f;
-                penalty -= d * 0.35f;
+                penalty += Mathf.Abs(s - 1.08f) * 0.45f;
+                penalty += Mathf.Abs(d - 0.100f) * 1.35f;
 
                 if (penalty < bestScore)
                 {
@@ -799,7 +799,7 @@ namespace PuzzleGlass
                 preset = preset,
                 innerHalfWidth = Mathf.Max(0.10f, innerHalfWidth),
                 wallThickness = Mathf.Max(0.035f, wallThickness),
-                ballDiameter = Mathf.Clamp(ballDiameter, 0.08f, 0.30f),
+                ballDiameter = Mathf.Clamp(ballDiameter, 0.060f, 0.125f),
                 lanesAcross = Mathf.Clamp(lanesAcross, 2, 6),
                 exitPoint = new Vector2(0f, -0.56f)
             };

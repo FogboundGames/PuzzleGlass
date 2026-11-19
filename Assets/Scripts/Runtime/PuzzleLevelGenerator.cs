@@ -199,7 +199,7 @@ namespace PuzzleGlass
             levelData.useStagingColumnQueue = false;
             levelData.puzzleLayerStyle = layerStyle;
             levelData.particleMode = ParticleArrangementMode.PhysicsBalls;
-            levelData.particleSize = 0.255f;
+            levelData.particleSize = 0.108f;
             levelData.particlesPerMonsterCount = 1;
             levelData.glassPreset = GlassShapePreset.RectangleBox;
             levelData.compartmentPreset = GlassCompartmentPreset.Custom;
@@ -330,7 +330,8 @@ namespace PuzzleGlass
                     break;
             }
 
-            return Mathf.Clamp(rng.Next(minSockets, maxSockets + 1), 1, MonsterCharacter.MaxVisualSockets);
+            int scaledCount = Mathf.Clamp(rng.Next(minSockets, maxSockets + 1) * 3, 3, 60);
+            return scaledCount;
         }
 
         private static List<GridPackedBlock> BuildSolvableGridLayout(

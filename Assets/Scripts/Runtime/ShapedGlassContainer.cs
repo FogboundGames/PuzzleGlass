@@ -222,6 +222,7 @@ namespace PuzzleGlass
         public Color boxFrameEdgeShadeColor = new Color(0.35f, 0.32f, 0.78f, 1.0f);
         public Color dropShadowColor = new Color(0.64f, 0.56f, 0.78f, 0.28f);
         public bool showBottomExitCollar = true;
+        public bool showGlassShowcaseBackdrop = true;
 
         [Header("Üst Cam Besleme Tüpleri (Per-Level)")]
         public bool useBallFeedTubes = false;
@@ -255,7 +256,7 @@ namespace PuzzleGlass
         [Header("Particle Fill & Granular Physics")]
         public BottleLayerPattern layerPattern = BottleLayerPattern.VFunnelBands;
         [Range(0.08f, 0.30f)]
-        public float particleSize = 0.24f;
+        public float particleSize = 0.108f;
         [Range(0.15f, 0.85f)]
         public float particleFillRatio = 0.48f;
         [Range(0, 20)]
@@ -486,6 +487,7 @@ namespace PuzzleGlass
         private Material _leftEarPillMat;
         private Material _rightEarPillMat;
         private Material _glassFakeShadowMat;
+        private Material _glassShowcaseBackdropMat;
         private Material _dividerOuterRimMat;
         private Material _dividerInnerCoreMat;
         private Material _feedTubeBackMat;
@@ -520,8 +522,8 @@ namespace PuzzleGlass
         private void Awake()
         {
             particlesPerMonsterCount = 1;
-            if (IsFlatBottomBox) particleSize = 0.24f;
-            else if (particleSize < 0.145f) particleSize = 0.155f;
+            if (IsFlatBottomBox) particleSize = 0.114f;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
             patternVerticalOffset = 0f;
             MigrateThemeIfNeeded();
             EnsureContourInitialized();
@@ -532,8 +534,8 @@ namespace PuzzleGlass
         private void OnEnable()
         {
             particlesPerMonsterCount = 1;
-            if (IsFlatBottomBox) particleSize = 0.24f;
-            else if (particleSize < 0.145f) particleSize = 0.155f;
+            if (IsFlatBottomBox) particleSize = 0.114f;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
             patternVerticalOffset = 0f;
             MigrateThemeIfNeeded();
             EnsureContourInitialized();
@@ -587,8 +589,8 @@ namespace PuzzleGlass
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            if (IsFlatBottomBox) particleSize = 0.24f;
-            else if (particleSize < 0.08f) particleSize = 0.24f;
+            if (IsFlatBottomBox) particleSize = 0.114f;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
             EnsureContourInitialized();
 
             UnityEditor.EditorApplication.delayCall += () =>
@@ -1374,6 +1376,18 @@ namespace PuzzleGlass
                     2970);
             }
 
+            Shader showcaseShader = Shader.Find("PuzzleGlass/SlotSquircleUI");
+            if (showcaseShader != null)
+            {
+                _glassShowcaseBackdropMat = new Material(showcaseShader)
+                {
+                    name = "Mat_GlassShowcaseBackdrop",
+                    color = Color.white,
+                    renderQueue = 1990
+                };
+                _glassShowcaseBackdropMat.SetFloat("_SlotMode", 4.0f);
+            }
+
             // 2. Crystal-Clear Hypercasual Glass Chamber Interior (airy transparent center + Fresnel tinted edges)
             Color backTint = glassBodyColor;
             backTint.a = Mathf.Clamp(backTint.a * 0.28f, 0.10f, 0.22f);
@@ -1721,7 +1735,7 @@ namespace PuzzleGlass
         {
             if (compiledTrack == null) RebuildTrackCompiledData();
             Rect ob = compiledTrack != null ? compiledTrack.outerBounds : Rect.MinMaxRect(-1.4f, -0.7f, 1.4f, 1.1f);
-            const float shadowPad = 0.26f;
+            const float shadowPad = 0.48f;
             quadCenter = ob.center;
             quadHalfW = Mathf.Max(0.45f, ob.width * 0.5f + shadowPad);
             quadHalfH = Mathf.Max(0.45f, ob.height * 0.5f + shadowPad);
@@ -1804,6 +1818,45 @@ namespace PuzzleGlass
             return m;
         }
 
+        private void BuildGlassShowcaseBackdrop(float centerX, float centerY, float glassW, float glassH)
+        {
+            if (!showGlassShowcaseBackdrop || _glassShowcaseBackdropMat == null || _glassWallsObj == null) return;
+
+            float padX = 0.24f;
+            float padTop = 0.22f;
+            float padBot = 0.14f;
+            float halfW = glassW * 0.5f + padX;
+            float halfH = glassH * 0.5f + (padTop + padBot) * 0.5f;
+            float panelCenterY = centerY + (padTop - padBot) * 0.5f;
+
+            float quadW = (halfW + 0.22f) * 2f;
+            float quadH = (halfH + 0.24f) * 2f;
+            float cornerRad = Mathf.Clamp(Mathf.Min(halfW, halfH) * 0.26f, 0.24f, 0.48f);
+            float rimWidth = 0.085f;
+
+            _glassShowcaseBackdropMat.SetFloat("_SlotMode", 4.0f);
+            _glassShowcaseBackdropMat.SetVector("_QuadSize", new Vector4(quadW, quadH, 0f, 0f));
+            _glassShowcaseBackdropMat.SetVector("_DockParams", new Vector4(halfW, halfH, cornerRad, rimWidth));
+
+            GameObject backdropObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            backdropObj.name = "GlassShowcaseBackdrop";
+            backdropObj.transform.SetParent(_glassWallsObj.transform, false);
+            backdropObj.transform.localPosition = new Vector3(centerX, panelCenterY, 0.22f);
+            backdropObj.transform.localScale = new Vector3(quadW, quadH, 1f);
+
+            Collider col = backdropObj.GetComponent<Collider>();
+            if (col != null)
+            {
+                if (Application.isPlaying) Destroy(col);
+                else DestroyImmediate(col);
+            }
+
+            var mr = backdropObj.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = _glassShowcaseBackdropMat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+
         private void BuildFlaskGeometry()
         {
             if (IsTrackShape)
@@ -1868,6 +1921,8 @@ namespace PuzzleGlass
                 }
 
                 Mesh boxQuadMesh = CreateRoundedBoxPoolQuadMesh(quadHalfW, quadHalfH, centerY);
+
+                BuildGlassShowcaseBackdrop(0f, centerY, visibleHalfW * 2f, visibleHalfH * 2f);
 
                 GameObject poolBackObj = new GameObject("FlaskInnerCenterGlow");
                 poolBackObj.transform.SetParent(_glassWallsObj.transform, false);
@@ -2195,11 +2250,11 @@ namespace PuzzleGlass
                     ? contourPoints[0].centerX * widthScale
                     : 0f);
 
-            float visibleCollarW = Mathf.Clamp(bottomW * 0.48f, 0.72f, 1.22f);
-            float visibleCollarH = 0.25f;
-            float quadW = visibleCollarW / 0.78f;
-            float quadH = visibleCollarH / 0.56f;
-            float collarCenterY = bottomEdgeY - visibleCollarH * 0.28f;
+            float visibleCollarW = Mathf.Clamp(bottomW * 0.46f, 0.70f, 1.18f);
+            float visibleCollarH = 0.23f;
+            float quadW = visibleCollarW / 0.76f;
+            float quadH = visibleCollarH / 0.48f;
+            float collarCenterY = bottomEdgeY - visibleCollarH * 0.26f;
 
             var collarRoot = new GameObject("BottomExitCollar");
             collarRoot.transform.SetParent(_glassWallsObj.transform, false);
@@ -2221,7 +2276,8 @@ namespace PuzzleGlass
                 collarMat.SetFloat("_IsCollar", 1f);
                 collarMat.SetFloat("_IsRoundedBoxPool", 0f);
                 collarMat.SetFloat("_BoxAspect", quadW / Mathf.Max(0.01f, quadH));
-                collarMat.renderQueue = 3018;
+                // Ön cam merceğinden (3020) hemen sonra çizilir; cam alt kenar çizgileri yakanın içinden taşmaz
+                collarMat.renderQueue = 3021;
 
                 var mr = quad.GetComponent<MeshRenderer>();
                 mr.sharedMaterial = collarMat;
@@ -2967,7 +3023,7 @@ namespace PuzzleGlass
 
             if (IsFlatBottomBox)
             {
-                particleSize = 0.265f;
+                particleSize = 0.114f;
             }
             else if (IsTrackShape && compiledTrack != null)
             {
@@ -2977,7 +3033,7 @@ namespace PuzzleGlass
             gen.glassContainer = this;
             gen.ballDiameter = IsTrackShape && compiledTrack != null
                 ? compiledTrack.ballDiameter
-                : (IsFlatBottomBox ? 0.265f : ((particleSize > 0.05f && particleSize <= 0.30f) ? particleSize : 0.265f));
+                : (IsFlatBottomBox ? 0.114f : ((particleSize > 0.05f && particleSize <= 0.13f) ? particleSize : 0.114f));
             gen.patternVerticalOffset = patternVerticalOffset;
             gen.initialShapeHoldTime = 0f;
 

@@ -25,7 +25,7 @@ namespace PuzzleGlass
         public Transform visualTransform;
 
         [Header("Physical Settings")]
-        public float ballRadius = 0.12f;
+        public float ballRadius = 0.052f;
         public float defaultMass = 0.32f;
         public float defaultDrag = 0.20f;
         public float defaultAngularDrag = 0.42f;
@@ -125,8 +125,8 @@ namespace PuzzleGlass
                 if (Mathf.Approximately(extraGravity, 14f)) extraGravity = 9.5f;
 
                 rb.mass = defaultMass;
-                rb.linearDamping = 1.65f;
-                rb.angularDamping = 1.4f;
+                rb.linearDamping = 0.88f;
+                rb.angularDamping = 1.05f;
                 rb.useGravity = false;
                 rb.sleepThreshold = 0.0f;
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
@@ -137,9 +137,9 @@ namespace PuzzleGlass
 
             if (sphereCollider != null)
             {
-                // 0.415f collider yarıçapı topların cam içinde birbirine ve duvar collider'larına çarparak
-                // sürekli aktif şekilde hareket edebilmesi için ideal fiziksel hareket payı bırakır.
-                sphereCollider.radius = 0.415f;
+                // 0.478f collider yarıçapı topların gerçek yüzey temasıyla çarpışıp doğal yön değiştirmesini,
+                // daralan alanlarda birbirini sıkıştırarak boşluklara yerleşmesini sağlar.
+                sphereCollider.radius = 0.478f;
             }
 
             EnsureFlightTrail();
@@ -209,13 +209,13 @@ namespace PuzzleGlass
             _isTrackMode = isTrack;
             if (sphereCollider != null)
             {
-                sphereCollider.radius = 0.415f;
+                sphereCollider.radius = 0.478f;
             }
             if (rb != null)
             {
                 rb.useGravity = false;
-                rb.linearDamping = 1.45f;
-                rb.angularDamping = 1.2f;
+                rb.linearDamping = 0.88f;
+                rb.angularDamping = 1.05f;
                 rb.sleepThreshold = 0.0f;
                 if (!rb.isKinematic) rb.WakeUp();
             }
@@ -255,25 +255,25 @@ namespace PuzzleGlass
                 rb.linearVelocity = vel;
             }
 
-            // 2. Sürekli aktif 2D fiziksel hareket / salınım (referans videodaki gibi cam içinde hiç durmadan canlı hareket eder)
+            // 2. Hafif yatay/mikro salınım (sıkışan topların birbirinin yanından kayıp boşluklara doğal yerleşmesini destekler)
             float t = Time.time;
             float p1 = _wobblePhase;
             float p2 = _wobblePhase * 1.73f;
-            float ax = Mathf.Sin(t * 4.6f + p1) + 0.70f * Mathf.Cos(t * 7.4f - p2);
-            float ay = Mathf.Cos(t * 4.2f + p2) + 0.70f * Mathf.Sin(t * 6.9f + p1);
-            Vector2 agitateAccel = new Vector2(ax, ay) * 3.85f;
+            float ax = Mathf.Sin(t * 4.6f + p1) + 0.65f * Mathf.Cos(t * 7.4f - p2);
+            float ay = Mathf.Cos(t * 4.2f + p2) + 0.65f * Mathf.Sin(t * 6.9f + p1);
+            Vector2 agitateAccel = new Vector2(ax * 1.10f, ay * 0.35f);
 
-            // 3. Standart havuz akışı (pist modundaki toplar kinematiktir ve TrackCrowdQueue tarafından sürülür)
+            // 3. Tutarlı aşağı (-Y) yerçekimi ve ağırlık/momentum akışı
             {
                 float downSpeed = Mathf.Max(0f, -vel.y);
-                float slideBoost = Mathf.Clamp01((downSpeed - 0.12f) / 0.40f);
-                float downAccel = Mathf.Lerp(0.75f, 6.2f, slideBoost);
+                float slideBoost = Mathf.Clamp01((downSpeed - 0.08f) / 0.45f);
+                float downAccel = Mathf.Lerp(5.8f, 10.6f, slideBoost);
                 Vector2 totalAccel = Vector2.down * downAccel + agitateAccel;
                 rb.AddForce(new Vector3(totalAccel.x, totalAccel.y, 0f), ForceMode.Acceleration);
             }
 
-            // 4. Yumuşak hız sınırı
-            const float maxContainerSpeed = 1.85f;
+            // 4. Yumuşak hız sınırı (momentum ve kontrollü sekmeyi kesmeyecek doğal tavan)
+            const float maxContainerSpeed = 2.65f;
             if (speedSq > maxContainerSpeed * maxContainerSpeed)
             {
                 float invSpd = maxContainerSpeed / Mathf.Sqrt(speedSq);
@@ -284,12 +284,12 @@ namespace PuzzleGlass
             }
 
             // 5. Sürekli 3D yuvarlanma ve canlı dönüş (hiçbir zaman tamamen donmaz)
-            float r = Mathf.Max(0.05f, ballRadius);
+            float r = Mathf.Max(0.025f, ballRadius);
             Vector3 continuousSpin = new Vector3(
-                Mathf.Cos(t * 3.4f + p1) * 1.8f,
-                Mathf.Sin(t * 3.9f + p2) * 1.8f,
-                Mathf.Sin(t * 2.8f + p1) * 0.9f);
-            Vector3 targetAngVel = new Vector3(-vel.y / r, vel.x / r, 0f) * 0.65f + continuousSpin;
+                Mathf.Cos(t * 3.4f + p1) * 1.4f,
+                Mathf.Sin(t * 3.9f + p2) * 1.4f,
+                Mathf.Sin(t * 2.8f + p1) * 0.7f);
+            Vector3 targetAngVel = new Vector3(-vel.y / r, vel.x / r, 0f) * 0.85f + continuousSpin;
             rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 12f * fixedDt);
         }
 
@@ -355,7 +355,7 @@ namespace PuzzleGlass
             EnsureComponents();
 
             colorType = color;
-            ballRadius = Mathf.Max(0.04f, radius);
+            ballRadius = Mathf.Max(0.025f, radius);
             state = BallState.InContainer;
             _attractionStartTime = -1f;
             _isTrackMode = false;
@@ -426,7 +426,7 @@ namespace PuzzleGlass
 
             if (sphereCollider != null)
             {
-                sphereCollider.radius = 0.415f;
+                sphereCollider.radius = 0.478f;
                 sphereCollider.sharedMaterial = physMaterial;
                 sphereCollider.enabled = true;
                 sphereCollider.isTrigger = false;
@@ -436,8 +436,8 @@ namespace PuzzleGlass
             {
                 rb.isKinematic = false;
                 rb.useGravity = false;
-                rb.linearDamping = 1.45f;
-                rb.angularDamping = 1.2f;
+                rb.linearDamping = 0.88f;
+                rb.angularDamping = 1.05f;
                 rb.sleepThreshold = 0.0f;
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
@@ -492,8 +492,8 @@ namespace PuzzleGlass
             {
                 rb.isKinematic = false;
                 rb.useGravity = false;
-                rb.linearDamping = 1.65f;
-                rb.angularDamping = 1.4f;
+                rb.linearDamping = 0.88f;
+                rb.angularDamping = 1.05f;
                 rb.sleepThreshold = 0.0f;
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
                 rb.WakeUp();
@@ -537,8 +537,8 @@ namespace PuzzleGlass
             {
                 rb.isKinematic = false;
                 rb.useGravity = false;
-                rb.linearDamping = 1.65f;
-                rb.angularDamping = 1.4f;
+                rb.linearDamping = 0.88f;
+                rb.angularDamping = 1.05f;
                 rb.sleepThreshold = 0.0f;
                 rb.constraints = RigidbodyConstraints.FreezePositionZ;
                 rb.linearVelocity = new Vector3(0f, -1.2f, 0f);
@@ -601,12 +601,32 @@ namespace PuzzleGlass
                     var other = activeList[i];
                     if (other != null && other != this && other.state == BallState.InContainer && other.rb != null)
                     {
-                        if (other.rb.isKinematic) continue;
-                        other.rb.WakeUp();
-
                         Vector3 op = other.transform.position;
                         float dx = vacatedPos.x - op.x;
                         float dy = op.y - vacatedPos.y;
+
+                        if (_isTrackMode && other.trackQueueDriven)
+                        {
+                            float distSq = dx * dx + dy * dy;
+                            float maxWakeDist = ballRadius * 5.2f;
+                            if (distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
+                            {
+                                float dist = Mathf.Sqrt(distSq);
+                                Vector2 toGap = new Vector2(dx / dist, dy / dist);
+                                float falloff = 1f - Mathf.Clamp01(dist / maxWakeDist);
+                                other.trackVel += toGap * (0.65f * falloff);
+                                if (dist <= ballRadius * 3.0f && Time.time >= other._nextCollisionSquashTime)
+                                {
+                                    other._nextCollisionSquashTime = Time.time + 0.14f;
+                                    other.PlayVisualSquashStretch(0.038f, new Vector3(toGap.x, toGap.y, 0f), isArrival: false);
+                                }
+                            }
+                            continue;
+                        }
+
+                        if (other.rb.isKinematic) continue;
+                        other.rb.WakeUp();
+
                         if (_isTrackMode)
                         {
                             float distSq = dx * dx + dy * dy;

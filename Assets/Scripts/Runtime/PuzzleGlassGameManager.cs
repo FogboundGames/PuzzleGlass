@@ -446,6 +446,31 @@ namespace PuzzleGlass
             }
         }
 
+        private bool _isEndgameFastForward = false;
+        private float _nextAutoSlotTime = 0f;
+        private readonly List<MonsterCharacter> _endgameGridBuffer = new List<MonsterCharacter>();
+        private readonly List<MonsterCharacter> _simRemainBuffer = new List<MonsterCharacter>();
+
+        private void SetEndgameFastForward(bool enabled)
+        {
+            if (_isEndgameFastForward == enabled) return;
+            _isEndgameFastForward = enabled;
+            if (Application.isPlaying)
+            {
+                Time.timeScale = enabled ? 2.0f : 1.0f;
+            }
+        }
+
+        private void OnDisable()
+        {
+            SetEndgameFastForward(false);
+        }
+
+        private void OnDestroy()
+        {
+            SetEndgameFastForward(false);
+        }
+
         private void Update()
         {
             HandleKeyboardInput();
@@ -463,8 +488,121 @@ namespace PuzzleGlass
                         }
                     }
                 }
+                StepEndgameAutoFinish();
                 CheckDeadlockState();
             }
+        }
+
+        private void StepEndgameAutoFinish()
+        {
+            if (isLevelCompleted || isLevelFailed || LevelTransitionController.IsTransitioning || activeMonsters == null || activeMonsters.Count == 0)
+            {
+                SetEndgameFastForward(false);
+                return;
+            }
+
+            _endgameGridBuffer.Clear();
+            bool anyIncomplete = false;
+            for (int i = 0; i < activeMonsters.Count; i++)
+            {
+                var m = activeMonsters[i];
+                if (m == null || !m.gameObject.activeInHierarchy || m.IsCompleted || m.remainingCount <= 0) continue;
+                anyIncomplete = true;
+                if (m.assignedSlot == null && !m.IsMovingToSlot)
+                {
+                    _endgameGridBuffer.Add(m);
+                }
+            }
+
+            if (!anyIncomplete)
+            {
+                SetEndgameFastForward(false);
+                return;
+            }
+
+            // Case 1: Izgarada slota koyulacak başka kutu kalmadıysa (hepsi slotlarda toplanıyorsa) 2x hızlan
+            if (_endgameGridBuffer.Count == 0)
+            {
+                SetEndgameFastForward(true);
+                return;
+            }
+
+            if (!SlotSystem.IsActive || SlotSystem.Instance == null || stagingGridBoard == null)
+            {
+                SetEndgameFastForward(false);
+                return;
+            }
+
+            int emptySlots = 0;
+            var slots = SlotSystem.Instance.slots;
+            if (slots != null)
+            {
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    var s = slots[i];
+                    if (s != null && !s.isLocked && !s.isOccupied && s.currentMonster == null)
+                    {
+                        emptySlots++;
+                    }
+                }
+            }
+
+            // Case 2: Izgaradaki tüm kalan kutular açık slotlara sığıyor ve hepsi kilitsiz/engelsiz çıkabiliyorsa ->
+            // 2x hızlan ve otomatik sırayla slotlara yerleştir!
+            if (emptySlots > 0 && _endgameGridBuffer.Count <= emptySlots && CanAllRemainingExitSequentially(_endgameGridBuffer))
+            {
+                SetEndgameFastForward(true);
+                if (Time.unscaledTime >= _nextAutoSlotTime && MonsterDragController.Instance != null)
+                {
+                    MonsterCharacter bestReady = null;
+                    for (int i = 0; i < _endgameGridBuffer.Count; i++)
+                    {
+                        var cand = _endgameGridBuffer[i];
+                        if (cand.IsMovementOrCollectionBlocked) continue;
+                        if (stagingGridBoard.IsBlockExitClearToSlots(cand, activeMonsters))
+                        {
+                            bestReady = cand;
+                            break;
+                        }
+                    }
+
+                    if (bestReady != null && MonsterDragController.Instance.TryAutoPlaceInFirstEmptySlot(bestReady))
+                    {
+                        _nextAutoSlotTime = Time.unscaledTime + 0.12f;
+                    }
+                }
+                return;
+            }
+
+            SetEndgameFastForward(false);
+        }
+
+        private bool CanAllRemainingExitSequentially(List<MonsterCharacter> gridBlocks)
+        {
+            if (gridBlocks == null || gridBlocks.Count == 0) return false;
+            _simRemainBuffer.Clear();
+            for (int i = 0; i < gridBlocks.Count; i++)
+            {
+                var b = gridBlocks[i];
+                if (b == null || b.IsMovementOrCollectionBlocked) return false;
+                _simRemainBuffer.Add(b);
+            }
+
+            int guard = _simRemainBuffer.Count + 1;
+            while (_simRemainBuffer.Count > 0 && guard-- > 0)
+            {
+                bool removedAny = false;
+                for (int i = _simRemainBuffer.Count - 1; i >= 0; i--)
+                {
+                    if (stagingGridBoard.IsBlockExitClearToSlots(_simRemainBuffer[i], _simRemainBuffer))
+                    {
+                        _simRemainBuffer.RemoveAt(i);
+                        removedAny = true;
+                    }
+                }
+                if (!removedAny) return false;
+            }
+            return _simRemainBuffer.Count == 0;
         }
 
         private void HandleKeyboardInput()
@@ -494,6 +632,7 @@ namespace PuzzleGlass
 
         public void ClearMonsters()
         {
+            SetEndgameFastForward(false);
             for (int i = _activeMechanicVfx.Count - 1; i >= 0; i--)
             {
                 GameObject vfx = _activeMechanicVfx[i];
@@ -636,17 +775,18 @@ namespace PuzzleGlass
                 if (levelData.useCustomSlotSettings)
                 {
                     slotSystem.regularSlotCount = Mathf.Clamp(levelData.slotCount, 1, 6);
-                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.42f, 0.90f);
+                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.42f, 0.96f);
                 }
                 else
                 {
                     slotSystem.regularSlotCount = 4;
-                    slotSystem.slotSpacing = 0.80f; // alttaki boş alanı kullanmak için biraz daha büyük slotlar
+                    slotSystem.slotSpacing = 0.86f;
                 }
                 slotSystem.enableVipSlot = enableVipSlot;
                 slotSystem.showAddSlotButton = enableAddSlotButton;
                 slotSystem.maxRegularSlotCount = Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd);
-                slotSystem.slotScale = 0.68f;
+                slotSystem.slotScale = 0.56f;
+                slotSystem.gapBelowGlass = 0.28f;
                 slotSystem.RebuildSlots();
             }
 
@@ -718,13 +858,13 @@ namespace PuzzleGlass
                     }
                 }
 
-                glassContainer.particleSize = 0.265f;
+                glassContainer.particleSize = 0.114f;
                 glassContainer.particlesPerMonsterCount = 1;
                 glassContainer.particleMode = ParticleArrangementMode.PhysicsBalls;
                 glassContainer.pixelArtPreset = levelData.pixelArtPreset;
                 glassContainer.customPattern = levelData.customPattern;
                 glassContainer.freezePatternInPlace = false;
-                glassContainer.gridCellSpacing = 0.265f;
+                glassContainer.gridCellSpacing = 0.114f;
                 glassContainer.patternVerticalOffset = 0f;
                 if (sandEngine != null) sandEngine.lockedSectionRatio = levelData.lockedSectionRatio;
 
@@ -797,29 +937,49 @@ namespace PuzzleGlass
                 glassContainer.feedTubeDropInterval = levelData.feedTubeDropInterval;
                 BallFeedTubeController.Instance?.ClearAll();
 
-                glassContainer.RebuildContainer();
-
-                if (Application.isPlaying)
+                // Camı üst bölgedeki yeni konumuna RebuildContainer'dan ÖNCE yerleştir ki toplar doğru dünya koordinatında doğsun
+                if (Application.isPlaying && !preserveSceneGlassInPlayMode)
                 {
                     if (!_hasBaseGlassLocalPos)
                     {
                         _hasBaseGlassLocalPos = true;
                         _baseGlassLocalPos = glassContainer.transform.localPosition;
                     }
-                    float glassH = 1.18f;
-                    if (glassContainer.IsTrackShape && glassContainer.compiledTrack != null)
+
+                    Camera cam = mainCamera != null ? mainCamera : Camera.main;
+                    float camTop = (cam != null && cam.orthographic) ? (cam.transform.position.y + cam.orthographicSize) : 4.50f;
+                    float topReserve = levelData.useBallFeedTubes ? 1.24f : 0.80f;
+                    float maxAllowedTopY = camTop - topReserve;
+                    float desiredCenterY = camTop - 2.38f;
+
+                    if (glassContainer.TryGetVisibleFrameWorldBounds(out _, out _, out float gMinY, out float gMaxY))
                     {
-                        glassH = glassContainer.compiledTrack.outerBounds.height;
+                        float curCenterY = (gMinY + gMaxY) * 0.5f;
+                        float halfH = (gMaxY - gMinY) * 0.5f;
+                        float targetCenterY = Mathf.Min(desiredCenterY, maxAllowedTopY - halfH);
+                        Vector3 pos = glassContainer.transform.position;
+                        pos.y += (targetCenterY - curCenterY);
+                        glassContainer.transform.position = pos;
+                        if (glassContainer.IsTrackShape && glassContainer.trackHiddenRatio > 0.001f)
+                        {
+                            glassContainer.RebuildTrackCompiledData();
+                        }
                     }
-                    else if (glassContainer.contourPoints != null && glassContainer.contourPoints.Count >= 2)
+                    else
                     {
-                        glassH = (glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y - glassContainer.contourPoints[0].y) * Mathf.Max(0.5f, glassContainer.heightScale);
+                        float glassH = 1.18f;
+                        if (glassContainer.IsTrackShape && glassContainer.compiledTrack != null)
+                            glassH = glassContainer.compiledTrack.outerBounds.height;
+                        else if (glassContainer.contourPoints != null && glassContainer.contourPoints.Count >= 2)
+                            glassH = (glassContainer.contourPoints[glassContainer.contourPoints.Count - 1].y - glassContainer.contourPoints[0].y) * Mathf.Max(0.5f, glassContainer.heightScale);
+                        float lift = (!levelData.useBallFeedTubes && glassH < 1.05f && levelData.stagingGridRows >= 5)
+                            ? Mathf.Clamp((1.18f - glassH) * 0.55f, 0f, 0.40f)
+                            : 0f;
+                        glassContainer.transform.localPosition = new Vector3(_baseGlassLocalPos.x, 1.92f + lift, _baseGlassLocalPos.z);
                     }
-                    float lift = (!levelData.useBallFeedTubes && glassH < 1.05f && levelData.stagingGridRows >= 5)
-                        ? Mathf.Clamp((1.18f - glassH) * 0.55f, 0f, 0.40f)
-                        : 0f;
-                    glassContainer.transform.localPosition = _baseGlassLocalPos + Vector3.up * lift;
                 }
+
+                glassContainer.RebuildContainer();
 
                 // 3. Rebuild Airtight Physics Colliders around container
                 if (containerPhysics != null)
@@ -855,14 +1015,14 @@ namespace PuzzleGlass
                     else
                     {
                         stagingGridBoard.matchGlassWidth = false;
-                        stagingGridBoard.maxBoardWidth = 3.20f;
-                        stagingGridBoard.maxBoardHeight = 2.15f;
+                        stagingGridBoard.maxBoardWidth = 3.70f;
+                        stagingGridBoard.maxBoardHeight = 2.45f;
                         stagingGridBoard.framePadding = 0.02f;
                         stagingGridBoard.innerMargin = 0.02f;
                         stagingGridBoard.frameCornerRadius = 0.135f;
                         stagingGridBoard.gapBelowGlass = 0.14f;
                         stagingGridBoard.useManualCellSize = false;
-                        stagingGridBoard.manualCellSize = 0.56f;
+                        stagingGridBoard.manualCellSize = 0.72f;
                         stagingGridBoard.showOuterGlassJar = false;
                         stagingGridBoard.showTrayVisuals = false;
                     }
@@ -920,7 +1080,7 @@ namespace PuzzleGlass
                 }
 
                 Vector3 pos = stagingGridBoard.GetWorldPositionForAnchor(anchor, shape);
-                Vector3 gridScale = Vector3.one * gridCellScale;
+                Vector3 gridScale = Vector3.one * (gridCellScale * 0.74f);
                 Vector3 slotFitScale = Vector3.one * stagingGridBoard.GetSlotFitScaleForShape(shape);
 
                 GameObject monObj = new GameObject($"CarrierBox_{entry.color}_{shape}_{entry.count}_{i + 1}");
@@ -1415,6 +1575,7 @@ namespace PuzzleGlass
 
         private void OnLevelDeadlocked()
         {
+            SetEndgameFastForward(false);
             Debug.LogWarning("<color=#FF6655>⚠️ SLOTLAR DOLDU - HAMLE KALMADI! (Alt katmandaki toplarla eşleşen boş slot kalmadı) ⚠️</color>");
             PuzzleSoundManager.Instance?.PlayLevelFail();
 
@@ -1478,6 +1639,7 @@ namespace PuzzleGlass
 
         private void OnLevelCleared()
         {
+            SetEndgameFastForward(false);
             Debug.Log("<color=#00FF88>★ LEVEL CLEARED! ALL CARRIER BOXES FILLED! ★</color>");
             PuzzleSoundManager.Instance?.PlayLevelClear();
 

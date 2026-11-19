@@ -43,6 +43,8 @@ Shader "PuzzleGlass/CarrierBox"
         _WobblePhase ("GPU Idle Breath Phase", Float) = 0.0
         _WobbleAmount ("GPU Idle Breath Amount", Range(0, 1)) = 0.0
         _SquashAmount ("GPU Squash & Stretch", Range(-0.5, 0.5)) = 0.0
+        _FillAmount ("Collection Fill Progress (0..1)", Range(0, 1)) = 0.0
+        _FillWave ("Collection Splash Wave (0..1)", Range(0, 1)) = 0.0
     }
 
     SubShader
@@ -112,6 +114,8 @@ Shader "PuzzleGlass/CarrierBox"
                 float _WobblePhase;
                 float _WobbleAmount;
                 float _SquashAmount;
+                float _FillAmount;
+                float _FillWave;
             CBUFFER_END
 
             #if defined(UNITY_INSTANCING_ENABLED) || defined(UNITY_PROCEDURAL_INSTANCING_ENABLED) || defined(UNITY_STEREO_INSTANCING_ENABLED)
@@ -145,6 +149,8 @@ Shader "PuzzleGlass/CarrierBox"
                     UNITY_DEFINE_INSTANCED_PROP(float, _WobblePhase)
                     UNITY_DEFINE_INSTANCED_PROP(float, _WobbleAmount)
                     UNITY_DEFINE_INSTANCED_PROP(float, _SquashAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _FillAmount)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _FillWave)
                 UNITY_INSTANCING_BUFFER_END(Props)
                 #define GET_BOX_PROP(prop) UNITY_ACCESS_INSTANCED_PROP(Props, prop)
             #else
@@ -242,6 +248,8 @@ Shader "PuzzleGlass/CarrierBox"
                 float4 lockCenter     = GET_BOX_PROP(_LockCenter);
                 float  socketCountF   = GET_BOX_PROP(_SocketCount);
                 float  socketRadF     = GET_BOX_PROP(_SocketRadius);
+                float  fillAmount     = saturate(GET_BOX_PROP(_FillAmount));
+                float  fillWave       = saturate(GET_BOX_PROP(_FillWave));
 
                 // Isotropic block-local coordinates so circles and borders never stretch across non-square shapes
                 float2 q = (IN.uv - 0.5) * max(localSize.xy, float2(0.25, 0.25));
@@ -427,6 +435,14 @@ Shader "PuzzleGlass/CarrierBox"
                     hollowVoidRGB = lerp(hollowVoidRGB, lerp(bodyDarkColor, bodyColor, 0.10), botInnerLip * 0.85);
 
                     float3 cavityRGB = lerp(innerWallCol, hollowVoidRGB, voidMask);
+
+                    // Subtle recessed floor highlight as 3D balls fill the cavity (no water surface)
+                    if (fillAmount > 0.001 || fillWave > 0.001)
+                    {
+                        float pitGlow = saturate(fillAmount * 0.24 + fillWave * 0.18) * voidMask;
+                        cavityRGB = lerp(cavityRGB, lerp(bodyDarkColor, bodyColor, 0.34), pitGlow);
+                    }
+
                     col = lerp(col, cavityRGB, plateMask);
                 }
                 else
