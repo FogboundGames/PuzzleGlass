@@ -16,7 +16,32 @@ namespace PuzzleGlass
         public const float FramePadding = 0.062f;
         public const float InnerMargin = 0.068f;
         public const float FrameCornerRadius = 0.165f;
-        public const float FrameLowerLip = 0.040f;
+        public const float FrameLowerLip = 0.060f;
+
+        // Park alanı tablası (Bus Traffic Fever oranları): slot satırının üstünde dar, altında geniş pay.
+        /// <summary>Slot satırı merkezinden tablanın üst kenarına, slotun yarısına ek pay.</summary>
+        public const float DockTopMargin = 0.15f;
+        /// <summary>Slot satırı merkezinden tablanın alt kenarına, slotun yarısına ek pay.</summary>
+        public const float DockBottomMargin = 0.38f;
+        /// <summary>Shader'da yüzeyin quad merkezine göre yukarı kaydırılması (kalınlık ve gölge quad'a sığsın diye).</summary>
+        public const float DockShaderSurfaceShift = 0.055f * 0.5f + 0.02f;
+
+        /// <summary>Slotun görünen kare boyu.</summary>
+        public static float SlotVisualSize(float cellSize)
+        {
+            float c = Mathf.Max(0.1f, cellSize);
+            return (SlotSystem.Instance != null)
+                ? Mathf.Min(c * 0.94f, Mathf.Max(0.42f, SlotSystem.Instance.slotScale * 1.18f))
+                : c;
+        }
+
+        /// <summary>Slot satırı merkezinden tablanın üst ve alt kenarına uzaklık (satır ölçeği öncesi).</summary>
+        public static void GetDockExtents(float cellSize, out float top, out float bottom)
+        {
+            float s = SlotVisualSize(cellSize);
+            top = s * 0.5f + DockTopMargin;
+            bottom = s * 0.5f + DockBottomMargin;
+        }
 
         private static Material s_FrameDark, s_FrameFront, s_FrameHighlight, s_FrameMidStep, s_FloorShadow, s_Floor;
         private static Material s_SlotWell, s_TileBevel, s_TileBevelHi, s_TileInnerShadow, s_TileBody, s_TileBodyHi;
@@ -120,7 +145,7 @@ namespace PuzzleGlass
 
             ComputeTrapezoidDimensions(cellSize, cells, out float he, out float rBotWidth, out float rTopWidth, out float cornerRad);
             quadW = rBotWidth * 2f + 0.30f;
-            quadH = he * 2f + 0.30f;
+            quadH = he * 2f + 0.46f;
 
             s_DockTrapMat.SetFloat(SlotModePropId, 3f);
             s_DockTrapMat.SetVector(QuadSizePropId, new Vector4(quadW, quadH, 0f, 0f));
@@ -133,12 +158,21 @@ namespace PuzzleGlass
             float c = Mathf.Max(0.1f, cellSize);
             int n = Mathf.Max(1, cells);
             float slotOuterHalfX = (n * 0.5f - 0.06f) * c;
-            rTopWidth = slotOuterHalfX + 0.28f;
-            rBotWidth = rTopWidth + 0.34f;
-            float slotVisSize = (SlotSystem.Instance != null)
-                ? Mathf.Min(c * 0.94f, Mathf.Max(0.42f, SlotSystem.Instance.slotScale * 1.18f))
-                : c;
-            halfH     = slotVisSize * 0.5f + 0.145f;
+            GetDockExtents(c, out float top, out float bottom);
+            halfH = (top + bottom) * 0.5f;
+
+            // Ekrana dönük düz plaka (pahsız): ekranın iki yanında küçük pay bırakacak kadar geniş, slotlar ve bloklar
+            // gibi tam karşıdan görünür. Üst ve alt yarı genişlik eşit; köşeler yuvarlak.
+            float screenHalfW = 0f;
+            Camera cam = Camera.main;
+            if (cam != null && cam.orthographic)
+            {
+                float rowScale = SlotSystem.Instance != null ? SlotSystem.Instance.RowFitScale : 1f;
+                screenHalfW = cam.orthographicSize * cam.aspect / Mathf.Max(0.1f, rowScale);
+            }
+            float halfW = Mathf.Max(slotOuterHalfX + 0.28f, screenHalfW - 0.16f);
+            rBotWidth = halfW;
+            rTopWidth = halfW;
             cornerRad = 0.24f;
         }
 

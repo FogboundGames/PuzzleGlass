@@ -1014,7 +1014,8 @@ namespace PuzzleGlass
                     var b = active[i];
                     if (b != null && b.gameObject.activeInHierarchy && b.state != BallState.InContainer && b.state != BallState.InFeedTube && b.state != BallState.Pooled)
                         return true;
-                    if (b != null && b.gameObject.activeInHierarchy && b.rb != null && !b.rb.isKinematic && b.rb.linearVelocity.sqrMagnitude > 0.15f)
+                    // Pistte sürekli dönen bant topları "hamle sürüyor" sayılmaz (yoksa kilitlenme hiç algılanmaz)
+                    if (b != null && b.gameObject.activeInHierarchy && b.rb != null && !b.rb.isKinematic && !b.trackQueueDriven && b.rb.linearVelocity.sqrMagnitude > 0.15f)
                         return true;
                 }
             }

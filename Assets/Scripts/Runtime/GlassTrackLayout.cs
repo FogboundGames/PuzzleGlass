@@ -46,7 +46,8 @@ namespace PuzzleGlass
     public static class GlassTrackLayout
     {
         public const int MaxShaderSegments = 64;
-        private const int FieldRes = 72;
+        // Duvar collider'ları bu ızgaradan çıkarılır; gerçek fizikte toplar duvara değdiği için daha ince ızgara
+        private const int FieldRes = 112;
 
         public struct TrackSegment
         {
@@ -81,6 +82,11 @@ namespace PuzzleGlass
             public int closedLoopBranch = -1;
             public Rect innerBounds;
             public Rect outerBounds;
+            /// <summary>
+            /// Camın "gövdesi": halkalı pistte ekranın üstüne uzanan giriş yolu hariç dış sınır. Camı ekrana
+            /// yerleştirmek ve slotları hizalamak için kullanılır (yol hesaba katılırsa halka aşağı itiliyordu).
+            /// </summary>
+            public Rect bodyOuterBounds;
 
             // 2D grid field over fieldRect for O(1) physics flow, wall containment, and collider extraction
             public Rect fieldRect;
@@ -946,6 +952,25 @@ namespace PuzzleGlass
             float padOut = track.innerHalfWidth + track.wallThickness;
             track.innerBounds = Rect.MinMaxRect(minX - padIn, minY - padIn, maxX + padIn, maxY + padIn);
             track.outerBounds = Rect.MinMaxRect(minX - padOut, minY - padOut, maxX + padOut, maxY + padOut);
+
+            // Gövde sınırı: halka varsa ona bağlı açık kollar (giriş yolu) hariç
+            track.bodyOuterBounds = track.outerBounds;
+            if (track.closedLoopBranch >= 0)
+            {
+                float bx0 = float.MaxValue, bx1 = float.MinValue, by0 = float.MaxValue, by1 = float.MinValue;
+                for (int b = 0; b < track.polylines.Count; b++)
+                {
+                    bool isOpenArm = b != track.closedLoopBranch && !track.polylineIsBridge[b];
+                    if (isOpenArm) continue;
+                    var poly = track.polylines[b];
+                    for (int i = 0; i < poly.Count; i++)
+                    {
+                        bx0 = Mathf.Min(bx0, poly[i].x); bx1 = Mathf.Max(bx1, poly[i].x);
+                        by0 = Mathf.Min(by0, poly[i].y); by1 = Mathf.Max(by1, poly[i].y);
+                    }
+                }
+                if (bx0 <= bx1) track.bodyOuterBounds = Rect.MinMaxRect(bx0 - padOut, by0 - padOut, bx1 + padOut, by1 + padOut);
+            }
 
             float fieldPad = padOut + 0.16f;
             track.fieldRect = Rect.MinMaxRect(minX - fieldPad, minY - fieldPad, maxX + fieldPad, maxY + fieldPad);

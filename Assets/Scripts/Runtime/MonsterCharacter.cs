@@ -1138,18 +1138,11 @@ namespace PuzzleGlass
             counterText.text = remainingCount.ToString();
             counterText.rectTransform.sizeDelta = new Vector2(1.1f, 0.7f);
             counterText.sortingOrder = 10;
-            if (visualStyle == BlockVisualStyle.PuzzleWithNumber)
-            {
-                // Boşluklu koyu iç hazne üstünde: parlak beyaz sayı + bloğun koyu tonunda kontur
-                counterText.color = Color.white;
-                Color darkOutline = Color.Lerp(GetCarrierDarkColor(colorType) * 0.35f, new Color(0.03f, 0.04f, 0.08f, 1f), 0.45f);
-                darkOutline.a = 0.95f;
-                ApplyTmpOutline(counterText, darkOutline, 0.22f);
-            }
-            else
-            {
-                ApplyTmpOutline(counterText, new Color(0.06f, 0.08f, 0.14f, 1f), 0.28f);
-            }
+            // Tok beyaz sayı + ince koyu kontur + aşağı düşen koyu gölge (referans rozet stili)
+            counterText.color = Color.white;
+            counterText.extraPadding = true;
+            counterText.characterSpacing = -4f;
+            ApplyBoxNumberStyle(counterText, new Color(0.04f, 0.05f, 0.10f, 1f));
 
             badge.SetActive(useCrateVisuals && !IsLockedByKey && !IsFrozenByIce && remainingCount > 0);
         }
@@ -2368,6 +2361,29 @@ namespace PuzzleGlass
                 if (inst.HasProperty("_OutlineWidth")) inst.SetFloat("_OutlineWidth", outlineWidth);
                 tmp.fontSharedMaterial = inst;
             }
+        }
+
+        private static void ApplyBoxNumberStyle(TextMeshPro tmp, Color outlineColor)
+        {
+            if (tmp == null || tmp.fontSharedMaterial == null) return;
+            Material inst = new Material(tmp.fontSharedMaterial)
+            {
+                name = $"{tmp.fontSharedMaterial.name}_BoxNumberInst"
+            };
+            if (inst.HasProperty("_FaceDilate")) inst.SetFloat("_FaceDilate", 0.28f);
+            if (inst.HasProperty("_OutlineColor")) inst.SetColor("_OutlineColor", outlineColor);
+            if (inst.HasProperty("_OutlineWidth")) inst.SetFloat("_OutlineWidth", 0.16f);
+            if (inst.HasProperty("_OutlineSoftness")) inst.SetFloat("_OutlineSoftness", 0f);
+            if (inst.HasProperty("_UnderlayColor"))
+            {
+                inst.EnableKeyword("UNDERLAY_ON");
+                inst.SetColor("_UnderlayColor", new Color(outlineColor.r, outlineColor.g, outlineColor.b, 0.85f));
+                inst.SetFloat("_UnderlayOffsetX", 0f);
+                inst.SetFloat("_UnderlayOffsetY", -0.75f);
+                inst.SetFloat("_UnderlayDilate", 0.45f);
+                inst.SetFloat("_UnderlaySoftness", 0.05f);
+            }
+            tmp.fontSharedMaterial = inst;
         }
 
         private GameObject BuildKeyOverlay(Transform parent)

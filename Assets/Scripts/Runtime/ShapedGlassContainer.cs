@@ -1793,6 +1793,86 @@ namespace PuzzleGlass
             Vector2 exitP = (compiledTrack.exitPoint - quadCenter) / qh;
             float exitMouthP = (compiledTrack.innerHalfWidth * 0.85f) / qh;
             mat.SetVector("_TrackExitPos", new Vector4(exitP.x, exitP.y - compiledTrack.innerHalfWidth / qh, exitMouthP, showBottomExitCollar ? 1f : 0f));
+
+            if (showBottomExitCollar)
+            {
+                GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out _, out _);
+                mat.SetVector("_TrackNeck", new Vector4((mouthY - quadCenter.y) / qh, neckInnerHalfW / qh, lipHalfH / qh, 1f));
+            }
+            else
+            {
+                mat.SetVector("_TrackNeck", Vector4.zero);
+            }
+        }
+
+        // Pist çıkış boynunun camın dış alt kenarından aşağı uzanma miktarı. Eski yakanın kapladığı alanı (≈0.175) aşmaz,
+        // böylece camın ekrana yerleşimi ve slot hizası (collarPad) değişmez.
+        private const float TrackNeckDrop = 0.17f;
+
+        /// <summary>Çıkış boynu ölçüleri (pist yerel koordinatlarında). Sadece görsel; fizik pist alanından gelir.</summary>
+        private void GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out float neckOuterHalfW, out float outerBottomY)
+        {
+            var t = compiledTrack;
+            outerBottomY = t.exitPoint.y - t.innerHalfWidth - t.wallThickness;
+            mouthY = outerBottomY - TrackNeckDrop;
+            neckInnerHalfW = t.innerHalfWidth * 1.05f; // geniş ağız
+            neckOuterHalfW = neckInnerHalfW + t.wallThickness;
+            lipHalfH = t.wallThickness * 0.36f;
+        }
+
+        /// <summary>
+        /// Pistin çıkış boynunu saran yarı saydam lavanta bilezik. İki kart: arka yarı topların ve boynun arkasında,
+        /// ön yarı önünde çizilir. Toplar bileziğin içinden geçiyormuş gibi görünür; fiziğe etkisi yoktur.
+        /// </summary>
+        private void BuildTrackExitSleeve()
+        {
+            if (_glassWallsObj == null || compiledTrack == null) return;
+            Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamberShader == null) return;
+
+            GetTrackNeckGeometry(out float mouthY, out _, out float lipHalfH, out float neckOuterHalfW, out float outerBottomY);
+            float lipTop = mouthY + lipHalfH * 2f;
+            // Bilezik, boynun kanala bağlandığı eklemi sarar (gerçek bir kaplin gibi); altında boynun camı ve dudak görünür kalır
+            float top = outerBottomY + 0.020f;
+            float bottom = Mathf.Max(lipTop + 0.040f, top - 0.095f);
+            float sleeveHalfH = Mathf.Max(0.025f, (top - bottom) * 0.5f);
+            float sleeveCenterY = bottom + sleeveHalfH;
+            float sleeveHalfW = neckOuterHalfW + 0.035f;
+
+            float quadHalfW = sleeveHalfW + 0.08f;
+            float quadHalfH = sleeveHalfH + 0.10f;
+            var sleeveParams = new Vector4(sleeveHalfW / quadHalfH, sleeveHalfH / quadHalfH, neckOuterHalfW / quadHalfH, 0f);
+
+            var root = new GameObject("TrackExitSleeve");
+            root.transform.SetParent(_glassWallsObj.transform, false);
+            root.transform.localPosition = new Vector3(compiledTrack.exitPoint.x, sleeveCenterY, 0f);
+
+            for (int layer = 0; layer < 2; layer++)
+            {
+                bool front = layer == 1;
+                var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                quad.name = front ? "SleeveFront" : "SleeveBack";
+                quad.transform.SetParent(root.transform, false);
+                // Arka yarı arka camın (z 0.08) arkasında, ön yarı topların (z -0.16 / -0.22) ve ön camın önünde
+                quad.transform.localPosition = new Vector3(0f, 0f, front ? -0.40f : 0.10f);
+                quad.transform.localScale = new Vector3(quadHalfW * 2f, quadHalfH * 2f, 1f);
+                var col = quad.GetComponent<Collider>();
+                if (col != null) { if (Application.isPlaying) Destroy(col); else DestroyImmediate(col); }
+
+                var mat = new Material(chamberShader) { name = front ? "Mat_ExitSleeveFront" : "Mat_ExitSleeveBack" };
+                mat.SetFloat("_IsCollar", 2f);
+                mat.SetFloat("_IsRoundedBoxPool", 0f);
+                mat.SetFloat("_IsFrontLens", front ? 1f : 0f);
+                mat.SetFloat("_BoxAspect", quadHalfW / Mathf.Max(0.01f, quadHalfH));
+                mat.SetVector("_SleeveParams", sleeveParams);
+                // Arka yarı arka camdan (1998) önce, ön yarı ön cam merceğinden (3020) sonra çizilir
+                mat.renderQueue = front ? 3021 : 1997;
+
+                var mr = quad.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = mat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+            }
         }
 
         private static Mesh CreateTrackQuadMesh(Vector2 center, float halfW, float halfH)
@@ -1889,7 +1969,8 @@ namespace PuzzleGlass
 
                 if (showBottomExitCollar && compiledTrack != null)
                 {
-                    BuildBottomExitCollar(compiledTrack.outerBounds.yMin);
+                    // Pistte çıkış: camın kendi boynu (shader) + boynu saran yarı saydam bilezik
+                    BuildTrackExitSleeve();
                 }
                 return;
             }
@@ -3186,7 +3267,8 @@ namespace PuzzleGlass
             if (IsTrackShape)
             {
                 if (compiledTrack == null) RebuildTrackCompiledData();
-                Rect ob = compiledTrack != null ? compiledTrack.outerBounds : Rect.MinMaxRect(-1.35f, -0.82f, 1.35f, 1.08f);
+                // Giriş yolu (ekranın üstüne uzanır) hariç cam gövdesi: yerleşim ve slot hizalaması buna göre yapılır
+                Rect ob = compiledTrack != null ? compiledTrack.bodyOuterBounds : Rect.MinMaxRect(-1.35f, -0.82f, 1.35f, 1.08f);
                 float collarPad = showBottomExitCollar ? 0.15f : 0f;
                 Vector3 worldMin = transform.TransformPoint(new Vector3(ob.xMin, ob.yMin - collarPad, 0f));
                 Vector3 worldMax = transform.TransformPoint(new Vector3(ob.xMax, ob.yMax, 0f));

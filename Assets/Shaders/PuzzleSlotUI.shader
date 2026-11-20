@@ -140,6 +140,23 @@ Shader "PuzzleGlass/SlotSquircleUI"
             // Exact Euclidean SDF for the 180-rotated broad sculpted purple dock platform:
             // Wide full-width top edge curving smoothly down into a generous rounded bottom plateau,
             // while keeping 3D lighting, lower base lip, and drop shadow oriented naturally downward.
+            // İkizkenar yamuk (iq): r1 = alt yarı genişlik, r2 = üst yarı genişlik, he = yarı yükseklik
+            float sdTrapezoidIQ(float2 p, float r1, float r2, float he)
+            {
+                float2 k1 = float2(r2, he);
+                float2 k2 = float2(r2 - r1, 2.0 * he);
+                p.x = abs(p.x);
+                float2 ca = float2(p.x - min(p.x, (p.y < 0.0) ? r1 : r2), abs(p.y) - he);
+                float2 cb = p - k1 + k2 * clamp(dot(k1 - p, k2) / dot(k2, k2), 0.0, 1.0);
+                float sgn = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;
+                return sgn * sqrt(min(dot(ca, ca), dot(cb, cb)));
+            }
+
+            float sdChamferDock(float2 p, float r1, float r2, float he, float rad)
+            {
+                return sdTrapezoidIQ(p, max(0.01, r1 - rad), max(0.01, r2 - rad), max(0.01, he - rad)) - rad;
+            }
+
             float sdSculptedApronDock(float2 p, float rBotWidth, float rTopWidth, float halfH, float cornerRad)
             {
                 // Flip Y by 180 degrees for silhouette orientation while preserving world-down lighting & shadows
@@ -281,84 +298,60 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 // =========================================================================
                 if (_SlotMode > 2.5)
                 {
+                    // =====================================================================
+                    // MODE 3: PARK ALANI TABLASI (Bus Traffic Fever renk ve oranlarıyla, ekrana dönük düz plaka)
+                    // Yuvarlak köşeli plaka (üst = alt genişlik), düz asfalt zemin, üst ve yanlarda ince kabarık bordür,
+                    // alt kenarda parlak bordür çizgisi, altında tablanın kalınlığı ve yumuşak gölge.
+                    // =====================================================================
                     float2 quadSize = max(_QuadSize.xy, float2(0.5, 0.5));
                     float2 p = (IN.uv - 0.5) * quadSize;
 
-                    float he        = _DockParams.x; // front face half-height
-                    float rBotWidth = _DockParams.y; // bottom half-width (wider)
-                    float rTopWidth = _DockParams.z; // top half-width (narrower)
-                    float cornerRad = _DockParams.w; // base corner radius
-                    float lipOffset = 0.044;         // 3D lower base lip thickness
-                    float rimWidth  = 0.050;         // raised perimeter border rim width
+                    float he   = _DockParams.x; // yüzeyin yarı yüksekliği
+                    float rBot = _DockParams.y; // alt yarı genişlik (ekrandan taşar)
+                    float rTop = _DockParams.z; // üst yarı genişlik (pahlı köşeler)
+                    float rad  = _DockParams.w; // köşe yuvarlaklığı
+                    const float lip   = 0.055;  // tablanın görünen kalınlığı (alt kenarın altında)
+                    const float rimW  = 0.030;  // üst ve pah kenarlarındaki kabarık bordür
+                    const float curbW = 0.026;  // alt kenardaki parlak bordür çizgisi
 
-                    // Slight vertical centering offset so the 3D lip and bottom shadow fit inside the quad
-                    float2 q = p - float2(0.0, 0.024);
+                    float2 q = p - float2(0.0, lip * 0.5 + 0.02);
+                    float dTop  = sdChamferDock(q, rBot, rTop, he, rad);
+                    float dLip  = sdChamferDock(q + float2(0.0, lip), rBot, rTop, he, rad);
+                    float dBody = min(dTop, dLip);
+                    float aa = max(fwidth(dBody) * 1.15, 0.0025);
 
-                    float dFront = sdSculptedApronDock(q, rBotWidth, rTopWidth, he, cornerRad);
-                    float dBase  = sdSculptedApronDock(q + float2(0.0, lipOffset), rBotWidth, rTopWidth, he, cornerRad);
-                    float dTotal = min(dFront, dBase);
+                    // Yumuşak gölge
+                    float dSh = sdChamferDock(q + float2(0.0, lip + 0.055), rBot + 0.02, rTop + 0.02, he, rad + 0.03);
+                    float shadowAlpha = (1.0 - smoothstep(-0.04, 0.17, dSh)) * 0.30;
+                    float3 shadowRGB = float3(0.16, 0.15, 0.32);
 
-                    // Hardware derivative screen-space anti-aliasing (eliminates all pixelation!)
-                    float aa = max(fwidth(dTotal) * 1.15, 0.0025);
+                    float bodyMask = 1.0 - smoothstep(-aa, aa, dBody);
+                    float topMask  = 1.0 - smoothstep(-aa, aa, dTop);
+                    float yN = saturate(q.y / max(0.1, he) * 0.5 + 0.5); // 0 alt kenar, 1 üst kenar
 
-                    // 0. Soft Ambient Drop Shadow beneath the sculpted apron dock
-                    float dShadow = sdSculptedApronDock(q + float2(0.0, lipOffset + 0.032), rBotWidth + 0.015, rTopWidth + 0.015, he, cornerRad + 0.02);
-                    float shadowAlpha = (1.0 - smoothstep(-0.035, 0.115, dShadow)) * 0.28;
-                    float3 shadowRGB = float3(0.14, 0.12, 0.34);
+                    // Tablanın kalınlığı (yan yüz): koyu lavanta, aşağı doğru koyulaşır
+                    float lipT = saturate(dTop / lip);
+                    float3 dockRGB = lerp(float3(0.15, 0.15, 0.30), float3(0.07, 0.07, 0.18), lipT);
 
-                    // 1. 3D Lower Base Skirt (deep royal indigo)
-                    float bodyMask = 1.0 - smoothstep(-aa, aa, dTotal);
-                    float skirtT = saturate((-dFront) / max(0.01, lipOffset));
-                    float3 skirtTop = float3(0.26, 0.24, 0.53);
-                    float3 skirtBot = float3(0.17, 0.15, 0.39);
-                    float3 dockRGB = lerp(skirtTop, skirtBot, saturate(1.0 - skirtT));
-                    float outerDarkSeam = (1.0 - smoothstep(-aa * 1.6, 0.0, dTotal)) * bodyMask;
-                    dockRGB = lerp(dockRGB, float3(0.13, 0.11, 0.32), outerDarkSeam * 0.45);
+                    // Düz asfalt yüzey (alt kısım biraz daha açık)
+                    float3 asphalt = lerp(float3(0.29, 0.29, 0.42), float3(0.25, 0.25, 0.38), yN);
+                    // Kenarların hemen içinde hafif ortam gölgesi
+                    float edgeAO = 1.0 - smoothstep(0.0, 0.10, -dTop);
+                    asphalt = lerp(asphalt, asphalt * 0.90, edgeAO * 0.6);
 
-                    // 2. Raised Outer Trapezoid Border Rim (periwinkle-lavender with top highlight)
-                    float frontMask = 1.0 - smoothstep(-aa, aa, dFront);
-                    float yGrad = saturate((q.y / max(0.1, he)) * 0.5 + 0.5);
-                    float3 rimBaseCol = lerp(float3(0.53, 0.55, 0.85), float3(0.64, 0.66, 0.93), yGrad);
+                    // Üst ve yan kenarlarda ince kabarık bordür (alt kenarda parlak bordür çizgisine geçer)
+                    float rimZone = smoothstep(0.10, 0.30, yN);
+                    float rimBand = (1.0 - smoothstep(rimW - aa, rimW + aa, -dTop)) * rimZone;
+                    float rimInnerLine = exp(-pow((-dTop - rimW) / 0.006, 2.0)) * rimZone;
+                    float3 rimCol = lerp(float3(0.46, 0.46, 0.62), float3(0.67, 0.67, 0.82), saturate(1.0 - (-dTop) / rimW));
+                    asphalt = lerp(asphalt, rimCol, rimBand);
+                    asphalt = lerp(asphalt, float3(0.16, 0.16, 0.27), rimInnerLine * 0.45);
 
-                    // Bright top catchlight along the upper edge of the raised border rim
-                    float topEdgeBand = frontMask - (1.0 - smoothstep(-0.016 - aa, -0.016 + aa, dFront));
-                    float topWeight = saturate(yGrad * 1.2 - 0.15);
-                    rimBaseCol = lerp(rimBaseCol, float3(0.79, 0.81, 0.98), saturate(topEdgeBand) * topWeight * 0.85);
+                    // Alt kenarda parlak bordür çizgisi (referanstaki beyaz kaldırım çizgisi)
+                    float curbBand = (1.0 - smoothstep(curbW - aa, curbW + aa, -dTop)) * (1.0 - smoothstep(0.10, 0.30, yN));
+                    asphalt = lerp(asphalt, float3(0.84, 0.84, 0.92), curbBand);
 
-                    // Intermediate stepped bevel ring just inside the outer border rim
-                    float dMidStep = dFront + rimWidth * 0.72;
-                    float midStepMask = (1.0 - smoothstep(-aa, aa, dMidStep)) * frontMask;
-                    float3 midStepCol = float3(0.39, 0.39, 0.69);
-                    rimBaseCol = lerp(rimBaseCol, midStepCol, midStepMask);
-
-                    dockRGB = lerp(dockRGB, rimBaseCol, frontMask);
-
-                    // 3. Recessed Inner Trapezoid Opening & 3D Inner Wall Step
-                    float dInner = dFront + rimWidth;
-                    float innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * frontMask;
-
-                    // Shifted deck floor exposes the 3D inner top & curved side wall step under the raised rim
-                    float innerWallDrop = 0.024;
-                    float dDeckFloor = sdSculptedApronDock(q + float2(0.0, innerWallDrop), rBotWidth, rTopWidth, he, cornerRad) + (rimWidth + 0.008);
-                    float deckFloorMask = (1.0 - smoothstep(-aa, aa, dDeckFloor)) * innerMask;
-
-                    float3 innerWallCol = lerp(float3(0.18, 0.16, 0.40), float3(0.23, 0.21, 0.47), saturate((dDeckFloor) / max(0.008, innerWallDrop)));
-
-                    // 4. Main Sunken Trapezoid Deck Floor (twilight slate-indigo)
-                    float3 deckTopCol = float3(0.28, 0.26, 0.54);
-                    float3 deckBotCol = float3(0.34, 0.32, 0.61);
-                    float3 deckRGB = lerp(deckBotCol, deckTopCol, yGrad);
-
-                    // Soft ambient overhang shadow cast by the inner top/side wall onto the deck floor
-                    float wallAO = 1.0 - smoothstep(-0.036, 0.0, dDeckFloor);
-                    deckRGB = lerp(deckRGB, float3(0.22, 0.20, 0.45), wallAO * 0.55);
-
-                    // Subtle bottom inner rim catchlight where the deck floor meets the bottom raised border
-                    float botInnerCatch = (1.0 - smoothstep(-0.014, 0.0, dInner)) * saturate(1.0 - yGrad * 2.2);
-                    deckRGB = lerp(deckRGB, float3(0.45, 0.46, 0.76), botInnerCatch * 0.55);
-
-                    float3 innerCombined = lerp(innerWallCol, deckRGB, deckFloorMask);
-                    dockRGB = lerp(dockRGB, innerCombined, innerMask);
+                    dockRGB = lerp(dockRGB, asphalt, topMask);
 
                     float finalAlpha = saturate(bodyMask + shadowAlpha * (1.0 - bodyMask)) * IN.color.a;
                     if (finalAlpha < 0.002) discard;
@@ -372,81 +365,51 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 // =========================================================================
                 float2 p = (IN.uv - 0.5) * 2.0;
 
-                // 1. Outer Recessed Dark Well & Soft Contact Shadow
-                float2 wellHalf = float2(0.86, 0.86);
-                float  wellRad  = 0.31;
-                float  dWell    = sdRoundBox(p - float2(0.0, -0.015), wellHalf, wellRad);
-                float  aa       = max(fwidth(dWell) * 1.15, 0.004);
+                // Düz "park yeri" slotu (Bus Traffic Fever tarzı): zeminden biraz koyu dolgu + ince açık kenar
+                float2 spotHalf = float2(0.84, 0.84);
+                float  spotRad  = 0.30;
+                float  dSpot    = sdRoundBox(p, spotHalf, spotRad);
+                float  aa       = max(fwidth(dSpot) * 1.15, 0.004);
+                float  wellMask = 1.0 - smoothstep(-aa, aa, dSpot);       // slotun tamamı
+                float  softOuterShadow = 0.0;
+                const float borderW = 0.075;
+                float  dInner    = dSpot + borderW;
+                float  innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * wellMask; // kenarın içi
+                float  yN = saturate(p.y * 0.5 + 0.5);
 
-                float softOuterShadow = (1.0 - smoothstep(-0.02, 0.09, dWell)) * 0.32;
-                float wellMask = 1.0 - smoothstep(-aa, aa, dWell);
-                float3 wellCol = float3(0.09, 0.08, 0.25); // Deep midnight navy-indigo well (Image 1 border)
-
-                // 2. Slot Perimeter Bevel Rim
-                float2 bevelHalf = float2(0.81, 0.81);
-                float  bevelRad  = 0.28;
-                float  dBevel    = sdRoundBox(p, bevelHalf, bevelRad);
-                float  bevelMask = (1.0 - smoothstep(-aa, aa, dBevel)) * wellMask;
-
-                float bevelY = saturate((p.y / bevelHalf.y) * 0.5 + 0.5);
-                float3 bevelCol;
-                float3 innerShadowCol;
-                float3 bodyBaseCol;
-                float3 bodyTopCol;
-
+                float3 fillCol;
+                float3 borderCol;
                 if (_SlotMode > 0.5 && _SlotMode < 1.5)
                 {
-                    // VIP Slot: Warm Golden Rim + Deep Amber-Gold Recessed Pad
-                    bevelCol       = lerp(float3(0.88, 0.64, 0.14), float3(1.00, 0.86, 0.36), bevelY);
-                    innerShadowCol = float3(0.32, 0.20, 0.04);
-                    bodyBaseCol    = float3(0.52, 0.35, 0.08);
-                    bodyTopCol     = float3(0.45, 0.30, 0.06);
+                    // VIP: altın kenar + koyu kehribar dolgu
+                    fillCol   = lerp(float3(0.23, 0.12, 0.012), float3(0.19, 0.09, 0.010), yN);
+                    borderCol = lerp(float3(0.83, 0.42, 0.026), float3(1.00, 0.71, 0.11), yN);
                 }
                 else if (_SlotMode > 1.5)
                 {
-                    // Locked '+' Slot: Dashed Dark Border Rim + Deep Indigo Pad (Image 2 style)
-                    float angle = atan2(p.y, p.x);
-                    float dashMask = smoothstep(-0.18, 0.18, cos(angle * 12.0));
-                    float3 dashLight = lerp(float3(0.22, 0.20, 0.46), float3(0.28, 0.26, 0.55), bevelY);
-                    float3 dashDark  = float3(0.08, 0.07, 0.22);
-                    bevelCol       = lerp(dashDark, dashLight, dashMask);
-                    innerShadowCol = float3(0.08, 0.07, 0.22);
-                    bodyBaseCol    = float3(0.14, 0.12, 0.34);
-                    bodyTopCol     = float3(0.12, 0.10, 0.30);
+                    // Kilitli "+": kesik çizgili koyu kenar, dolgu biraz daha koyu
+                    fillCol = lerp(float3(0.14, 0.14, 0.23), float3(0.12, 0.12, 0.21), yN);
+                    float perim = atan2(p.y, p.x);
+                    float dash = smoothstep(-0.25, 0.25, cos(perim * 14.0));
+                    borderCol = lerp(fillCol, float3(0.06, 0.06, 0.11), dash);
                 }
                 else
                 {
-                    // Regular Slot: Crisp Indigo-Violet Bevel Rim + Deep Dark Indigo Body (rgb 44,37,104)
-                    bevelCol       = lerp(float3(0.26, 0.24, 0.55), float3(0.38, 0.36, 0.70), bevelY);
-                    innerShadowCol = float3(0.11, 0.10, 0.28);
-                    bodyBaseCol    = float3(0.175, 0.150, 0.415);
-                    bodyTopCol     = float3(0.155, 0.135, 0.380);
+                    // Normal: asfalttan biraz koyu dolgu + açık lavanta kenar
+                    fillCol   = lerp(float3(0.16, 0.16, 0.25), float3(0.14, 0.14, 0.22), yN);
+                    borderCol = lerp(float3(0.40, 0.41, 0.55), float3(0.51, 0.51, 0.67), yN);
                 }
 
-                // Hover highlight when a block is dragged over the slot
+                // Blok üzerine gelince vurgu
                 float hi = saturate(_Highlight);
-                bevelCol    = lerp(bevelCol, float3(0.56, 0.55, 0.88), hi * 0.55);
-                bodyBaseCol = lerp(bodyBaseCol, float3(0.30, 0.28, 0.64), hi * 0.85);
-                bodyTopCol  = lerp(bodyTopCol, float3(0.26, 0.24, 0.58), hi * 0.85);
+                fillCol   = lerp(fillCol, float3(0.27, 0.27, 0.48), hi * 0.7);
+                borderCol = lerp(borderCol, float3(0.83, 0.83, 1.00), hi * 0.6);
 
-                float3 slotRGB = lerp(wellCol, bevelCol, bevelMask);
+                // Kenarın hemen içinde üstten hafif gömülme gölgesi
+                float recessAO = exp(-max(0.0, -dInner) / 0.10) * (0.35 + 0.65 * yN);
+                fillCol = lerp(fillCol, fillCol * 0.82, recessAO * 0.55);
 
-                // 3. Inner Recessed Cavity Step & Dark Slot Body
-                float2 innerHalf = float2(0.71, 0.71);
-                float  innerRad  = 0.21;
-                float  dInner    = sdRoundBox(p, innerHalf, innerRad);
-                float  innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * bevelMask;
-
-                // Shifted floor exposes the 3D top inner recess shadow inside the slot
-                float  dFloor    = sdRoundBox(p + float2(0.0, 0.072), innerHalf - float2(0.008, 0.008), innerRad * 0.94);
-                float  floorMask = (1.0 - smoothstep(-aa, aa, dFloor)) * innerMask;
-
-                float3 bodyCol = lerp(bodyBaseCol, bodyTopCol, bevelY);
-                float  topFloorAO = 1.0 - smoothstep(-0.08, 0.0, dFloor);
-                bodyCol = lerp(bodyCol, innerShadowCol, topFloorAO * 0.45);
-
-                float3 cavityCombined = lerp(innerShadowCol, bodyCol, floorMask);
-                slotRGB = lerp(slotRGB, cavityCombined, innerMask);
+                float3 slotRGB = lerp(borderCol, fillCol, innerMask);
 
                 // 4. Smooth Anti-Aliased 3D Green '+' Icon on Locked Slot (_SlotMode == 2)
                 if (_SlotMode > 1.5 && _SlotMode < 2.5)

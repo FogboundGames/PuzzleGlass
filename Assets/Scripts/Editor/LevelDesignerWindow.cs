@@ -778,7 +778,7 @@ namespace PuzzleGlass.Editor
             for (int i = 0; i < lvl.monsters.Count; i++)
             {
                 var entry = lvl.monsters[i];
-                entry.count = Mathf.Clamp(entry.count, 1, MonsterCharacter.MaxVisualSockets);
+                entry.count = Mathf.Clamp(entry.count, 1, LevelMonsterEntry.MaxBallsPerEntry);
 
                 EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
 
@@ -841,7 +841,7 @@ namespace PuzzleGlass.Editor
                 if (EditorGUI.EndChangeCheck())
                 {
                     Undo.RecordObject(lvl, "Edit Box Socket Count");
-                    entry.count = Mathf.Clamp(editedCount, 1, MonsterCharacter.MaxVisualSockets);
+                    entry.count = Mathf.Clamp(editedCount, 1, LevelMonsterEntry.MaxBallsPerEntry);
                     lvl.RebuildTripletsFromBoxes();
                     EditorUtility.SetDirty(lvl);
                     if (_liveSyncToScene) ApplyLevelToScene(lvl);

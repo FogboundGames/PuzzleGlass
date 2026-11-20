@@ -234,18 +234,25 @@ namespace PuzzleGlass
         [Tooltip("0 = buzsuz. >0 = buzun erimesi için gereken sayaç (ör. 15).")]
         public int iceCount = 0;
 
+        /// <summary>
+        /// Bir blok/grubun en fazla top sayısı. Eskiden 16'ydı (blok başına en fazla görsel delik); toplar küçülüp
+        /// sayıları arttığında (blok başına 18-30+) gruplar bloklardan yeniden kurulurken 16'ya kırpılıyor ve
+        /// level eksik topla açılıyordu. EnsureCarrierBoxPuzzleFormat'taki blok sınırıyla (99) aynıdır.
+        /// </summary>
+        public const int MaxBallsPerEntry = 99;
+
         public LevelMonsterEntry() { }
 
         public LevelMonsterEntry(PuzzleColor color, int count)
         {
             this.color = color;
-            this.count = Mathf.Clamp(count, 1, 16);
+            this.count = Mathf.Clamp(count, 1, MaxBallsPerEntry);
         }
 
         public LevelMonsterEntry(PuzzleColor color, int count, CarrierBlockShape shape, Vector2Int gridAnchor)
         {
             this.color = color;
-            this.count = Mathf.Clamp(count, 1, 16);
+            this.count = Mathf.Clamp(count, 1, MaxBallsPerEntry);
             this.blockShape = shape;
             this.gridAnchor = gridAnchor;
             this.hasGridAnchor = true;
@@ -661,7 +668,7 @@ namespace PuzzleGlass
             for (int i = 0; i < monsters.Count; i++)
             {
                 if (monsters[i] == null) continue;
-                int cnt = Mathf.Clamp(monsters[i].count, 1, 50);
+                int cnt = Mathf.Clamp(monsters[i].count, 1, LevelMonsterEntry.MaxBallsPerEntry);
                 monsters[i].count = cnt;
                 PuzzleColor c = monsters[i].color;
                 if (!buckets.ContainsKey(c))

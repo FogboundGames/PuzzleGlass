@@ -238,6 +238,9 @@ namespace PuzzleGlass
         public void StepBallPhysics(float fixedDt)
         {
             if (state != BallState.InContainer || rb == null || rb.isKinematic) return;
+            // Pist topları TrackCrowdQueue'nun sürüşüyle ve PhysX ile hareket eder; havuz salınımı/yerçekimi uygulanmaz
+            // (ayrıca uyuyan topu burada uyandırmayız ki dengeye gelen top dinlenebilsin).
+            if (_isTrackMode && trackQueueDriven) return;
             if (rb.IsSleeping()) rb.WakeUp();
 
             Vector3 pos = rb.position;
@@ -473,10 +476,12 @@ namespace PuzzleGlass
             {
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
-                rb.isKinematic = true;
+                rb.isKinematic = !TrackCrowdQueue.UseRigidbodyPhysics;
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
             }
             ResetTrackQueueState(true);
+            // Gerçek fizik modunda pist topu dinamik Rigidbody'dir (çarpışma, yuvarlanma, momentum, uyku PhysX'te)
+            if (TrackCrowdQueue.UseRigidbodyPhysics) TrackCrowdQueue.ConfigureDynamicTrackBall(this);
         }
 
         public void ReleaseToPhysics()
@@ -615,6 +620,9 @@ namespace PuzzleGlass
                                 Vector2 toGap = new Vector2(dx / dist, dy / dist);
                                 float falloff = 1f - Mathf.Clamp01(dist / maxWakeDist);
                                 other.trackVel += toGap * (0.65f * falloff);
+                                // Gerçek fizikte: çıkan topun bıraktığı boşluğa komşulara hafif bir itki
+                                if (other.rb != null && !other.rb.isKinematic)
+                                    other.rb.AddForce(new Vector3(toGap.x, toGap.y, 0f) * (0.25f * falloff), ForceMode.VelocityChange);
                                 if (dist <= ballRadius * 3.0f && Time.time >= other._nextCollisionSquashTime)
                                 {
                                     other._nextCollisionSquashTime = Time.time + 0.14f;

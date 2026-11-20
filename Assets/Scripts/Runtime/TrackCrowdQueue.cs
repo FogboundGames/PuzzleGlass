@@ -17,7 +17,7 @@ namespace PuzzleGlass
     /// Döngüsüz pist (U-kanal, S-kanal): toplar sıralı bir kuyruk gibi çıkışa yürür; öndeki önceliklidir.
     /// Toplar kinematik Rigidbody'dir; konumlarını MovePosition ile bu sınıf belirler.
     /// </summary>
-    public static class TrackCrowdQueue
+    public static partial class TrackCrowdQueue
     {
         /// <summary>Bantın dönme hızı (cam yerel birimi / sn, yol ortasında).</summary>
         public static float BeltSpeed = 1.18f;
@@ -75,6 +75,11 @@ namespace PuzzleGlass
             public float centerLen;
             public float phase;             // 0..1, bütün şeritler aynı oranda döner (renk blokları dağılmaz)
             public BallPhysicsController[] occupant;
+            // Granül akış: cam yerel düzleminde her hücre için en yakın halka orta çizgisi noktası (yol teğeti için)
+            public int[] nearLookup;
+            public Rect nearRect;
+            public float nearCell;
+            public int nearCols, nearRows;
             public float entryU;            // giriş yolu yoksa: gizli kuyruk girişi (yolun en üst noktası), bant oranı
             // Giriş yolu (gizli kuyruk): halkaya üstten bağlanan yol; toplar buradan aşağı akıp banda katılır
             public bool hasRoad;
@@ -98,6 +103,7 @@ namespace PuzzleGlass
         public static bool IsAtExit(BallPhysicsController ball)
         {
             var loop = s_Loop;
+            if (UseGranularFlow || UseRigidbodyPhysics) return IsAtExitGranular(loop, ball);
             if (loop == null || ball == null || ball.trackLoopSlot < 0 || ball.trackLoopSlot >= loop.totalSlots) return false;
             SlotToLaneRow(loop, ball.trackLoopSlot, out int lane, out int row);
             float u = GetSlotU(loop, lane, row);
@@ -311,7 +317,7 @@ namespace PuzzleGlass
                     float uCrossSection = (float)row / rows;
                     slots.Add(new GlassTrackLayout.TrackSlot
                     {
-                        localPos = SlotPosition(loop, l, row),
+                        localPos = SafeSpawnPosition(track, SlotPosition(loop, l, row) + ((UseGranularFlow || UseRigidbodyPhysics) ? GranularSpawnJitter(l, row, track.ballDiameter) : Vector2.zero)),
                         branchId = track.closedLoopBranch,
                         rowIndex = row,
                         laneIndex = l,
@@ -321,6 +327,23 @@ namespace PuzzleGlass
                 }
             }
             return added;
+        }
+
+        /// <summary>
+        /// Doğma noktası duvara fazla yakınsa kanal içine çeker: gerçek fizikte duvar collider'ına gömülü doğan top
+        /// iç içe geçme çözülürken duvarın dışına itilebiliyordu.
+        /// </summary>
+        private static Vector2 SafeSpawnPosition(GlassTrackLayout.CompiledTrack track, Vector2 p)
+        {
+            float clear = track.ballDiameter * 0.56f;
+            for (int i = 0; i < 3; i++)
+            {
+                track.SampleField(p, out float sdf, out _, out _, out Vector2 inward);
+                float over = sdf + clear;
+                if (over <= 0f) break;
+                p += inward * over;
+            }
+            return p;
         }
 
         private static Vector2 SlotPosition(BeltLoop loop, int lane, int row)
@@ -399,6 +422,8 @@ namespace PuzzleGlass
             Transform ct = container.transform;
             EnsureCapacity(activeBalls.Count);
             var loop = GetLoop(container);
+            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct);
+            if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct);
 
             float d = Mathf.Max(0.05f, track.ballDiameter);
             float r = d * 0.5f;
@@ -870,6 +895,7 @@ namespace PuzzleGlass
         {
             var loop = GetLoop(container);
             if (loop == null) return false;
+            if (UseGranularFlow || UseRigidbodyPhysics) return CanJoinBelt(s_RingCount);
             int occupied = 0;
             bool anyEmpty = false;
             for (int s = 0; s < loop.totalSlots; s++)

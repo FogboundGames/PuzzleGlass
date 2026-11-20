@@ -136,8 +136,8 @@ namespace PuzzleGlass
                 currentIndex++;
             }
 
-            BuildTrayFrame(totalSlots);
             FitRowToScreen(totalSlots);
+            BuildTrayFrame(totalSlots); // tabla genişliği satır ölçeğine göre ekrandan taşacak şekilde hesaplanır
         }
 
         /// <summary>Slot sırasının ekrana sığması için uygulanan ölçek (1 = tam boy).</summary>
@@ -188,9 +188,12 @@ namespace PuzzleGlass
 
             _trayFrameObj = new GameObject("SlotTrayFrame");
             _trayFrameObj.transform.SetParent(transform, false);
-            _trayFrameObj.transform.localPosition = new Vector3(0f, -0.015f, 0.06f);
-
             float cell = Mathf.Max(0.1f, slotSpacing);
+            // Tabla slot satırına göre asimetrik: altta daha geniş pay (slotlar tablanın üst kısmında durur)
+            TrayTileVisuals.GetDockExtents(cell, out float dockTop, out float dockBottom);
+            float dockCenterY = (dockTop - dockBottom) * 0.5f;
+            _trayFrameObj.transform.localPosition = new Vector3(0f, dockCenterY - TrayTileVisuals.DockShaderSurfaceShift, 0.06f);
+
             Material dockMat = TrayTileVisuals.GetConfiguredTrapezoidDockMaterial(cell, cellCount, out float quadW, out float quadH);
 
             GameObject dockQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -216,8 +219,8 @@ namespace PuzzleGlass
             get
             {
                 if (SlotPlatform.UseIndividualFrames) return Mathf.Max(0.1f, slotSpacing) * SlotPlatform.FrameRatio * 0.5f;
-                TrayTileVisuals.GetFrameSize(Mathf.Max(0.1f, slotSpacing), 1, out _, out _, out _, out float outerH);
-                return outerH * 0.5f;
+                TrayTileVisuals.GetDockExtents(Mathf.Max(0.1f, slotSpacing), out float top, out _);
+                return top; // camın altına hizalama tablanın üst kenarına göre yapılır
             }
         }
 
@@ -280,8 +283,8 @@ namespace PuzzleGlass
         {
             int total = slots.Count;
             if (total == 0) return;
-            BuildTrayFrame(total);
             FitRowToScreen(total);
+            BuildTrayFrame(total);
 
             float totalWidth = (total - 1) * slotSpacing;
             float startX = -totalWidth * 0.5f;
@@ -355,10 +358,17 @@ namespace PuzzleGlass
                 maxY = transform.position.y;
                 return false;
             }
-            float halfH = FrameHalfHeight * RowFitScale;
             float cy = transform.position.y;
-            maxY = cy + halfH;
-            minY = cy - halfH - TrayTileVisuals.FrameLowerLip * RowFitScale; // çerçevenin alt dudağı dahil
+            if (SlotPlatform.UseIndividualFrames)
+            {
+                float halfH = FrameHalfHeight * RowFitScale;
+                maxY = cy + halfH;
+                minY = cy - halfH - TrayTileVisuals.FrameLowerLip * RowFitScale;
+                return true;
+            }
+            TrayTileVisuals.GetDockExtents(Mathf.Max(0.1f, slotSpacing), out float top, out float bottom);
+            maxY = cy + top * RowFitScale;
+            minY = cy - (bottom + TrayTileVisuals.FrameLowerLip) * RowFitScale; // tablanın kalınlığı dahil
             return true;
         }
 
