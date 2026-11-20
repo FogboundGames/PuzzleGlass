@@ -50,6 +50,9 @@ namespace PuzzleGlass
         private GameObject _lockedBadgeObj;
         private Tweener _highlightScaleTween;
         private Tweener _highlightColorTween;
+        private MaterialPropertyBlock _warningMpb;
+        private bool _isWarningActive;
+        private static readonly int ColorPropId = Shader.PropertyToID("_Color");
 
         public event Action<SlotPlatform> OnUnlocked;
 
@@ -279,7 +282,29 @@ namespace PuzzleGlass
             if (_tileBodyRenderer != null)
             {
                 _tileBodyRenderer.sharedMaterial = TrayTileVisuals.GetSdfSlotMaterial(slotType, highlight);
+                if (highlight) SetWarningPulse(false);
             }
+        }
+
+        /// <summary>Son boş slot kaldığında oyuncuya yaklaşan doluluk riskini yumuşak renk nabzıyla gösterir.</summary>
+        public void SetWarningPulse(bool active, float pulse01 = 0f)
+        {
+            if (_tileBodyRenderer == null) return;
+            if (!active || isOccupied || isLocked || isHighlighted)
+            {
+                if (!_isWarningActive) return;
+                _isWarningActive = false;
+                if (_warningMpb == null) _warningMpb = new MaterialPropertyBlock();
+                _warningMpb.SetColor(ColorPropId, Color.white);
+                _tileBodyRenderer.SetPropertyBlock(_warningMpb);
+                return;
+            }
+
+            _isWarningActive = true;
+            if (_warningMpb == null) _warningMpb = new MaterialPropertyBlock();
+            Color warnTint = Color.Lerp(Color.white, new Color(1.0f, 0.68f, 0.56f, 1f), Mathf.Clamp01(pulse01));
+            _warningMpb.SetColor(ColorPropId, warnTint);
+            _tileBodyRenderer.SetPropertyBlock(_warningMpb);
         }
 
         public void PlayImpactPunch()

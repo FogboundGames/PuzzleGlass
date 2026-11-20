@@ -55,6 +55,14 @@ namespace PuzzleGlass
         /// <summary>Top havuzu canlılığı için hafif salınım/itişme kuvveti.</summary>
         public static float AgitationStrength = 1.55f;
         private const float MaxBallSpeed = 4.2f;
+        private const float FastForwardBallSpeedMultiplier = 2.0f;
+
+        private static float GetActiveSpeedMultiplier()
+        {
+            return (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsEndgameFastForward)
+                ? FastForwardBallSpeedMultiplier
+                : 1.0f;
+        }
 
         // ==================== Bant (döngü) verisi ====================
 
@@ -422,8 +430,14 @@ namespace PuzzleGlass
             Transform ct = container.transform;
             EnsureCapacity(activeBalls.Count);
             var loop = GetLoop(container);
-            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct);
-            if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct);
+            float speedMul = GetActiveSpeedMultiplier();
+            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul);
+            if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct, speedMul);
+
+            float beltSpeed = BeltSpeed * speedMul;
+            float maxSpeed = MaxSpeed * speedMul;
+            float maxAccel = Acceleration * speedMul;
+            float maxBallSpeed = MaxBallSpeed * speedMul;
 
             float d = Mathf.Max(0.05f, track.ballDiameter);
             float r = d * 0.5f;
@@ -458,7 +472,7 @@ namespace PuzzleGlass
                 }
 
                 if (!anyOnBelt) s_CachedFrontRow = -1;
-                loop.phase = anyOnBelt ? Frac(loop.phase + BeltSpeed * dt / Mathf.Max(0.01f, loop.centerLen)) : 0f;
+                loop.phase = anyOnBelt ? Frac(loop.phase + beltSpeed * dt / Mathf.Max(0.01f, loop.centerLen)) : 0f;
 
                 if (s_SlotPos.Length < loop.totalSlots)
                 {
@@ -546,7 +560,7 @@ namespace PuzzleGlass
                     float kNorm = LateralSpringStiffness;
                     float cNorm = 2f * Mathf.Sqrt(kNorm) * 0.34f;
 
-                    Vector2 beltVel = tang * BeltSpeed;
+                    Vector2 beltVel = tang * beltSpeed;
                     Vector2 relVel = b.trackVel - beltVel;
                     float relVelTang = Vector2.Dot(relVel, tang);
                     float relVelNorm = Vector2.Dot(relVel, norm);
@@ -580,7 +594,7 @@ namespace PuzzleGlass
 
                     Vector2 accel = springAccel + gravAccel + agitate;
                     Vector2 v = b.trackVel + accel * dt;
-                    if (v.sqrMagnitude > MaxBallSpeed * MaxBallSpeed) v = v.normalized * MaxBallSpeed;
+                    if (v.sqrMagnitude > maxBallSpeed * maxBallSpeed) v = v.normalized * maxBallSpeed;
                     b.trackVel = v;
 
                     Vector2 q = p + v * dt;
@@ -620,7 +634,7 @@ namespace PuzzleGlass
             if (q0 > 1) Array.Sort(s_Keys, s_Order, 0, q0);
 
             float wallClear = r * 1.02f;
-            float maxStep = MaxSpeed * 1.4f * dt;
+            float maxStep = maxSpeed * 1.4f * dt;
             for (int k = 0; k < q0; k++)
             {
                 int i = s_Order[k];
@@ -630,12 +644,12 @@ namespace PuzzleGlass
 
                 // Tutarlı aşağı yerçekimi + kanal akış ivmesi (aniden durmaz, mevcut momentum s_Vel üzerinden devam eder)
                 float downhillBoost = flow.y < 0f ? (1f + (-flow.y) * 0.55f) : 0.88f;
-                float targetSpd = MaxSpeed * downhillBoost;
+                float targetSpd = maxSpeed * downhillBoost;
                 Vector2 gravBiasedFlow = (flow + new Vector2(0f, -0.32f)).normalized;
                 Vector2 desiredVel = gravBiasedFlow * targetSpd;
-                Vector2 vel = Vector2.MoveTowards(s_Vel[i], desiredVel, Acceleration * downhillBoost * dt);
+                Vector2 vel = Vector2.MoveTowards(s_Vel[i], desiredVel, maxAccel * downhillBoost * dt);
                 vel.y -= TrackGravity * 0.35f * dt;
-                if (vel.sqrMagnitude > MaxBallSpeed * MaxBallSpeed) vel = vel.normalized * MaxBallSpeed;
+                if (vel.sqrMagnitude > maxBallSpeed * maxBallSpeed) vel = vel.normalized * maxBallSpeed;
 
                 Vector2 q = p + vel * dt;
 
@@ -730,7 +744,7 @@ namespace PuzzleGlass
                 // böylece toplar aniden durmaz, sekme ve yön değişimini doğal ağırlıkla tamamlar.
                 Vector2 squeezeVel = s_Corr[i] * (0.34f / dt);
                 Vector2 v = (s_Vel[i] + squeezeVel) * inertiaDecay;
-                if (v.sqrMagnitude > MaxBallSpeed * MaxBallSpeed) v = v.normalized * MaxBallSpeed;
+                if (v.sqrMagnitude > maxBallSpeed * maxBallSpeed) v = v.normalized * maxBallSpeed;
                 b.trackVel = v;
 
                 float hit = s_Corr[i].magnitude / dt;
@@ -750,7 +764,7 @@ namespace PuzzleGlass
                 for (int i = 0; i < n && topFree; i++) if ((s_Pos[i] - loop.roadTop).sqrMagnitude < clearSq) topFree = false;
                 if (topFree && SpawnQueuedBall(container, loop.roadTop) != null)
                 {
-                    s_NextRoadSpawn = Time.time + 0.06f;
+                    s_NextRoadSpawn = Time.time + 0.06f / speedMul;
                     settling = true;
                 }
             }

@@ -234,6 +234,12 @@ namespace PuzzleGlass
         [Tooltip("0 = buzsuz. >0 = buzun erimesi için gereken sayaç (ör. 15).")]
         public int iceCount = 0;
 
+        [Header("Filled Supply Box (Starts Full, Feeds Into Glass)")]
+        [Tooltip("True ise kutunun içi başlangıçta toplarla doludur; slota konulunca içindeki toplar camın içine çekilir.")]
+        public bool isFilledBox = false;
+        [Tooltip("Dolu kutunun içindeki topların rengi (çerçeve renginden bağımsız seçilebilir).")]
+        public PuzzleColor filledBallColor = PuzzleColor.Blue;
+
         /// <summary>
         /// Bir blok/grubun en fazla top sayısı. Eskiden 16'ydı (blok başına en fazla görsel delik); toplar küçülüp
         /// sayıları arttığında (blok başına 18-30+) gruplar bloklardan yeniden kurulurken 16'ya kırpılıyor ve
@@ -506,10 +512,31 @@ namespace PuzzleGlass
         public int GetTotalBallCount()
         {
             if (monsters == null) return 0;
-            int sum = 0;
+            int collectorSum = 0;
+            int allSum = 0;
+            bool hasCollector = false;
             for (int i = 0; i < monsters.Count; i++)
             {
-                if (monsters[i] != null) sum += Mathf.Max(1, monsters[i].count);
+                var m = monsters[i];
+                if (m == null) continue;
+                int c = Mathf.Max(1, m.count);
+                allSum += c;
+                if (!m.isFilledBox)
+                {
+                    hasCollector = true;
+                    collectorSum += c;
+                }
+            }
+            return hasCollector ? collectorSum : allSum;
+        }
+
+        public int GetGlassStartBallCount()
+        {
+            if (bottomToTopGroups == null) return 0;
+            int sum = 0;
+            for (int i = 0; i < bottomToTopGroups.Count; i++)
+            {
+                if (bottomToTopGroups[i] != null) sum += Mathf.Max(1, bottomToTopGroups[i].count);
             }
             return sum;
         }
@@ -620,7 +647,64 @@ namespace PuzzleGlass
 
         private bool DoGroupsMatchBoxes(List<LevelMonsterEntry> groups, List<LevelMonsterEntry> boxes)
         {
-            if (groups == null || boxes == null || groups.Count != boxes.Count) return false;
+            if (groups == null || boxes == null) return false;
+
+            bool hasAnyFilled = false;
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                if (boxes[i] != null && boxes[i].isFilledBox)
+                {
+                    hasAnyFilled = true;
+                    break;
+                }
+            }
+
+            if (hasAnyFilled)
+            {
+                // Dolu kutular varsa: camda başlayan top sayısı = boş kutu talebi - dolu kutu stoğu
+                Dictionary<PuzzleColor, int> expectedGlass = new Dictionary<PuzzleColor, int>();
+                for (int i = 0; i < boxes.Count; i++)
+                {
+                    var b = boxes[i];
+                    if (b == null) return false;
+                    int cnt = Mathf.Max(1, b.count);
+                    if (!b.isFilledBox)
+                    {
+                        expectedGlass[b.color] = expectedGlass.TryGetValue(b.color, out int cur) ? cur + cnt : cnt;
+                    }
+                    else
+                    {
+                        expectedGlass[b.filledBallColor] = (expectedGlass.TryGetValue(b.filledBallColor, out int cur) ? cur : 0) - cnt;
+                    }
+                }
+                foreach (var kv in expectedGlass)
+                {
+                    if (kv.Value < 0) return true; // Geçersiz fazla stok durumunda otomatik ezme yapma; solver uyarır
+                }
+
+                Dictionary<PuzzleColor, int> actualGlass = new Dictionary<PuzzleColor, int>();
+                for (int i = 0; i < groups.Count; i++)
+                {
+                    var g = groups[i];
+                    if (g == null) return false;
+                    int cnt = Mathf.Max(1, g.count);
+                    actualGlass[g.color] = actualGlass.TryGetValue(g.color, out int cur) ? cur + cnt : cnt;
+                }
+
+                foreach (var kv in expectedGlass)
+                {
+                    actualGlass.TryGetValue(kv.Key, out int ac);
+                    if (ac != Mathf.Max(0, kv.Value)) return false;
+                }
+                foreach (var kv in actualGlass)
+                {
+                    expectedGlass.TryGetValue(kv.Key, out int ec);
+                    if (kv.Value != Mathf.Max(0, ec)) return false;
+                }
+                return true;
+            }
+
+            if (groups.Count != boxes.Count) return false;
 
             Dictionary<(PuzzleColor, int), int> diff = new Dictionary<(PuzzleColor, int), int>();
             for (int i = 0; i < groups.Count; i++)
@@ -662,15 +746,36 @@ namespace PuzzleGlass
 
             if (monsters == null) return;
 
-            // Group boxes by color in order of first appearance while preserving each box's socket count
+            // Dolu kutuların içinde taşınan topları renk bazında hesapla (camda başlamazlar)
+            Dictionary<PuzzleColor, int> supplyByColor = new Dictionary<PuzzleColor, int>();
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                var m = monsters[i];
+                if (m == null) continue;
+                m.count = Mathf.Clamp(m.count, 1, LevelMonsterEntry.MaxBallsPerEntry);
+                if (m.isFilledBox)
+                {
+                    supplyByColor[m.filledBallColor] = (supplyByColor.TryGetValue(m.filledBallColor, out int cur) ? cur : 0) + m.count;
+                }
+            }
+
+            // Boş kutuların (toplayıcıların) gruplarını renk sırasıyla oluştur ve dolu kutu stoğunu camdan düş
             Dictionary<PuzzleColor, Queue<LevelMonsterEntry>> buckets = new Dictionary<PuzzleColor, Queue<LevelMonsterEntry>>();
             List<PuzzleColor> order = new List<PuzzleColor>();
             for (int i = 0; i < monsters.Count; i++)
             {
-                if (monsters[i] == null) continue;
-                int cnt = Mathf.Clamp(monsters[i].count, 1, LevelMonsterEntry.MaxBallsPerEntry);
-                monsters[i].count = cnt;
-                PuzzleColor c = monsters[i].color;
+                var m = monsters[i];
+                if (m == null || m.isFilledBox) continue;
+                int cnt = m.count;
+                PuzzleColor c = m.color;
+                if (supplyByColor.TryGetValue(c, out int remSupply) && remSupply > 0)
+                {
+                    int deduct = Mathf.Min(cnt, remSupply);
+                    cnt -= deduct;
+                    supplyByColor[c] = remSupply - deduct;
+                }
+                if (cnt <= 0) continue;
+
                 if (!buckets.ContainsKey(c))
                 {
                     buckets[c] = new Queue<LevelMonsterEntry>();

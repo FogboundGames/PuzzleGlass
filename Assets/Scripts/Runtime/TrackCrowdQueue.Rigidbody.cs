@@ -76,9 +76,14 @@ namespace PuzzleGlass
         }
 
         private static bool StepRigidbody(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt,
-            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct)
+            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f)
         {
             IsMoving = false;
+            float beltSpeed = BeltSpeed * speedMul;
+            float maxSpeed = MaxSpeed * speedMul;
+            float driveGain = PhysDriveGain * speedMul;
+            float maxDriveAccel = PhysMaxDriveAccel * speedMul * speedMul;
+            float spreadAccel = PhysSpreadAccel * speedMul * speedMul;
             EnsureCenterLookup(loop);
             EnsureCapacity(activeBalls.Count + 8);
             if (s_GTang.Length < s_All.Length)
@@ -185,7 +190,7 @@ namespace PuzzleGlass
                                 if (al > 0f && al < aheadMax && Mathf.Abs(Vector2.Dot(diff, nrm)) < aheadLat)
                                 {
                                     // Öndeki top da yavaşsa gerçekten tıkalı (sıkışık kuyruk)
-                                    if (Vector2.Dot(s_Vel[j], t) < BeltSpeed * 0.25f) { blocked = true; break; }
+                                    if (Vector2.Dot(s_Vel[j], t) < beltSpeed * 0.25f) { blocked = true; break; }
                                 }
                             }
                             j = s_Next[j];
@@ -199,8 +204,8 @@ namespace PuzzleGlass
                 bool resting = !s_GOnRing[i] && blocked && v.sqrMagnitude < 0.03f * 0.03f;
                 if (!resting)
                 {
-                    float target = s_GOnRing[i] ? BeltSpeed : MaxSpeed * 0.6f;
-                    float a = Mathf.Clamp((target - along) * PhysDriveGain, -PhysMaxDriveAccel, PhysMaxDriveAccel);
+                    float target = s_GOnRing[i] ? beltSpeed : maxSpeed * 0.6f;
+                    float a = Mathf.Clamp((target - along) * driveGain, -maxDriveAccel, maxDriveAccel);
                     if (blocked && a > 0f) a *= 0.35f; // tıkalıyken kalabalığı ezmeden hafifçe it
                     accel = t * a;
 
@@ -209,7 +214,7 @@ namespace PuzzleGlass
                     {
                         float band = Mathf.Max(0f, track.innerHalfWidth - r) * 0.55f;
                         float excess = Mathf.Abs(s_GOffset[i]) - band;
-                        if (excess > 0f) accel -= nrm * (Mathf.Sign(s_GOffset[i]) * PhysSpreadAccel * Mathf.Clamp01(excess / Mathf.Max(0.01f, r)));
+                        if (excess > 0f) accel -= nrm * (Mathf.Sign(s_GOffset[i]) * spreadAccel * Mathf.Clamp01(excess / Mathf.Max(0.01f, r)));
                     }
                 }
 
@@ -240,7 +245,7 @@ namespace PuzzleGlass
                     for (int i = 0; i < n && free; i++) if ((s_Pos[i] - spawn).sqrMagnitude < clearSq) free = false;
                     if (free && SpawnQueuedBall(container, spawn) != null)
                     {
-                        s_NextRoadSpawn = Time.time + 0.06f;
+                        s_NextRoadSpawn = Time.time + 0.06f / speedMul;
                         IsMoving = true;
                     }
                 }

@@ -86,13 +86,11 @@ namespace PuzzleGlass
             }
         }
 
-        [Header("Slot Sırası (VIP / + Mekaniği)")]
+        [Header("Slot Sırası (Sabit 5 Slot / İsteğe Bağlı VIP)")]
         [Tooltip("Açıkken slot sırasının en solunda VIP slot olur (normal slotlar dolunca kullanılır).")]
         public bool enableVipSlot = false;
-        [Tooltip("Açıkken en sağda '+' slotu olur; basınca yeni bir slot açılır.")]
-        public bool enableAddSlotButton = true;
-        [Tooltip("'+' ile açılabilecek en fazla normal slot sayısı.")]
-        [Range(4, 9)] public int maxSlotsWithAdd = 7;
+        [HideInInspector] public bool enableAddSlotButton = false;
+        [HideInInspector] public int maxSlotsWithAdd = 5;
 
 #if UNITY_EDITOR
         private void OnValidate()
@@ -103,11 +101,13 @@ namespace PuzzleGlass
                 // Blok görünümü değiştiyse sahnedeki blokları yeni görünümle yeniden çiz
                 if (this != null) ApplyBlockVisualStyle(blockVisualStyle);
                 if (this == null || slotSystem == null || !Application.isPlaying) return;
-                if (slotSystem.enableVipSlot == enableVipSlot && slotSystem.showAddSlotButton == enableAddSlotButton
-                    && slotSystem.maxRegularSlotCount == Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd)) return;
+                if (slotSystem.enableVipSlot == enableVipSlot && !slotSystem.showAddSlotButton
+                    && slotSystem.regularSlotCount == SlotSystem.FixedSlotCount
+                    && slotSystem.maxRegularSlotCount == SlotSystem.FixedSlotCount) return;
                 slotSystem.enableVipSlot = enableVipSlot;
-                slotSystem.showAddSlotButton = enableAddSlotButton;
-                slotSystem.maxRegularSlotCount = Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd);
+                slotSystem.showAddSlotButton = false;
+                slotSystem.regularSlotCount = SlotSystem.FixedSlotCount;
+                slotSystem.maxRegularSlotCount = SlotSystem.FixedSlotCount;
                 slotSystem.RebuildSlots();
             };
         }
@@ -447,6 +447,7 @@ namespace PuzzleGlass
         }
 
         private bool _isEndgameFastForward = false;
+        public bool IsEndgameFastForward => _isEndgameFastForward;
         private float _nextAutoSlotTime = 0f;
         private readonly List<MonsterCharacter> _endgameGridBuffer = new List<MonsterCharacter>();
         private readonly List<MonsterCharacter> _simRemainBuffer = new List<MonsterCharacter>();
@@ -520,10 +521,14 @@ namespace PuzzleGlass
                 return;
             }
 
-            // Case 1: Izgarada slota koyulacak başka kutu kalmadıysa (hepsi slotlarda toplanıyorsa) 2x hızlan
+            // Case 1: Izgarada slota koyulacak başka kutu kalmadıysa (hepsi slotlarda toplanıyorsa) 2x hızlan;
+            // ancak slotlar tamamen kilitlendiyse (fail'e düşecekse) 2x hızlandırma açılmasın.
             if (_endgameGridBuffer.Count == 0)
             {
-                SetEndgameFastForward(true);
+                bool canProgress = collectionController == null
+                    || collectionController.HasAnyBallInTransitOrAttracting()
+                    || collectionController.HasAnyCollectableMoveForSlottedMonsters();
+                SetEndgameFastForward(canProgress);
                 return;
             }
 
@@ -767,24 +772,16 @@ namespace PuzzleGlass
             EnsureGameplayControllers();
             ClearMonsters();
 
-            // 1. Configure upper Slot Row Dock (4 Active Slots + 1 '+' Slot dynamically sliding)
+            // 1. Configure upper Slot Row Dock (Fixed 5 regular slots, no '+' slot)
             if (slotSystem != null)
             {
                 slotSystem.gameObject.SetActive(true);
                 slotSystem.slotsEnabled = true;
-                if (levelData.useCustomSlotSettings)
-                {
-                    slotSystem.regularSlotCount = Mathf.Clamp(levelData.slotCount, 1, 6);
-                    slotSystem.slotSpacing = Mathf.Clamp(levelData.slotSpacing, 0.42f, 0.96f);
-                }
-                else
-                {
-                    slotSystem.regularSlotCount = 4;
-                    slotSystem.slotSpacing = 0.86f;
-                }
+                slotSystem.regularSlotCount = SlotSystem.FixedSlotCount;
+                slotSystem.slotSpacing = 0.72f;
                 slotSystem.enableVipSlot = enableVipSlot;
-                slotSystem.showAddSlotButton = enableAddSlotButton;
-                slotSystem.maxRegularSlotCount = Mathf.Max(slotSystem.regularSlotCount, maxSlotsWithAdd);
+                slotSystem.showAddSlotButton = false;
+                slotSystem.maxRegularSlotCount = SlotSystem.FixedSlotCount;
                 slotSystem.slotScale = 0.56f;
                 slotSystem.gapBelowGlass = 0.28f;
                 slotSystem.RebuildSlots();
@@ -1097,7 +1094,9 @@ namespace PuzzleGlass
                     shape,
                     entry.hasKey,
                     entry.lockKeyCount,
-                    entry.iceCount);
+                    entry.iceCount,
+                    entry.isFilledBox,
+                    entry.filledBallColor);
                 mon.SetGridState(anchor, pos, gridScale, slotFitScale, exitClear: true, animateMove: false);
                 activeMonsters.Add(mon);
             }
@@ -1527,9 +1526,22 @@ namespace PuzzleGlass
             }
         }
 
+        private void ClearSlotWarnings()
+        {
+            if (slotSystem == null || slotSystem.slots == null) return;
+            for (int i = 0; i < slotSystem.slots.Count; i++)
+            {
+                if (slotSystem.slots[i] != null) slotSystem.slots[i].SetWarningPulse(false);
+            }
+        }
+
         private void CheckDeadlockState()
         {
-            if (isLevelCompleted || isLevelFailed) return;
+            if (isLevelCompleted || isLevelFailed)
+            {
+                ClearSlotWarnings();
+                return;
+            }
             // Upper holding slots are disabled in direct-grid mode; blocks never lock out a slot buffer.
             if (slotSystem == null || !slotSystem.gameObject.activeInHierarchy || slotSystem.slots == null || slotSystem.slots.Count == 0)
             {
@@ -1537,31 +1549,116 @@ namespace PuzzleGlass
                 return;
             }
 
-            // Check if every slot is currently occupied by a locked Carrier Box that still needs balls
-            for (int i = 0; i < slotSystem.slots.Count; i++)
+            // Herhangi bir kutu slota uçuyorsa yerleşmesini bekle
+            if (activeMonsters != null)
             {
-                var slot = slotSystem.slots[i];
-                if (slot == null || !slot.isOccupied || slot.currentMonster == null)
+                for (int i = 0; i < activeMonsters.Count; i++)
                 {
-                    _deadlockTimer = 0f;
-                    return;
-                }
-                if (slot.currentMonster.IsCompleted || slot.currentMonster.remainingCount <= 0)
-                {
-                    _deadlockTimer = 0f;
-                    return;
+                    var m = activeMonsters[i];
+                    if (m != null && m.IsMovingToSlot)
+                    {
+                        _deadlockTimer = 0f;
+                        ClearSlotWarnings();
+                        return;
+                    }
                 }
             }
 
-            // If any ball is still flying, attracting, or can be collected by any slotted box, not deadlocked
-            if (collectionController != null)
+            int unlockedTotal = 0;
+            int occupiedIncomplete = 0;
+            SlotPlatform singleEmptySlot = null;
+
+            for (int i = 0; i < slotSystem.slots.Count; i++)
             {
-                if (collectionController.HasAnyBallInTransitOrAttracting() ||
-                    collectionController.HasAnyCollectableMoveForSlottedMonsters())
+                var slot = slotSystem.slots[i];
+                if (slot == null || slot.isLocked) continue;
+                unlockedTotal++;
+
+                if (!slot.isOccupied || slot.currentMonster == null)
+                {
+                    singleEmptySlot = (unlockedTotal - occupiedIncomplete == 1) ? slot : null;
+                    continue;
+                }
+
+                // Tamamlanmak üzere patlayan kutu slotu birazdan boşaltacaktır
+                if (slot.currentMonster.IsCompleted || slot.currentMonster.remainingCount <= 0)
                 {
                     _deadlockTimer = 0f;
+                    ClearSlotWarnings();
                     return;
                 }
+
+                occupiedIncomplete++;
+            }
+
+            if (unlockedTotal == 0)
+            {
+                _deadlockTimer = 0f;
+                ClearSlotWarnings();
+                return;
+            }
+
+            int emptyUnlocked = unlockedTotal - occupiedIncomplete;
+
+            // Top uçuşta, çekiliyorsa veya slottaki kutulardan biri top toplayabiliyorsa kilitlenme yoktur
+            if (collectionController != null &&
+                (collectionController.HasAnyBallInTransitOrAttracting() ||
+                 collectionController.HasAnyCollectableMoveForSlottedMonsters()))
+            {
+                _deadlockTimer = 0f;
+                ClearSlotWarnings();
+                return;
+            }
+
+            // Son 1 boş slot kaldıysa ve diğer slotlar top çekemeden bekliyorsa yumuşak uyarı nabzı göster
+            bool showLastSlotWarning = emptyUnlocked == 1 && singleEmptySlot != null && occupiedIncomplete >= unlockedTotal - 1;
+            float warnPulse = showLastSlotWarning ? (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6.0f)) : 0f;
+            for (int i = 0; i < slotSystem.slots.Count; i++)
+            {
+                var slot = slotSystem.slots[i];
+                if (slot == null) continue;
+                slot.SetWarningPulse(showLastSlotWarning && slot == singleEmptySlot, warnPulse);
+            }
+
+            bool isDeadlocked = false;
+            if (emptyUnlocked == 0)
+            {
+                // Durum 1: Tüm açık slotlar tamamlanmamış ve top çekemeyen kutularla dolu
+                isDeadlocked = true;
+            }
+            else if (activeMonsters != null)
+            {
+                // Durum 2: Boş slot var ama tahtada kalan tüm kutular kilit/buz/duvar yüzünden slota çıkamıyor
+                bool anyGridIncomplete = false;
+                bool anyGridCanExit = false;
+                bool traySlideEnabled = stagingGridBoard != null && stagingGridBoard.showTrayVisuals;
+
+                for (int i = 0; i < activeMonsters.Count; i++)
+                {
+                    var m = activeMonsters[i];
+                    if (m == null || !m.gameObject.activeInHierarchy || m.IsCompleted || m.remainingCount <= 0) continue;
+                    if (m.assignedSlot != null || m.IsMovingToSlot) continue;
+
+                    anyGridIncomplete = true;
+                    if (m.IsMovementOrCollectionBlocked) continue;
+
+                    if (traySlideEnabled || stagingGridBoard == null || stagingGridBoard.IsBlockExitClearToSlots(m, activeMonsters))
+                    {
+                        anyGridCanExit = true;
+                        break;
+                    }
+                }
+
+                if (anyGridIncomplete && !anyGridCanExit)
+                {
+                    isDeadlocked = true;
+                }
+            }
+
+            if (!isDeadlocked)
+            {
+                _deadlockTimer = 0f;
+                return;
             }
 
             _deadlockTimer += Time.deltaTime;
@@ -1569,6 +1666,7 @@ namespace PuzzleGlass
             {
                 isLevelFailed = true;
                 _deadlockTimer = 0f;
+                ClearSlotWarnings();
                 OnLevelDeadlocked();
             }
         }

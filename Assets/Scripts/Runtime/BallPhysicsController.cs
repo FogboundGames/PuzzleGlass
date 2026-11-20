@@ -10,7 +10,8 @@ namespace PuzzleGlass
         InFeedTube,
         AttractingToExit,
         FlyingToMonster,
-        Pooled
+        Pooled,
+        FlyingIntoContainer
     }
 
     [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
@@ -288,10 +289,11 @@ namespace PuzzleGlass
 
             // 5. Sürekli 3D yuvarlanma ve canlı dönüş (hiçbir zaman tamamen donmaz)
             float r = Mathf.Max(0.025f, ballRadius);
+            float spinMul = (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsEndgameFastForward) ? 2.0f : 1.0f;
             Vector3 continuousSpin = new Vector3(
-                Mathf.Cos(t * 3.4f + p1) * 1.4f,
-                Mathf.Sin(t * 3.9f + p2) * 1.4f,
-                Mathf.Sin(t * 2.8f + p1) * 0.7f);
+                Mathf.Cos(t * 3.4f * spinMul + p1) * 1.4f,
+                Mathf.Sin(t * 3.9f * spinMul + p2) * 1.4f,
+                Mathf.Sin(t * 2.8f * spinMul + p1) * 0.7f) * spinMul;
             Vector3 targetAngVel = new Vector3(-vel.y / r, vel.x / r, 0f) * 0.85f + continuousSpin;
             rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 12f * fixedDt);
         }
@@ -667,7 +669,7 @@ namespace PuzzleGlass
         /// </summary>
         public void ApplyAttractionToExit(Vector3 exitWorldPos, float pullForce = 24f, float maxSpeed = 3.4f)
         {
-            if (state == BallState.FlyingToMonster || state == BallState.Pooled || rb == null) return;
+            if (state == BallState.FlyingToMonster || state == BallState.FlyingIntoContainer || state == BallState.Pooled || rb == null) return;
 
             if (state != BallState.AttractingToExit)
             {
@@ -717,7 +719,7 @@ namespace PuzzleGlass
             MonsterCharacter targetMonster,
             Action<BallPhysicsController> onEatenCallback)
         {
-            if (state == BallState.FlyingToMonster || state == BallState.Pooled) return;
+            if (state == BallState.FlyingToMonster || state == BallState.FlyingIntoContainer || state == BallState.Pooled) return;
 
             state = BallState.FlyingToMonster;
             _targetMonster = targetMonster;
@@ -771,6 +773,87 @@ namespace PuzzleGlass
                 }
                 _onEatenCallback?.Invoke(this);
                 RecycleSelf();
+            });
+        }
+
+        /// <summary>
+        /// Dolu kutudan çıkan bir topu slot üzerindeki kutudan fırlatıp camın içine yerleştirir.
+        /// </summary>
+        public void LaunchIntoContainer(
+            Vector3 startWorldPos,
+            Vector3 startWorldScale,
+            ShapedGlassContainer container,
+            Vector3 targetWorldPos,
+            bool isTrackMode,
+            Vector2 trackFlowDir)
+        {
+            if (state == BallState.Pooled) return;
+
+            state = BallState.FlyingIntoContainer;
+            _targetMonster = null;
+            _onEatenCallback = null;
+
+            ConfigureForTrackMode(isTrackMode);
+            StopAndMakeKinematic();
+
+            if (sphereCollider != null)
+            {
+                sphereCollider.enabled = false;
+                sphereCollider.isTrigger = false;
+            }
+
+            transform.DOKill();
+            transform.position = new Vector3(startWorldPos.x, startWorldPos.y, -0.22f);
+            transform.localScale = startWorldScale;
+            SetFlightTrailActive(true);
+
+            Vector3 landPos = new Vector3(targetWorldPos.x, targetWorldPos.y, -0.10f);
+            float duration = Mathf.Clamp(Vector3.Distance(transform.position, landPos) * 0.24f, 0.28f, 0.46f);
+            if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive)
+            {
+                duration *= 0.65f;
+            }
+
+            Sequence flightSeq = DOTween.Sequence();
+            flightSeq.Join(transform.DOJump(landPos, jumpPower: 0.24f, numJumps: 1, duration: duration).SetEase(Ease.OutQuad));
+            flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
+            flightSeq.Join(transform.DOScale(_originalScale, duration * 0.80f).SetEase(Ease.OutQuad));
+            flightSeq.SetLink(gameObject, LinkBehaviour.KillOnDisable);
+
+            flightSeq.OnComplete(() =>
+            {
+                if (state != BallState.FlyingIntoContainer || !gameObject.activeInHierarchy) return;
+
+                SetFlightTrailActive(false);
+                state = BallState.InContainer;
+                transform.position = landPos;
+                transform.localScale = _originalScale;
+
+                if (sphereCollider != null)
+                {
+                    sphereCollider.enabled = true;
+                    sphereCollider.isTrigger = false;
+                }
+
+                ReleaseToPhysics();
+
+                if (rb != null && !rb.isKinematic)
+                {
+                    if (isTrackMode)
+                    {
+                        Vector2 flow2 = trackFlowDir.sqrMagnitude > 0.001f ? trackFlowDir.normalized : Vector2.right;
+                        Vector3 worldFlow = container != null
+                            ? container.transform.TransformDirection(new Vector3(flow2.x, flow2.y, 0f))
+                            : new Vector3(flow2.x, flow2.y, 0f);
+                        rb.linearVelocity = worldFlow * TrackCrowdQueue.BeltSpeed;
+                    }
+                    else
+                    {
+                        rb.linearVelocity = new Vector3(UnityEngine.Random.Range(-0.22f, 0.22f), -0.60f, 0f);
+                    }
+                }
+
+                BallCollectionController.Instance?.MarkBallFieldDirty();
             });
         }
 

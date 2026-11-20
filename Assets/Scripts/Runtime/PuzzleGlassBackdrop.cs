@@ -29,6 +29,12 @@ namespace PuzzleGlass
         [Range(0f, 1.0f)]
         public float floatingStrength = 0.0f;
 
+        [Header("Stepped Lower Ground")]
+        public bool enableSteppedSplitGround = true;
+        public Color lowerTopColor = new Color(0.550f, 0.550f, 0.660f, 1f);
+        public Color lowerBotColor = new Color(0.505f, 0.508f, 0.625f, 1f);
+        public Color lowerRimColor = new Color(0.765f, 0.765f, 0.865f, 1f);
+
         [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
         private Transform _quadTransform;
@@ -36,19 +42,29 @@ namespace PuzzleGlass
         private float _lastOrthoSize = -1f;
         private float _lastAspect = -1f;
         private Vector3 _lastCamPos = new Vector3(float.NaN, float.NaN, float.NaN);
+        private float _quadWorldWidth = 5f;
+        private float _quadWorldHeight = 9f;
+        private Vector4 _lastSplitDockParams = new Vector4(float.NaN, float.NaN, float.NaN, float.NaN);
+        private float _lastSplitEnabled = -1f;
 
-        private static readonly int MainTexId          = Shader.PropertyToID("_MainTex");
-        private static readonly int TintColorId        = Shader.PropertyToID("_TintColor");
-        private static readonly int UseTextureId       = Shader.PropertyToID("_UseTexture");
-        private static readonly int TexAspectId        = Shader.PropertyToID("_TexAspect");
-        private static readonly int TopColorId         = Shader.PropertyToID("_TopColor");
-        private static readonly int MidColorId         = Shader.PropertyToID("_MidColor");
-        private static readonly int BotColorId         = Shader.PropertyToID("_BotColor");
-        private static readonly int GlowColorId        = Shader.PropertyToID("_GlowColor");
-        private static readonly int DotColorId         = Shader.PropertyToID("_DotColor");
-        private static readonly int DotStrengthId      = Shader.PropertyToID("_DotStrength");
-        private static readonly int FloatingStrengthId = Shader.PropertyToID("_FloatingStrength");
-        private static readonly int AspectId           = Shader.PropertyToID("_Aspect");
+        private static readonly int MainTexId           = Shader.PropertyToID("_MainTex");
+        private static readonly int TintColorId         = Shader.PropertyToID("_TintColor");
+        private static readonly int UseTextureId        = Shader.PropertyToID("_UseTexture");
+        private static readonly int TexAspectId         = Shader.PropertyToID("_TexAspect");
+        private static readonly int TopColorId          = Shader.PropertyToID("_TopColor");
+        private static readonly int MidColorId          = Shader.PropertyToID("_MidColor");
+        private static readonly int BotColorId          = Shader.PropertyToID("_BotColor");
+        private static readonly int GlowColorId         = Shader.PropertyToID("_GlowColor");
+        private static readonly int DotColorId          = Shader.PropertyToID("_DotColor");
+        private static readonly int DotStrengthId       = Shader.PropertyToID("_DotStrength");
+        private static readonly int FloatingStrengthId  = Shader.PropertyToID("_FloatingStrength");
+        private static readonly int AspectId            = Shader.PropertyToID("_Aspect");
+        private static readonly int LowerTopColorId     = Shader.PropertyToID("_LowerTopColor");
+        private static readonly int LowerBotColorId     = Shader.PropertyToID("_LowerBotColor");
+        private static readonly int LowerRimColorId     = Shader.PropertyToID("_LowerRimColor");
+        private static readonly int BackdropWorldRectId = Shader.PropertyToID("_BackdropWorldRect");
+        private static readonly int SplitDockParamsId   = Shader.PropertyToID("_SplitDockParams");
+        private static readonly int SplitEnabledId      = Shader.PropertyToID("_SplitEnabled");
 
         private void OnEnable()
         {
@@ -80,9 +96,9 @@ namespace PuzzleGlass
 
         private void MigrateThemeIfNeeded()
         {
-            // v6: Seçenek 2 — Açık ve düşük doygunluklu Pastel Lila Cam Atölyesi
-            if (visualThemeVersion >= 6) return;
-            visualThemeVersion = 6;
+            // v7: Pastel Lila Üst Duvar + Slotları Saran Kademeli (___/‾‾‾\___) Gri-Lavanta Alt Zemin
+            if (visualThemeVersion >= 7) return;
+            visualThemeVersion = 7;
             ApplyPastelLavenderStudioPreset();
         }
 
@@ -97,11 +113,16 @@ namespace PuzzleGlass
             dotColor  = new Color(0.840f, 0.845f, 0.925f, 1f);
             dotStrength = 0.0f;
             floatingStrength = 0.0f;
+            enableSteppedSplitGround = true;
+            lowerTopColor = new Color(0.550f, 0.550f, 0.660f, 1f);
+            lowerBotColor = new Color(0.505f, 0.508f, 0.625f, 1f);
+            lowerRimColor = new Color(0.765f, 0.765f, 0.865f, 1f);
         }
 
         private void LateUpdate()
         {
             SyncWithCamera(force: false);
+            UpdateSplitDockUniforms(force: false);
         }
 
         private void OnDestroy()
@@ -175,6 +196,10 @@ namespace PuzzleGlass
                 {
                     _lastCamPos = camPos;
                     _quadTransform.position = new Vector3(camPos.x, camPos.y, 8.0f);
+                    if (_backdropMaterial != null && _backdropMaterial.HasProperty(BackdropWorldRectId))
+                    {
+                        _backdropMaterial.SetVector(BackdropWorldRectId, new Vector4(camPos.x, camPos.y, _quadWorldWidth, _quadWorldHeight));
+                    }
                 }
                 return;
             }
@@ -185,6 +210,8 @@ namespace PuzzleGlass
 
             float h = ortho * 2.15f;
             float w = h * aspect;
+            _quadWorldWidth = w;
+            _quadWorldHeight = h;
 
             _quadTransform.position = new Vector3(camPos.x, camPos.y, 8.0f);
             _quadTransform.rotation = Quaternion.identity;
@@ -212,6 +239,43 @@ namespace PuzzleGlass
             if (_backdropMaterial.HasProperty(DotStrengthId)) _backdropMaterial.SetFloat(DotStrengthId, dotStrength);
             if (_backdropMaterial.HasProperty(FloatingStrengthId)) _backdropMaterial.SetFloat(FloatingStrengthId, floatingStrength);
             if (_backdropMaterial.HasProperty(AspectId)) _backdropMaterial.SetFloat(AspectId, aspect);
+            if (_backdropMaterial.HasProperty(LowerTopColorId)) _backdropMaterial.SetColor(LowerTopColorId, lowerTopColor);
+            if (_backdropMaterial.HasProperty(LowerBotColorId)) _backdropMaterial.SetColor(LowerBotColorId, lowerBotColor);
+            if (_backdropMaterial.HasProperty(LowerRimColorId)) _backdropMaterial.SetColor(LowerRimColorId, lowerRimColor);
+            if (_backdropMaterial.HasProperty(BackdropWorldRectId))
+            {
+                float cx = float.IsNaN(_lastCamPos.x) ? 0f : _lastCamPos.x;
+                float cy = float.IsNaN(_lastCamPos.y) ? 0.3f : _lastCamPos.y;
+                _backdropMaterial.SetVector(BackdropWorldRectId, new Vector4(cx, cy, _quadWorldWidth, _quadWorldHeight));
+            }
+            UpdateSplitDockUniforms(force: true);
+        }
+
+        private void UpdateSplitDockUniforms(bool force)
+        {
+            if (_backdropMaterial == null) return;
+
+            float enabled = 0f;
+            Vector4 splitParams = Vector4.zero;
+            if (enableSteppedSplitGround)
+            {
+                SlotSystem slotSys = SlotSystem.Instance != null ? SlotSystem.Instance : FindFirstObjectByType<SlotSystem>();
+                if (slotSys != null && slotSys.TryGetRaisedBayWorldBounds(out float cx, out float bayHalfW, out float bayTopY, out float wingY))
+                {
+                    enabled = 1f;
+                    splitParams = new Vector4(cx, bayTopY, wingY, bayHalfW);
+                }
+            }
+
+            if (!force && Mathf.Approximately(enabled, _lastSplitEnabled) && splitParams == _lastSplitDockParams)
+            {
+                return;
+            }
+
+            _lastSplitEnabled = enabled;
+            _lastSplitDockParams = splitParams;
+            if (_backdropMaterial.HasProperty(SplitEnabledId)) _backdropMaterial.SetFloat(SplitEnabledId, enabled);
+            if (_backdropMaterial.HasProperty(SplitDockParamsId)) _backdropMaterial.SetVector(SplitDockParamsId, splitParams);
         }
     }
 }

@@ -320,11 +320,16 @@ namespace PuzzleGlass
         public int iceCount = 0;
         public int remainingIceCount = 0;
 
+        [Header("Filled Supply Box (Starts Full, Empties Into Glass)")]
+        public bool isFilledBox = false;
+        public PuzzleColor filledBallColor = PuzzleColor.Blue;
+
         public bool IsLockedByKey => remainingLockKeys > 0;
         public bool IsFrozenByIce => remainingIceCount > 0;
         public bool IsMovementOrCollectionBlocked => IsLockedByKey || IsFrozenByIce;
 
-        public bool IsActivelyCollecting => (isCollectingInGrid || (assignedSlot != null && !_isMovingToSlot)) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+        public bool IsActivelyCollecting => !isFilledBox && (isCollectingInGrid || (assignedSlot != null && !_isMovingToSlot)) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+        public bool IsSupplyBoxActive => isFilledBox && assignedSlot != null && !_isMovingToSlot && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
 
         public bool IsMovingToSlot => _isMovingToSlot;
 
@@ -447,8 +452,10 @@ namespace PuzzleGlass
                 }
                 else
                 {
+                    RefreshSocketBallColors();
                     ApplySocketLayoutToMaterial();
                     UpdateBadgeText();
+                    SyncFillProgressImmediate();
                     RefreshSpecialMechanicVisuals();
                 }
             };
@@ -640,7 +647,9 @@ namespace PuzzleGlass
             CarrierBlockShape shape,
             bool hasKey,
             int lockKeyCount,
-            int iceCount)
+            int iceCount,
+            bool isFilledBox = false,
+            PuzzleColor filledBallColor = PuzzleColor.Blue)
         {
             colorType = color;
             blockShape = shape;
@@ -651,6 +660,8 @@ namespace PuzzleGlass
             this.remainingLockKeys = this.lockKeyCount;
             this.iceCount = Mathf.Max(0, iceCount);
             this.remainingIceCount = this.iceCount;
+            this.isFilledBox = isFilledBox;
+            this.filledBallColor = isFilledBox ? filledBallColor : color;
             _keyConsumedVisually = false;
             _subParticleCounter = 0;
             _nextIncomingSocketCounter = 0;
@@ -658,7 +669,7 @@ namespace PuzzleGlass
             _isCompleted = false;
             _fillAmountTween?.Kill();
             _fillWaveTween?.Kill();
-            _mpbFillAmount = 0f;
+            _mpbFillAmount = this.isFilledBox ? 1f : 0f;
             _mpbFillWave = 0f;
             monsterId = string.IsNullOrEmpty(id) ? $"Monster_{color}_{Guid.NewGuid().ToString().Substring(0, 4)}" : id;
             EnsureStagingHomeRecorded();
@@ -697,6 +708,10 @@ namespace PuzzleGlass
             EnsureMaterials();
             BuildCarrierBoxHierarchy();
             UpdateBadgeText();
+            if (isFilledBox)
+            {
+                SyncFillProgressImmediate();
+            }
         }
 
         private static Material GetSharedCarrierBoxMaterial()
@@ -948,7 +963,8 @@ namespace PuzzleGlass
                 mr.sharedMaterial = socketBallMaterial;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.receiveShadows = false;
-                BallObjectPool.ApplyBallPropertyBlock(mr, colorType, variantIndex: 1, wobblePhase: i * 0.65f);
+                PuzzleColor ballCol = isFilledBox ? filledBallColor : colorType;
+                BallObjectPool.ApplyBallPropertyBlock(mr, ballCol, variantIndex: 1, wobblePhase: i * 0.65f);
 
                 ballObj.SetActive(false);
                 socketBalls[i] = ballObj;
@@ -1663,9 +1679,25 @@ namespace PuzzleGlass
             }
         }
 
+        private void RefreshSocketBallColors()
+        {
+            if (socketBalls == null) return;
+            PuzzleColor ballCol = isFilledBox ? filledBallColor : colorType;
+            for (int i = 0; i < socketBalls.Length; i++)
+            {
+                if (socketBalls[i] == null) continue;
+                var mr = socketBalls[i].GetComponent<MeshRenderer>();
+                if (mr != null)
+                {
+                    BallObjectPool.ApplyBallPropertyBlock(mr, ballCol, variantIndex: 1, wobblePhase: i * 0.65f);
+                }
+            }
+        }
+
         private float GetCurrentFillProgress()
         {
             if (initialCount <= 0) return 0f;
+            if (isFilledBox) return Mathf.Clamp01(Mathf.Max(0, remainingCount) / (float)initialCount);
             return Mathf.Clamp01((initialCount - Mathf.Max(0, remainingCount)) / (float)initialCount);
         }
 
@@ -1675,34 +1707,116 @@ namespace PuzzleGlass
             _mpbFillWave = 0f;
             ApplyBoxPropertyBlock();
 
-            if (!Application.isPlaying && IsHollowPitStyle && socketBalls != null && socketBalls.Length > 0)
+            if ((!Application.isPlaying || isFilledBox) && ShowsCavityBalls && socketBalls != null && socketBalls.Length > 0)
             {
                 int targetActive = Mathf.Clamp(Mathf.RoundToInt(_mpbFillAmount * socketBalls.Length), 0, socketBalls.Length);
-                if (_pitSim == null || _pitSim.Length != socketBalls.Length)
+                if (IsHollowPitStyle)
                 {
-                    _pitSim = new PitBallSim[socketBalls.Length];
-                    CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
-                }
-                float r = Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f);
-                for (int i = 0; i < socketBalls.Length; i++)
-                {
-                    bool act = i < targetActive;
-                    if (socketBalls[i] != null) socketBalls[i].SetActive(act);
-                    if (act && !_pitSim[i].active)
+                    if (_pitSim == null || _pitSim.Length != socketBalls.Length)
                     {
-                        _pitSim[i] = new PitBallSim { pos = GetPitDropEntryLocal(i, r), vel = new Vector2(((i % 2 == 0) ? -0.25f : 0.25f), -1.2f), active = true };
+                        _pitSim = new PitBallSim[socketBalls.Length];
+                        CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
                     }
-                    else if (!act)
+                    float r = Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f);
+                    for (int i = 0; i < socketBalls.Length; i++)
                     {
-                        _pitSim[i].active = false;
+                        bool act = i < targetActive;
+                        if (socketBalls[i] != null) socketBalls[i].SetActive(act);
+                        if (act && !_pitSim[i].active)
+                        {
+                            _pitSim[i] = new PitBallSim { pos = GetPitDropEntryLocal(i, r), vel = new Vector2(((i % 2 == 0) ? -0.25f : 0.25f), -1.2f), active = true };
+                        }
+                        else if (!act)
+                        {
+                            _pitSim[i].active = false;
+                        }
+                    }
+                    _pitAnyActive = targetActive > 0;
+                    if (_pitAnyActive)
+                    {
+                        for (int s = 0; s < 40; s++) StepHollowPitPhysics(0.016f);
                     }
                 }
-                _pitAnyActive = targetActive > 0;
-                if (_pitAnyActive)
+                else
                 {
-                    for (int s = 0; s < 35; s++) StepHollowPitPhysics(0.016f);
+                    for (int i = 0; i < socketBalls.Length; i++)
+                    {
+                        if (socketBalls[i] != null) socketBalls[i].SetActive(i < targetActive);
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// Dolu kutudan bir topu eksiltir, kutu içindeki görsel top yığınından en üsttekini çıkarır ve başlangıç noktasını döndürür.
+        /// </summary>
+        public Vector3 PopOneFilledSupplyBallVisual(out Vector3 startWorldScale)
+        {
+            startWorldScale = GetSocketBallWorldScale();
+            Vector3 startPos = (bodyPivot != null ? bodyPivot.position : transform.position) + new Vector3(0f, 0.04f, -0.14f);
+
+            if (ShowsCavityBalls && socketBalls != null && socketBalls.Length > 0)
+            {
+                int activeCount = 0;
+                int topIdx = -1;
+                float bestY = float.MinValue;
+                for (int i = 0; i < socketBalls.Length; i++)
+                {
+                    var sb = socketBalls[i];
+                    if (sb == null || !sb.activeSelf) continue;
+                    activeCount++;
+                    float y = sb.transform.position.y;
+                    if (y > bestY)
+                    {
+                        bestY = y;
+                        topIdx = i;
+                    }
+                }
+
+                if (topIdx >= 0)
+                {
+                    startPos = socketBalls[topIdx].transform.position;
+                }
+
+                int nextRem = Mathf.Max(0, remainingCount - 1);
+                int targetActiveAfter = nextRem <= 0
+                    ? 0
+                    : Mathf.Clamp(Mathf.CeilToInt((nextRem / (float)Mathf.Max(1, initialCount)) * socketBalls.Length), 1, socketBalls.Length);
+
+                while (activeCount > targetActiveAfter)
+                {
+                    int removeIdx = -1;
+                    float highestY = float.MinValue;
+                    for (int i = 0; i < socketBalls.Length; i++)
+                    {
+                        var sb = socketBalls[i];
+                        if (sb == null || !sb.activeSelf) continue;
+                        float y = sb.transform.position.y;
+                        if (y > highestY)
+                        {
+                            highestY = y;
+                            removeIdx = i;
+                        }
+                    }
+                    if (removeIdx < 0) break;
+
+                    socketBalls[removeIdx].SetActive(false);
+                    if (_pitSim != null && removeIdx < _pitSim.Length)
+                    {
+                        _pitSim[removeIdx].active = false;
+                    }
+                    activeCount--;
+                }
+
+                if (activeCount <= 0)
+                {
+                    _pitAnyActive = false;
+                }
+            }
+
+            PlaySmoothGulpWave();
+            DecrementCounterAndCheckComplete();
+            return startPos;
         }
 
         private void AnimateCollectionFillProgress()
@@ -1760,7 +1874,7 @@ namespace PuzzleGlass
             {
                 _isCompleted = true;
                 StagingGridBoard.Instance?.MarkGridDirty();
-                if (ShowsCavityBalls)
+                if (ShowsCavityBalls && !isFilledBox)
                 {
                     // Ensure all sockets / pit balls visibly hold settled balls on completion
                     int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
@@ -1771,6 +1885,15 @@ namespace PuzzleGlass
                             ActivateAndPulseSocketBall(i, playSeatEffect: false);
                         }
                     }
+                }
+                else if (isFilledBox && socketBalls != null)
+                {
+                    for (int i = 0; i < socketBalls.Length; i++)
+                    {
+                        if (socketBalls[i] != null) socketBalls[i].SetActive(false);
+                        if (_pitSim != null && i < _pitSim.Length) _pitSim[i].active = false;
+                    }
+                    _pitAnyActive = false;
                 }
                 StartCoroutine(CelebrateAndCompleteRoutine());
             }

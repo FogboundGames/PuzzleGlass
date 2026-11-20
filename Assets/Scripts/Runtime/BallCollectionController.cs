@@ -110,6 +110,104 @@ namespace PuzzleGlass
 
             AutoActivateMatchingTopEdgeBlocks();
             PollSlottedMonsters();
+            UpdateSupplyBoxFeeds();
+        }
+
+        private readonly Dictionary<string, float> _supplyNextLaunchTime = new Dictionary<string, float>();
+
+        private void UpdateSupplyBoxFeeds()
+        {
+            var gm = PuzzleGlassGameManager.Instance;
+            if (gm == null || gm.activeMonsters == null || gm.isLevelCompleted || gm.isLevelFailed) return;
+            if (BallObjectPool.Instance == null) return;
+
+            ShapedGlassContainer container = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : FindFirstObjectByType<ShapedGlassContainer>();
+            if (container == null) return;
+
+            bool isFastForward = gm.IsEndgameFastForward;
+            bool isFever = gm.IsFeverActive;
+            float interval = (isFastForward || isFever) ? 0.035f : 0.068f;
+            float ballRadius = (container.particleSize > 0.05f) ? container.particleSize * 0.5f : 0.057f;
+            float now = Time.time;
+
+            for (int i = 0; i < gm.activeMonsters.Count; i++)
+            {
+                var m = gm.activeMonsters[i];
+                if (m == null || !m.IsSupplyBoxActive) continue;
+
+                string key = m.monsterId;
+                if (string.IsNullOrEmpty(key)) continue;
+
+                if (_supplyNextLaunchTime.TryGetValue(key, out float nextTime) && now < nextTime) continue;
+
+                Vector3 startPos = m.PopOneFilledSupplyBallVisual(out Vector3 startScale);
+                Vector3 targetWorld = ComputeSupplyLandingWorldPos(container, ballRadius, out bool isTrack, out Vector2 flowDir);
+
+                var ball = BallObjectPool.Instance.SpawnBall(m.filledBallColor, startPos, ballRadius);
+                if (ball != null)
+                {
+                    ball.LaunchIntoContainer(startPos, startScale, container, targetWorld, isTrack, flowDir);
+                    PuzzleSoundManager.Instance?.PlayBallTap(0.55f);
+                }
+
+                _supplyNextLaunchTime[key] = now + interval;
+            }
+        }
+
+        private static Vector3 ComputeSupplyLandingWorldPos(
+            ShapedGlassContainer container,
+            float ballRadius,
+            out bool isTrack,
+            out Vector2 trackFlowDir)
+        {
+            isTrack = container != null && container.IsTrackShape;
+            trackFlowDir = Vector2.right;
+
+            if (container == null) return new Vector3(0f, 1.5f, -0.10f);
+
+            if (isTrack)
+            {
+                if (container.compiledTrack == null) container.RebuildTrackCompiledData();
+                if (container.compiledTrack != null)
+                {
+                    Vector2 exitPt = container.compiledTrack.exitPoint;
+                    container.compiledTrack.SampleField(exitPt, out _, out trackFlowDir, out _, out _);
+                    Vector2 jitter = trackFlowDir * UnityEngine.Random.Range(0.02f, ballRadius * 1.4f);
+                    Vector2 localPt = exitPt + jitter;
+                    return container.transform.TransformPoint(new Vector3(localPt.x, localPt.y, -0.10f));
+                }
+                return container.GetBottomExitWorldPosition();
+            }
+
+            float floorY = container.GetChamberFloorY();
+            float ceilY = (container.contourPoints != null && container.contourPoints.Count > 0)
+                ? container.contourPoints[container.contourPoints.Count - 1].y * container.heightScale
+                : floorY + 1.1f;
+
+            float targetY = Mathf.Lerp(floorY + ballRadius * 2.5f, Mathf.Max(floorY + ballRadius * 3f, ceilY - ballRadius * 2.0f), UnityEngine.Random.Range(0.52f, 0.84f));
+            container.GetSafeCubeBoundsAtY(targetY, out float safeL, out float safeR);
+            float pad = ballRadius * 1.3f;
+            float minX = safeL + pad;
+            float maxX = safeR - pad;
+            float targetX = (minX < maxX) ? UnityEngine.Random.Range(minX, maxX) : (safeL + safeR) * 0.5f;
+
+            if (container.dividers != null)
+            {
+                for (int d = 0; d < container.dividers.Count; d++)
+                {
+                    var div = container.dividers[d];
+                    if (div != null && div.enabled && !div.runtimeIsOpened && div.OverlapsCircle(new Vector2(targetX, targetY), ballRadius, 0.01f))
+                    {
+                        targetX = (targetX >= div.center.x)
+                            ? Mathf.Min(maxX, div.center.x + div.thickness * 0.5f + ballRadius * 1.4f)
+                            : Mathf.Max(minX, div.center.x - div.thickness * 0.5f - ballRadius * 1.4f);
+                    }
+                }
+            }
+
+            return container.transform.TransformPoint(new Vector3(targetX, targetY, -0.10f));
         }
 
         private void StepSquashingBalls(float dt)
@@ -344,6 +442,7 @@ namespace PuzzleGlass
             // Pacing & congestion limit: ensure smooth, readable flow without overcrowding
             // During Fever Mode (Streak >= 3) or when a VIP Slot is actively collecting, vacuum speed is 2x faster!
             bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
+            bool isFastForward = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsEndgameFastForward;
             bool isVipCollecting = false;
             foreach (var s in _activeStreams.Values)
             {
@@ -354,15 +453,15 @@ namespace PuzzleGlass
                 }
             }
 
-            float effectiveInterval = (isFever || isVipCollecting) ? (collectionInterval * 0.55f) : collectionInterval;
-            int effectiveMaxInSpout = (isFever || isVipCollecting) ? (maxBallsInSpout + 2) : maxBallsInSpout;
+            float effectiveInterval = (isFever || isVipCollecting || isFastForward) ? (collectionInterval * 0.55f) : collectionInterval;
+            int effectiveMaxInSpout = (isFever || isVipCollecting || isFastForward) ? (maxBallsInSpout + 2) : maxBallsInSpout;
 
             // Bant çıkışın önünden sürekli top geçirir: uyan topları kaçırmamak için daha sık ve çok top al
             var beltContainer = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
             if (beltContainer != null && TrackCrowdQueue.HasLoop(beltContainer))
             {
-                effectiveInterval = Mathf.Min(effectiveInterval, 0.035f);
-                effectiveMaxInSpout = Mathf.Max(effectiveMaxInSpout, 14);
+                effectiveInterval = Mathf.Min(effectiveInterval, isFastForward ? 0.018f : 0.035f);
+                effectiveMaxInSpout = Mathf.Max(effectiveMaxInSpout, isFastForward ? 20 : 14);
             }
 
             float now = Time.time;
@@ -923,8 +1022,10 @@ namespace PuzzleGlass
                 Vector3 exitPos = GetExitWorldPosForBall(container, ball);
 
                 bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
-                float pullF = isFever ? (attractionPullForce * 1.65f) : attractionPullForce;
-                float maxSpd = isFever ? (maxBallSpeed * 1.55f) : maxBallSpeed;
+                bool isFastForward = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsEndgameFastForward;
+                bool fastPull = isFever || isFastForward;
+                float pullF = fastPull ? (attractionPullForce * 1.65f) : attractionPullForce;
+                float maxSpd = fastPull ? (maxBallSpeed * 1.55f) : maxBallSpeed;
 
                 ball.ApplyAttractionToExit(exitPos, pullF, maxSpd);
 
@@ -932,7 +1033,7 @@ namespace PuzzleGlass
                 bool reachedVertical = ballPos.y <= exitPos.y + exitTriggerYOffset;
                 bool reachedCollarX = Mathf.Abs(ballPos.x - exitPos.x) <= exitCollarHorizontalTolerance;
                 bool reachedExit = reachedVertical && reachedCollarX;
-                bool timedOut = ball.AttractionTime > (isFever ? 1.00f : 1.65f);
+                bool timedOut = ball.AttractionTime > (fastPull ? 1.00f : 1.65f);
 
                 if (reachedExit || timedOut)
                 {
@@ -1024,6 +1125,16 @@ namespace PuzzleGlass
 
         public bool HasAnyCollectableMoveForSlottedMonsters()
         {
+            var gm = PuzzleGlassGameManager.Instance;
+            if (gm != null && gm.activeMonsters != null)
+            {
+                for (int i = 0; i < gm.activeMonsters.Count; i++)
+                {
+                    var m = gm.activeMonsters[i];
+                    if (m != null && m.IsSupplyBoxActive) return true;
+                }
+            }
+
             if (FindNextCollectableBall(out _) != null) return true;
 
             // Bantlı pist: toplar dönmeye devam eder; eşleşen top şu an çıkışın önünde olmasa da tur atıp gelecektir.
@@ -1075,6 +1186,7 @@ namespace PuzzleGlass
             TrackCrowdQueue.ClearPending();
             _attractingBalls.Clear();
             _activeStreams.Clear();
+            _supplyNextLaunchTime.Clear();
             _squashingBalls.Clear();
             _bottomCandidatesCache.Clear();
             _ballFieldDirty = true;

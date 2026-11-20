@@ -13,12 +13,16 @@ namespace PuzzleGlass
         public static bool IsActive =>
             Instance != null && Instance.slotsEnabled && Instance.gameObject.activeInHierarchy && Instance.slots != null && Instance.slots.Count > 0;
 
+        public const int FixedSlotCount = 5;
+
         [Header("Slot Dock Configuration (Bus Traffic Fever Style)")]
         public bool slotsEnabled = true;
         public bool enableVipSlot = false;
-        [Range(1, 8)] public int regularSlotCount = 4;
-        public bool showAddSlotButton = true;
-        [Range(4, 9)] public int maxRegularSlotCount = 7;
+        [Range(1, 8)] public int regularSlotCount = FixedSlotCount;
+        public bool showAddSlotButton = false;
+        [Range(4, 9)] public int maxRegularSlotCount = FixedSlotCount;
+
+        [SerializeField, HideInInspector] private int slotLayoutVersion = 0;
 
         /// <summary>Geriye dönük uyumluluk için regular slot sayısını döndürür/ayarlar.</summary>
         public int slotCount
@@ -27,7 +31,7 @@ namespace PuzzleGlass
             set => regularSlotCount = Mathf.Clamp(value, 1, maxRegularSlotCount);
         }
 
-        public float slotSpacing = 0.86f;
+        public float slotSpacing = 0.72f;
         [Range(0.40f, 1.25f)] public float slotScale = 0.56f;
         public float gapBelowGlass = 0.28f;
 
@@ -44,13 +48,27 @@ namespace PuzzleGlass
         private void Awake()
         {
             Instance = this;
+            MigrateSlotLayoutIfNeeded();
             RebuildSlots();
         }
 
         private void OnEnable()
         {
             Instance = this;
+            MigrateSlotLayoutIfNeeded();
             RebuildSlots();
+        }
+
+        private void MigrateSlotLayoutIfNeeded()
+        {
+            // v2: '+' slotu kaldırıldı; tüm seviyelerde sabit 5 slot düzeni
+            if (slotLayoutVersion >= 2) return;
+            slotLayoutVersion = 2;
+            regularSlotCount = FixedSlotCount;
+            maxRegularSlotCount = FixedSlotCount;
+            showAddSlotButton = false;
+            slotSpacing = 0.72f;
+            slotScale = 0.56f;
         }
 
 #if UNITY_EDITOR
@@ -86,10 +104,12 @@ namespace PuzzleGlass
 
             EnsureMaterials();
 
-            // Dok Sistemi:
-            // [VIP (varsa)] + [Normal Aktif Slotlar] + [Tek Bir Dinamik '+' Slotu (sağda)]
+            // Dok Sistemi: Sabit 5 slot (+ butonu olmadan; isteğe bağlı VIP slotu)
+            regularSlotCount = FixedSlotCount;
+            maxRegularSlotCount = FixedSlotCount;
+            showAddSlotButton = false;
             int vipCount = enableVipSlot ? 1 : 0;
-            int plusCount = (showAddSlotButton && regularSlotCount < maxRegularSlotCount) ? 1 : 0;
+            int plusCount = 0;
             int totalSlots = vipCount + regularSlotCount + plusCount;
             if (totalSlots <= 0) return;
 
@@ -174,8 +194,8 @@ namespace PuzzleGlass
         private GameObject _trayFrameObj;
 
         /// <summary>
-        /// Slot sırasının arkasına 2. görseldeki gibi perspektifli yamuk (trapezoid), çok katmanlı ve
-        /// SDF tabanlı (pikselleşmesiz, pürüzsüz kenarlı) tema uyumlu 3D dok tablası oluşturur.
+        /// Slot sırasının arkasındaki ayrı dok plakası artık birleşik kademeli alt arka plan
+        /// (PuzzleGlassBackdrop) tarafından çizildiği için varsa eski SlotTrayFrame nesnesini temizler.
         /// </summary>
         private void BuildTrayFrame(int cellCount)
         {
@@ -184,33 +204,11 @@ namespace PuzzleGlass
                 if (Application.isPlaying) Destroy(_trayFrameObj); else DestroyImmediate(_trayFrameObj);
                 _trayFrameObj = null;
             }
-            if (cellCount <= 0 || SlotPlatform.UseIndividualFrames) return;
-
-            _trayFrameObj = new GameObject("SlotTrayFrame");
-            _trayFrameObj.transform.SetParent(transform, false);
-            float cell = Mathf.Max(0.1f, slotSpacing);
-            // Tabla slot satırına göre asimetrik: altta daha geniş pay (slotlar tablanın üst kısmında durur)
-            TrayTileVisuals.GetDockExtents(cell, out float dockTop, out float dockBottom);
-            float dockCenterY = (dockTop - dockBottom) * 0.5f;
-            _trayFrameObj.transform.localPosition = new Vector3(0f, dockCenterY - TrayTileVisuals.DockShaderSurfaceShift, 0.06f);
-
-            Material dockMat = TrayTileVisuals.GetConfiguredTrapezoidDockMaterial(cell, cellCount, out float quadW, out float quadH);
-
-            GameObject dockQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            dockQuad.name = "TrapezoidDockSDFQuad";
-            dockQuad.transform.SetParent(_trayFrameObj.transform, false);
-            dockQuad.transform.localPosition = Vector3.zero;
-            dockQuad.transform.localScale = new Vector3(quadW, quadH, 1f);
-            Collider col = dockQuad.GetComponent<Collider>();
-            if (col != null)
+            Transform leftover = transform.Find("SlotTrayFrame");
+            if (leftover != null)
             {
-                if (Application.isPlaying) Destroy(col); else DestroyImmediate(col);
+                if (Application.isPlaying) Destroy(leftover.gameObject); else DestroyImmediate(leftover.gameObject);
             }
-
-            var mr = dockQuad.GetComponent<MeshRenderer>();
-            mr.sharedMaterial = dockMat;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            mr.receiveShadows = false;
         }
 
         /// <summary>Çerçeve dahil slot sırasının yarı yüksekliği (merkezden üst kenara).</summary>
@@ -369,6 +367,66 @@ namespace PuzzleGlass
             TrayTileVisuals.GetDockExtents(Mathf.Max(0.1f, slotSpacing), out float top, out float bottom);
             maxY = cy + top * RowFitScale;
             minY = cy - (bottom + TrayTileVisuals.FrameLowerLip) * RowFitScale; // tablanın kalınlığı dahil
+            return true;
+        }
+
+        /// <summary>
+        /// Kademeli arka planın (___/‾‾‾\___) slot sırasını saran yükseltilmiş orta bölüm sınırlarını dünya uzayında döndürür.
+        /// </summary>
+        public bool TryGetRaisedBayWorldBounds(out float centerX, out float bayHalfW, out float bayTopY, out float wingY)
+        {
+            centerX = transform.position.x;
+            bayHalfW = 1.6f;
+            bayTopY = transform.position.y + 0.45f;
+            wingY = transform.position.y - 0.65f;
+
+            if (!slotsEnabled || !gameObject.activeInHierarchy || slots == null || slots.Count == 0)
+            {
+                return false;
+            }
+
+            float minX = float.MaxValue;
+            float maxX = float.MinValue;
+            bool anyActive = false;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var sl = slots[i];
+                if (sl == null || !sl.gameObject.activeInHierarchy) continue;
+                if (sl.transform.localScale.x <= 0.02f) continue;
+                float x = sl.transform.position.x;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                anyActive = true;
+            }
+
+            if (!anyActive)
+            {
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    var sl = slots[i];
+                    if (sl == null) continue;
+                    float x = sl.transform.position.x;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    anyActive = true;
+                }
+            }
+
+            if (!anyActive) return false;
+
+            float rowScale = RowFitScale;
+            float slotVis = TrayTileVisuals.SlotVisualSize(Mathf.Max(0.1f, slotSpacing));
+            // PuzzleSlotUI.shader spotHalf = 0.84 -> görünen slot yarı genişliği
+            float slotVisHalf = slotVis * 0.5f * 0.84f * rowScale;
+            float sidePad = 0.14f * rowScale;
+
+            centerX = (minX + maxX) * 0.5f;
+            bayHalfW = (maxX - minX) * 0.5f + slotVisHalf + sidePad;
+
+            float cy = transform.position.y;
+            TrayTileVisuals.GetDockExtents(Mathf.Max(0.1f, slotSpacing), out float top, out float bottom);
+            bayTopY = cy + top * rowScale;
+            wingY = cy - bottom * rowScale;
             return true;
         }
 

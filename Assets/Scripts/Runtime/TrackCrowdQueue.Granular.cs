@@ -139,9 +139,14 @@ namespace PuzzleGlass
         }
 
         private static bool StepGranular(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt,
-            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct)
+            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f)
         {
             IsMoving = false;
+            float beltSpeed = BeltSpeed * speedMul;
+            float maxSpeed = MaxSpeed * speedMul;
+            float maxBallSpeed = MaxBallSpeed * speedMul;
+            float driveGain = GranularDriveGain * speedMul;
+            float spreadStiff = GranularSpreadStiffness * speedMul * speedMul;
             EnsureCenterLookup(loop);
             EnsureCapacity(activeBalls.Count + 8);
             if (s_GTang.Length < s_All.Length)
@@ -237,12 +242,12 @@ namespace PuzzleGlass
                     }
                 }
 
-                float target = s_GOnRing[i] ? BeltSpeed : MaxSpeed * 0.6f;
+                float target = s_GOnRing[i] ? beltSpeed : maxSpeed * 0.6f;
                 if (!blocked) target *= 1f + GranularCatchUp;
 
                 Vector2 v = s_Vel[i];
                 float along = Vector2.Dot(v, t);
-                v += t * ((target - along) * GranularDriveGain * dt);
+                v += t * ((target - along) * driveGain * dt);
                 float lat = Vector2.Dot(v, nrm);
                 v -= nrm * (lat * Mathf.Min(1f, GranularLateralDamping * dt));
 
@@ -253,7 +258,7 @@ namespace PuzzleGlass
                     float freeHalf = Mathf.Max(0f, track.innerHalfWidth - r) * 0.30f;
                     float off = s_GOffset[i];
                     float excess = Mathf.Abs(off) - freeHalf;
-                    if (excess > 0f) v -= nrm * (Mathf.Sign(off) * excess * GranularSpreadStiffness * dt);
+                    if (excess > 0f) v -= nrm * (Mathf.Sign(off) * excess * spreadStiff * dt);
                 }
 
                 // İtişme: her topa kendi fazında yavaş değişen küçük bir ivme (granül kalabalığın canlılığı)
@@ -263,7 +268,7 @@ namespace PuzzleGlass
                                           Mathf.Cos(now * 5.3f + ph * 1.7f) + 0.5f * Mathf.Cos(now * 9.7f + ph));
                 v += jit * (GranularJitter * d * dt);
 
-                if (v.sqrMagnitude > MaxBallSpeed * MaxBallSpeed) v = v.normalized * MaxBallSpeed;
+                if (v.sqrMagnitude > maxBallSpeed * maxBallSpeed) v = v.normalized * maxBallSpeed;
                 s_Vel[i] = v;
                 s_Pos[i] = p + v * dt;
                 s_Corr[i] = Vector2.zero;
@@ -355,7 +360,7 @@ namespace PuzzleGlass
             {
                 var b = s_All[i];
                 Vector2 v = s_Vel[i];
-                if (v.sqrMagnitude > MaxBallSpeed * MaxBallSpeed) v = v.normalized * MaxBallSpeed;
+                if (v.sqrMagnitude > maxBallSpeed * maxBallSpeed) v = v.normalized * maxBallSpeed;
                 b.trackVel = v;
                 b.trackQueueSpeed = v.magnitude;
 
@@ -391,7 +396,7 @@ namespace PuzzleGlass
                     for (int i = 0; i < n && free; i++) if ((s_Pos[i] - spawn).sqrMagnitude < clearSq) free = false;
                     if (free && SpawnQueuedBall(container, spawn) != null)
                     {
-                        s_NextRoadSpawn = Time.time + 0.06f;
+                        s_NextRoadSpawn = Time.time + 0.06f / speedMul;
                         IsMoving = true;
                     }
                 }

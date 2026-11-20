@@ -15,6 +15,12 @@ Shader "PuzzleGlass/SoftBackdrop"
         _DotStrength ("Pattern Strength", Range(0, 0.25)) = 0.0
         _FloatingStrength ("Floating Cubes Strength", Range(0, 1.0)) = 0.0
         _Aspect      ("Viewport Aspect", Float)         = 0.5625
+        _LowerTopColor    ("Lower Ground Top", Color)         = (0.550, 0.550, 0.660, 1.0)
+        _LowerBotColor    ("Lower Ground Bottom", Color)      = (0.505, 0.508, 0.625, 1.0)
+        _LowerRimColor    ("Lower Contour Rim", Color)        = (0.765, 0.765, 0.865, 1.0)
+        _BackdropWorldRect ("Backdrop World (cx,cy,w,h)", Vector) = (0.0, 0.3, 5.0, 9.0)
+        _SplitDockParams  ("Split Dock (cx,topY,wingY,halfW)", Vector) = (0.0, 0.2, -1.0, 1.7)
+        _SplitEnabled     ("Use Stepped Split Ground", Float) = 0.0
     }
 
     SubShader
@@ -57,6 +63,12 @@ Shader "PuzzleGlass/SoftBackdrop"
                 float  _DotStrength;
                 float  _FloatingStrength;
                 float  _Aspect;
+                float4 _LowerTopColor;
+                float4 _LowerBotColor;
+                float4 _LowerRimColor;
+                float4 _BackdropWorldRect;
+                float4 _SplitDockParams;
+                float  _SplitEnabled;
             CBUFFER_END
 
             struct Attributes
@@ -92,6 +104,23 @@ Shader "PuzzleGlass/SoftBackdrop"
                 return 1.0 - smoothstep(-0.008, blur, sdf);
             }
 
+            float sdTrapezoidIQ(float2 p, float r1, float r2, float he)
+            {
+                float2 k1 = float2(r2, he);
+                float2 k2 = float2(r2 - r1, 2.0 * he);
+                p.x = abs(p.x);
+                float2 ca = float2(p.x - min(p.x, (p.y < 0.0) ? r1 : r2), abs(p.y) - he);
+                float2 cb = p - k1 + k2 * clamp(dot(k1 - p, k2) / max(1e-6, dot(k2, k2)), 0.0, 1.0);
+                float sgn = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;
+                return sgn * sqrt(min(dot(ca, ca), dot(cb, cb)));
+            }
+
+            float sminPoly(float a, float b, float k)
+            {
+                float h = clamp(0.5 + 0.5 * (b - a) / max(1e-4, k), 0.0, 1.0);
+                return lerp(b, a, h) - k * h * (1.0 - h);
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
                 float2 uv = IN.uv;
@@ -124,24 +153,88 @@ Shader "PuzzleGlass/SoftBackdrop"
                 float centerGlow = 1.0 - smoothstep(0.05, 0.56, radialDist);
                 wallCol = lerp(wallCol, _GlowColor.rgb, centerGlow * 0.55);
 
-                // Cool acrylic/stone studio tabletop behind the lower half of the grid tray
-                float horizonY = 0.225;
-                float floorMask = 1.0 - smoothstep(horizonY - 0.025, horizonY + 0.028, uv.y);
+                float3 col;
+                float lowerZoneMask = 0.0;
 
-                // Subtle studio cove crease right above the horizon for grounded 3D depth
-                float crease = exp(-pow((uv.y - (horizonY + 0.014)) / 0.045, 2.0));
-                wallCol *= lerp(1.0, 0.962, crease * (1.0 - floorMask));
+                if (_SplitEnabled > 0.5)
+                {
+                    float2 wPos = _BackdropWorldRect.xy + (uv - 0.5) * _BackdropWorldRect.zw;
+                    float cx       = _SplitDockParams.x;
+                    float bayTopY  = _SplitDockParams.y;
+                    float wingY    = _SplitDockParams.z;
+                    float bayHalfW = max(0.30, _SplitDockParams.w);
 
-                // Cool tabletop with gentle foreground brightening and wide soft tray contact shade
-                float tableDepthT = saturate((horizonY - uv.y) / max(0.05, horizonY));
-                float3 tableHighlight = lerp(_BotColor.rgb, _GlowColor.rgb, 0.34);
-                float3 tableCol = lerp(_BotColor.rgb, tableHighlight, smoothstep(0.10, 0.88, tableDepthT) * 0.45);
+                    float bayH = max(0.20, bayTopY - wingY);
+                    float topRad = min(0.22, bayH * 0.34);
+                    float baseFillet = min(0.15, bayH * 0.24);
+                    float slopeFlare = 0.11;
 
-                float2 tableShadowOffset = float2((uv.x - 0.5) * aspect * 0.72, (uv.y - 0.145) * 2.2);
-                float contactShadow = exp(-dot(tableShadowOffset, tableShadowOffset) * 14.0);
-                tableCol *= lerp(1.0, 0.925, contactShadow * floorMask);
+                    // Trapezoid spans [wingY - topRad * 1.5, bayTopY] so its bottom stays hidden below wingY
+                    float baySpan = bayH + topRad * 1.5;
+                    float he = baySpan * 0.5;
+                    float boxCy = bayTopY - he;
+                    float tWing = bayH / max(0.05, baySpan);
+                    float rTop = bayHalfW;
+                    float rBot = rTop + slopeFlare / max(0.25, tWing);
 
-                float3 col = lerp(wallCol, tableCol, floorMask);
+                    float dWing = wPos.y - wingY;
+                    float dBay = sdTrapezoidIQ(
+                        wPos - float2(cx, boxCy),
+                        max(0.05, rBot - topRad),
+                        max(0.05, rTop - topRad),
+                        max(0.05, he - topRad)) - topRad;
+
+                    float dSplit = sminPoly(dWing, dBay, baseFillet);
+                    float aa = max(fwidth(dSplit) * 1.15, 0.0025);
+
+                    // Soft ambient contact shadow on the light upper wall just above the raised contour
+                    float wallAO = exp(-max(0.0, dSplit) / 0.038) * step(0.0, dSplit);
+                    wallCol *= lerp(1.0, 0.945, wallAO);
+
+                    // Lower slate-grey ground (matches slot dock tone, covers slot bay + lower board area)
+                    float lowerDepthT = saturate((bayTopY - wPos.y) / max(1.0, _BackdropWorldRect.w * 0.72));
+                    float3 lowerCol = lerp(_LowerTopColor.rgb, _LowerBotColor.rgb, smoothstep(0.08, 0.95, lowerDepthT));
+                    float2 lowerCenter = float2((wPos.x - cx) * 0.45, (wPos.y - (wingY - 1.4)) * 0.38);
+                    float lowerGlow = exp(-dot(lowerCenter, lowerCenter) * 1.15);
+                    lowerCol = lerp(lowerCol, lowerCol * 1.10 + float3(0.012, 0.012, 0.018), lowerGlow * 0.55);
+
+                    // Clean bevelled border rim along the entire ___/‾‾‾\___ contour
+                    lowerZoneMask = 1.0 - smoothstep(-aa, aa, dSplit);
+                    const float rimW = 0.032;
+                    float rimMask = (1.0 - smoothstep(rimW - aa, rimW + aa, -dSplit)) * lowerZoneMask;
+                    float rimT = saturate(1.0 - max(0.0, -dSplit) / rimW);
+                    float3 rimCol = lerp(_LowerRimColor.rgb * 0.76, _LowerRimColor.rgb, rimT);
+                    lowerCol = lerp(lowerCol, rimCol, rimMask);
+
+                    // Subtle crisp inner seam groove & soft inner drop shadow below the rim
+                    float innerGroove = exp(-pow((-dSplit - rimW) / 0.007, 2.0)) * lowerZoneMask;
+                    lowerCol = lerp(lowerCol, lowerCol * 0.62, innerGroove * 0.42);
+                    float innerAO = (1.0 - smoothstep(rimW, rimW + 0.085, -dSplit)) * (1.0 - rimMask) * lowerZoneMask;
+                    lowerCol = lerp(lowerCol, lowerCol * 0.91, innerAO * 0.65);
+
+                    col = lerp(wallCol, lowerCol, lowerZoneMask);
+                }
+                else
+                {
+                    // Cool acrylic/stone studio tabletop behind the lower half of the grid tray
+                    float horizonY = 0.225;
+                    float floorMask = 1.0 - smoothstep(horizonY - 0.025, horizonY + 0.028, uv.y);
+
+                    // Subtle studio cove crease right above the horizon for grounded 3D depth
+                    float crease = exp(-pow((uv.y - (horizonY + 0.014)) / 0.045, 2.0));
+                    wallCol *= lerp(1.0, 0.962, crease * (1.0 - floorMask));
+
+                    // Cool tabletop with gentle foreground brightening and wide soft tray contact shade
+                    float tableDepthT = saturate((horizonY - uv.y) / max(0.05, horizonY));
+                    float3 tableHighlight = lerp(_BotColor.rgb, _GlowColor.rgb, 0.34);
+                    float3 tableCol = lerp(_BotColor.rgb, tableHighlight, smoothstep(0.10, 0.88, tableDepthT) * 0.45);
+
+                    float2 tableShadowOffset = float2((uv.x - 0.5) * aspect * 0.72, (uv.y - 0.145) * 2.2);
+                    float contactShadow = exp(-dot(tableShadowOffset, tableShadowOffset) * 14.0);
+                    tableCol *= lerp(1.0, 0.925, contactShadow * floorMask);
+
+                    col = lerp(wallCol, tableCol, floorMask);
+                }
 
                 // Dreamy out-of-focus 3D pastel cubes clearly placed inside visible left/right outer margins
                 if (_FloatingStrength > 0.005)
