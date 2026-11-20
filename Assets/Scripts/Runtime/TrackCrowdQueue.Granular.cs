@@ -59,7 +59,29 @@ namespace PuzzleGlass
             var track = loop.source;
             float d = track.ballDiameter;
             Vector2 rel = ball.trackQueueLocalPos - track.exitPoint;
-            return Mathf.Abs(rel.x) <= d * 1.6f && Mathf.Abs(rel.y) <= track.innerHalfWidth + d * 0.6f;
+            if (Mathf.Abs(rel.x) > d * 1.6f || Mathf.Abs(rel.y) > track.innerHalfWidth + d * 0.6f) return false;
+            // Ağız aşağıda: topla ağız arasında (altında) onu kapatan başka bir top varsa çıkamaz.
+            // Aksi halde üst sıradaki top, alttaki farklı renkli topun üstünden atlayıp çıkıyordu.
+            return !IsBlockedTowardExit(ball, d);
+        }
+
+        private static bool IsBlockedTowardExit(BallPhysicsController ball, float d)
+        {
+            var pool = BallObjectPool.Instance;
+            if (pool == null || pool.ActiveBalls == null) return false;
+            var balls = pool.ActiveBalls;
+            Vector2 p = ball.trackQueueLocalPos;
+            float laneHalf = d * 0.80f;   // yatayda bu kadar örtüşen top yolu kapatır
+            float minDrop = d * 0.35f;    // en az bu kadar aşağıdaysa "altında" sayılır
+            for (int i = 0; i < balls.Count; i++)
+            {
+                var o = balls[i];
+                if (o == null || o == ball || o.state != BallState.InContainer || !o.trackQueuePosValid || o.trackLoopSlot < 0) continue;
+                Vector2 q = o.trackQueueLocalPos;
+                float drop = p.y - q.y;
+                if (drop >= minDrop && drop <= d * 2.5f && Mathf.Abs(q.x - p.x) < laneHalf) return true;
+            }
+            return false;
         }
 
         /// <summary>Halka orta çizgisinin en yakın noktası için hücre tablosu (level başına bir kez).</summary>
