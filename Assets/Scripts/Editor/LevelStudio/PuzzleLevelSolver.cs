@@ -192,7 +192,8 @@ namespace PuzzleGlass.Editor.Studio
                 }
             }
 
-            // Renk dengesi: camda başlayan top + dolu kutu stoğu = boş (toplayıcı) kutu yuvası
+            // Renk dengesi: camda başlayan top + dolu kutu stoğu = tüm kutuların toplam toplayıcı yuvası
+            // (Dolu kutular içindekileri cama aktardıktan sonra yok olmaz, kendi rengindeki topları da toplar.)
             var glass = new Dictionary<PuzzleColor, int>();
             var supply = new Dictionary<PuzzleColor, int>();
             var sockets = new Dictionary<PuzzleColor, int>();
@@ -209,10 +210,9 @@ namespace PuzzleGlass.Editor.Studio
             {
                 if (m == null) continue;
                 int cnt = Mathf.Max(1, m.count);
+                sockets[m.color] = (sockets.TryGetValue(m.color, out int v) ? v : 0) + cnt;
                 if (m.isFilledBox)
-                    supply[m.filledBallColor] = (supply.TryGetValue(m.filledBallColor, out int v) ? v : 0) + cnt;
-                else
-                    sockets[m.color] = (sockets.TryGetValue(m.color, out int v) ? v : 0) + cnt;
+                    supply[m.filledBallColor] = (supply.TryGetValue(m.filledBallColor, out int sv) ? sv : 0) + cnt;
             }
             var allColors = new HashSet<PuzzleColor>(glass.Keys);
             allColors.UnionWith(supply.Keys);
@@ -227,8 +227,8 @@ namespace PuzzleGlass.Editor.Studio
                     list.Add(new LevelFinding
                     {
                         severity = FindingSeverity.Critical,
-                        text = $"{ColorName(c)}: dolu kutularda {sup} top var ama boş kutularda toplam {sc} yuva var.",
-                        why = "Dolu kutuların içindeki topları toplayabilecek kadar aynı renkte boş (toplayıcı) kutu olmalı."
+                        text = $"{ColorName(c)}: dolu kutularda {sup} top var ama toplam toplayıcı yuva {sc}.",
+                        why = "Dolu kutuların içindeki topları toplayabilecek kadar aynı renkte kutu yuvası olmalı."
                     });
                 }
                 else if (gc + sup != sc)
@@ -236,10 +236,10 @@ namespace PuzzleGlass.Editor.Studio
                     list.Add(new LevelFinding
                     {
                         severity = FindingSeverity.Critical,
-                        text = $"{ColorName(c)}: camda {gc} + dolu kutuda {sup} = {gc + sup} top var, boş kutularda {sc} yuva.",
+                        text = $"{ColorName(c)}: camda {gc} + dolu kutuda {sup} = {gc + sup} top var, kutularda {sc} yuva.",
                         why = lvl.useManualBallLayout
-                            ? "Her renk için (camdaki top + dolu kutu stoğu) toplamı boş kutu yuvalarına eşit olmalı."
-                            : "Her renk için (camdaki top + dolu kutu stoğu) toplamı boş kutu yuvalarına eşit olmalı. Cam sırasını kutulardan yeniden kurabilirsin."
+                            ? "Her renk için (camdaki top + dolu kutu stoğu) toplamı kutu yuvalarına eşit olmalı."
+                            : "Her renk için (camdaki top + dolu kutu stoğu) toplamı kutu yuvalarına eşit olmalı. Cam sırasını kutulardan yeniden kurabilirsin."
                     });
                 }
             }
@@ -318,7 +318,7 @@ namespace PuzzleGlass.Editor.Studio
 
             if (lvl.useBallFeedTubes)
             {
-                int totalBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetTotalBallCount();
+                int totalBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetGlassStartBallCount();
                 int eff = BallFeedTubeUtility.GetEffectiveContainerLimit(lvl.feedTubeContainerLimit, totalBalls);
                 if (totalBalls > 1 && eff >= totalBalls)
                 {
@@ -685,6 +685,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             public Vector2Int[] anchors;
             public bool[] removed;
+            public bool[] emptied;
             public int[] fill;
             public int[] taken;
             public int[] supplied;
@@ -695,6 +696,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 anchors = (Vector2Int[])anchors.Clone(),
                 removed = (bool[])removed.Clone(),
+                emptied = emptied != null ? (bool[])emptied.Clone() : null,
                 inSlot = inSlot != null ? (bool[])inSlot.Clone() : null,
                 fill = (int[])fill.Clone(),
                 taken = (int[])taken.Clone(),
@@ -723,7 +725,7 @@ namespace PuzzleGlass.Editor.Studio
             for (int i = 0; i < s.anchors.Length; i++)
             {
                 if (s.removed[i]) sb.Append('x');
-                else if (s.inSlot != null && s.inSlot[i]) sb.Append('s').Append(s.fill[i]);
+                else if (s.inSlot != null && s.inSlot[i]) sb.Append(s.emptied != null && s.emptied[i] ? 'e' : 's').Append(s.fill[i]);
                 else sb.Append(s.anchors[i].x).Append(',').Append(s.anchors[i].y).Append(':').Append(s.fill[i]);
                 sb.Append(';');
             }
@@ -926,16 +928,15 @@ namespace PuzzleGlass.Editor.Studio
                         }
                     }
 
-                    if (blocks[i].isFilledBox)
+                    if (blocks[i].isFilledBox && (s.emptied == null || !s.emptied[i]))
                     {
                         if (slotMode && s.inSlot[i])
                         {
                             if (s.supplied == null) s.supplied = new int[16];
+                            if (s.emptied == null) s.emptied = new bool[blocks.Length];
                             s.supplied[(int)blocks[i].filledBallColor] += blocks[i].count;
-                            s.fill[i] = blocks[i].count;
-                            s.removed[i] = true;
+                            s.emptied[i] = true;
                             changed = true;
-                            onStepCompleted?.Invoke(ballsBefore, boxesBefore);
                         }
                         continue;
                     }

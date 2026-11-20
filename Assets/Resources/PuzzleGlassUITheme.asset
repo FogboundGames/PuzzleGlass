@@ -1,0 +1,46 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6dbe464ee27ae85448953fa6c45253fd, type: 3}
+  m_Name: PuzzleGlassUITheme
+  m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassUITheme
+  buttonViolet: {fileID: 4717104774431673990, guid: 2204c5120d209e24b8d8473101c0670f, type: 3}
+  buttonBlue: {fileID: -8111322212487550922, guid: 4edd415ab2cd6784ea5e7905122a703d, type: 3}
+  buttonGreen: {fileID: -6029991969101318831, guid: c77a20011fee4694cb75577a7509ffda, type: 3}
+  buttonRed: {fileID: 5014669083926033807, guid: f05ec7f8583bfa3468fb8958e87e24d9, type: 3}
+  smallSquareViolet: {fileID: 3624760936692437016, guid: 931f6455943555649a61ed7f1c76cbf6, type: 3}
+  smallSquareBlue: {fileID: 7919194353434859991, guid: b35fcaa46fa9f3e49b71c103f69df698, type: 3}
+  roundedWhite80: {fileID: 4211293783942383924, guid: a64f98d7a00501442ae40845562f1c20, type: 3}
+  menuDarkPanel: {fileID: -7020922751645015488, guid: f0b4dc9b8fe390b4597ba9c379657d44, type: 3}
+  whitePanelViolet: {fileID: 4132817045525890051, guid: 8dc0d81c32fd06241b092585c45b6993, type: 3}
+  darkPanelViolet: {fileID: 6548843039894869275, guid: 2423bc8beede9344d98c41e18af1a299, type: 3}
+  iconSoundOn: {fileID: 8837445301905419745, guid: e66426b52acd2a948999e48ec901d97b, type: 3}
+  iconSoundOff: {fileID: 2443078639938028321, guid: 623df017cd9375c49946605e46d06755, type: 3}
+  iconRestart: {fileID: -1819701690166057918, guid: c1cc38a044718ba4ba4bfa2e1538b4d8, type: 3}
+  iconLeft: {fileID: -1162935304264728111, guid: bdd455275ad5e0d4ca4bdae7242a35c5, type: 3}
+  iconRight: {fileID: -6219010595072361576, guid: aa74ae4519ce50f408e46eb517d1ce34, type: 3}
+  iconClose: {fileID: -4497578210200758736, guid: 578fc686cfcf7b848b77f202915a9e02, type: 3}
+  iconCheck: {fileID: 170680371954149730, guid: cfd28c4685f7c504c8541bb8903d4ec8, type: 3}
+  iconHandClick: {fileID: -8566248467332192918, guid: 2f4af7272a8a2d84e9c9495b43d4b057, type: 3}
+  iconSnow: {fileID: -4474710661713538717, guid: 4ca4131db50a5f042aab2fb63aa1a2c4, type: 3}
+  iconLock: {fileID: -4651609163538782172, guid: 8475a027dba8b0f4aabc4ddb1462b53c, type: 3}
+  iconKey: {fileID: -4120535925080400364, guid: decd9f9d258a2a846af4921e94195170, type: 3}
+  iconGiftBox: {fileID: -8129519003703414651, guid: 828cca5c37b17bf4fb0115a66ea7ffb6, type: 3}
+  iconTrophy: {fileID: 8926966136675838141, guid: 8bcb45200576a2749b900ea43bc98bbd, type: 3}
+  iconStar: {fileID: -6757650509867252992, guid: 5823f577f85850f4ead3867ad470e293, type: 3}
+  iconStarHollow: {fileID: 11430341629358306, guid: 18a6346ad00e33e449b41c4e27c46ff0, type: 3}
+  iconWarning: {fileID: -1475592282209771893, guid: 08418683700dc1349a59ba1c9bb4ac9a, type: 3}
+  iconInfo: {fileID: 77246056025122526, guid: 458eadb5d498dba4f8a494ff07209f5a, type: 3}
+  coloredTrophy: {fileID: -2138534889620764463, guid: 3522f1dff3fd3564c98cbbb56b303b6b, type: 3}
+  coloredStar: {fileID: 5199979006384268662, guid: 174cd13a4c04d4944a6e414d9e3987f4, type: 3}
+  coloredGoldLock: {fileID: 8953939582977333722, guid: 38ddff12778ca354e99a1f645644de56, type: 3}
+  coloredGoldKey: {fileID: 4143605862378377139, guid: 76a0ae3b6739b9d49b8afe591137c19d, type: 3}
+  coloredBox: {fileID: 4727633781103762509, guid: 45ab094653c66ba40a2ca337adf32ff4, type: 3}

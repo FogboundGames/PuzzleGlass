@@ -512,22 +512,69 @@ namespace PuzzleGlass
         public int GetTotalBallCount()
         {
             if (monsters == null) return 0;
-            int collectorSum = 0;
-            int allSum = 0;
-            bool hasCollector = false;
+            int sum = 0;
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                var m = monsters[i];
+                if (m != null) sum += Mathf.Max(1, m.count);
+            }
+            return sum;
+        }
+
+        public bool HasAnyFilledBox()
+        {
+            if (monsters == null) return false;
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                if (monsters[i] != null && monsters[i].isFilledBox) return true;
+            }
+            return false;
+        }
+
+        public int GetFilledBoxBallCount()
+        {
+            if (monsters == null) return 0;
+            int sum = 0;
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                var m = monsters[i];
+                if (m != null && m.isFilledBox) sum += Mathf.Max(1, m.count);
+            }
+            return sum;
+        }
+
+        public int GetExpectedGlassBallCount()
+        {
+            var remaining = GetRemainingCollectorCapacityByColor(-1);
+            int sum = 0;
+            foreach (var kv in remaining)
+            {
+                if (kv.Value > 0) sum += kv.Value;
+            }
+            return sum;
+        }
+
+        /// <summary>
+        /// Renk bazında tüm kutuların toplayıcı yuvalarından diğer dolu kutuların stoğunu düşerek kalan kapasiteyi döndürür.
+        /// Dolu kutular da içindekileri boşalttıktan sonra kendi renklerini topladığı için her kutu kendi rengine yuva ekler.
+        /// excludeMonsterIndex &gt;= 0 verilirse o kutunun yalnızca dolu-kutu stoğu hariç tutulur.
+        /// </summary>
+        public Dictionary<PuzzleColor, int> GetRemainingCollectorCapacityByColor(int excludeMonsterIndex = -1)
+        {
+            var cap = new Dictionary<PuzzleColor, int>();
+            if (monsters == null) return cap;
             for (int i = 0; i < monsters.Count; i++)
             {
                 var m = monsters[i];
                 if (m == null) continue;
                 int c = Mathf.Max(1, m.count);
-                allSum += c;
-                if (!m.isFilledBox)
+                cap[m.color] = (cap.TryGetValue(m.color, out int cur) ? cur : 0) + c;
+                if (m.isFilledBox && i != excludeMonsterIndex)
                 {
-                    hasCollector = true;
-                    collectorSum += c;
+                    cap[m.filledBallColor] = (cap.TryGetValue(m.filledBallColor, out int curS) ? curS : 0) - c;
                 }
             }
-            return hasCollector ? collectorSum : allSum;
+            return cap;
         }
 
         public int GetGlassStartBallCount()
@@ -661,20 +708,18 @@ namespace PuzzleGlass
 
             if (hasAnyFilled)
             {
-                // Dolu kutular varsa: camda başlayan top sayısı = boş kutu talebi - dolu kutu stoğu
+                // Dolu kutular önce içindekileri cama aktarır, sonra kendi rengindeki topları toplar:
+                // camda başlayan top sayısı = tüm kutuların talebi - dolu kutu stoğu
                 Dictionary<PuzzleColor, int> expectedGlass = new Dictionary<PuzzleColor, int>();
                 for (int i = 0; i < boxes.Count; i++)
                 {
                     var b = boxes[i];
                     if (b == null) return false;
                     int cnt = Mathf.Max(1, b.count);
-                    if (!b.isFilledBox)
+                    expectedGlass[b.color] = expectedGlass.TryGetValue(b.color, out int cur) ? cur + cnt : cnt;
+                    if (b.isFilledBox)
                     {
-                        expectedGlass[b.color] = expectedGlass.TryGetValue(b.color, out int cur) ? cur + cnt : cnt;
-                    }
-                    else
-                    {
-                        expectedGlass[b.filledBallColor] = (expectedGlass.TryGetValue(b.filledBallColor, out int cur) ? cur : 0) - cnt;
+                        expectedGlass[b.filledBallColor] = (expectedGlass.TryGetValue(b.filledBallColor, out int curS) ? curS : 0) - cnt;
                     }
                 }
                 foreach (var kv in expectedGlass)
@@ -759,13 +804,13 @@ namespace PuzzleGlass
                 }
             }
 
-            // Boş kutuların (toplayıcıların) gruplarını renk sırasıyla oluştur ve dolu kutu stoğunu camdan düş
+            // Tüm kutuların (dolu kutular dahil) kendi renk gruplarını oluştur ve dolu kutu stoğunu camdan düş
             Dictionary<PuzzleColor, Queue<LevelMonsterEntry>> buckets = new Dictionary<PuzzleColor, Queue<LevelMonsterEntry>>();
             List<PuzzleColor> order = new List<PuzzleColor>();
             for (int i = 0; i < monsters.Count; i++)
             {
                 var m = monsters[i];
-                if (m == null || m.isFilledBox) continue;
+                if (m == null) continue;
                 int cnt = m.count;
                 PuzzleColor c = m.color;
                 if (supplyByColor.TryGetValue(c, out int remSupply) && remSupply > 0)

@@ -589,7 +589,7 @@ namespace PuzzleGlass.Editor.Studio
 
         private static void ConfigureFeedTubes(PuzzleGlassLevelData lvl, Options opt, System.Random rng)
         {
-            int total = lvl.GetTotalBallCount();
+            int total = lvl.GetGlassStartBallCount();
             if (total < 10) return;
 
             bool both = RollChance(opt.feedTubeBothSidesPct, rng);

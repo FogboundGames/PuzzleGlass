@@ -365,13 +365,19 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 // =========================================================================
                 float2 p = (IN.uv - 0.5) * 2.0;
 
-                // Düz "park yeri" slotu (Bus Traffic Fever tarzı): zeminden biraz koyu dolgu + ince açık kenar
+                // Düz "park yeri" slotu: zeminden biraz koyu dolgu + ince açık kenar + yumuşak dış/iç fake shadow
                 float2 spotHalf = float2(0.84, 0.84);
                 float  spotRad  = 0.30;
                 float  dSpot    = sdRoundBox(p, spotHalf, spotRad);
                 float  aa       = max(fwidth(dSpot) * 1.15, 0.004);
                 float  wellMask = 1.0 - smoothstep(-aa, aa, dSpot);       // slotun tamamı
-                float  softOuterShadow = 0.0;
+
+                // Dış fake drop + temas gölgesi (quad sınırına taşmadan pürüzsüz sönümlenir)
+                float  dDrop           = sdRoundBox(p + float2(0.0, 0.042), spotHalf + float2(0.012, 0.012), spotRad + 0.012);
+                float  dropAlpha       = (1.0 - smoothstep(-0.01, 0.115, dDrop)) * 0.36;
+                float  contactAlpha    = exp(-max(0.0, dSpot) / 0.032) * 0.24;
+                float  edgeFade        = 1.0 - smoothstep(0.91, 1.0, max(abs(p.x), abs(p.y)));
+                float  softOuterShadow = saturate(max(dropAlpha, contactAlpha)) * edgeFade;
                 const float borderW = 0.075;
                 float  dInner    = dSpot + borderW;
                 float  innerMask = (1.0 - smoothstep(-aa, aa, dInner)) * wellMask; // kenarın içi
@@ -405,9 +411,11 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 fillCol   = lerp(fillCol, float3(0.27, 0.27, 0.48), hi * 0.7);
                 borderCol = lerp(borderCol, float3(0.83, 0.83, 1.00), hi * 0.6);
 
-                // Kenarın hemen içinde üstten hafif gömülme gölgesi
-                float recessAO = exp(-max(0.0, -dInner) / 0.10) * (0.35 + 0.65 * yN);
-                fillCol = lerp(fillCol, fillCol * 0.82, recessAO * 0.55);
+                // Kenar ve köşelerin hemen içinde üstten aşağı yumuşak gömülme gölgesi
+                float dInnerSh  = sdRoundBox(p + float2(0.0, 0.055), spotHalf - borderW, max(0.05, spotRad - borderW));
+                float innerDrop = smoothstep(-0.16, 0.02, dInnerSh);
+                float recessAO  = exp(-max(0.0, -dInner) / 0.13) * (0.45 + 0.55 * yN);
+                fillCol = lerp(fillCol, fillCol * 0.66, saturate(recessAO * 0.62 + innerDrop * 0.35));
 
                 float3 slotRGB = lerp(borderCol, fillCol, innerMask);
 
@@ -444,7 +452,7 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 float finalAlpha = saturate(wellMask + softOuterShadow * (1.0 - wellMask)) * IN.color.a;
                 if (finalAlpha < 0.002) discard;
 
-                float3 finalRGB = lerp(float3(0.07, 0.06, 0.20), slotRGB * IN.color.rgb, wellMask);
+                float3 finalRGB = lerp(float3(0.11, 0.11, 0.24), slotRGB * IN.color.rgb, wellMask);
                 return half4(finalRGB, finalAlpha);
             }
             ENDHLSL

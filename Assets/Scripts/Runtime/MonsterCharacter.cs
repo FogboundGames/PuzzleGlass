@@ -1815,8 +1815,47 @@ namespace PuzzleGlass
             }
 
             PlaySmoothGulpWave();
-            DecrementCounterAndCheckComplete();
+            if (isFilledBox)
+            {
+                remainingCount = Mathf.Max(0, remainingCount - 1);
+                UpdateBadgeText();
+                AnimateCollectionFillProgress();
+                if (remainingCount <= 0)
+                {
+                    TransitionFilledSupplyToCollector();
+                }
+            }
+            else
+            {
+                DecrementCounterAndCheckComplete();
+            }
             return startPos;
+        }
+
+        private void TransitionFilledSupplyToCollector()
+        {
+            isFilledBox = false;
+            remainingCount = Mathf.Max(1, initialCount);
+            _subParticleCounter = 0;
+            _nextIncomingSocketCounter = 0;
+            _settledSocketCount = 0;
+            if (socketBalls != null)
+            {
+                for (int i = 0; i < socketBalls.Length; i++)
+                {
+                    if (socketBalls[i] != null) socketBalls[i].SetActive(false);
+                    if (_pitSim != null && i < _pitSim.Length) _pitSim[i].active = false;
+                }
+            }
+            _pitAnyActive = false;
+            RefreshSocketBallColors();
+            UpdateBadgeText();
+            _fillAmountTween?.Kill();
+            _mpbFillAmount = 0f;
+            _mpbFillWave = 0f;
+            ApplyBoxPropertyBlock();
+            PlaySmoothGulpWave();
+            BallCollectionController.Instance?.OnMonsterPlacedInSlot(this);
         }
 
         private void AnimateCollectionFillProgress()

@@ -60,7 +60,7 @@ namespace PuzzleGlass.Editor.Studio
             float wallThick = (lvl != null && lvl.useCustomGlassShape && lvl.trackWallThickness > 0.01f) ? lvl.trackWallThickness : 0.082f;
 
             List<LevelMonsterEntry> groups = lvl?.bottomToTopGroups;
-            if ((groups == null || groups.Count == 0) && lvl?.monsters != null && lvl.monsters.Count > 0)
+            if ((groups == null || groups.Count == 0) && lvl != null && !lvl.HasAnyFilledBox() && lvl.monsters != null && lvl.monsters.Count > 0)
                 groups = lvl.monsters;
 
             GlassTrackLayout.BuildForLevel(

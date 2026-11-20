@@ -777,12 +777,13 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Dolu kutudan çıkan bir topu slot üzerindeki kutudan fırlatıp camın içine yerleştirir.
+        /// Dolu kutudan çıkan bir topu slot üzerindeki kutudan alt giriş ağzına getirip camın içine sokar.
         /// </summary>
         public void LaunchIntoContainer(
             Vector3 startWorldPos,
             Vector3 startWorldScale,
             ShapedGlassContainer container,
+            Vector3 mouthWorldPos,
             Vector3 targetWorldPos,
             bool isTrackMode,
             Vector2 trackFlowDir)
@@ -807,17 +808,29 @@ namespace PuzzleGlass
             transform.localScale = startWorldScale;
             SetFlightTrailActive(true);
 
+            Vector3 entryPos = new Vector3(mouthWorldPos.x, mouthWorldPos.y - 0.045f, -0.14f);
+            Vector3 throatPos = new Vector3(mouthWorldPos.x, mouthWorldPos.y + 0.025f, -0.10f);
             Vector3 landPos = new Vector3(targetWorldPos.x, targetWorldPos.y, -0.10f);
-            float duration = Mathf.Clamp(Vector3.Distance(transform.position, landPos) * 0.24f, 0.28f, 0.46f);
+
+            float leg1Dist = Vector3.Distance(transform.position, entryPos);
+            float leg2Dist = Vector3.Distance(entryPos, landPos);
+            float leg1Dur = Mathf.Clamp(leg1Dist * 0.20f, 0.16f, 0.30f);
+            float leg2Dur = Mathf.Clamp(leg2Dist * 0.32f, 0.10f, 0.18f);
             if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive)
             {
-                duration *= 0.65f;
+                leg1Dur *= 0.65f;
+                leg2Dur *= 0.65f;
             }
 
+            // 1. Aşama: Kutudan alt giriş ağzının önüne uç
+            // 2. Aşama: Doğrudan giriş boğazından yukarı geçip camın içine yerleş
             Sequence flightSeq = DOTween.Sequence();
-            flightSeq.Join(transform.DOJump(landPos, jumpPower: 0.24f, numJumps: 1, duration: duration).SetEase(Ease.OutQuad));
-            flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
-            flightSeq.Join(transform.DOScale(_originalScale, duration * 0.80f).SetEase(Ease.OutQuad));
+            flightSeq.Append(transform.DOJump(entryPos, jumpPower: 0.09f, numJumps: 1, duration: leg1Dur).SetEase(Ease.InOutQuad));
+            flightSeq.Join(transform.DORotate(new Vector3(140f, 0f, 60f), leg1Dur, RotateMode.FastBeyond360));
+            flightSeq.Join(transform.DOScale(_originalScale * 0.96f, leg1Dur).SetEase(Ease.OutQuad));
+            flightSeq.Append(transform.DOPath(new[] { throatPos, landPos }, leg2Dur, PathType.CatmullRom).SetEase(Ease.OutQuad));
+            flightSeq.Join(transform.DORotate(new Vector3(220f, 0f, 120f), leg2Dur, RotateMode.FastBeyond360));
+            flightSeq.Join(transform.DOScale(_originalScale, leg2Dur).SetEase(Ease.OutQuad));
             flightSeq.SetLink(gameObject, LinkBehaviour.KillOnDisable);
 
             flightSeq.OnComplete(() =>
@@ -849,7 +862,7 @@ namespace PuzzleGlass
                     }
                     else
                     {
-                        rb.linearVelocity = new Vector3(UnityEngine.Random.Range(-0.22f, 0.22f), -0.60f, 0f);
+                        rb.linearVelocity = new Vector3(UnityEngine.Random.Range(-0.24f, 0.24f), 0.90f, 0f);
                     }
                 }
 

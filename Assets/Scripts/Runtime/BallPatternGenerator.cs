@@ -567,6 +567,7 @@ namespace PuzzleGlass
                     foreach (var b in manual.balls) list.Add((b.localPos, b.color));
                     return;
                 }
+                bool hasFilledBoxes = gm.currentLevel.HasAnyFilledBox();
                 if (gm.currentLevel.bottomToTopGroups != null && gm.currentLevel.bottomToTopGroups.Count > 0)
                 {
                     for (int i = 0; i < gm.currentLevel.bottomToTopGroups.Count; i++)
@@ -575,7 +576,7 @@ namespace PuzzleGlass
                         if (g != null) groups.Add(new LevelMonsterEntry(g.color, Mathf.Max(1, g.count)));
                     }
                 }
-                else if (gm.currentLevel.bottomToTopTriplets != null && gm.currentLevel.bottomToTopTriplets.Count > 0)
+                else if (!hasFilledBoxes && gm.currentLevel.bottomToTopTriplets != null && gm.currentLevel.bottomToTopTriplets.Count > 0)
                 {
                     int bpb = Mathf.Clamp(gm.currentLevel.ballsPerBox, 1, MonsterCharacter.MaxVisualSockets);
                     for (int i = 0; i < gm.currentLevel.bottomToTopTriplets.Count; i++)
@@ -585,7 +586,8 @@ namespace PuzzleGlass
                 }
             }
 
-            if (groups.Count == 0 && goals != null && goals.Count > 0)
+            bool skipFallbackForFilled = gm != null && gm.currentLevel != null && gm.currentLevel.HasAnyFilledBox();
+            if (groups.Count == 0 && !skipFallbackForFilled && goals != null && goals.Count > 0)
             {
                 for (int i = 0; i < goals.Count; i++)
                 {
@@ -596,7 +598,7 @@ namespace PuzzleGlass
             }
 
             // Default fallback: 9 boxes x 3 balls = 27 balls
-            if (groups.Count == 0)
+            if (groups.Count == 0 && !skipFallbackForFilled)
             {
                 PuzzleColor[] defCols = { PuzzleColor.Blue, PuzzleColor.Yellow, PuzzleColor.Red };
                 for (int r = 0; r < 3; r++)

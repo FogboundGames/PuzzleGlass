@@ -142,13 +142,14 @@ namespace PuzzleGlass
 
                 if (_supplyNextLaunchTime.TryGetValue(key, out float nextTime) && now < nextTime) continue;
 
+                PuzzleColor launchColor = m.filledBallColor;
                 Vector3 startPos = m.PopOneFilledSupplyBallVisual(out Vector3 startScale);
-                Vector3 targetWorld = ComputeSupplyLandingWorldPos(container, ballRadius, out bool isTrack, out Vector2 flowDir);
+                Vector3 targetWorld = ComputeSupplyLandingWorldPos(container, ballRadius, out Vector3 mouthWorld, out bool isTrack, out Vector2 flowDir);
 
-                var ball = BallObjectPool.Instance.SpawnBall(m.filledBallColor, startPos, ballRadius);
+                var ball = BallObjectPool.Instance.SpawnBall(launchColor, startPos, ballRadius);
                 if (ball != null)
                 {
-                    ball.LaunchIntoContainer(startPos, startScale, container, targetWorld, isTrack, flowDir);
+                    ball.LaunchIntoContainer(startPos, startScale, container, mouthWorld, targetWorld, isTrack, flowDir);
                     PuzzleSoundManager.Instance?.PlayBallTap(0.55f);
                 }
 
@@ -159,13 +160,21 @@ namespace PuzzleGlass
         private static Vector3 ComputeSupplyLandingWorldPos(
             ShapedGlassContainer container,
             float ballRadius,
+            out Vector3 mouthWorldPos,
             out bool isTrack,
             out Vector2 trackFlowDir)
         {
             isTrack = container != null && container.IsTrackShape;
             trackFlowDir = Vector2.right;
 
-            if (container == null) return new Vector3(0f, 1.5f, -0.10f);
+            if (container == null)
+            {
+                mouthWorldPos = new Vector3(0f, 1.35f, -0.10f);
+                return new Vector3(0f, 1.5f, -0.10f);
+            }
+
+            mouthWorldPos = container.GetBottomExitWorldPosition();
+            mouthWorldPos.z = -0.10f;
 
             if (isTrack)
             {
@@ -174,24 +183,26 @@ namespace PuzzleGlass
                 {
                     Vector2 exitPt = container.compiledTrack.exitPoint;
                     container.compiledTrack.SampleField(exitPt, out _, out trackFlowDir, out _, out _);
-                    Vector2 jitter = trackFlowDir * UnityEngine.Random.Range(0.02f, ballRadius * 1.4f);
+                    Vector2 perp = new Vector2(-trackFlowDir.y, trackFlowDir.x);
+                    Vector2 jitter = trackFlowDir * UnityEngine.Random.Range(0.02f, ballRadius * 1.15f)
+                        + perp * UnityEngine.Random.Range(-ballRadius * 0.25f, ballRadius * 0.25f);
                     Vector2 localPt = exitPt + jitter;
                     return container.transform.TransformPoint(new Vector3(localPt.x, localPt.y, -0.10f));
                 }
-                return container.GetBottomExitWorldPosition();
+                return mouthWorldPos + new Vector3(0f, ballRadius * 1.8f, 0f);
             }
 
+            Vector3 mouthLocal = container.transform.InverseTransformPoint(mouthWorldPos);
             float floorY = container.GetChamberFloorY();
-            float ceilY = (container.contourPoints != null && container.contourPoints.Count > 0)
-                ? container.contourPoints[container.contourPoints.Count - 1].y * container.heightScale
-                : floorY + 1.1f;
-
-            float targetY = Mathf.Lerp(floorY + ballRadius * 2.5f, Mathf.Max(floorY + ballRadius * 3f, ceilY - ballRadius * 2.0f), UnityEngine.Random.Range(0.52f, 0.84f));
+            float targetY = floorY + ballRadius * 1.55f;
             container.GetSafeCubeBoundsAtY(targetY, out float safeL, out float safeR);
-            float pad = ballRadius * 1.3f;
+            float pad = ballRadius * 1.25f;
             float minX = safeL + pad;
             float maxX = safeR - pad;
-            float targetX = (minX < maxX) ? UnityEngine.Random.Range(minX, maxX) : (safeL + safeR) * 0.5f;
+            float targetX = Mathf.Clamp(
+                mouthLocal.x + UnityEngine.Random.Range(-ballRadius * 0.45f, ballRadius * 0.45f),
+                minX,
+                Mathf.Max(minX, maxX));
 
             if (container.dividers != null)
             {

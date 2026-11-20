@@ -698,18 +698,31 @@ namespace PuzzleGlass.Editor.Studio
             row.Q<Label>("number").text = lvl.levelNumber.ToString();
             row.Q<Label>("title").text = ShortName(lvl);
             int blocks = lvl.monsters?.Count ?? 0;
-            row.Q<Label>("sub").text = $"{DifficultyName(lvl.difficulty)} · {blocks} blok · {lvl.GetTotalBallCount()} top · {lvl.stagingGridCols}x{lvl.stagingGridRows}";
+            int filledBalls = lvl.GetFilledBoxBallCount();
+            int glassBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetGlassStartBallCount();
+            string ballInfo = filledBalls > 0 ? $"{glassBalls}+{filledBalls} top" : $"{lvl.GetTotalBallCount()} top";
+            row.Q<Label>("sub").text = $"{DifficultyName(lvl.difficulty)} · {blocks} blok · {ballInfo} · {lvl.stagingGridCols}x{lvl.stagingGridRows}";
             var dots = row.Q("dots");
             dots.Clear();
             var seen = new HashSet<PuzzleColor>();
             if (lvl.monsters != null)
                 foreach (var m in lvl.monsters)
-                    if (m != null && seen.Add(m.color))
+                    if (m != null)
                     {
-                        var dot = new VisualElement();
-                        dot.AddToClassList("level-row__dot");
-                        dot.style.backgroundColor = PuzzleColorPalette.GetBodyColor(m.color);
-                        dots.Add(dot);
+                        if (seen.Add(m.color))
+                        {
+                            var dot = new VisualElement();
+                            dot.AddToClassList("level-row__dot");
+                            dot.style.backgroundColor = PuzzleColorPalette.GetBodyColor(m.color);
+                            dots.Add(dot);
+                        }
+                        if (m.isFilledBox && seen.Add(m.filledBallColor))
+                        {
+                            var fdot = new VisualElement();
+                            fdot.AddToClassList("level-row__dot");
+                            fdot.style.backgroundColor = PuzzleColorPalette.GetBodyColor(m.filledBallColor);
+                            dots.Add(fdot);
+                        }
                     }
         }
 
@@ -1017,30 +1030,155 @@ namespace PuzzleGlass.Editor.Studio
             if (syncScene && m_LiveSync) ScheduleSceneSync();
         }
 
+        private static void ResolveFilledTarget(
+            PuzzleGlassLevelData lvl,
+            int excludeIndex,
+            PuzzleColor preferredColor,
+            int currentCount,
+            bool allowFallbackColor,
+            out PuzzleColor resolvedColor,
+            out int resolvedCount)
+        {
+            resolvedColor = preferredColor;
+            int clampedCurrent = Mathf.Clamp(currentCount, 1, LevelMonsterEntry.MaxBallsPerEntry);
+            resolvedCount = clampedCurrent;
+            if (lvl == null) return;
+
+            var remaining = lvl.GetRemainingCollectorCapacityByColor(excludeIndex);
+            if (!remaining.TryGetValue(resolvedColor, out int cap) || cap <= 0)
+            {
+                if (allowFallbackColor)
+                {
+                    PuzzleColor? bestCol = null;
+                    int bestCap = 0;
+                    foreach (var kv in remaining)
+                    {
+                        if (kv.Value <= 0) continue;
+                        if (kv.Value >= clampedCurrent)
+                        {
+                            if (!bestCol.HasValue || bestCap < clampedCurrent || kv.Value > bestCap)
+                            {
+                                bestCol = kv.Key;
+                                bestCap = kv.Value;
+                            }
+                        }
+                        else if (!bestCol.HasValue || (bestCap < clampedCurrent && kv.Value > bestCap))
+                        {
+                            bestCol = kv.Key;
+                            bestCap = kv.Value;
+                        }
+                    }
+                    if (bestCol.HasValue)
+                    {
+                        resolvedColor = bestCol.Value;
+                        cap = bestCap;
+                    }
+                }
+            }
+
+            if (cap > 0)
+            {
+                resolvedCount = Mathf.Clamp(clampedCurrent, 1, cap);
+            }
+        }
+
+        private static void SyncManualBallsAfterBoxEdit(PuzzleGlassLevelData lvl)
+        {
+            if (lvl == null || !lvl.useManualBallLayout || lvl.manualBalls == null || lvl.manualBalls.Count == 0) return;
+
+            var remaining = lvl.GetRemainingCollectorCapacityByColor(-1);
+            var placed = new Dictionary<PuzzleColor, int>();
+            for (int i = 0; i < lvl.manualBalls.Count; i++)
+            {
+                var b = lvl.manualBalls[i];
+                if (b != null) placed[b.color] = (placed.TryGetValue(b.color, out int v) ? v : 0) + 1;
+            }
+
+            foreach (var kv in placed)
+            {
+                remaining.TryGetValue(kv.Key, out int exp);
+                int expected = Mathf.Max(0, exp);
+                int excess = kv.Value - expected;
+                if (excess <= 0) continue;
+
+                var candidates = new List<int>();
+                for (int i = 0; i < lvl.manualBalls.Count; i++)
+                {
+                    var b = lvl.manualBalls[i];
+                    if (b != null && b.color == kv.Key) candidates.Add(i);
+                }
+                candidates.Sort((a, b) =>
+                {
+                    var ba = lvl.manualBalls[a];
+                    var bb = lvl.manualBalls[b];
+                    int cmp = bb.row.CompareTo(ba.row);
+                    return cmp != 0 ? cmp : bb.column.CompareTo(ba.column);
+                });
+
+                var removeSet = new HashSet<int>();
+                for (int k = 0; k < excess && k < candidates.Count; k++) removeSet.Add(candidates[k]);
+                for (int i = lvl.manualBalls.Count - 1; i >= 0; i--)
+                {
+                    if (removeSet.Contains(i)) lvl.manualBalls.RemoveAt(i);
+                }
+            }
+        }
+
+        private void SyncGlassAfterBoxChange(bool forceRebuild)
+        {
+            if (m_Level == null) return;
+            if (m_Level.useManualBallLayout)
+            {
+                SyncManualBallsAfterBoxEdit(m_Level);
+            }
+            else if (forceRebuild || m_Level.HasAnyFilledBox())
+            {
+                m_Level.RebuildTripletsFromBoxes();
+            }
+            else
+            {
+                m_Level.SyncTripletsFromGroups();
+            }
+        }
+
         private void AddBlock(PuzzleColor color, CarrierBlockShape shape, Vector2Int anchor)
         {
             Record("Blok ekle");
-            int count = Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, MonsterCharacter.MaxVisualSockets);
+            int count = Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, LevelMonsterEntry.MaxBallsPerEntry);
             var entry = new LevelMonsterEntry(color, count, shape, anchor) { hasGridAnchor = true };
             if (m_BrushMechanic == MechanicBrush.Key) entry.hasKey = true;
             else if (m_BrushMechanic == MechanicBrush.Lock) entry.lockKeyCount = Mathf.Max(1, m_BrushLockCount);
             else if (m_BrushMechanic == MechanicBrush.Ice) entry.iceCount = Mathf.Max(1, m_BrushIceCount);
             else if (m_BrushMechanic == MechanicBrush.Filled)
             {
+                PuzzleColor targetFill = m_BrushFilledColor ?? color;
+                int resolvedCount = count;
+                if (targetFill != color)
+                {
+                    ResolveFilledTarget(
+                        m_Level, -1, targetFill, count,
+                        allowFallbackColor: false,
+                        out targetFill, out resolvedCount);
+                }
                 entry.isFilledBox = true;
-                entry.filledBallColor = m_BrushFilledColor ?? color;
+                entry.filledBallColor = targetFill;
+                entry.count = resolvedCount;
             }
             m_Level.monsters.Add(entry);
-            if (entry.isFilledBox && !m_Level.useManualBallLayout)
+            if (!m_Level.useManualBallLayout && (entry.isFilledBox || m_Level.HasAnyFilledBox()))
             {
                 m_Level.RebuildTripletsFromBoxes();
             }
-            else
+            else if (!m_Level.useManualBallLayout)
             {
                 if (m_Level.bottomToTopGroups == null) m_Level.bottomToTopGroups = new List<LevelMonsterEntry>();
-                m_Level.bottomToTopGroups.Add(new LevelMonsterEntry(color, count));
+                m_Level.bottomToTopGroups.Add(new LevelMonsterEntry(color, entry.count));
                 m_Level.carrierBoxFormatVersion = 3;
                 m_Level.SyncTripletsFromGroups();
+            }
+            else
+            {
+                SyncManualBallsAfterBoxEdit(m_Level);
             }
             m_SelectedBlock = m_Level.monsters.Count - 1;
             OnEdited(syncScene: true);
@@ -1085,8 +1223,13 @@ namespace PuzzleGlass.Editor.Studio
             if (m.isFilledBox == isFilled) return;
             Record("İçi dolu kutu");
             m.isFilledBox = isFilled;
-            if (isFilled) m.filledBallColor = m.color;
-            if (!m_Level.useManualBallLayout) m_Level.RebuildTripletsFromBoxes();
+            if (isFilled)
+            {
+                ResolveFilledTarget(m_Level, i, m.color, m.count, allowFallbackColor: true, out var ballColor, out var newCount);
+                m.filledBallColor = ballColor;
+                m.count = newCount;
+            }
+            SyncGlassAfterBoxChange(forceRebuild: true);
             OnEdited(syncScene: true);
         }
 
@@ -1097,7 +1240,12 @@ namespace PuzzleGlass.Editor.Studio
             if (m.filledBallColor == ballColor) return;
             Record("Dolu kutu top rengi");
             m.filledBallColor = ballColor;
-            if (m.isFilledBox && !m_Level.useManualBallLayout) m_Level.RebuildTripletsFromBoxes();
+            if (m.isFilledBox)
+            {
+                ResolveFilledTarget(m_Level, i, ballColor, m.count, allowFallbackColor: false, out _, out int newCount);
+                m.count = newCount;
+            }
+            SyncGlassAfterBoxChange(forceRebuild: m.isFilledBox);
             OnEdited(syncScene: true);
         }
 
@@ -1119,13 +1267,16 @@ namespace PuzzleGlass.Editor.Studio
                     SetBlockIceCount(i, m.iceCount == targetIce ? 0 : targetIce);
                     break;
                 case MechanicBrush.Filled:
-                    PuzzleColor targetFillCol = m_BrushFilledColor ?? m.color;
                     if (!m.isFilledBox)
                     {
                         Record("İçi dolu kutu");
+                        bool allowFallback = !m_BrushFilledColor.HasValue;
+                        PuzzleColor preferred = m_BrushFilledColor ?? m.color;
+                        ResolveFilledTarget(m_Level, i, preferred, m.count, allowFallback, out var ballColor, out var newCount);
                         m.isFilledBox = true;
-                        m.filledBallColor = targetFillCol;
-                        if (!m_Level.useManualBallLayout) m_Level.RebuildTripletsFromBoxes();
+                        m.filledBallColor = ballColor;
+                        m.count = newCount;
+                        SyncGlassAfterBoxChange(forceRebuild: true);
                         OnEdited(syncScene: true);
                     }
                     else if (m_BrushFilledColor.HasValue && m.filledBallColor != m_BrushFilledColor.Value)
@@ -1146,14 +1297,14 @@ namespace PuzzleGlass.Editor.Studio
             Record("Blok sil");
             var m = m_Level.monsters[i];
             bool wasFilled = m.isFilledBox;
-            if (!wasFilled)
+            bool hadFilled = wasFilled || m_Level.HasAnyFilledBox();
+            if (!wasFilled && !hadFilled && !m_Level.useManualBallLayout)
             {
                 int g = FindGroup(m.color, m.count, fromTop: true);
                 if (g >= 0) m_Level.bottomToTopGroups.RemoveAt(g);
             }
             m_Level.monsters.RemoveAt(i);
-            if (wasFilled && !m_Level.useManualBallLayout) m_Level.RebuildTripletsFromBoxes();
-            else m_Level.SyncTripletsFromGroups();
+            SyncGlassAfterBoxChange(forceRebuild: hadFilled);
             m_SelectedBlock = -1;
             m_SelectedGroup = -1;
             OnEdited(syncScene: true);
@@ -1164,31 +1315,32 @@ namespace PuzzleGlass.Editor.Studio
             if (!ValidBlock(i) || m_Level.monsters[i].color == c) return;
             Record("Blok rengi");
             var m = m_Level.monsters[i];
-            if (!m.isFilledBox)
+            bool hasFilled = m_Level.HasAnyFilledBox();
+            if (!m.isFilledBox && !hasFilled && !m_Level.useManualBallLayout)
             {
                 int g = FindGroup(m.color, m.count, fromTop: false);
                 if (g >= 0) m_Level.bottomToTopGroups[g].color = c;
             }
             m.color = c;
-            m_Level.SyncTripletsFromGroups();
+            SyncGlassAfterBoxChange(forceRebuild: hasFilled);
             OnEdited(syncScene: true);
         }
 
         private void SetBlockCount(int i, int count)
         {
             if (!ValidBlock(i)) return;
-            count = Mathf.Clamp(count, 1, MonsterCharacter.MaxVisualSockets);
+            count = Mathf.Clamp(count, 1, LevelMonsterEntry.MaxBallsPerEntry);
             var m = m_Level.monsters[i];
             if (m.count == count) return;
-            Record("Yuva sayısı");
-            if (!m.isFilledBox)
+            Record(m.isFilledBox ? "Dolu kutu top sayısı" : "Yuva sayısı");
+            bool hasFilled = m.isFilledBox || m_Level.HasAnyFilledBox();
+            if (!m.isFilledBox && !hasFilled && !m_Level.useManualBallLayout)
             {
                 int g = FindGroup(m.color, m.count, fromTop: false);
                 if (g >= 0) m_Level.bottomToTopGroups[g].count = count;
             }
             m.count = count;
-            if (m.isFilledBox && !m_Level.useManualBallLayout) m_Level.RebuildTripletsFromBoxes();
-            else m_Level.SyncTripletsFromGroups();
+            SyncGlassAfterBoxChange(forceRebuild: hasFilled);
             OnEdited(syncScene: true);
         }
 
@@ -1505,7 +1657,10 @@ namespace PuzzleGlass.Editor.Studio
                 : $"Önizleme: otomatik {DifficultyName(m_PendingDifficulty)} level";
             string solve = m_Solve == null ? "çözüm aranıyor…" : SolveText(m_Solve);
             string tube = m_Pending.useBallFeedTubes ? " · 🧪 tüp" : "";
-            m_PreviewDetail.text = $"{m_Pending.monsters.Count} blok · {m_Pending.GetTotalBallCount()} top · {m_Pending.stagingGridCols}x{m_Pending.stagingGridRows} tepsi{tube} · {solve}. Uygula derseniz şimdiki levelin yerine geçer.";
+            int filledBalls = m_Pending.GetFilledBoxBallCount();
+            int glassBalls = m_Pending.GetGlassStartBallCount();
+            string ballTxt = filledBalls > 0 ? $"{glassBalls} cam + {filledBalls} dolu kutu" : $"{m_Pending.GetTotalBallCount()} top";
+            m_PreviewDetail.text = $"{m_Pending.monsters.Count} blok · {ballTxt} · {m_Pending.stagingGridCols}x{m_Pending.stagingGridRows} tepsi{tube} · {solve}. Uygula derseniz şimdiki levelin yerine geçer.";
         }
 
         // ---------- Palet ----------
@@ -1878,7 +2033,22 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     bool makeFilled = hit < 0 || !ghost.isFilledBox || (m_BrushFilledColor.HasValue && ghost.filledBallColor != m_BrushFilledColor.Value);
                     ghost.isFilledBox = makeFilled;
-                    if (makeFilled) ghost.filledBallColor = m_BrushFilledColor ?? ghost.color;
+                    if (makeFilled)
+                    {
+                        if (hit < 0 && !m_BrushFilledColor.HasValue)
+                        {
+                            ghost.filledBallColor = ghost.color;
+                        }
+                        else
+                        {
+                            ResolveFilledTarget(
+                                lvl, hit, m_BrushFilledColor ?? ghost.color, ghost.count,
+                                allowFallbackColor: !m_BrushFilledColor.HasValue,
+                                out var gCol, out var gCnt);
+                            ghost.filledBallColor = gCol;
+                            ghost.count = gCnt;
+                        }
+                    }
                 }
                 DrawBlock(m_Tray, ghost, -1, at ?? cell - CarrierBlockShapeUtility.GetCells(shape)[0], rows, false, false, true, !at.HasValue);
             }
@@ -1990,16 +2160,32 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (var b in lvl.manualBalls)
                     if (b != null) placedByColor[b.color] = (placedByColor.TryGetValue(b.color, out int v) ? v : 0) + 1;
             }
-            var neededByColor = new Dictionary<PuzzleColor, int>();
+            var socketsByColor = new Dictionary<PuzzleColor, int>();
+            var supplyByColor = new Dictionary<PuzzleColor, int>();
             if (lvl.monsters != null)
             {
                 foreach (var m in lvl.monsters)
-                    if (m != null) neededByColor[m.color] = (neededByColor.TryGetValue(m.color, out int v) ? v : 0) + Mathf.Max(1, m.count);
+                {
+                    if (m == null) continue;
+                    int cnt = Mathf.Max(1, m.count);
+                    socketsByColor[m.color] = (socketsByColor.TryGetValue(m.color, out int v) ? v : 0) + cnt;
+                    if (m.isFilledBox)
+                        supplyByColor[m.filledBallColor] = (supplyByColor.TryGetValue(m.filledBallColor, out int sv) ? sv : 0) + cnt;
+                }
+            }
+            var neededByColor = new Dictionary<PuzzleColor, int>();
+            foreach (var kv in socketsByColor)
+            {
+                supplyByColor.TryGetValue(kv.Key, out int sup);
+                int net = Mathf.Max(0, kv.Value - sup);
+                if (net > 0) neededByColor[kv.Key] = net;
             }
 
             // Önce leveldeki blokların/camın renkleri, sonra diğer palet renkleri
             var orderedColors = new List<PuzzleColor>();
-            foreach (var c in BrushColors) if (neededByColor.ContainsKey(c) || placedByColor.ContainsKey(c)) orderedColors.Add(c);
+            foreach (var c in BrushColors)
+                if (neededByColor.ContainsKey(c) || placedByColor.ContainsKey(c) || supplyByColor.ContainsKey(c) || socketsByColor.ContainsKey(c))
+                    orderedColors.Add(c);
             foreach (var c in BrushColors) if (!orderedColors.Contains(c)) orderedColors.Add(c);
 
             foreach (var c in orderedColors)
@@ -2007,6 +2193,9 @@ namespace PuzzleGlass.Editor.Studio
                 var color = c;
                 neededByColor.TryGetValue(color, out int need);
                 placedByColor.TryGetValue(color, out int have);
+                supplyByColor.TryGetValue(color, out int sup);
+                socketsByColor.TryGetValue(color, out int sc);
+                bool overSupplied = sup > sc;
                 bool active = m_BallBrushColor == color && !m_BallEraser;
                 var chip = BallChip(() =>
                 {
@@ -2016,17 +2205,19 @@ namespace PuzzleGlass.Editor.Studio
                     RefreshBallToolbar(lvl);
                     RedrawGlass();
                 }, active);
-                if (need != have) chip.AddToClassList("ball-chip--warn");
+                if (need != have || overSupplied) chip.AddToClassList("ball-chip--warn");
 
                 var sw = new VisualElement();
                 sw.AddToClassList("swatch");
                 sw.style.backgroundColor = PuzzleColorPalette.GetBodyColor(color);
-                if (need == 0 && have == 0) sw.style.marginRight = 0;
+                if (need == 0 && have == 0 && sup == 0) sw.style.marginRight = 0;
                 chip.Add(sw);
-                if (need > 0 || have > 0) chip.Add(new Label($"{have}/{need}"));
-                chip.tooltip = need > 0 || have > 0
-                    ? $"{PuzzleLevelSolver.ColorName(color)}: camda {have}, kutularda {need} yuva. Tıkla = top fırçası."
-                    : $"{PuzzleLevelSolver.ColorName(color)} top fırçası";
+                if (need > 0 || have > 0 || sup > 0) chip.Add(new Label($"{have}/{need}"));
+                chip.tooltip = overSupplied
+                    ? $"{PuzzleLevelSolver.ColorName(color)}: dolu kutularda {sup} top var ama toplam toplayıcı yuva {sc}!"
+                    : (need > 0 || have > 0 || sup > 0)
+                        ? $"{PuzzleLevelSolver.ColorName(color)}: camda {have}/{need} top (kutu yuvası {sc}, dolu kutu {sup}). Tıkla = top fırçası."
+                        : $"{PuzzleLevelSolver.ColorName(color)} top fırçası";
                 m_BallToolbar.Add(chip);
             }
 
@@ -2996,8 +3187,22 @@ namespace PuzzleGlass.Editor.Studio
                         m.isFilledBox && m.filledBallColor == col,
                         () =>
                         {
-                            if (!m.isFilledBox) SetBlockIsFilled(idx, true);
-                            SetBlockFilledColor(idx, col);
+                            if (!ValidBlock(idx)) return;
+                            var blk = m_Level.monsters[idx];
+                            if (!blk.isFilledBox)
+                            {
+                                Record("İçi dolu kutu");
+                                ResolveFilledTarget(m_Level, idx, col, blk.count, allowFallbackColor: false, out _, out int newCnt);
+                                blk.isFilledBox = true;
+                                blk.filledBallColor = col;
+                                blk.count = newCnt;
+                                SyncGlassAfterBoxChange(forceRebuild: true);
+                                OnEdited(syncScene: true);
+                            }
+                            else
+                            {
+                                SetBlockFilledColor(idx, col);
+                            }
                         });
                 }
                 menu.AddSeparator("");
@@ -3148,7 +3353,8 @@ namespace PuzzleGlass.Editor.Studio
                 return strip;
             }
             PuzzleColor? linked = null;
-            if (m_SelectedBlock >= 0 && lvl.monsters != null && m_SelectedBlock < lvl.monsters.Count) linked = lvl.monsters[m_SelectedBlock].color;
+            if (m_SelectedBlock >= 0 && lvl.monsters != null && m_SelectedBlock < lvl.monsters.Count)
+                linked = lvl.monsters[m_SelectedBlock].color;
 
             for (int i = 0; i < groups.Count; i++)
             {
@@ -3249,12 +3455,31 @@ namespace PuzzleGlass.Editor.Studio
 
             // İstatistik
             var colors = new HashSet<PuzzleColor>();
-            if (lvl.monsters != null) foreach (var m in lvl.monsters) if (m != null) colors.Add(m.color);
+            if (lvl.monsters != null)
+            {
+                foreach (var m in lvl.monsters)
+                {
+                    if (m == null) continue;
+                    colors.Add(m.color);
+                    if (m.isFilledBox) colors.Add(m.filledBallColor);
+                }
+            }
             m_Stats.Add(Stat((lvl.monsters?.Count ?? 0).ToString(), "blok"));
-            int boxBalls = lvl.GetTotalBallCount();
-            int camBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : boxBalls;
-            string ballStat = lvl.useManualBallLayout && camBalls != boxBalls ? $"{camBalls}/{boxBalls}" : camBalls.ToString();
-            m_Stats.Add(Stat(ballStat, lvl.useManualBallLayout ? "top (elle)" : "top"));
+            int expectedGlass = lvl.GetExpectedGlassBallCount();
+            int filledBalls = lvl.GetFilledBoxBallCount();
+            int camBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetGlassStartBallCount();
+            string ballStat = lvl.useManualBallLayout
+                ? (camBalls != expectedGlass ? $"{camBalls}/{expectedGlass}" : camBalls.ToString())
+                : (filledBalls > 0 ? $"{camBalls}+{filledBalls}" : camBalls.ToString());
+            string ballLabel = lvl.useManualBallLayout
+                ? "top (elle)"
+                : (filledBalls > 0 ? "cam+kutu" : "top");
+            var ballStatBox = Stat(ballStat, ballLabel);
+            if (filledBalls > 0)
+            {
+                ballStatBox.tooltip = $"Camda başlayan: {camBalls} (beklenen {expectedGlass}) · Dolu kutularda: {filledBalls} · Toplam toplayıcı yuva: {lvl.GetTotalBallCount()}";
+            }
+            m_Stats.Add(ballStatBox);
             m_Stats.Add(Stat(colors.Count.ToString(), "renk"));
 
             if (m_Pending != null)
@@ -3309,7 +3534,7 @@ namespace PuzzleGlass.Editor.Studio
 
             var row = new VisualElement();
             row.AddToClassList("inspector__row");
-            var rl = new Label("Yuva (top)");
+            var rl = new Label(m.isFilledBox ? "Top / Yuva" : "Yuva (top)");
             rl.AddToClassList("inspector__row-label");
             row.Add(rl);
             row.Add(new Button(() => SetBlockCount(i, m.count - 1)) { text = "−" });
@@ -3317,11 +3542,30 @@ namespace PuzzleGlass.Editor.Studio
             count.AddToClassList("inspector__count");
             row.Add(count);
             row.Add(new Button(() => SetBlockCount(i, m.count + 1)) { text = "+" });
-            row.Add(new Button(() => SetBlockCount(i, CarrierBlockShapeUtility.GetCellCount(m.blockShape) * 2))
+            int defaultCount = CarrierBlockShapeUtility.GetCellCount(m.blockShape) * 2;
+            int filledCap = 0;
+            if (m.isFilledBox)
+            {
+                var remCap = m_Level.GetRemainingCollectorCapacityByColor(i);
+                remCap.TryGetValue(m.filledBallColor, out filledCap);
+            }
+            row.Add(new Button(() =>
+            {
+                int target = m.isFilledBox && filledCap > 0 ? Mathf.Min(defaultCount, filledCap) : defaultCount;
+                SetBlockCount(i, target);
+            })
             {
                 text = "↺",
                 tooltip = "Şekle göre varsayılan: hücre başına 2 yuva (büyük bloğa çok, küçüğe az)."
             });
+            if (m.isFilledBox && filledCap > 0 && m.count != filledCap)
+            {
+                row.Add(new Button(() => SetBlockCount(i, filledCap))
+                {
+                    text = $"{filledCap}",
+                    tooltip = $"Aynı renkteki boş kutuların kalan kapasitesine ({filledCap}) eşitle."
+                });
+            }
             m_Inspector.Add(row);
 
             var mechTitle = new Label("Özel Mekanikler");
@@ -3373,8 +3617,8 @@ namespace PuzzleGlass.Editor.Studio
             icePresets.Add(new Button(() => SetBlockIceCount(i, 15)) { text = "15" });
             m_Inspector.Add(icePresets);
 
-            var filledToggle = new Toggle("●↑ İçi dolu kutu (cama top gönderir)") { value = m.isFilledBox };
-            filledToggle.tooltip = "Açıkken kutu başlangıçta toplarla doludur; slota konulunca içindeki toplar camın içine gider ve kutu boşalıp slottan çıkar.";
+            var filledToggle = new Toggle("●↑ İçi dolu kutu (cama atar + toplar)") { value = m.isFilledBox };
+            filledToggle.tooltip = "Açıkken kutu başlangıçta toplarla doludur; slota konulunca içindeki topları camın içine gönderir, ardından yok olmadan kendi rengindeki topları toplayıp tamamlanır.";
             filledToggle.RegisterValueChangedCallback(e => SetBlockIsFilled(i, e.newValue));
             m_Inspector.Add(filledToggle);
 
@@ -3383,13 +3627,33 @@ namespace PuzzleGlass.Editor.Studio
                 var ballColorField = new EnumField("İçindeki Top Rengi", m.filledBallColor);
                 ballColorField.RegisterValueChangedCallback(e => SetBlockFilledColor(i, (PuzzleColor)e.newValue));
                 m_Inspector.Add(ballColorField);
+
+                if (filledCap <= 0)
+                {
+                    var matchBtn = new Button(() =>
+                    {
+                        ResolveFilledTarget(m_Level, i, m.filledBallColor, m.count, allowFallbackColor: true, out var rCol, out var rCnt);
+                        if (rCol == m.filledBallColor && rCnt == m.count)
+                        {
+                            ShowNotification(new GUIContent("Levelde uygun toplayıcı kutu yok"));
+                            return;
+                        }
+                        Record("Dolu kutuyu mevcut toplayıcıya uydur");
+                        m.filledBallColor = rCol;
+                        m.count = rCnt;
+                        SyncGlassAfterBoxChange(forceRebuild: true);
+                        OnEdited(syncScene: true);
+                    }) { text = "Mevcut toplayıcıya uydur" };
+                    matchBtn.AddToClassList("inspector__action");
+                    m_Inspector.Add(matchBtn);
+                }
             }
 
             if (m.hasKey || m.lockKeyCount > 0 || m.iceCount > 0 || m.isFilledBox)
             {
                 string unit = m_Level.iceMeltMode == IceMeltMode.PerBallCollected ? "top toplandığında" : "kutu tamamlandığında";
                 string mechSummary = "";
-                if (m.isFilledBox) mechSummary += $"• İçi dolu: slota konulunca camın içine {m.count} adet {PuzzleLevelSolver.ColorName(m.filledBallColor)} top gönderir.\n";
+                if (m.isFilledBox) mechSummary += $"• İçi dolu: slota konulunca camın içine {m.count} adet {PuzzleLevelSolver.ColorName(m.filledBallColor)} top gönderir, ardından {m.count} adet {PuzzleLevelSolver.ColorName(m.color)} top toplayıp tamamlanır.\n";
                 if (m.hasKey) mechSummary += "• Anahtarlı: tamamlanınca tüm kilitleri 1 azaltır.\n";
                 if (m.lockKeyCount > 0) mechSummary += $"• Kilitli ({m.lockKeyCount}): {m.lockKeyCount} anahtar gelene kadar kaymaz ve top toplamaz.\n";
                 if (m.iceCount > 0) mechSummary += $"• Buzlu ({m.iceCount}): {m.iceCount} {unit} eriyene kadar donuk kalır.";
@@ -3398,7 +3662,28 @@ namespace PuzzleGlass.Editor.Studio
                 m_Inspector.Add(mechHint);
             }
 
-            if (m_Level.useManualBallLayout)
+            if (m.isFilledBox)
+            {
+                int collectorSockets = 0;
+                int totalSupply = 0;
+                if (m_Level.monsters != null)
+                {
+                    foreach (var box in m_Level.monsters)
+                    {
+                        if (box == null) continue;
+                        if (box.color == m.filledBallColor) collectorSockets += Mathf.Max(1, box.count);
+                        if (box.isFilledBox && box.filledBallColor == m.filledBallColor) totalSupply += Mathf.Max(1, box.count);
+                    }
+                }
+                int fromGlass = Mathf.Max(0, collectorSockets - totalSupply);
+                string balanceText = collectorSockets >= totalSupply
+                    ? $"{PuzzleLevelSolver.ColorName(m.filledBallColor)} dengesi: {collectorSockets} toplam yuva = {fromGlass} camdan + {totalSupply} dolu kutudan."
+                    : $"{PuzzleLevelSolver.ColorName(m.filledBallColor)} eksik yuva: dolu kutularda {totalSupply} top, kutularda {collectorSockets} yuva var!";
+                var order = new Label(balanceText);
+                order.AddToClassList("inspector__hint");
+                m_Inspector.Add(order);
+            }
+            else if (m_Level.useManualBallLayout)
             {
                 int inGlass = 0;
                 if (m_Level.manualBalls != null)
@@ -3410,9 +3695,12 @@ namespace PuzzleGlass.Editor.Studio
             else
             {
                 int g = FindGroup(m.color, m.count, fromTop: false);
+                bool suppliedByFilled = g < 0 && m_Level.HasAnyFilledBox();
                 var order = new Label(g >= 0
                     ? $"Bu bloğun topları cam sırasında {g + 1}. sırada (alttan). Sırayı aşağıdaki şeritten değiştir."
-                    : "Bu bloğun topları cam sırasında yok!");
+                    : (suppliedByFilled
+                        ? "Bu bloğun topları dolu kutudan gelecek (camda başlamıyor)."
+                        : "Bu bloğun topları cam sırasında yok!"));
                 order.AddToClassList("inspector__hint");
                 m_Inspector.Add(order);
             }
