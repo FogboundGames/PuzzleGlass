@@ -606,7 +606,12 @@ namespace PuzzleGlass
             if (BallObjectPool.Instance != null)
             {
                 var activeList = BallObjectPool.Instance.ActiveBalls;
-                float wakeRangeX = ballRadius * 4.8f;
+                bool flatPool = BallContainerManager.Instance != null
+                    && BallContainerManager.Instance.glassContainer != null
+                    && BallContainerManager.Instance.glassContainer.IsFlatBottomBox;
+                float wakeRangeX = ballRadius * (flatPool ? 3.0f : 4.8f);
+                float nudgeCap = flatPool ? 0.18f : 0.45f;
+                float nudgeDown = flatPool ? -0.12f : -0.24f;
                 for (int i = 0; i < activeList.Count; i++)
                 {
                     var other = activeList[i];
@@ -653,8 +658,8 @@ namespace PuzzleGlass
                         }
                         else if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
                         {
-                            float inwardVx = Mathf.Clamp(dx * 1.45f, -0.45f, 0.45f);
-                            other.rb.linearVelocity += new Vector3(inwardVx, -0.24f, 0f);
+                            float inwardVx = Mathf.Clamp(dx * 1.45f, -nudgeCap, nudgeCap);
+                            other.rb.linearVelocity += new Vector3(inwardVx, nudgeDown, 0f);
 
                             if (dy <= ballRadius * 3.0f && Mathf.Abs(dx) <= ballRadius * 2.6f && Time.time >= other._nextCollisionSquashTime)
                             {

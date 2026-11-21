@@ -38,9 +38,26 @@ namespace PuzzleGlass
         [Tooltip("Açıkken tabandaki aynı renk toplar yatay kuvvetle kutuya doğru itilir (kayma). Kapalı: toplar sadece dümdüz aşağı çekilir.")]
         public bool enableFloorDrift = false;
 
+        [Header("Pool Drain Funnel")]
+        [Tooltip("Düz tabanlı havuzlarda alt sıradaki topları merkezdeki çıkış deliğine doğru çeker.")]
+        public bool enablePoolDrainFunnel = true;
+
+        [Tooltip("Alt sıra kabul yüksekliği (top çapı cinsinden).")]
+        public float poolDrainRowToleranceInDiameters = 1.25f;
+
+        [Tooltip("Deliğe doğru çekim ivmesi.")]
+        public float poolDrainAccel = 1.35f;
+
+        [Tooltip("Huninin etki yarıçapı (top çapı cinsinden); dışarıdaki toplar çekilmez.")]
+        public float poolDrainRadiusInDiameters = 5.0f;
+
+        [Tooltip("Deliğin hemen yanındaki ölü bölge (top çapı cinsinden); topların delik üzerinde titremesini engeller.")]
+        public float poolDrainDeadZoneInDiameters = 0.35f;
+
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
         private float _lastGlobalCollectionTime = -10f;
+        private float _lastDrainTargetTime = -10f;
         private float _levelStartTime = -10f;
 
         private class ActiveMonsterStream
@@ -281,6 +298,7 @@ namespace PuzzleGlass
         {
             StepAllBallPhysics();
             UpdateAttractionPhysics();
+            ApplyPoolDrainFunnel();
             ApplyFloorDriftTowardHungryMonsters();
         }
 
@@ -483,6 +501,7 @@ namespace PuzzleGlass
             BallPhysicsController bestBall = FindNextCollectableBall(out ActiveMonsterStream targetStream);
             if (bestBall != null && targetStream != null)
             {
+                _lastDrainTargetTime = now;
                 StartBallAttraction(bestBall, targetStream.monster, targetStream);
                 _lastGlobalCollectionTime = now;
                 targetStream.lastCollectionTime = now;
@@ -550,6 +569,15 @@ namespace PuzzleGlass
             if (container != null && container.IsTrackShape)
             {
                 return grid.HasAnyOpenTopColumn(monster, allMonsters);
+            }
+
+            // Düz tabanlı havuzlarda tek merkez deliği vardır: top hangi sütunda olursa olsun
+            // aynı delikten çıkar. Bölme varsa yalnızca deliğe giden yol kapalıysa engelle.
+            if (container != null && container.IsFlatBottomBox)
+            {
+                Vector3 ballLocal = container.transform.InverseTransformPoint(ball.transform.position);
+                Vector3 exitLocal = container.transform.InverseTransformPoint(container.GetBottomExitWorldPosition());
+                return ArePositionsInSameBottomCompartment(container, ballLocal.x, exitLocal.x, ballLocal.y);
             }
 
             float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;
@@ -834,6 +862,8 @@ namespace PuzzleGlass
                 : null;
             bool isTrack = trackContainer != null && trackContainer.IsTrackShape;
             bool isBelt = isTrack && TrackCrowdQueue.HasLoop(trackContainer);
+            bool isFlatBottomPool = trackContainer != null && trackContainer.IsFlatBottomBox;
+            Vector3 drainExitWorld = isFlatBottomPool ? trackContainer.GetBottomExitWorldPosition() : Vector3.zero;
 
             foreach (var kvp in _activeStreams)
             {
@@ -856,13 +886,18 @@ namespace PuzzleGlass
                     if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
-                    // Pist modunda çıkış ağzına en yakın top önce gelir; kutu modunda bloğa yatay en yakın top
+                    // Pist modunda çıkış ağzına en yakın top önce gelir; kare havuzda merkez deliğe
+                    // en yakın top önce gelir (böylece toplar yanlardan merkeze sürüklenmez).
                     float score;
                     if (isTrack)
                     {
                         Vector3 lp = trackContainer.transform.InverseTransformPoint(cand.transform.position);
                         trackContainer.SampleTrackField(lp, out _, out _, out float exDist, out _);
                         score = exDist;
+                    }
+                    else if (isFlatBottomPool)
+                    {
+                        score = Mathf.Abs(cand.transform.position.x - drainExitWorld.x);
                     }
                     else
                     {
@@ -894,6 +929,55 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Düz tabanlı havuzlarda alt sıradaki topları merkezdeki çıkış deliğine doğru iter.
+        /// Böylece toplar yan sütunlardan merkeze sürüklenmek yerine delik çevresinde doğal bir huni oluşturur.
+        /// </summary>
+        private void ApplyPoolDrainFunnel()
+        {
+            if (!enablePoolDrainFunnel) return;
+            if (_attractingBalls.Count == 0 && Time.time - _lastDrainTargetTime > 0.40f) return;
+            if (BallObjectPool.Instance == null) return;
+
+            ShapedGlassContainer container = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : null;
+            if (container == null || !container.IsFlatBottomBox) return;
+
+            var activeBalls = BallObjectPool.Instance.ActiveBalls;
+            if (activeBalls == null || activeBalls.Count == 0) return;
+
+            Vector3 exitWorld = container.GetBottomExitWorldPosition();
+            Vector3 exitLocal = container.transform.InverseTransformPoint(exitWorld);
+            float floorLocalY = container.GetChamberFloorY();
+            float ballDiamLocal = container.particleSize > 0.08f ? container.particleSize : 0.24f;
+            float ballDiamWorld = ballDiamLocal * Mathf.Abs(container.transform.lossyScale.x);
+            if (ballDiamWorld <= 0.001f) ballDiamWorld = ballDiamLocal;
+
+            float maxBottomLocalY = floorLocalY + ballDiamLocal * Mathf.Max(1.0f, poolDrainRowToleranceInDiameters);
+            float deadZone = ballDiamWorld * Mathf.Max(0f, poolDrainDeadZoneInDiameters);
+            float funnelRadius = ballDiamWorld * Mathf.Max(1.0f, poolDrainRadiusInDiameters);
+
+            for (int i = 0; i < activeBalls.Count; i++)
+            {
+                var b = activeBalls[i];
+                if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                if (b.rb == null || b.rb.isKinematic) continue;
+
+                Vector3 bLocal = container.transform.InverseTransformPoint(b.transform.position);
+                if (bLocal.y > maxBottomLocalY) continue;
+                if (!ArePositionsInSameBottomCompartment(container, bLocal.x, exitLocal.x, bLocal.y)) continue;
+
+                float worldDx = exitWorld.x - b.transform.position.x;
+                float absDx = Mathf.Abs(worldDx);
+                if (absDx <= deadZone || absDx > funnelRadius) continue;
+
+                float dir = Mathf.Sign(worldDx);
+                b.rb.AddForce(new Vector3(dir * poolDrainAccel, 0f, 0f), ForceMode.Acceleration);
+                b.rb.WakeUp();
+            }
+        }
+
+        /// <summary>
         /// Gently rolls resting bottom-floor balls laterally toward a hungry slotted monster of the same color
         /// when space opens up beside them, giving the ball pool a lively, magnetic physical response!
         /// </summary>
@@ -908,6 +992,9 @@ namespace PuzzleGlass
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
+
+            // Kare havuzda merkez deliğe çeken huni varken canavara doğru yatay sürükleme yapma.
+            if (enablePoolDrainFunnel && container != null && container.IsFlatBottomBox) return;
 
             float floorLocalY = (container != null) ? container.GetChamberFloorY() : -0.56f;
             float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;
