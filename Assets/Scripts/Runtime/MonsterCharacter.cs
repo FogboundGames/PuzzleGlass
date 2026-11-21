@@ -18,6 +18,7 @@ namespace PuzzleGlass
     public class MonsterCharacter : MonoBehaviour
     {
         public const int MaxVisualSockets = 16;
+        public const int MaxHollowPitBalls = 30;
 
         [Tooltip("Bloğun görünümü. Oyunda GameManager'daki 'Block Visual Style' ayarından gelir.")]
         public BlockVisualStyle visualStyle = BlockVisualStyle.PuzzleWithNumber;
@@ -160,12 +161,14 @@ namespace PuzzleGlass
         public void SetLockGlyphScale(float s) { _mpbLockCenter.z = s; ApplyBoxPropertyBlock(); }
 
         /// <summary>
-        /// Returns how many visual sockets this Carrier Box should display (clamped 1..16).
+        /// Returns how many visual sockets/balls this Carrier Box should display
+        /// (1..30 for hollow pit boxes, 1..16 for legacy socket plates).
         /// </summary>
         public int GetVisibleSocketCount()
         {
             int raw = (initialCount > 0) ? initialCount : Mathf.Max(1, remainingCount);
-            return Mathf.Clamp(raw, 1, MaxVisualSockets);
+            int cap = IsHollowPitStyle ? MaxHollowPitBalls : MaxVisualSockets;
+            return Mathf.Clamp(raw, 1, cap);
         }
 
         private bool IsHollowPitStyle => visualStyle == BlockVisualStyle.PuzzleWithNumber;
@@ -356,9 +359,12 @@ namespace PuzzleGlass
         {
             public Vector2 pos;
             public Vector2 vel;
+            public Vector2 target;
+            public bool settled;
             public bool active;
         }
         private PitBallSim[] _pitSim;
+        private Vector2[] _pitTargets;
         private Vector4 _pitRect0;
         private Vector4 _pitRect1;
         private int _pitRectCount = 1;
@@ -935,6 +941,7 @@ namespace PuzzleGlass
             socketTransforms = new Transform[expectedSockets];
             socketBalls = new GameObject[expectedSockets];
             _pitSim = new PitBallSim[expectedSockets];
+            _pitTargets = socketPositions;
             _pitRect0 = rect0;
             _pitRect1 = rect1;
             _pitRectCount = rectCount;
@@ -1272,8 +1279,9 @@ namespace PuzzleGlass
             if (IsHollowPitStyle)
             {
                 Transform t = bodyPivot != null ? bodyPivot : transform;
-                Vector2 entry = GetPitDropEntryLocal(socketIndex, Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f));
-                return t.TransformPoint(new Vector3(entry.x, entry.y, -0.09f));
+                Vector2 target = GetPitTargetLocal(socketIndex);
+                float liftY = _socketBallLocalDiameter * 0.42f;
+                return t.TransformPoint(new Vector3(target.x, target.y + liftY, -0.070f));
             }
             if (ShowsCavityBalls && socketTransforms != null && socketTransforms.Length > 0)
             {
@@ -1336,52 +1344,29 @@ namespace PuzzleGlass
 
             if (IsHollowPitStyle)
             {
+                EnsurePitLayoutCached();
                 float r = Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f);
-                if (_pitSim == null || _pitSim.Length != socketBalls.Length)
-                {
-                    _pitSim = new PitBallSim[socketBalls.Length];
-                    CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
-                }
+                Vector2 target = GetPitTargetLocal(idx);
+                Vector2 entry = GetPitDropEntryLocal(idx, target, r);
 
-                Vector2 entry = GetPitDropEntryLocal(idx, r);
-                if (Application.isPlaying)
-                {
-                    entry.x += UnityEngine.Random.Range(-0.045f, 0.045f);
-                }
                 _pitSim[idx] = new PitBallSim
                 {
-                    pos = entry,
-                    vel = Application.isPlaying
-                        ? new Vector2(UnityEngine.Random.Range(-0.55f, 0.55f), UnityEngine.Random.Range(-2.3f, -1.6f))
-                        : Vector2.zero,
+                    pos = Application.isPlaying ? entry : target,
+                    vel = Application.isPlaying ? new Vector2(0f, -1.6f) : Vector2.zero,
+                    target = target,
+                    settled = !Application.isPlaying,
                     active = true
                 };
-                _pitAnyActive = true;
-
-                // Nudge nearby already-settled balls slightly on impact so the pile reacts physically
-                if (Application.isPlaying)
-                {
-                    float impactRange = r * 4.5f;
-                    for (int k = 0; k < _pitSim.Length; k++)
-                    {
-                        if (k == idx || !_pitSim[k].active) continue;
-                        Vector2 diff = _pitSim[k].pos - entry;
-                        float dist = diff.magnitude;
-                        if (dist < impactRange)
-                        {
-                            Vector2 dir = (dist > 0.001f) ? (diff / dist) : new Vector2((k % 2 == 0) ? -1f : 1f, 0.3f);
-                            _pitSim[k].vel += dir * 0.32f + Vector2.up * 0.14f;
-                        }
-                    }
-                }
+                _pitAnyActive = Application.isPlaying;
 
                 if (socketTransforms != null && idx < socketTransforms.Length && socketTransforms[idx] != null)
                 {
-                    socketTransforms[idx].localPosition = new Vector3(entry.x, entry.y, -0.055f);
+                    Vector2 initialPos = Application.isPlaying ? entry : target;
+                    socketTransforms[idx].localPosition = new Vector3(initialPos.x, initialPos.y, -0.055f);
                 }
 
                 tr.localPosition = Vector3.zero;
-                tr.localScale = targetLocalScale * 1.16f;
+                tr.localScale = targetLocalScale * 1.10f;
                 tr.DOScale(targetLocalScale, 0.14f).SetEase(Ease.OutBack).SetLink(sBall);
             }
             else
@@ -1415,158 +1400,94 @@ namespace PuzzleGlass
             StepHollowPitPhysics(Mathf.Min(Time.deltaTime, 0.035f));
         }
 
-        private Vector2 GetPitDropEntryLocal(int ballIdx, float radius)
+        private void EnsurePitLayoutCached()
+        {
+            int count = (socketBalls != null && socketBalls.Length > 0) ? socketBalls.Length : GetVisibleSocketCount();
+            if (_pitSim == null || _pitSim.Length != count)
+            {
+                _pitSim = new PitBallSim[count];
+            }
+            if (_pitTargets == null || _pitTargets.Length != count)
+            {
+                CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
+                CarrierBlockShapeUtility.ComputeHollowPitBallLayout(blockShape, count, out _pitTargets, out _socketBallLocalDiameter);
+            }
+            else if (_pitRect0 == Vector4.zero)
+            {
+                CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
+            }
+        }
+
+        private Vector2 GetPitTargetLocal(int ballIdx)
+        {
+            EnsurePitLayoutCached();
+            if (_pitTargets != null && _pitTargets.Length > 0)
+            {
+                int idx = Mathf.Clamp(ballIdx, 0, _pitTargets.Length - 1);
+                return _pitTargets[idx];
+            }
+            return new Vector2(_pitRect0.x, _pitRect0.y - 0.03f);
+        }
+
+        private Vector2 GetPitDropEntryLocal(int ballIdx, Vector2 target, float radius)
         {
             if (_pitRect0 == Vector4.zero)
             {
                 CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
             }
-            Vector4 hostRect = (_pitRectCount > 1 && (ballIdx % 2 == 1)) ? _pitRect1 : _pitRect0;
-            float usableHalfX = Mathf.Max(0.02f, hostRect.z - (0.118f + radius + 0.025f));
-            // Deterministic golden-ratio sweep across top opening so consecutive balls spread naturally before colliding
-            float frac = ((ballIdx * 0.6180339f) % 1.0f) * 2f - 1f;
-            float entryX = hostRect.x + frac * usableHalfX * 0.72f;
-            float entryY = hostRect.y + hostRect.w - (0.118f + 0.072f + radius);
-            return new Vector2(entryX, entryY);
-        }
-
-        private static float SdRoundBoxLocal(Vector2 p, Vector2 halfSize, float rad)
-        {
-            Vector2 q = new Vector2(Mathf.Abs(p.x), Mathf.Abs(p.y)) - halfSize + new Vector2(rad, rad);
-            return Mathf.Min(Mathf.Max(q.x, q.y), 0f) + new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude - rad;
-        }
-
-        private float EvalSingleRectPitSdf(Vector2 p, Vector4 rectVec, float radius)
-        {
-            float halfX = Mathf.Max(0.015f, rectVec.z - (0.118f + radius + 0.004f));
-            float botY = rectVec.y - rectVec.w + (0.118f + radius + 0.004f);
-            float topY = rectVec.y + rectVec.w - (0.118f + 0.070f + radius);
-            if (topY < botY) topY = botY;
-            Vector2 center = new Vector2(rectVec.x, (botY + topY) * 0.5f);
-            Vector2 half = new Vector2(halfX, Mathf.Max(0.015f, (topY - botY) * 0.5f));
-            float cornerR = Mathf.Min(0.044f, Mathf.Min(half.x, half.y) * 0.55f);
-            return SdRoundBoxLocal(p - center, half, cornerR);
-        }
-
-        private float EvalPitBoundarySdf(Vector2 p, float radius)
-        {
-            float d = EvalSingleRectPitSdf(p, _pitRect0, radius);
-            if (_pitRectCount > 1)
+            float pitTopY = _pitRect0.y + _pitRect0.w - (0.118f + 0.068f + radius);
+            if (_pitRectCount > 1 && Mathf.Abs(target.x - _pitRect1.x) <= _pitRect1.z && Mathf.Abs(target.y - _pitRect1.y) <= _pitRect1.w)
             {
-                d = Mathf.Min(d, EvalSingleRectPitSdf(p, _pitRect1, radius));
+                pitTopY = _pitRect1.y + _pitRect1.w - (0.118f + 0.068f + radius);
             }
-            return d;
-        }
-
-        private Vector2 SamplePitWallNormal(Vector2 p, float radius)
-        {
-            const float eps = 0.0025f;
-            float gx = EvalPitBoundarySdf(new Vector2(p.x + eps, p.y), radius) - EvalPitBoundarySdf(new Vector2(p.x - eps, p.y), radius);
-            float gy = EvalPitBoundarySdf(new Vector2(p.x, p.y + eps), radius) - EvalPitBoundarySdf(new Vector2(p.x, p.y - eps), radius);
-            Vector2 g = new Vector2(gx, gy);
-            return (g.sqrMagnitude > 1e-8f) ? g.normalized : Vector2.down;
+            float dropDist = Mathf.Clamp(_socketBallLocalDiameter * 1.95f, 0.14f, 0.34f);
+            float startY = Mathf.Max(target.y + _socketBallLocalDiameter * 0.90f, Mathf.Min(pitTopY + 0.02f, target.y + dropDist));
+            return new Vector2(target.x, startY);
         }
 
         private void StepHollowPitPhysics(float dt)
         {
             if (dt <= 0.0001f || _pitSim == null) return;
-            float radius = Mathf.Max(0.028f, _socketBallLocalDiameter * 0.5f);
-            float minDist = radius * 2.02f;
-            float minDistSq = minDist * minDist;
+            const float gravity = 16.5f;
+            const float bounceRestitution = 0.14f;
+            bool anyMoving = false;
 
-            const int substeps = 3;
-            float subDt = dt / substeps;
-            const float gravity = 6.8f;
-            const float restitutionBall = 0.28f;
-            const float restitutionWall = 0.30f;
-
-            for (int step = 0; step < substeps; step++)
-            {
-                for (int i = 0; i < _pitSim.Length; i++)
-                {
-                    if (!_pitSim[i].active) continue;
-                    _pitSim[i].vel.y -= gravity * subDt;
-                    _pitSim[i].vel *= Mathf.Clamp01(1f - 1.35f * subDt);
-                    _pitSim[i].pos += _pitSim[i].vel * subDt;
-                }
-
-                // Pairwise ball-ball collision & momentum exchange
-                for (int i = 0; i < _pitSim.Length; i++)
-                {
-                    if (!_pitSim[i].active) continue;
-                    for (int j = i + 1; j < _pitSim.Length; j++)
-                    {
-                        if (!_pitSim[j].active) continue;
-                        Vector2 delta = _pitSim[j].pos - _pitSim[i].pos;
-                        float dSq = delta.sqrMagnitude;
-                        if (dSq >= minDistSq) continue;
-
-                        float d = Mathf.Sqrt(Mathf.Max(dSq, 1e-8f));
-                        Vector2 n = (d > 1e-4f) ? (delta / d) : new Vector2(0.707f, 0.707f);
-                        float overlap = minDist - d;
-                        _pitSim[i].pos -= n * (overlap * 0.5f);
-                        _pitSim[j].pos += n * (overlap * 0.5f);
-
-                        float relVn = Vector2.Dot(_pitSim[j].vel - _pitSim[i].vel, n);
-                        if (relVn < 0f)
-                        {
-                            float jImp = -(1f + restitutionBall) * relVn * 0.5f;
-                            _pitSim[i].vel -= jImp * n;
-                            _pitSim[j].vel += jImp * n;
-
-                            Vector2 tangent = new Vector2(-n.y, n.x);
-                            float relVt = Vector2.Dot(_pitSim[j].vel - _pitSim[i].vel, tangent);
-                            float fImp = relVt * 0.10f;
-                            _pitSim[i].vel += fImp * tangent;
-                            _pitSim[j].vel -= fImp * tangent;
-                        }
-                    }
-                }
-
-                // Polyomino pit wall collision + rolling friction
-                for (int i = 0; i < _pitSim.Length; i++)
-                {
-                    if (!_pitSim[i].active) continue;
-                    float dist = EvalPitBoundarySdf(_pitSim[i].pos, radius);
-                    if (dist > 0f)
-                    {
-                        Vector2 n = SamplePitWallNormal(_pitSim[i].pos, radius);
-                        _pitSim[i].pos -= n * dist;
-                        float vn = Vector2.Dot(_pitSim[i].vel, n);
-                        if (vn > 0f)
-                        {
-                            _pitSim[i].vel -= (1f + restitutionWall) * vn * n;
-                        }
-                        if (n.y < -0.45f)
-                        {
-                            _pitSim[i].vel.x *= Mathf.Clamp01(1f - 5.5f * subDt);
-                        }
-                    }
-                }
-            }
-
-            // Apply transforms & subtle 3D rolling spin
-            float radSafe = Mathf.Max(0.02f, radius);
             for (int i = 0; i < _pitSim.Length; i++)
             {
-                if (!_pitSim[i].active) continue;
-                if (_pitSim[i].vel.sqrMagnitude < 0.00025f)
+                if (!_pitSim[i].active || _pitSim[i].settled) continue;
+
+                ref PitBallSim sim = ref _pitSim[i];
+                sim.vel.y -= gravity * dt;
+                sim.pos += sim.vel * dt;
+                sim.pos.x = Mathf.Lerp(sim.pos.x, sim.target.x, Mathf.Clamp01(dt * 18f));
+
+                if (sim.pos.y <= sim.target.y)
                 {
-                    _pitSim[i].vel *= 0.85f;
-                }
-                if (socketTransforms != null && i < socketTransforms.Length && socketTransforms[i] != null)
-                {
-                    socketTransforms[i].localPosition = new Vector3(_pitSim[i].pos.x, _pitSim[i].pos.y, -0.055f);
-                }
-                if (socketBalls != null && i < socketBalls.Length && socketBalls[i] != null)
-                {
-                    float rollDeg = (-_pitSim[i].vel.x * dt / radSafe) * Mathf.Rad2Deg;
-                    if (Mathf.Abs(rollDeg) > 0.01f)
+                    sim.pos.y = sim.target.y;
+                    if (sim.vel.y < -0.45f)
                     {
-                        socketBalls[i].transform.Rotate(0f, 0f, rollDeg, Space.Self);
+                        sim.vel.y = -sim.vel.y * bounceRestitution;
+                        anyMoving = true;
+                    }
+                    else
+                    {
+                        sim.pos = sim.target;
+                        sim.vel = Vector2.zero;
+                        sim.settled = true;
                     }
                 }
+                else
+                {
+                    anyMoving = true;
+                }
+
+                if (socketTransforms != null && i < socketTransforms.Length && socketTransforms[i] != null)
+                {
+                    socketTransforms[i].localPosition = new Vector3(sim.pos.x, sim.pos.y, -0.055f);
+                }
             }
+
+            _pitAnyActive = anyMoving;
         }
 
         // ==================== ANIMATIONS ====================
@@ -1654,12 +1575,33 @@ namespace PuzzleGlass
             if (_isCompleted) return;
 
             _settledSocketCount++;
-            int mappedIndex = socketIndex;
-            if (IsHollowPitStyle && socketBalls != null && socketBalls.Length > 0 && initialCount > socketBalls.Length && initialCount > 0)
+            if (IsHollowPitStyle && socketBalls != null && socketBalls.Length > 0)
             {
-                mappedIndex = Mathf.Clamp(Mathf.CeilToInt((_settledSocketCount / (float)initialCount) * socketBalls.Length) - 1, 0, socketBalls.Length - 1);
+                int total = Mathf.Max(1, initialCount);
+                int targetActive = Mathf.Clamp(
+                    Mathf.RoundToInt((_settledSocketCount / (float)total) * socketBalls.Length),
+                    1,
+                    socketBalls.Length);
+                int lastActivated = targetActive - 1;
+                bool activatedAny = false;
+                for (int i = 0; i < targetActive; i++)
+                {
+                    if (socketBalls[i] != null && !socketBalls[i].activeSelf)
+                    {
+                        ActivateAndPulseSocketBall(i, playSeatEffect: (i == lastActivated));
+                        activatedAny = true;
+                    }
+                }
+                if (!activatedAny && counterText != null && Application.isPlaying)
+                {
+                    counterText.transform.DOKill(true);
+                    counterText.transform.DOPunchScale(Vector3.one * 0.24f, 0.14f, 5, 0.5f);
+                }
             }
-            ActivateAndPulseSocketBall(mappedIndex);
+            else
+            {
+                ActivateAndPulseSocketBall(socketIndex);
+            }
             PlaySmoothGulpWave();
             DecrementCounterAndCheckComplete();
         }
@@ -1712,30 +1654,26 @@ namespace PuzzleGlass
                 int targetActive = Mathf.Clamp(Mathf.RoundToInt(_mpbFillAmount * socketBalls.Length), 0, socketBalls.Length);
                 if (IsHollowPitStyle)
                 {
-                    if (_pitSim == null || _pitSim.Length != socketBalls.Length)
-                    {
-                        _pitSim = new PitBallSim[socketBalls.Length];
-                        CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
-                    }
-                    float r = Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f);
+                    EnsurePitLayoutCached();
                     for (int i = 0; i < socketBalls.Length; i++)
                     {
                         bool act = i < targetActive;
                         if (socketBalls[i] != null) socketBalls[i].SetActive(act);
-                        if (act && !_pitSim[i].active)
+                        Vector2 tPos = GetPitTargetLocal(i);
+                        _pitSim[i] = new PitBallSim
                         {
-                            _pitSim[i] = new PitBallSim { pos = GetPitDropEntryLocal(i, r), vel = new Vector2(((i % 2 == 0) ? -0.25f : 0.25f), -1.2f), active = true };
-                        }
-                        else if (!act)
+                            pos = tPos,
+                            vel = Vector2.zero,
+                            target = tPos,
+                            settled = act,
+                            active = act
+                        };
+                        if (act && socketTransforms != null && i < socketTransforms.Length && socketTransforms[i] != null)
                         {
-                            _pitSim[i].active = false;
+                            socketTransforms[i].localPosition = new Vector3(tPos.x, tPos.y, -0.055f);
                         }
                     }
-                    _pitAnyActive = targetActive > 0;
-                    if (_pitAnyActive)
-                    {
-                        for (int s = 0; s < 40; s++) StepHollowPitPhysics(0.016f);
-                    }
+                    _pitAnyActive = false;
                 }
                 else
                 {

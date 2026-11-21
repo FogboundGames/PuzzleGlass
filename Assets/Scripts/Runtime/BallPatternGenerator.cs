@@ -325,6 +325,18 @@ namespace PuzzleGlass
                 PuzzleSoundManager.Instance?.SuppressBallTaps(0.02f);
             }
 
+            float maxEntryY = float.MinValue;
+            for (int i = 0; i < ballSpawns.Count; i++)
+                if (ballSpawns[i].pos.y > maxEntryY) maxEntryY = ballSpawns[i].pos.y;
+            float headroom = (maxSpawnLocalY < float.MaxValue * 0.5f && maxEntryY > float.MinValue)
+                ? Mathf.Max(0f, maxSpawnLocalY - maxEntryY)
+                : 0.25f;
+            int maxLayerIdx = Mathf.Max(0, rowYCenters.Count - 1);
+            float desiredTopLift = 0.05f + maxLayerIdx * 0.016f;
+            float liftScale = (headroom > 0.01f && desiredTopLift > 0.001f)
+                ? Mathf.Clamp01(headroom / desiredTopLift)
+                : 0f;
+
             for (int i = 0; i < ballSpawns.Count; i++)
             {
                 var entry = ballSpawns[i];
@@ -345,8 +357,11 @@ namespace PuzzleGlass
                 bool isTrack = glassContainer != null && glassContainer.IsTrackShape;
                 if (Application.isPlaying && initialShapeHoldTime <= 0.05f && !hasSlopedDivider && !isTrack)
                 {
-                    float liftedY = entry.pos.y + 0.12f + layerIdx * 0.042f;
-                    spawnLocalY = Mathf.Min(liftedY, Mathf.Max(entry.pos.y, maxSpawnLocalY));
+                    // Kaldırma miktarını tavan boşluğuna oranla; böylece üst sıralar tavanda birbirinin üstüne binip alt sırayı dışarı ezmez
+                    spawnLocalY = entry.pos.y + (0.05f + layerIdx * 0.016f) * liftScale;
+                    if (maxSpawnLocalY < float.MaxValue * 0.5f)
+                        spawnLocalY = Mathf.Min(spawnLocalY, maxSpawnLocalY);
+                    spawnLocalY = Mathf.Max(spawnLocalY, localFloorY + ballRadius * 1.04f);
                 }
 
                 Vector3 localPos = new Vector3(entry.pos.x, spawnLocalY, -0.10f);

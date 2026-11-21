@@ -18,17 +18,15 @@ namespace PuzzleGlass
     {
         public CanvasGroup Group { get; private set; }
 
-        // Renkler (oyunun lavanta/indigo paleti)
-        private static readonly Color BgTop = new Color(0.80f, 0.76f, 0.99f, 1f);
-        private static readonly Color BgMid = new Color(0.93f, 0.91f, 1.00f, 1f);
-        private static readonly Color BgBottom = new Color(0.76f, 0.71f, 0.97f, 1f);
+        // Renkler (tek renk arka plan + Color Load logosuyla uyumlu mor/beyaz vurgu)
+        private static readonly Color DefaultBgColor = new Color(0.910f, 0.906f, 0.961f, 1f);
         private static readonly Color LogoTop = new Color(0.60f, 0.45f, 1.00f, 1f);
         private static readonly Color LogoBottom = new Color(0.32f, 0.19f, 0.84f, 1f);
         private static readonly Color LogoDepth = new Color(0.19f, 0.10f, 0.47f, 1f);
-        private static readonly Color FillLeft = new Color(0.72f, 0.58f, 1.00f, 1f);
-        private static readonly Color FillRight = new Color(0.46f, 0.30f, 0.96f, 1f);
-        private static readonly Color LabelColor = new Color(0.44f, 0.37f, 0.80f, 1f);
-        private static readonly Color PercentColor = new Color(0.29f, 0.18f, 0.72f, 1f);
+        private static readonly Color FillLeft = new Color(0.56f, 0.24f, 0.98f, 1f);
+        private static readonly Color FillRight = new Color(0.36f, 0.12f, 0.80f, 1f);
+        private static readonly Color LabelColor = new Color(0.36f, 0.18f, 0.72f, 1f);
+        private static readonly Color PercentColor = new Color(0.28f, 0.12f, 0.64f, 1f);
 
         private const float BarW = 660f;
         private const float BarH = 60f;
@@ -43,6 +41,7 @@ namespace PuzzleGlass
             public float amp, freq, phase, rotSpeed, baseRot, tilt;
         }
 
+        private Image _bgImage;
         private Floater[] _floaters;
         private RectTransform _logo;
         private CanvasGroup _logoGroup;
@@ -60,11 +59,16 @@ namespace PuzzleGlass
         private float _shineT;
 
         private static string[] s_PercentStrings;
-        private static Sprite s_Bg, s_Glow, s_Shadow, s_Cube, s_Ring, s_Bubble, s_Ball, s_ShineBand;
+        private static Sprite s_LogoSprite, s_Ring, s_ShineBand;
 
         // ------------------------------------------------------------------ kurulum
 
         public static LoadingScreenView Create(Transform parent, Font font, string title, Sprite pill)
+        {
+            return Create(parent, font, title, pill, DefaultBgColor);
+        }
+
+        public static LoadingScreenView Create(Transform parent, Font font, string title, Sprite pill, Color backdropColor)
         {
             EnsureSprites();
             if (s_PercentStrings == null)
@@ -81,88 +85,23 @@ namespace PuzzleGlass
             view.Group = go.AddComponent<CanvasGroup>();
             view.Group.alpha = 0f;
 
-            // Arka plan: dikey lavanta degrade (dokunuşları da yakalar: perde arkasındaki oyun tıklanmasın)
-            var bg = NewImage("Background", root, s_Bg, Color.white);
-            Stretch(bg.rectTransform);
-            bg.raycastTarget = true;
+            // Arka plan: tek renk düz zemin (dokunuşları yakalar: perde arkasındaki oyun tıklanmasın)
+            backdropColor.a = 1f;
+            view._bgImage = NewImage("Background", root, null, backdropColor);
+            Stretch(view._bgImage.rectTransform);
+            view._bgImage.raycastTarget = true;
 
-            // Logonun arkasında yumuşak ışık
-            var glow = NewImage("LogoGlow", root, s_Glow, new Color(1f, 1f, 1f, 0.75f));
-            Anchor(glow.rectTransform, new Vector2(0.5f, 0.63f), new Vector2(1250f, 1000f), Vector2.zero);
-
-            view.BuildDecor(root);
+            view._floaters = System.Array.Empty<Floater>();
             view.BuildLogo(root, font, title);
             view.BuildBar(root, font, pill);
             return view;
         }
 
-        private void BuildDecor(RectTransform root)
+        public void SetBackdropColor(Color c)
         {
-            // Hareketli kenar objeleri ayrı bir alt kanvasta: her kare sadece bu katman yeniden çizilir
-            var decorGo = new GameObject("Decor", typeof(RectTransform));
-            decorGo.transform.SetParent(root, false);
-            var decor = (RectTransform)decorGo.transform;
-            Stretch(decor);
-            decorGo.AddComponent<Canvas>();
-
-            Color lav = new Color(0.86f, 0.82f, 1.00f, 1f);
-            Color pink = new Color(1.00f, 0.84f, 0.96f, 1f);
-            Color sky = new Color(0.80f, 0.90f, 1.00f, 1f);
-
-            _floaters = new[]
-            {
-                // sol üst
-                MakeFloater(decor, s_Cube, lav, new Vector2(0f, 1f), new Vector2(135f, -255f), 230f, 14f, 0.22f, 0.0f, 7f, 16f, true),
-                MakeFloater(decor, s_Ball, PuzzleColorPalette.GetPrimaryColor(PuzzleColor.Yellow), new Vector2(0f, 1f), new Vector2(300f, -125f), 64f, 9f, 0.31f, 1.3f, 0f, 0f, true),
-                // sağ üst
-                MakeFloater(decor, s_Ring, sky, new Vector2(1f, 1f), new Vector2(-140f, -330f), 190f, 12f, 0.26f, 2.1f, -9f, 0f, true),
-                MakeFloater(decor, s_Ball, PuzzleColorPalette.GetPrimaryColor(PuzzleColor.Blue), new Vector2(1f, 1f), new Vector2(-300f, -170f), 78f, 10f, 0.34f, 0.6f, 0f, 0f, true),
-                // orta kenarlar (küçük, orta alana girmez)
-                MakeFloater(decor, s_Bubble, Color.white, new Vector2(0f, 0.5f), new Vector2(72f, 120f), 120f, 16f, 0.19f, 3.0f, 0f, 0f, false),
-                MakeFloater(decor, s_Cube, pink, new Vector2(1f, 0.5f), new Vector2(-82f, -20f), 120f, 13f, 0.24f, 4.2f, -6f, -12f, true),
-                // sol alt
-                MakeFloater(decor, s_Ring, pink, new Vector2(0f, 0f), new Vector2(165f, 340f), 165f, 12f, 0.21f, 5.0f, 8f, 0f, true),
-                MakeFloater(decor, s_Ball, PuzzleColorPalette.GetPrimaryColor(PuzzleColor.Green), new Vector2(0f, 0f), new Vector2(330f, 210f), 58f, 9f, 0.37f, 2.6f, 0f, 0f, true),
-                // sağ alt
-                MakeFloater(decor, s_Cube, sky, new Vector2(1f, 0f), new Vector2(-160f, 290f), 205f, 15f, 0.2f, 1.7f, -5f, 24f, true),
-                MakeFloater(decor, s_Ball, PuzzleColorPalette.GetPrimaryColor(PuzzleColor.Red), new Vector2(1f, 0f), new Vector2(-345f, 165f), 80f, 10f, 0.29f, 3.6f, 0f, 0f, true),
-                MakeFloater(decor, s_Bubble, Color.white, new Vector2(1f, 0f), new Vector2(-95f, 520f), 70f, 11f, 0.33f, 0.9f, 0f, 0f, false),
-            };
-        }
-
-        private static Floater MakeFloater(RectTransform parent, Sprite sprite, Color tint, Vector2 anchor, Vector2 pos,
-            float size, float amp, float freq, float phase, float rotSpeed, float baseRot, bool withShadow)
-        {
-            var f = new Floater
-            {
-                basePos = pos,
-                amp = amp,
-                freq = freq,
-                phase = phase,
-                rotSpeed = rotSpeed,
-                baseRot = baseRot,
-                tilt = rotSpeed == 0f ? 6f : 0f,
-                shadowOffset = new Vector2(size * 0.06f, -size * 0.12f)
-            };
-            if (withShadow)
-            {
-                var sh = NewImage("Shadow", parent, s_Shadow, new Color(0.36f, 0.27f, 0.74f, 0.20f));
-                Anchor(sh.rectTransform, anchor, new Vector2(size * 1.05f, size * 0.55f), pos + f.shadowOffset);
-                f.shadow = sh.rectTransform;
-            }
-            var img = NewImage(sprite.name, parent, sprite, tint);
-            Anchor(img.rectTransform, anchor, new Vector2(size, size), pos);
-            img.rectTransform.localRotation = Quaternion.Euler(0f, 0f, baseRot);
-            f.rt = img.rectTransform;
-
-            if (sprite == s_Ball)
-            {
-                // Topun parlak noktası ayrı (tint'ten etkilenmesin, oyundaki toplar gibi beyaz parlasın)
-                var hi = NewImage("Highlight", img.rectTransform, s_Glow, new Color(1f, 1f, 1f, 0.85f));
-                Anchor(hi.rectTransform, new Vector2(0.36f, 0.68f), new Vector2(size * 0.42f, size * 0.32f), Vector2.zero);
-                hi.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 35f);
-            }
-            return f;
+            if (_bgImage == null) return;
+            c.a = 1f;
+            _bgImage.color = c;
         }
 
         private void BuildLogo(RectTransform root, Font font, string title)
@@ -170,11 +109,19 @@ namespace PuzzleGlass
             var logoGo = new GameObject("Logo", typeof(RectTransform));
             logoGo.transform.SetParent(root, false);
             _logo = (RectTransform)logoGo.transform;
-            Anchor(_logo, new Vector2(0.5f, 0.63f), new Vector2(1000f, 440f), Vector2.zero);
+            Anchor(_logo, new Vector2(0.5f, 0.58f), new Vector2(920f, 380f), Vector2.zero);
             logoGo.AddComponent<Canvas>(); // girişte ve boşta hafif hareket ediyor: ayrı alt kanvas
             _logoGroup = logoGo.AddComponent<CanvasGroup>();
 
-            string upper = string.IsNullOrEmpty(title) ? "PUZZLE GLASS" : title.ToUpperInvariant();
+            if (s_LogoSprite != null)
+            {
+                var logoImg = NewImage("ColorLoadLogo", _logo, s_LogoSprite, Color.white);
+                Stretch(logoImg.rectTransform);
+                logoImg.preserveAspect = true;
+                return;
+            }
+
+            string upper = string.IsNullOrEmpty(title) ? "COLOR LOAD" : title.ToUpperInvariant();
             int split = upper.LastIndexOf(' ');
             string line1 = split > 0 ? upper.Substring(0, split) : upper;
             string line2 = split > 0 ? upper.Substring(split + 1) : "";
@@ -226,7 +173,7 @@ namespace PuzzleGlass
             var barGo = new GameObject("LoadingBar", typeof(RectTransform));
             barGo.transform.SetParent(root, false);
             _barRoot = (RectTransform)barGo.transform;
-            Anchor(_barRoot, new Vector2(0.5f, 0.405f), new Vector2(BarW, BarH), Vector2.zero);
+            Anchor(_barRoot, new Vector2(0.5f, 0.37f), new Vector2(BarW, BarH), Vector2.zero);
 
             // Üst satır: solda "LOADING", sağda gerçek yüzde
             var label = NewText("Label", _barRoot, font, "LOADING", 30, LabelColor);
@@ -436,46 +383,32 @@ namespace PuzzleGlass
 
         private static void EnsureSprites()
         {
-            if (s_Bg != null) return;
-            s_Bg = MakeBackground();
-            s_Glow = MakeSprite("Glow", 128, (x, y) =>
+            if (s_LogoSprite == null)
             {
-                float r = Mathf.Sqrt(x * x + y * y);
-                float a = Mathf.Clamp01(1f - r);
-                return new Color(1f, 1f, 1f, a * a);
-            });
-            s_Shadow = MakeSprite("Shadow", 128, (x, y) =>
-            {
-                float r2 = x * x + y * y;
-                return new Color(1f, 1f, 1f, Mathf.Exp(-r2 * 4.5f) * (r2 < 1f ? 1f : 0f));
-            });
-            s_Cube = MakeSprite("GlassCube", 256, GlassCube);
+                s_LogoSprite = Resources.Load<Sprite>("Textures/ColorLoadLogo");
+                if (s_LogoSprite == null)
+                {
+                    var tex = Resources.Load<Texture2D>("Textures/ColorLoadLogo");
+                    if (tex != null)
+                    {
+                        s_LogoSprite = Sprite.Create(
+                            tex,
+                            new Rect(0f, 0f, tex.width, tex.height),
+                            new Vector2(0.5f, 0.5f),
+                            100f);
+                        s_LogoSprite.name = "ColorLoadLogo";
+                    }
+                }
+            }
+
+            if (s_Ring != null) return;
             s_Ring = MakeSprite("GlassRing", 256, GlassRing);
-            s_Bubble = MakeSprite("GlassBubble", 256, GlassBubble);
-            s_Ball = MakeSprite("Ball", 128, Ball);
             s_ShineBand = MakeSprite("ShineBand", 64, (x, y) =>
             {
                 float d = (x - y * 0.45f);
                 float a = Mathf.Exp(-d * d * 6f);
                 return new Color(1f, 1f, 1f, a);
             });
-        }
-
-        private static Sprite MakeBackground()
-        {
-            const int h = 256;
-            var tex = new Texture2D(2, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear, name = "LoadingBg" };
-            var px = new Color32[2 * h];
-            for (int y = 0; y < h; y++)
-            {
-                float t = y / (float)(h - 1); // 0 alt, 1 üst
-                Color c = t > 0.55f ? Color.Lerp(BgMid, BgTop, Mathf.SmoothStep(0f, 1f, (t - 0.55f) / 0.45f))
-                                    : Color.Lerp(BgBottom, BgMid, Mathf.SmoothStep(0f, 1f, t / 0.55f));
-                px[y * 2] = px[y * 2 + 1] = c;
-            }
-            tex.SetPixels32(px);
-            tex.Apply(false, true);
-            return Sprite.Create(tex, new Rect(0, 0, 2, h), new Vector2(0.5f, 0.5f), 100f);
         }
 
         private delegate Color PixelFn(float x, float y);

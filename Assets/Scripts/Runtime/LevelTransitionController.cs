@@ -25,7 +25,7 @@ namespace PuzzleGlass
         public static bool IsTransitioning => Instance != null && Instance._isPlaying;
 
         [Header("Oyun Başlığı ve Tema Rengi")]
-        public string gameTitle = "PUZZLE GLASS";
+        public string gameTitle = "COLOR LOAD";
         public string loadingLabel = "LOADING...";
         [Tooltip("Geçiş ekranı düz arka plan rengi (oyun teması açık lavanta #E8E7F5)")]
         public Color themeBackdropColor = new Color(0.910f, 0.906f, 0.961f, 1f);
@@ -596,6 +596,7 @@ namespace PuzzleGlass
             if (_overlayImage != null) _overlayImage.enabled = false;
             _overlayCanvas.sortingOrder = overlaySortingOrder;
             if (_curtainBg != null) _curtainBg.color = themeBackdropColor;
+            if (_loadingView != null) _loadingView.SetBackdropColor(themeBackdropColor);
             if (_titleText != null) { _titleText.text = gameTitle; _titleText.color = titleColor; }
             bool wasHidden = !_overlayCanvas.gameObject.activeSelf || (_curtainGroup != null && _curtainGroup.alpha <= 0.001f);
             if (_curtainGroup != null)
@@ -991,6 +992,7 @@ namespace PuzzleGlass
             _overlayImage.texture = _overlayRT;
 
             if (_curtainBg != null) _curtainBg.color = themeBackdropColor;
+            if (_loadingView != null) _loadingView.SetBackdropColor(themeBackdropColor);
             if (_titleText != null)
             {
                 _titleText.text = gameTitle;
@@ -1092,8 +1094,8 @@ namespace PuzzleGlass
 
             canvasGo.AddComponent<GraphicRaycaster>();
 
-            // 1) Loading ekranı (degrade arka plan, süzülen cam objeler, logo, kapsül bar) — LoadingScreenView
-            _loadingView = LoadingScreenView.Create(canvasGo.transform, _uiFont, gameTitle, _pillSprite);
+            // 1) Loading ekranı (tek renk arka plan, Color Load logosu, kapsül bar) — LoadingScreenView
+            _loadingView = LoadingScreenView.Create(canvasGo.transform, _uiFont, gameTitle, _pillSprite, themeBackdropColor);
             _curtainGroup = _loadingView.Group;
             _curtainBg = null;
             _titleText = null;

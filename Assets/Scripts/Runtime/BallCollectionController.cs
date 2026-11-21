@@ -915,13 +915,13 @@ namespace PuzzleGlass
                         Vector3 lp = trackContainer.transform.InverseTransformPoint(cand.transform.position);
                         trackContainer.SampleTrackField(lp, out _, out _, out float exDist, out _);
                         score = hasChannels
-                            ? (exDist * 0.7f + Vector2.Distance(cand.transform.position, chanEntrance) * 0.8f + cand.transform.position.y * 1.4f)
-                            : exDist;
+                            ? (cand.transform.position.y * 3.6f + exDist * 0.55f + Vector2.Distance(cand.transform.position, chanEntrance) * 0.45f)
+                            : (cand.transform.position.y * 3.0f + exDist);
                     }
                     else if (isFlatBottomPool)
                     {
                         score = hasChannels
-                            ? (Mathf.Abs(cand.transform.position.x - chanEntrance.x) + cand.transform.position.y * 1.8f)
+                            ? (cand.transform.position.y * 3.6f + Mathf.Abs(cand.transform.position.x - chanEntrance.x) * 0.65f)
                             : Mathf.Abs(cand.transform.position.x - drainExitWorld.x);
                     }
                     else

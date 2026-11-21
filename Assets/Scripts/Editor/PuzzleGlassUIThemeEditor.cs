@@ -13,6 +13,7 @@ namespace PuzzleGlass.Editor
     {
         private const string AssetPath = "Assets/Resources/PuzzleGlassUITheme.asset";
         private const string Root = "Assets/Violet Theme Ui/";
+        private const string WhiteUiRoot = "Assets/Resources/UI/";
 
         static PuzzleGlassUIThemeEditor()
         {
@@ -22,11 +23,23 @@ namespace PuzzleGlass.Editor
         private static void EnsureThemeAssetIfMissingOrIncomplete()
         {
             var existing = AssetDatabase.LoadAssetAtPath<PuzzleGlassUITheme>(AssetPath);
-            if (existing != null && existing.HasCoreHudSprites && existing.iconHandClick != null && existing.whitePanelViolet != null)
+            if (existing != null
+                && existing.HasCoreHudSprites
+                && existing.iconHandClick != null
+                && existing.whitePanelViolet != null
+                && IsWhiteBorderSprite(existing.buttonViolet)
+                && IsWhiteBorderSprite(existing.smallSquareViolet))
             {
                 return;
             }
             RebuildThemeAsset(logResult: false);
+        }
+
+        private static bool IsWhiteBorderSprite(Sprite s)
+        {
+            if (s == null) return false;
+            string p = AssetDatabase.GetAssetPath(s);
+            return !string.IsNullOrEmpty(p) && p.StartsWith(WhiteUiRoot);
         }
 
         [MenuItem("Tools/PuzzleGlass/UI/Violet UI Temasını Güncelle", false, 41)]
@@ -53,12 +66,12 @@ namespace PuzzleGlass.Editor
 
             bool dirty = created;
 
-            dirty |= Assign(ref theme.buttonViolet,       Root + "Buttons/Button Violet.png");
-            dirty |= Assign(ref theme.buttonBlue,         Root + "Buttons/Button Blue.png");
-            dirty |= Assign(ref theme.buttonGreen,        Root + "Buttons/Button Green.png");
-            dirty |= Assign(ref theme.buttonRed,          Root + "Buttons/Button Red.png");
-            dirty |= Assign(ref theme.smallSquareViolet,  Root + "Buttons/Misc/Small Square Button Violet.png");
-            dirty |= Assign(ref theme.smallSquareBlue,    Root + "Buttons/Misc/Small Square Button Blue.png");
+            dirty |= Assign(ref theme.buttonViolet,       WhiteUiRoot + "Button Violet.png");
+            dirty |= Assign(ref theme.buttonBlue,         WhiteUiRoot + "Button Blue.png");
+            dirty |= Assign(ref theme.buttonGreen,        WhiteUiRoot + "Button Green.png");
+            dirty |= Assign(ref theme.buttonRed,          WhiteUiRoot + "Button Red.png");
+            dirty |= Assign(ref theme.smallSquareViolet,  WhiteUiRoot + "Small Square Button Violet.png");
+            dirty |= Assign(ref theme.smallSquareBlue,    WhiteUiRoot + "Small Square Button Blue.png");
             dirty |= Assign(ref theme.roundedWhite80,     Root + "Buttons/Misc/80x80 Background.png");
             dirty |= Assign(ref theme.menuDarkPanel,      Root + "Buttons/Misc/Menu Background.png");
             dirty |= Assign(ref theme.whitePanelViolet,   Root + "Panels/White Panel Style 2 Violet.png");

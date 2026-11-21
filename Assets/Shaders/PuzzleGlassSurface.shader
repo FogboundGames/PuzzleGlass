@@ -1155,22 +1155,22 @@ Shader "PuzzleGlass/GlassChamberLit"
                 else
                 {
                     // ARKA CAM (topların arkasında)
-                    // Gölge: tüp zeminden hafif yüksekte
-                    float dNearRaw  = TrackSDF(p - float2(0.0, -0.040));
+                    // Gölge: tüp zeminden hafif yüksekte; sağ-aşağı yumuşak çok katmanlı derinlik gölgesi
+                    float dNearRaw  = TrackSDF(p - float2(0.024, -0.052));
                     float dShadNear = dNearRaw - wallThick;
-                    float dShadFar  = TrackSDF(p - float2(0.0, -0.085)) - wallThick;
+                    float dShadFar  = TrackSDF(p - float2(0.046, -0.125)) - wallThick;
                     if (hasNeck)
                     {
                         // Boyun + dudak da zemine gölge düşürür
                         float2 neckC = float2(neckX, (neckTopY + mouthY) * 0.5);
                         float2 neckH = float2(neckOuterHW + lipOver, (neckTopY - mouthY) * 0.5);
-                        dShadNear = min(dShadNear, sdRoundBox2D(p - float2(0.0, -0.040) - neckC, neckH, lipHH));
-                        dShadFar  = min(dShadFar,  sdRoundBox2D(p - float2(0.0, -0.085) - neckC, neckH, lipHH));
+                        dShadNear = min(dShadNear, sdRoundBox2D(p - float2(0.024, -0.052) - neckC, neckH, lipHH));
+                        dShadFar  = min(dShadFar,  sdRoundBox2D(p - float2(0.046, -0.125) - neckC, neckH, lipHH));
                     }
-                    float contactShad = pow(1.0 - smoothstep(-0.015, 0.080, dShadNear), 1.55);
-                    float dropShad    = pow(1.0 - smoothstep(-0.025, 0.175, dShadFar), 1.80);
-                    float shadowAlpha = saturate(contactShad * 0.60 + dropShad * 0.42) * 0.34 * (1.0 - exitCut * 0.70) * quadEdgeFade;
-                    float3 shadowRGB = float3(0.12, 0.14, 0.30);
+                    float contactShad = pow(1.0 - smoothstep(-0.015, 0.095, dShadNear), 1.45);
+                    float dropShad    = pow(1.0 - smoothstep(-0.020, 0.250, dShadFar), 1.75);
+                    float shadowAlpha = saturate(contactShad * 0.52 + dropShad * 0.46) * 0.48 * (1.0 - exitCut * 0.65) * quadEdgeFade;
+                    float3 shadowRGB = float3(0.18, 0.20, 0.40);
 
                     // İç boşluk: borunun arka yarısı. Şeffaf, soğuk tonlu; gölgedeki yana doğru koyulaşır,
                     // cidara yaklaştıkça (daha çok cam) yoğunlaşır.
@@ -1392,13 +1392,13 @@ Shader "PuzzleGlass/GlassChamberLit"
                 }
                 else
                 {
-                    float dNearRaw  = ExitChanSDF(p - float2(0.0, -0.025));
+                    float dNearRaw  = ExitChanSDF(p - float2(0.014, -0.036));
                     float dShadNear = dNearRaw - wallThick;
-                    float dShadFar  = ExitChanSDF(p - float2(0.0, -0.055)) - wallThick;
-                    float contactShad = pow(1.0 - smoothstep(-0.010, 0.050, dShadNear), 1.6);
-                    float dropShad    = pow(1.0 - smoothstep(-0.015, 0.110, dShadFar), 1.8);
-                    float shadowAlpha = saturate(contactShad * 0.55 + dropShad * 0.38) * 0.16 * clipMask * quadEdgeFade;
-                    float3 shadowRGB = float3(0.16, 0.18, 0.38);
+                    float dShadFar  = ExitChanSDF(p - float2(0.026, -0.072)) - wallThick;
+                    float contactShad = pow(1.0 - smoothstep(-0.010, 0.058, dShadNear), 1.55);
+                    float dropShad    = pow(1.0 - smoothstep(-0.015, 0.130, dShadFar), 1.75);
+                    float shadowAlpha = saturate(contactShad * 0.54 + dropShad * 0.44) * 0.26 * clipMask * quadEdgeFade;
+                    float3 shadowRGB = float3(0.18, 0.20, 0.40);
 
                     float3 bedTopCol = float3(0.30, 0.33, 0.52);
                     float3 bedBotCol = float3(0.23, 0.26, 0.44);

@@ -131,7 +131,7 @@ namespace PuzzleGlass
                 rb.angularDamping = 1.15f;
                 rb.useGravity = false;
                 rb.sleepThreshold = 0.0f;
-                rb.maxDepenetrationVelocity = 0.95f;
+                rb.maxDepenetrationVelocity = 2.4f;
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
                 // Lock strictly to the Z = -0.10f plane while allowing free X, Y movement and 3D rolling rotation!
@@ -254,10 +254,25 @@ namespace PuzzleGlass
             Vector3 vel = rb.linearVelocity;
             float speedSq = vel.x * vel.x + vel.y * vel.y;
 
-            // 1. Z-plane containment (keep balls strictly on 2D board plane without PhysX teleportation artifacts)
+            // 1. Z-plane & floor containment (keep balls strictly on 2D board plane and above container floor)
             if (Mathf.Abs(pos.z - (-0.10f)) > 0.015f)
             {
-                rb.position = new Vector3(pos.x, pos.y, -0.10f);
+                pos.z = -0.10f;
+                rb.position = pos;
+            }
+            if (containerFloorWorldY > -9f)
+            {
+                float minWorldY = containerFloorWorldY + ballRadius * 0.72f;
+                if (pos.y < minWorldY)
+                {
+                    pos.y = minWorldY;
+                    rb.position = pos;
+                    if (vel.y < 0f)
+                    {
+                        vel.y = 0f;
+                        rb.linearVelocity = vel;
+                    }
+                }
             }
             if (Mathf.Abs(vel.z) > 0.0001f)
             {
@@ -441,6 +456,10 @@ namespace PuzzleGlass
                 sphereCollider.sharedMaterial = physMaterial;
                 sphereCollider.enabled = true;
                 sphereCollider.isTrigger = false;
+                if (BallContainerManager.Instance != null && BallContainerManager.Instance.bottomSpoutStopper != null)
+                {
+                    Physics.IgnoreCollision(sphereCollider, BallContainerManager.Instance.bottomSpoutStopper, false);
+                }
             }
 
             if (rb != null)
@@ -628,23 +647,21 @@ namespace PuzzleGlass
                         float dx = vacatedPos.x - op.x;
                         float dy = op.y - vacatedPos.y;
 
-                        if (_isTrackMode && other.trackQueueDriven)
+                        if (_isTrackMode)
                         {
+                            // Pist modunda komşu toplara ani hız darbesi vurma ki mevcut diziliş/katmanlar sarsılıp karışmasın;
+                            // sadece yakın komşuyu uyandır, doğal yerçekimi ve bant akışı boşluğu sakince doldursun.
                             float distSq = dx * dx + dy * dy;
-                            float maxWakeDist = ballRadius * 4.6f;
-                            if (dy >= -ballRadius * 0.35f && distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
+                            float maxWakeDist = ballRadius * 3.6f;
+                            if (dy >= -ballRadius * 0.25f && distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
                             {
+                                if (!other.rb.isKinematic) other.rb.WakeUp();
                                 float dist = Mathf.Sqrt(distSq);
-                                // dy = op.y - vacatedPos.y olduğundan boşluğa doğru çekiş -dy yönündedir (asla yukarı itme).
-                                Vector2 toGap = new Vector2(dx / dist, Mathf.Min(0f, -dy / dist));
-                                float falloff = 1f - Mathf.Clamp01(dist / maxWakeDist);
-                                other.trackVel += toGap * (0.38f * falloff);
-                                if (other.rb != null && !other.rb.isKinematic)
-                                    other.rb.AddForce(new Vector3(toGap.x, toGap.y, 0f) * (0.18f * falloff), ForceMode.VelocityChange);
-                                if (dist <= ballRadius * 3.0f && Time.time >= other._nextCollisionSquashTime)
+                                if (dist <= ballRadius * 2.8f && Time.time >= other._nextCollisionSquashTime)
                                 {
                                     other._nextCollisionSquashTime = Time.time + 0.14f;
-                                    other.PlayVisualSquashStretch(0.038f, new Vector3(toGap.x, toGap.y, 0f), isArrival: false);
+                                    Vector2 toGap = new Vector2(dx / dist, Mathf.Min(0f, -dy / dist));
+                                    other.PlayVisualSquashStretch(0.032f, new Vector3(toGap.x, toGap.y, 0f), isArrival: false);
                                 }
                             }
                             continue;
@@ -653,19 +670,7 @@ namespace PuzzleGlass
                         if (other.rb.isKinematic) continue;
                         other.rb.WakeUp();
 
-                        if (_isTrackMode)
-                        {
-                            float distSq = dx * dx + dy * dy;
-                            float maxWakeDist = ballRadius * 4.6f;
-                            if (dy >= -ballRadius * 0.30f && distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
-                            {
-                                Vector3 toGap = (vacatedPos - op).normalized;
-                                toGap.y = Mathf.Min(0f, toGap.y);
-                                float falloff = 1f - Mathf.Clamp01(Mathf.Sqrt(distSq) / maxWakeDist);
-                                other.rb.linearVelocity += new Vector3(toGap.x, toGap.y, 0f) * (0.20f * falloff + 0.06f);
-                            }
-                        }
-                        else if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
+                        if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
                         {
                             float inwardVx = Mathf.Clamp(dx * 1.45f, -nudgeCap, nudgeCap);
                             other.rb.linearVelocity += new Vector3(inwardVx, nudgeDown, 0f);

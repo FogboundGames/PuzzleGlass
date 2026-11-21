@@ -71,14 +71,31 @@ namespace PuzzleGlass
             var pool = BallObjectPool.Instance;
             if (pool == null || pool.ActiveBalls == null) return false;
             var balls = pool.ActiveBalls;
+            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            Transform ct = container != null ? container.transform : null;
             Vector2 p = ball.trackQueueLocalPos;
             float laneHalf = d * 0.92f;   // alttan iki top arasına yaslanan üst top da engelli sayılır
             float minDrop = d * 0.28f;    // en az bu kadar aşağıdaysa "altında" sayılır
             for (int i = 0; i < balls.Count; i++)
             {
                 var o = balls[i];
-                if (o == null || o == ball || o.state != BallState.InContainer || !o.trackQueuePosValid || o.trackLoopSlot < 0) continue;
-                Vector2 q = o.trackQueueLocalPos;
+                if (o == null || o == ball) continue;
+                Vector2 q;
+                if (o.state == BallState.InContainer)
+                {
+                    if (!o.trackQueuePosValid || o.trackLoopSlot < 0) continue;
+                    q = o.trackQueueLocalPos;
+                }
+                else if (o.state == BallState.AttractingToExit && ct != null)
+                {
+                    // Çıkmaya henüz başlamış alt top kapıdan ayrılana kadar üstündeki topu tut (sıra/diziliş bozulmasın)
+                    Vector3 lp = ct.InverseTransformPoint(o.transform.position);
+                    q = new Vector2(lp.x, lp.y);
+                }
+                else
+                {
+                    continue;
+                }
                 float drop = p.y - q.y;
                 if (drop >= minDrop && drop <= d * 2.5f && Mathf.Abs(q.x - p.x) < laneHalf) return true;
             }

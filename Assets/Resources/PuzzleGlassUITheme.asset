@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6dbe464ee27ae85448953fa6c45253fd, type: 3}
   m_Name: PuzzleGlassUITheme
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassUITheme
-  buttonViolet: {fileID: 4717104774431673990, guid: 2204c5120d209e24b8d8473101c0670f, type: 3}
-  buttonBlue: {fileID: -8111322212487550922, guid: 4edd415ab2cd6784ea5e7905122a703d, type: 3}
-  buttonGreen: {fileID: -6029991969101318831, guid: c77a20011fee4694cb75577a7509ffda, type: 3}
-  buttonRed: {fileID: 5014669083926033807, guid: f05ec7f8583bfa3468fb8958e87e24d9, type: 3}
-  smallSquareViolet: {fileID: 3624760936692437016, guid: 931f6455943555649a61ed7f1c76cbf6, type: 3}
-  smallSquareBlue: {fileID: 7919194353434859991, guid: b35fcaa46fa9f3e49b71c103f69df698, type: 3}
+  buttonViolet: {fileID: 21300000, guid: 04f8c192689143a59cf44d8cd6b57f8f, type: 3}
+  buttonBlue: {fileID: 21300000, guid: dd5329438afd4affab81adcbe22b0faf, type: 3}
+  buttonGreen: {fileID: 21300000, guid: 3f882eaa44d048eda9d3289c6658b412, type: 3}
+  buttonRed: {fileID: 21300000, guid: 27660641a5924612993b44b8e9b6883a, type: 3}
+  smallSquareViolet: {fileID: 21300000, guid: b2dcb12488d14b5f9b38d60e0c01bfb7, type: 3}
+  smallSquareBlue: {fileID: 21300000, guid: 80284f80b18c4a2a9571f730ffaa6240, type: 3}
   roundedWhite80: {fileID: 4211293783942383924, guid: a64f98d7a00501442ae40845562f1c20, type: 3}
   menuDarkPanel: {fileID: -7020922751645015488, guid: f0b4dc9b8fe390b4597ba9c379657d44, type: 3}
   whitePanelViolet: {fileID: 4132817045525890051, guid: 8dc0d81c32fd06241b092585c45b6993, type: 3}

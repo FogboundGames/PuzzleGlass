@@ -321,9 +321,9 @@ Shader "PuzzleGlass/SlotSquircleUI"
                     float aa = max(fwidth(dBody) * 1.15, 0.0025);
 
                     // Yumuşak gölge
-                    float dSh = sdChamferDock(q + float2(0.0, lip + 0.055), rBot + 0.02, rTop + 0.02, he, rad + 0.03);
-                    float shadowAlpha = (1.0 - smoothstep(-0.04, 0.17, dSh)) * 0.30;
-                    float3 shadowRGB = float3(0.16, 0.15, 0.32);
+                    float dSh = sdChamferDock(q + float2(-0.02, lip + 0.075), rBot + 0.03, rTop + 0.03, he, rad + 0.04);
+                    float shadowAlpha = (1.0 - smoothstep(-0.03, 0.22, dSh)) * 0.44;
+                    float3 shadowRGB = float3(0.14, 0.13, 0.30);
 
                     float bodyMask = 1.0 - smoothstep(-aa, aa, dBody);
                     float topMask  = 1.0 - smoothstep(-aa, aa, dTop);
@@ -373,10 +373,10 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 float  wellMask = 1.0 - smoothstep(-aa, aa, dSpot);       // slotun tamamı
 
                 // Dış fake drop + temas gölgesi (quad sınırına taşmadan pürüzsüz sönümlenir)
-                float  dDrop           = sdRoundBox(p + float2(0.0, 0.042), spotHalf + float2(0.012, 0.012), spotRad + 0.012);
-                float  dropAlpha       = (1.0 - smoothstep(-0.01, 0.115, dDrop)) * 0.36;
-                float  contactAlpha    = exp(-max(0.0, dSpot) / 0.032) * 0.24;
-                float  edgeFade        = 1.0 - smoothstep(0.91, 1.0, max(abs(p.x), abs(p.y)));
+                float  dDrop           = sdRoundBox(p + float2(-0.020, 0.055), spotHalf + float2(0.015, 0.015), spotRad + 0.015);
+                float  dropAlpha       = (1.0 - smoothstep(-0.01, 0.135, dDrop)) * 0.52;
+                float  contactAlpha    = exp(-max(0.0, dSpot) / 0.036) * 0.46;
+                float  edgeFade        = 1.0 - smoothstep(0.92, 1.0, max(abs(p.x), abs(p.y)));
                 float  softOuterShadow = saturate(max(dropAlpha, contactAlpha)) * edgeFade;
                 const float borderW = 0.075;
                 float  dInner    = dSpot + borderW;
@@ -411,11 +411,13 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 fillCol   = lerp(fillCol, float3(0.27, 0.27, 0.48), hi * 0.7);
                 borderCol = lerp(borderCol, float3(0.83, 0.83, 1.00), hi * 0.6);
 
-                // Kenar ve köşelerin hemen içinde üstten aşağı yumuşak gömülme gölgesi
-                float dInnerSh  = sdRoundBox(p + float2(0.0, 0.055), spotHalf - borderW, max(0.05, spotRad - borderW));
-                float innerDrop = smoothstep(-0.16, 0.02, dInnerSh);
-                float recessAO  = exp(-max(0.0, -dInner) / 0.13) * (0.45 + 0.55 * yN);
-                fillCol = lerp(fillCol, fillCol * 0.66, saturate(recessAO * 0.62 + innerDrop * 0.35));
+                // Kenar ve köşelerin hemen içinde üstten aşağı derin gömülme gölgesi + alt kenar ışık yakalama
+                float dInnerSh  = sdRoundBox(p + float2(-0.025, 0.080), spotHalf - borderW, max(0.05, spotRad - borderW));
+                float innerDrop = smoothstep(-0.22, 0.015, dInnerSh);
+                float recessAO  = exp(-max(0.0, -dInner) / 0.16) * (0.42 + 0.58 * yN);
+                fillCol = lerp(fillCol, fillCol * 0.44, saturate(recessAO * 0.65 + innerDrop * 0.48));
+                float bottomCatchlight = exp(-max(0.0, -dInner) / 0.045) * (1.0 - smoothstep(0.0, 0.45, yN));
+                fillCol = lerp(fillCol, fillCol + float3(0.08, 0.08, 0.13), bottomCatchlight * 0.65);
 
                 float3 slotRGB = lerp(borderCol, fillCol, innerMask);
 
@@ -452,7 +454,7 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 float finalAlpha = saturate(wellMask + softOuterShadow * (1.0 - wellMask)) * IN.color.a;
                 if (finalAlpha < 0.002) discard;
 
-                float3 finalRGB = lerp(float3(0.11, 0.11, 0.24), slotRGB * IN.color.rgb, wellMask);
+                float3 finalRGB = lerp(float3(0.07, 0.07, 0.16), slotRGB * IN.color.rgb, wellMask);
                 return half4(finalRGB, finalAlpha);
             }
             ENDHLSL

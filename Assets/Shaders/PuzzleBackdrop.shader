@@ -187,12 +187,12 @@ Shader "PuzzleGlass/SoftBackdrop"
                     float dSplit = sminPoly(dWing, dBay, baseFillet);
                     float aa = max(fwidth(dSplit) * 1.15, 0.0025);
 
-                    // Soft outer fake shadow & contact AO around the raised contour + rounded corners
+                    // Rich 3D fake shadow & contact AO outside the raised lower tray contour + rounded corners
                     float outerDist = max(0.0, dSplit);
-                    float wallDrop = exp(-outerDist / 0.085) * 0.48;
-                    float wallContact = exp(-outerDist / 0.018) * 0.55;
-                    float wallShadow = saturate(wallDrop + wallContact) * step(0.0, dSplit);
-                    wallCol = lerp(wallCol, wallCol * float3(0.74, 0.75, 0.86), wallShadow);
+                    float wallDrop = exp(-outerDist / 0.145) * 0.58;
+                    float wallContact = exp(-outerDist / 0.024) * 0.78;
+                    float wallShadow = saturate(wallDrop + wallContact * 0.65) * step(0.0, dSplit);
+                    wallCol = lerp(wallCol, wallCol * float3(0.56, 0.57, 0.74), wallShadow);
 
                     // Lower slate-grey ground (matches slot dock tone, covers slot bay + lower board area)
                     float lowerDepthT = saturate((bayTopY - wPos.y) / max(1.0, _BackdropWorldRect.w * 0.72));
@@ -210,10 +210,10 @@ Shader "PuzzleGlass/SoftBackdrop"
                     lowerCol = lerp(lowerCol, rimCol, rimMask);
 
                     // Subtle crisp inner seam groove & soft inner drop shadow below the rim & rounded corners
-                    float innerGroove = exp(-pow((-dSplit - rimW) / 0.008, 2.0)) * lowerZoneMask;
-                    lowerCol = lerp(lowerCol, lowerCol * 0.58, innerGroove * 0.52);
-                    float innerAO = (1.0 - smoothstep(rimW, rimW + 0.115, -dSplit)) * (1.0 - rimMask) * lowerZoneMask;
-                    lowerCol = lerp(lowerCol, lowerCol * 0.84, innerAO * 0.75);
+                    float innerGroove = exp(-pow((-dSplit - rimW) / 0.009, 2.0)) * lowerZoneMask;
+                    lowerCol = lerp(lowerCol, lowerCol * 0.52, innerGroove * 0.65);
+                    float innerAO = (1.0 - smoothstep(rimW, rimW + 0.145, -dSplit)) * (1.0 - rimMask) * lowerZoneMask;
+                    lowerCol = lerp(lowerCol, lowerCol * 0.76, innerAO * 0.85);
 
                     col = lerp(wallCol, lowerCol, lowerZoneMask);
                 }

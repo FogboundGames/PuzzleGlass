@@ -258,8 +258,9 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Computes bottom-to-top ball landing positions and diameters centered inside the recessed dark pit
-        /// of a hollow numbered block (BlockVisualStyle.PuzzleWithNumber).
+        /// Computes bottom-to-top tight honeycomb ball landing positions and diameters centered inside
+        /// the recessed dark pit of a hollow numbered block (BlockVisualStyle.PuzzleWithNumber).
+        /// Supports up to MonsterCharacter.MaxHollowPitBalls (30) across all polyomino shapes.
         /// </summary>
         public static void ComputeHollowPitBallLayout(
             CarrierBlockShape shape,
@@ -267,79 +268,170 @@ namespace PuzzleGlass
             out Vector2[] positions,
             out float ballLocalDiameter)
         {
-            int c = Mathf.Clamp(count, 1, MonsterCharacter.MaxVisualSockets);
-            if (shape == CarrierBlockShape.Rect1x1)
+            int c = Mathf.Clamp(count, 1, MonsterCharacter.MaxHollowPitBalls);
+            GetRectParts(shape, out Vector4 rect0, out Vector4 rect1, out int rectCount, out _, out _);
+
+            if (c == 1)
             {
-                const float pitCenterY = -0.032f;
-                switch (c)
+                Vector2 center = new Vector2(rect0.x, rect0.y - 0.025f);
+                positions = new[] { center };
+                ballLocalDiameter = 0.26f;
+                return;
+            }
+
+            float maxD = (shape == CarrierBlockShape.Rect1x1) ? 0.25f : 0.28f;
+            float minD = 0.075f;
+            float chosenD = minD;
+            List<List<Vector2>> chosenRows = null;
+
+            const int searchSteps = 84;
+            for (int step = 0; step < searchSteps; step++)
+            {
+                float d = maxD - step * ((maxD - minD) / (searchSteps - 1));
+                List<List<Vector2>> rows = GenerateHollowPitRows(rect0, rect1, rectCount, d);
+                int cap = 0;
+                for (int r = 0; r < rows.Count; r++) cap += rows[r].Count;
+                if (cap >= c)
                 {
-                    case 1:
-                        positions = new[] { new Vector2(0f, pitCenterY) };
-                        ballLocalDiameter = 0.26f;
-                        return;
-                    case 2:
-                        positions = new[] { new Vector2(-0.135f, pitCenterY), new Vector2(0.135f, pitCenterY) };
-                        ballLocalDiameter = 0.21f;
-                        return;
-                    case 3:
-                        positions = new[]
-                        {
-                            new Vector2(-0.125f, -0.125f),
-                            new Vector2( 0.125f, -0.125f),
-                            new Vector2( 0.000f,  0.070f)
-                        };
-                        ballLocalDiameter = 0.19f;
-                        return;
-                    case 4:
-                        positions = BuildOffsetGrid(new[] { 2, 2 }, 0.225f, new[] { -0.128f, 0.064f }, 0f);
-                        ballLocalDiameter = 0.185f;
-                        return;
-                    case 5:
-                        positions = BuildOffsetGrid(new[] { 3, 2 }, 0.180f, new[] { -0.125f, 0.060f }, 0f);
-                        ballLocalDiameter = 0.160f;
-                        return;
-                    case 6:
-                        positions = BuildOffsetGrid(new[] { 3, 3 }, 0.180f, new[] { -0.125f, 0.060f }, 0f);
-                        ballLocalDiameter = 0.160f;
-                        return;
-                    case 7:
-                        positions = BuildOffsetGrid(new[] { 3, 3, 1 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
-                        ballLocalDiameter = 0.146f;
-                        return;
-                    case 8:
-                        positions = BuildOffsetGrid(new[] { 3, 3, 2 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
-                        ballLocalDiameter = 0.146f;
-                        return;
-                    case 9:
-                        positions = BuildOffsetGrid(new[] { 3, 3, 3 }, 0.174f, new[] { -0.175f, -0.032f, 0.110f }, 0f);
-                        ballLocalDiameter = 0.146f;
-                        return;
-                    case 10:
-                    case 11:
-                    case 12:
-                    {
-                        int[] rc = c == 10 ? new[] { 4, 3, 3 } : (c == 11 ? new[] { 4, 4, 3 } : new[] { 4, 4, 4 });
-                        positions = BuildOffsetGrid(rc, 0.140f, new[] { -0.168f, -0.032f, 0.104f }, 0f);
-                        ballLocalDiameter = 0.128f;
-                        return;
-                    }
-                    default:
-                    {
-                        int r3 = Mathf.Max(1, c - 12);
-                        int[] rc = { 4, 4, 4, r3 };
-                        positions = BuildOffsetGrid(rc, 0.136f, new[] { -0.194f, -0.086f, 0.022f, 0.130f }, 0f);
-                        ballLocalDiameter = 0.114f;
-                        return;
-                    }
+                    chosenD = d;
+                    chosenRows = rows;
+                    break;
                 }
             }
 
-            ComputeSocketLayoutForShape(shape, c, out positions, out _, out ballLocalDiameter);
-            for (int i = 0; i < positions.Length; i++)
+            if (chosenRows == null || chosenRows.Count == 0)
             {
-                positions[i].y -= 0.048f;
+                chosenD = minD;
+                chosenRows = GenerateHollowPitRows(rect0, rect1, rectCount, chosenD);
             }
-            ballLocalDiameter = Mathf.Min(ballLocalDiameter, 0.24f);
+
+            // Order strictly bottom-to-top by row; within each row use center-outward contiguous order
+            // so partial rows fill symmetrically with zero bottom-row gaps.
+            var ordered = new List<Vector2>(c + 8);
+            for (int r = 0; r < chosenRows.Count; r++)
+            {
+                List<Vector2> row = chosenRows[r];
+                int n = row.Count;
+                int left = (n - 1) / 2;
+                int right = left + 1;
+                bool takeLeft = true;
+                while (left >= 0 || right < n)
+                {
+                    if (takeLeft && left >= 0)
+                    {
+                        ordered.Add(row[left--]);
+                    }
+                    else if (right < n)
+                    {
+                        ordered.Add(row[right++]);
+                    }
+                    else if (left >= 0)
+                    {
+                        ordered.Add(row[left--]);
+                    }
+                    takeLeft = !takeLeft;
+                }
+            }
+
+            positions = new Vector2[c];
+            for (int i = 0; i < c; i++)
+            {
+                positions[i] = (i < ordered.Count)
+                    ? ordered[i]
+                    : (ordered.Count > 0 ? ordered[ordered.Count - 1] : new Vector2(rect0.x, rect0.y - 0.03f));
+            }
+            ballLocalDiameter = chosenD;
+        }
+
+        private static List<List<Vector2>> GenerateHollowPitRows(Vector4 rect0, Vector4 rect1, int rectCount, float diameter)
+        {
+            float rad = diameter * 0.5f;
+            const float pitInset = 0.118f;
+            const float wallPad = 0.002f;
+            const float topOverhang = 0.068f;
+
+            float minX = rect0.x - rect0.z;
+            float maxX = rect0.x + rect0.z;
+            float minY = rect0.y - rect0.w;
+            float maxY = rect0.y + rect0.w;
+            if (rectCount > 1)
+            {
+                minX = Mathf.Min(minX, rect1.x - rect1.z);
+                maxX = Mathf.Max(maxX, rect1.x + rect1.z);
+                minY = Mathf.Min(minY, rect1.y - rect1.w);
+                maxY = Mathf.Max(maxY, rect1.y + rect1.w);
+            }
+
+            minX += pitInset + rad + wallPad;
+            maxX -= pitInset + rad + wallPad;
+            minY += pitInset + rad + wallPad;
+            maxY -= pitInset + topOverhang + rad + wallPad;
+
+            var rows = new List<List<Vector2>>();
+            if (maxX < minX || maxY < minY) return rows;
+
+            float dy = diameter * 0.885f;
+            float stepX = diameter * 0.995f;
+            float span = maxX - minX;
+            int evenCount = Mathf.Max(1, Mathf.FloorToInt(span / stepX) + 1);
+            float evenWidth = (evenCount - 1) * stepX;
+            float evenStart = 0.5f * (minX + maxX) - 0.5f * evenWidth;
+
+            int rowIdx = 0;
+            for (float y = minY; y <= maxY + 0.003f; y += dy, rowIdx++)
+            {
+                bool isOdd = (rowIdx % 2 == 1) && (evenCount >= 2);
+                int cols = isOdd ? (evenCount - 1) : evenCount;
+                float startX = isOdd ? (evenStart + 0.5f * stepX) : evenStart;
+
+                var rowPts = new List<Vector2>(cols);
+                for (int k = 0; k < cols; k++)
+                {
+                    float px = startX + k * stepX;
+                    if (EvalHollowPitPackSdf(new Vector2(px, y), rect0, rect1, rectCount, rad) <= 0.006f)
+                    {
+                        rowPts.Add(new Vector2(px, y));
+                    }
+                }
+                if (rowPts.Count > 0)
+                {
+                    rows.Add(rowPts);
+                }
+            }
+            return rows;
+        }
+
+        private static float EvalHollowPitPackSdf(Vector2 p, Vector4 rect0, Vector4 rect1, int rectCount, float rad)
+        {
+            float d = EvalSingleHollowPitSdf(p, rect0, rad);
+            if (rectCount > 1)
+            {
+                d = Mathf.Min(d, EvalSingleHollowPitSdf(p, rect1, rad));
+            }
+            return d;
+        }
+
+        private static float EvalSingleHollowPitSdf(Vector2 p, Vector4 rectVec, float rad)
+        {
+            const float pitInset = 0.118f;
+            const float wallPad = 0.002f;
+            const float topOverhang = 0.068f;
+            const float outerCornerRad = 0.056f;
+
+            float ihx = rectVec.z - pitInset;
+            float ihy = rectVec.w - pitInset;
+            float minY = rectVec.y - ihy;
+            float maxY = rectVec.y + ihy - topOverhang;
+            if (ihx <= rad + wallPad || (maxY - minY) <= 2f * rad + 2f * wallPad)
+            {
+                return 1f;
+            }
+
+            Vector2 center = new Vector2(rectVec.x, 0.5f * (minY + maxY));
+            Vector2 half = new Vector2(ihx - rad - wallPad, 0.5f * (maxY - minY) - rad - wallPad);
+            float cr = Mathf.Min(Mathf.Max(0.004f, outerCornerRad - rad), Mathf.Min(half.x, half.y));
+            Vector2 q = new Vector2(Mathf.Abs(p.x - center.x), Mathf.Abs(p.y - center.y)) - half + new Vector2(cr, cr);
+            return Mathf.Min(Mathf.Max(q.x, q.y), 0f) + new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude - cr;
         }
 
         private static Vector2[] BuildOffsetGrid(int[] countsPerRow, float xStep, float[] rowYs, float yOffset)

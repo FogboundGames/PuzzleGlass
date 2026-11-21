@@ -107,15 +107,16 @@ namespace PuzzleGlass
                     Vector2 dir = (pB - pA) / segLen;
                     float angleZ = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
                     // ExtractWallSegments garanti eder ki (dir.y, -dir.x) dışarı (duvar içine, sdf > 0) bakar
+                    float effTrackWallT = Mathf.Max(wallThickness, 0.18f);
                     Vector2 outNorm = new Vector2(dir.y, -dir.x);
-                    Vector2 colPos = mid + outNorm * (wallThickness * 0.5f);
+                    Vector2 colPos = mid + outNorm * (effTrackWallT * 0.5f);
 
                     GameObject segObj = new GameObject($"Track_WallSeg_{i}");
                     segObj.transform.SetParent(_collidersRoot.transform, false);
                     segObj.transform.localPosition = new Vector3(colPos.x, colPos.y, -0.10f);
                     segObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
                     var box = segObj.AddComponent<BoxCollider>();
-                    box.size = new Vector3(segLen + 0.025f, wallThickness, wallDepth);
+                    box.size = new Vector3(segLen + 0.030f, effTrackWallT, wallDepth);
                     box.sharedMaterial = _glassPhysMaterial;
                 }
 
@@ -134,15 +135,15 @@ namespace PuzzleGlass
                 backTrackCol.size = new Vector3(trackW, trackH, 0.08f);
                 backTrackCol.sharedMaterial = _glassPhysMaterial;
 
-                // Bottom Exit Stopper & Trigger at track exit mouth
+                // Bottom Exit Stopper & Trigger at track exit mouth (thick downward so heavy balls never tunnel out)
                 float exitY = track.exitPoint.y - track.innerHalfWidth;
-                float exitW = Mathf.Max(0.45f, track.innerHalfWidth * 2.4f);
+                float exitW = Mathf.Max(0.75f, track.innerHalfWidth * 3.0f);
 
                 GameObject trackStopper = new GameObject("BottomSpoutStopperGate");
                 trackStopper.transform.SetParent(_collidersRoot.transform, false);
-                trackStopper.transform.localPosition = new Vector3(track.exitPoint.x, exitY - 0.045f, -0.10f);
+                trackStopper.transform.localPosition = new Vector3(track.exitPoint.x, exitY - 0.20f, -0.10f);
                 bottomSpoutStopper = trackStopper.AddComponent<BoxCollider>();
-                bottomSpoutStopper.size = new Vector3(exitW, 0.08f, wallDepth);
+                bottomSpoutStopper.size = new Vector3(exitW, 0.40f, wallDepth);
                 bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
 
                 GameObject trackTrigger = new GameObject("SpoutExitTrigger");
@@ -168,20 +169,22 @@ namespace PuzzleGlass
                 float boxH = Mathf.Max(0.5f, (ceilY - floorY) + 0.40f);
                 float boxW = innerHalfW * 2f + 0.60f;
 
+                float effBoxWallT = Mathf.Max(wallThickness, 0.20f);
+
                 // Left vertical wall (inner face at -innerHalfW)
                 GameObject leftBoxWall = new GameObject("LeftGlassWallCollider");
                 leftBoxWall.transform.SetParent(_collidersRoot.transform, false);
-                leftBoxWall.transform.localPosition = new Vector3(-innerHalfW - wallThickness * 0.5f, centerY, -0.10f);
+                leftBoxWall.transform.localPosition = new Vector3(-innerHalfW - effBoxWallT * 0.5f, centerY, -0.10f);
                 var leftCol = leftBoxWall.AddComponent<BoxCollider>();
-                leftCol.size = new Vector3(wallThickness, boxH, wallDepth);
+                leftCol.size = new Vector3(effBoxWallT, boxH, wallDepth);
                 leftCol.sharedMaterial = _glassPhysMaterial;
 
                 // Right vertical wall (inner face at +innerHalfW)
                 GameObject rightBoxWall = new GameObject("RightGlassWallCollider");
                 rightBoxWall.transform.SetParent(_collidersRoot.transform, false);
-                rightBoxWall.transform.localPosition = new Vector3(innerHalfW + wallThickness * 0.5f, centerY, -0.10f);
+                rightBoxWall.transform.localPosition = new Vector3(innerHalfW + effBoxWallT * 0.5f, centerY, -0.10f);
                 var rightCol = rightBoxWall.AddComponent<BoxCollider>();
-                rightCol.size = new Vector3(wallThickness, boxH, wallDepth);
+                rightCol.size = new Vector3(effBoxWallT, boxH, wallDepth);
                 rightCol.sharedMaterial = _glassPhysMaterial;
 
                 // Front & Back Z containment walls
@@ -208,12 +211,12 @@ namespace PuzzleGlass
                 topBoxCol.size = new Vector3(boxW, 0.15f, wallDepth);
                 topBoxCol.sharedMaterial = _glassPhysMaterial;
 
-                // Flat Floor Stopper (top surface at floorY)
+                // Flat Floor Stopper (top surface at floorY, thick downward so stacked rows never punch out the floor)
                 GameObject floorStopperObj = new GameObject("BottomSpoutStopperGate");
                 floorStopperObj.transform.SetParent(_collidersRoot.transform, false);
-                floorStopperObj.transform.localPosition = new Vector3(0f, floorY - 0.04f, -0.10f);
+                floorStopperObj.transform.localPosition = new Vector3(0f, floorY - 0.20f, -0.10f);
                 bottomSpoutStopper = floorStopperObj.AddComponent<BoxCollider>();
-                bottomSpoutStopper.size = new Vector3(boxW, 0.08f, wallDepth);
+                bottomSpoutStopper.size = new Vector3(boxW, 0.40f, wallDepth);
                 bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
 
                 // Rounded Bottom Corner Fillets (matches the curved bottom-left and bottom-right glass corners of Image 2
@@ -303,9 +306,9 @@ namespace PuzzleGlass
 
             GameObject stopperObj = new GameObject("BottomSpoutStopperGate");
             stopperObj.transform.SetParent(_collidersRoot.transform, false);
-            stopperObj.transform.localPosition = new Vector3(spoutCenterX, throatY - 0.02f, -0.10f);
+            stopperObj.transform.localPosition = new Vector3(spoutCenterX, throatY - 0.18f, -0.10f);
             bottomSpoutStopper = stopperObj.AddComponent<BoxCollider>();
-            bottomSpoutStopper.size = new Vector3(stopperW, 0.08f, wallDepth);
+            bottomSpoutStopper.size = new Vector3(stopperW, 0.40f, wallDepth);
             bottomSpoutStopper.sharedMaterial = _glassPhysMaterial;
 
             // 7. Spout Exit Trigger (Detects when a collecting ball clears the spout tip)
