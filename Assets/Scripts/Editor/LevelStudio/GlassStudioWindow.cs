@@ -254,7 +254,8 @@ namespace PuzzleGlass.Editor.Studio
             if (paren > 0 && name.Contains("Izgara")) name = name.Substring(0, paren);
             row.Q<Label>("title").text = name;
             string kind;
-            if (!lvl.useCustomGlassShape) kind = "Varsayılan pist";
+            if (GlassShapeData.IsManualDefaultBox(lvl)) kind = "Varsayılan kutu (elle dizim)";
+            else if (!lvl.useCustomGlassShape) kind = "Varsayılan pist";
             else if (GlassShapeData.IsTrack(lvl)) kind = $"Pist ({TrackPresetLabel(lvl.trackPreset)})";
             else if (GlassShapeData.IsBoxPreset(lvl.glassPreset))
             {

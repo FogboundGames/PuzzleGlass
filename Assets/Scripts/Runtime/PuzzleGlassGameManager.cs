@@ -836,6 +836,15 @@ namespace PuzzleGlass
                         glassContainer.trackHiddenRatio = Mathf.Clamp(levelData.trackHiddenRatio, 0f, 0.6f);
                         glassContainer.trackBranches = GlassTrackLayout.CloneBranches(levelData.trackBranches);
                     }
+                    else if (levelData.useManualBallLayout)
+                    {
+                        // Elle dizim + özel cam yok: Level Design'daki düz ızgarayla aynı dikdörtgen kutu cam
+                        glassContainer.shapePreset = GlassShapePreset.RectangleBox;
+                        glassContainer.symmetricMode = true;
+                        glassContainer.widthScale = 1.0f;
+                        glassContainer.heightScale = 1.0f;
+                        glassContainer.showShoulderHandles = false;
+                    }
                     else
                     {
                         // Varsayılan üst camsı yapı: Görsel 1 tarzı sıkı toplu eğrisel cam pist (ArchLoop)
@@ -912,7 +921,7 @@ namespace PuzzleGlass
                     {
                         // Yükseklik top sayısına göre otomatik (Cam Stüdyosu'nda elle ayarlanmadıkça)
                         glassContainer.contourPoints = levelData.useManualBallLayout
-                            ? ShapedGlassContainer.BuildManualBottleContour(levelData.manualBalls, levelData.manualLaneWidth)
+                            ? ShapedGlassContainer.BuildManualBoxContour(levelData.manualBalls, levelData.manualLaneWidth)
                             : ShapedGlassContainer.BuildAutoBottleContour(levelData.bottomToTopGroups);
                         glassContainer.SyncBoundsFromContour();
                     }

@@ -461,6 +461,7 @@ namespace PuzzleGlass
                 for (int i = 0; i < kv.Value.Count; i++)
                 {
                     int targetRow = i < validRows.Count ? validRows[i] : validRows[validRows.Count - 1] + (i - validRows.Count + 1);
+                    if (kv.Value[i].row != targetRow) kv.Value[i].hasTrackPos = false; // kanalda yeni yer: eski konum kaydı bırakılır
                     kv.Value[i].row = targetRow;
                 }
             }

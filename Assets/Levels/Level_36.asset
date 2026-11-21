@@ -18,7 +18,7 @@ MonoBehaviour:
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
-  useCustomGlassShape: 0
+  useCustomGlassShape: 1
   glassIsBottle: 0
   glassPreset: 14
   colorTheme: 0
@@ -61,7 +61,23 @@ MonoBehaviour:
   fillEmptyWithColor: 0
   emptyCellColor: 0
   lockedSectionRatio: 0.3
-  contourPoints: []
+  contourPoints:
+  - y: -0.56
+    halfWidth: 1.32
+    centerX: 0
+    cornerTension: 1
+  - y: -0.52
+    halfWidth: 1.32
+    centerX: 0
+    cornerTension: 1
+  - y: 1.0041003
+    halfWidth: 1.32
+    centerX: 0
+    cornerTension: 1
+  - y: 1.0441003
+    halfWidth: 1.32
+    centerX: 0
+    cornerTension: 1
   trackPreset: 0
   trackLanesAcross: 0
   trackAutoFitToBalls: 1

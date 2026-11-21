@@ -53,6 +53,9 @@ namespace PuzzleGlass
         public PuzzleColor color = PuzzleColor.Blue;
         public int column;
         public int row;
+        [Tooltip("Kanal camında topun konumu (pist sınırlarına göre 0..1). Slot düzeni değişse de top en yakın slota oturur.")]
+        public bool hasTrackPos;
+        public Vector2 trackPos;
 
         public ManualPoolBallEntry() { }
 
@@ -454,6 +457,9 @@ namespace PuzzleGlass
         public bool useManualBallLayout = false;
         [Tooltip("Elle dizilimde şerit başına sütun sayısı (0 = otomatik, 3..8 = sabit sütun yoğunluğu).")]
         public int manualLaneWidth = 0;
+        [Tooltip("Kanal camında elle dizim: pistin kaç topa göre boyutlanacağı (0 = top sayısına göre). Elle dizime geçerken " +
+                 "sabitlenir; böylece top ekleyip silmek pisti yeniden boyutlandırıp diğer topları kaydırmaz.")]
+        public int manualTrackCapacity = 0;
         public List<ManualPoolBallEntry> manualBalls = new List<ManualPoolBallEntry>();
 
         [Tooltip("Cam haznedeki top gruplarının En Alttan (0) En Üste doğru renk sırası (Eski/uyumluluk listesi)")]

@@ -175,6 +175,33 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Elle top dizimli ama kendi cam şekli olmayan level: Level Design'daki düz ızgarayla aynı dikdörtgen kutu cam.
+        /// Genişlik varsayılan kutu (2.64), yükseklik en üst dolu sıraya göre uzar. Oyun ve editör bu konturu birlikte kullanır.
+        /// </summary>
+        public static List<GlassContourPoint> BuildManualBoxContour(List<ManualPoolBallEntry> manualBalls, int manualLaneWidth)
+        {
+            const float bottomY = -0.56f;
+            int lw = Mathf.Clamp(manualLaneWidth > 0 ? manualLaneWidth : 4, 3, 8);
+            int cols = lw * 3;
+            // Genişlik sütun sayısına oturur: petek kaydırması (±çeyrek çap) dahil satırlar duvardan duvara dolar, fizikte yere yayılmaz
+            float hw = Mathf.Min(1.32f, (cols * 0.5f + 0.35f) * OrderedPoolLayout.MaxDiameter + 0.11f);
+            float d = Mathf.Clamp((hw * 2f - 0.22f) / cols, OrderedPoolLayout.MinDiameter, OrderedPoolLayout.MaxDiameter);
+            int maxRow = 0;
+            if (manualBalls != null)
+                foreach (var b in manualBalls)
+                    if (b != null && b.row > maxRow) maxRow = b.row;
+            float needed = d + maxRow * d * OrderedPoolLayout.RowFactor + 0.03f;
+            float topY = bottomY + Mathf.Clamp(Mathf.Max(1.18f, needed), 1.18f, 2.80f);
+            return new List<GlassContourPoint>
+            {
+                new GlassContourPoint(bottomY, hw, 0f, 1f),
+                new GlassContourPoint(bottomY + 0.04f, hw, 0f, 1f),
+                new GlassContourPoint(topY - 0.04f, hw, 0f, 1f),
+                new GlassContourPoint(topY, hw, 0f, 1f)
+            };
+        }
+
+        /// <summary>
         /// Düz tabanlı özel şekil (Cam Stüdyosu'nda çizilen yamuk, altıgen, kapsül vb.): tabanı geniş olan
         /// serbest kontur. Oyunda havuz gibi davranır: düz zemin, toplar deliğin üstünden dümdüz iner.
         /// (Tabanı dar olan eski huni ağızlı şişeler bu kapsamda değildir.)
@@ -1939,11 +1966,13 @@ namespace PuzzleGlass
             List<LevelMonsterEntry> groups = null;
             List<ManualPoolBallEntry> manualBalls = null;
             bool useManual = false;
+            int manualCapacity = 0;
 
             if (gm != null && gm.currentLevel != null)
             {
                 gm.currentLevel.EnsureCarrierBoxPuzzleFormat();
                 useManual = gm.currentLevel.useManualBallLayout;
+                manualCapacity = gm.currentLevel.manualTrackCapacity;
                 manualBalls = gm.currentLevel.manualBalls;
                 groups = gm.currentLevel.bottomToTopGroups;
                 if ((groups == null || groups.Count == 0) && gm.currentLevel.monsters != null && gm.currentLevel.monsters.Count > 0)
@@ -1976,7 +2005,8 @@ namespace PuzzleGlass
                 trackHiddenRatio,
                 GetScreenTopLocalY(),
                 out compiledTrack,
-                out var layoutRes);
+                out var layoutRes,
+                manualCapacity);
             cachedTrackLayout = layoutRes;
             if (compiledTrack != null)
             {

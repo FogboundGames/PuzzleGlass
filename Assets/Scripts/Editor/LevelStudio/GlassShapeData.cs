@@ -19,10 +19,15 @@ namespace PuzzleGlass.Editor.Studio
 
         /// <summary>Eğrisel cam pist / kanal mı? (Varsayılan üst cam artık Görsel 1 tarzı pisttir.)</summary>
         public static bool IsTrack(PuzzleGlassLevelData lvl) =>
-            lvl == null || !lvl.useCustomGlassShape || lvl.glassPreset == GlassShapePreset.TrackChannel;
+            lvl == null || (lvl.useCustomGlassShape ? lvl.glassPreset == GlassShapePreset.TrackChannel : !lvl.useManualBallLayout);
+
+        /// <summary>Elle top dizimli ama kendi cam şekli olmayan level: oyunda ve editörde düz dikdörtgen kutu cam.</summary>
+        public static bool IsManualDefaultBox(PuzzleGlassLevelData lvl) =>
+            lvl != null && !lvl.useCustomGlassShape && lvl.useManualBallLayout;
 
         /// <summary>Level oyunda havuz kutusu olarak mı yüklenecek?</summary>
-        public static bool IsBox(PuzzleGlassLevelData lvl) => lvl != null && lvl.useCustomGlassShape && IsBoxPreset(lvl.glassPreset);
+        public static bool IsBox(PuzzleGlassLevelData lvl) =>
+            lvl != null && ((lvl.useCustomGlassShape && IsBoxPreset(lvl.glassPreset)) || IsManualDefaultBox(lvl));
 
         /// <summary>Şişe tabanlı cam mı?</summary>
         public static bool IsBottle(PuzzleGlassLevelData lvl) =>
@@ -73,8 +78,42 @@ namespace PuzzleGlass.Editor.Studio
                 autoFit,
                 scale,
                 wallThick,
+                0f,
+                float.NaN,
                 out compiled,
-                out layout);
+                out layout,
+                lvl != null ? lvl.manualTrackCapacity : 0);
+        }
+
+        /// <summary>
+        /// Kanalda elle dizim: her topun adresini (sütun/sıra) oturduğu slota göre günceller ve konumunu (pist sınırlarına
+        /// göre 0..1) kaydeder. Böylece slot üretimi ileride değişse de toplar kayıtlı konumlarına en yakın slota oturur.
+        /// Bir şey değiştiyse true döner.
+        /// </summary>
+        public static bool CanonicalizeManualTrackBalls(PuzzleGlassLevelData lvl)
+        {
+            if (lvl == null || !lvl.useManualBallLayout || lvl.manualBalls == null || lvl.manualBalls.Count == 0 || !IsTrack(lvl)) return false;
+            BuildTrack(lvl, out var track, out _);
+            if (track == null || track.manualSlots == null || track.manualSlots.Count == 0) return false;
+            var slots = track.manualSlots;
+            int[] assign = GlassTrackLayout.ResolveManualAssignments(track, slots, lvl.manualBalls);
+            bool changed = false;
+            for (int i = 0; i < lvl.manualBalls.Count; i++)
+            {
+                var mb = lvl.manualBalls[i];
+                if (mb == null || assign[i] < 0) continue;
+                var s = slots[assign[i]];
+                Vector2 norm = GlassTrackLayout.NormalizeTrackPos(track, s.localPos);
+                if (mb.column != s.column || mb.row != s.row || !mb.hasTrackPos || (mb.trackPos - norm).sqrMagnitude > 1e-10f)
+                {
+                    mb.column = s.column;
+                    mb.row = s.row;
+                    mb.hasTrackPos = true;
+                    mb.trackPos = norm;
+                    changed = true;
+                }
+            }
+            return changed;
         }
 
         /// <summary>Oyundaki top dizilimi (pist, kutu ya da düz tabanlı özel şekil için oyunla aynı hesap).</summary>
@@ -113,6 +152,17 @@ namespace PuzzleGlass.Editor.Studio
             int lw = Mathf.Clamp(lvl != null && lvl.manualLaneWidth > 0 ? lvl.manualLaneWidth : 4, 3, 8);
             laneWidth = lw;
             totalColumns = lw * 3;
+            if (IsTrack(lvl))
+            {
+                // Kanal: oyunla aynı pist slotları (sıra 0 = çıkışa en yakın)
+                BuildTrack(lvl, out var compiled, out var trackLayout);
+                diameter = compiled != null ? compiled.ballDiameter : trackLayout.diameter;
+                var trackSlots = compiled != null ? compiled.manualSlots : new List<OrderedPoolLayout.Slot>();
+                int maxCol = 0;
+                foreach (var s in trackSlots) maxCol = Mathf.Max(maxCol, s.column);
+                totalColumns = maxCol + 1;
+                return trackSlots;
+            }
             if (IsShapedPool(lvl))
             {
                 bool custom = lvl != null && lvl.useCustomGlassShape;
@@ -178,7 +228,7 @@ namespace PuzzleGlass.Editor.Studio
             if (lvl != null && lvl.useCustomGlassShape && lvl.contourPoints != null && lvl.contourPoints.Count >= 3)
                 return lvl.contourPoints;
             if (lvl != null && lvl.useManualBallLayout)
-                return ShapedGlassContainer.BuildManualBottleContour(lvl.manualBalls, lvl.manualLaneWidth);
+                return ShapedGlassContainer.BuildManualBoxContour(lvl.manualBalls, lvl.manualLaneWidth);
             return ShapedGlassContainer.BuildAutoBottleContour(lvl?.bottomToTopGroups);
         }
 

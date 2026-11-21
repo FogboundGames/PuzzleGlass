@@ -1024,11 +1024,16 @@ namespace PuzzleGlass.Editor.Studio
         private void Record(string what)
         {
             Undo.RecordObject(m_Level, what);
+            // Kanalda elle dizim kapasitesi henüz sabitlenmemişse ilk düzenlemeden önce mevcut top sayısına sabitle
+            if (m_Level != null && m_Level.useManualBallLayout && m_Level.manualTrackCapacity <= 0 && GlassShapeData.IsTrack(m_Level))
+                m_Level.manualTrackCapacity = Mathf.Max(1, m_Level.manualBalls != null ? m_Level.manualBalls.Count : 0);
         }
 
         private void OnEdited(bool syncScene)
         {
             if (m_Level == null) return;
+            // Kanalda elle dizim: adresleri oturulan slotlara göre güncelle, konumları kaydet
+            GlassShapeData.CanonicalizeManualTrackBalls(m_Level);
             EditorUtility.SetDirty(m_Level);
             m_Solve = null;
             ScheduleSolve();
@@ -1758,6 +1763,9 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_BoardContent == null) return;
             var lvl = Shown;
+            // Eski (konumsuz) kanal dizimleri ilk açılışta konumlu hale getirilir; görünen dizilim değişmez
+            if (lvl != null && lvl == m_Level && GlassShapeData.CanonicalizeManualTrackBalls(lvl))
+                EditorUtility.SetDirty(lvl);
             m_Findings = lvl != null ? PuzzleLevelSolver.Check(lvl, m_Solve) : new List<LevelFinding>();
             RefreshPalette();
             RefreshPreviewBar();
@@ -2283,6 +2291,81 @@ namespace PuzzleGlass.Editor.Studio
             lvl.manualBalls.Clear();
             lvl.manualLaneWidth = Mathf.Clamp(layout.laneWidth > 0 ? layout.laneWidth : 4, 3, 8);
             if (layout.balls == null) return;
+            if (lvl.useCustomGlassShape && lvl.glassPreset == GlassShapePreset.TrackChannel)
+            {
+                // Kanal: pist boyunu bu top sayısına sabitle (top ekleyip silmek pisti yeniden boyutlandırmasın).
+                // Elle dizim pisti otomatik pistten biraz farklı ölçekte olabilir; her top otomatik dizilimdeki konumunun
+                // (pist sınırlarına göre 0..1) karşılığı olan en yakın slota oturur. Sıraya göre eşleme halkada sol ve sağ
+                // kolu karıştırıyordu (çıkışa iki yönden eşit uzaklık), konuma göre eşleme renk bloklarını yerinde tutar.
+                bool prevManual = lvl.useManualBallLayout;
+                lvl.useManualBallLayout = false;
+                GlassShapeData.BuildTrack(lvl, out var autoTrack, out _);
+                lvl.manualTrackCapacity = layout.balls.Count;
+                lvl.useManualBallLayout = true;
+                GlassShapeData.BuildTrack(lvl, out var manualTrack, out _);
+                lvl.useManualBallLayout = prevManual;
+
+                // Halka: toplar halka boyunca tek yönde sıralanıp aynı yönde sıralı slotlara dizilir (zincir kopmaz,
+                // sıkışık bölgedeki toplar uzak boş köşelere savrulmaz)
+                if (autoTrack != null && manualTrack != null && autoTrack.closedLoopBranch >= 0 && manualTrack.closedLoopBranch >= 0
+                    && manualTrack.manualSlots != null && manualTrack.manualSlots.Count >= layout.balls.Count)
+                {
+                    var balls = new List<(float u, OrderedPoolLayout.PoolBall b)>();
+                    foreach (var b in layout.balls) balls.Add((GlassTrackLayout.RingParam(autoTrack, b.localPos), b));
+                    var mslots = new List<(float u, OrderedPoolLayout.Slot s)>();
+                    foreach (var s in manualTrack.manualSlots) mslots.Add((GlassTrackLayout.RingParam(manualTrack, s.localPos), s));
+                    if (balls.Count > 0 && balls.TrueForAll(x => x.u >= 0f) && mslots.TrueForAll(x => x.u >= 0f))
+                    {
+                        // Sıralamayı topların arasındaki en büyük boşluktan (dizilimin boş kalan kısmı) başlat
+                        balls.Sort((x, y) => x.u.CompareTo(y.u));
+                        float startU = balls[0].u, maxGap = -1f;
+                        for (int i = 0; i < balls.Count; i++)
+                        {
+                            float next = i + 1 < balls.Count ? balls[i + 1].u : balls[0].u + 1f;
+                            if (next - balls[i].u > maxGap) { maxGap = next - balls[i].u; startU = next % 1f; }
+                        }
+                        float Shift(float u) => (u - startU + 2f) % 1f;
+                        balls.Sort((x, y) => Shift(x.u).CompareTo(Shift(y.u)));
+                        mslots.Sort((x, y) => Shift(x.u).CompareTo(Shift(y.u)));
+
+                        // Sıra korunarak her topa hedef konumuna en yakın slot (kalan toplara yetecek slot bırakılır)
+                        int B = balls.Count, S = mslots.Count, ptr = 0;
+                        for (int i = 0; i < B; i++)
+                        {
+                            float target = Shift(balls[i].u);
+                            int limit = S - (B - i);
+                            int j = ptr;
+                            while (j < limit && Shift(mslots[j + 1].u) <= target) j++;
+                            if (j + 1 <= limit && Mathf.Abs(Shift(mslots[j + 1].u) - target) < Mathf.Abs(Shift(mslots[j].u) - target)) j++;
+                            var s = mslots[j].s;
+                            var entry = new ManualPoolBallEntry(balls[i].b.color, s.column, s.row)
+                            {
+                                hasTrackPos = true,
+                                trackPos = GlassTrackLayout.NormalizeTrackPos(manualTrack, s.localPos)
+                            };
+                            lvl.manualBalls.Add(entry);
+                            ptr = j + 1;
+                        }
+                        return;
+                    }
+                }
+
+                foreach (var b in layout.balls)
+                {
+                    var entry = new ManualPoolBallEntry(b.color, -1, -1);
+                    if (autoTrack != null)
+                    {
+                        entry.hasTrackPos = true;
+                        entry.trackPos = GlassTrackLayout.NormalizeTrackPos(autoTrack, b.localPos);
+                    }
+                    lvl.manualBalls.Add(entry);
+                }
+                // Adresler (sütun/sıra) konumlardan hesaplanır
+                lvl.useManualBallLayout = true;
+                GlassShapeData.CanonicalizeManualTrackBalls(lvl);
+                lvl.useManualBallLayout = prevManual;
+                return;
+            }
             foreach (var b in layout.balls)
                 lvl.manualBalls.Add(new ManualPoolBallEntry(b.color, b.ballColumn, b.row));
         }
@@ -3008,6 +3091,8 @@ namespace PuzzleGlass.Editor.Studio
             {
                 m_Level.manualBalls[fromIdx].column = to.col;
                 m_Level.manualBalls[fromIdx].row = to.row;
+                // Eski kanal konumu bırakılmazsa top eski yerine geri oturur; yeni konum OnEdited'da kaydedilir
+                m_Level.manualBalls[fromIdx].hasTrackPos = false;
             }
             OnEdited(syncScene: true);
         }

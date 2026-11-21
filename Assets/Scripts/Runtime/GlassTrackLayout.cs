@@ -78,6 +78,9 @@ namespace PuzzleGlass
             public float ballDiameter;
             public int lanesAcross;
             public Vector2 exitPoint;
+            /// <summary>Elle top dizimi için adreslenmiş slotlar (column = kol*şerit+şerit, row = çıkıştan uzaklık sırası).
+            /// Level Design ve oyun aynı listeyi kullanır.</summary>
+            public List<OrderedPoolLayout.Slot> manualSlots = new List<OrderedPoolLayout.Slot>();
             /// <summary>Kapalı halka (yürüyen bant) olarak tanımlanmış kolun indeksi; yoksa -1.</summary>
             public int closedLoopBranch = -1;
             public Rect innerBounds;
@@ -452,11 +455,16 @@ namespace PuzzleGlass
             float hiddenRatio,
             float entryRoadTopLocalY,
             out CompiledTrack compiled,
-            out OrderedPoolLayout.Result layout)
+            out OrderedPoolLayout.Result layout,
+            int manualCapacity = 0,
+            int manualRetry = 0,
+            int manualNeed = 0)
         {
             // Hedef top listesi (alttan üste)
             List<PuzzleColor> orderedColors = ExpandBallColors(bottomToTopGroups, manualBalls, useManualLayout);
             int totalCount = orderedColors.Count;
+            // Elle dizimde pist sabit kapasiteye göre boyutlanır: top ekleyip silmek slotları kaydırmaz
+            if (useManualLayout && manualCapacity > totalCount) totalCount = manualCapacity;
             // Gizli kuyruk: toplamın (1 - oran) kadarı bantta başlar, kalanı sırasıyla girişte bekler.
             // Pist, banttaki top sayısına göre boyutlanır.
             hiddenRatio = Mathf.Clamp(hiddenRatio, 0f, 0.6f);
@@ -541,7 +549,322 @@ namespace PuzzleGlass
                 }
             }
 
-            layout = BuildOrderedResultFromSlots(allSlots, orderedColors, bottomToTopGroups, useManualLayout, chosenDiam, lanes, compiled, targetCount);
+            // Elle dizimde gereken slot sayısı (ilk çağrıda belirlenir; tekrar denemelerde büyüyen pist hedefiyle karışmaz).
+            // Sabit kapasiteye küçük pay: topları sürükleyip yeniden dizmek için birkaç boş slot kalsın.
+            int headroom = manualCapacity > 0 ? Mathf.Max(6, Mathf.CeilToInt(manualCapacity * 0.06f)) : 0;
+            int need = !useManualLayout ? 0
+                : (manualNeed > 0 ? manualNeed : Mathf.Max(orderedColors.Count, manualCapacity + headroom));
+
+            if (compiled != null)
+            {
+                if (compiled.closedLoopBranch >= 0)
+                {
+                    // Halka: önce tam top aralığıyla diz; yer yetmezse pisti değiştirmeden (otomatik dizilimle aynı pist
+                    // kalsın) şerit boyunca adımı sıkılaştır (en fazla %18 değme). Pist ancak bu da yetmezse büyütülür.
+                    float stepFactor = 1.01f;
+                    var ms = BuildManualTrackSlots(GenerateManualRingSlots(compiled, allSlots, stepFactor), chosenDiam, lanes);
+                    for (int it = 0; it < 3 && need > 0 && ms.Count < need && stepFactor > 0.821f; it++)
+                    {
+                        stepFactor = Mathf.Clamp(stepFactor * ms.Count / need * 0.99f, 0.82f, stepFactor - 0.01f);
+                        ms = BuildManualTrackSlots(GenerateManualRingSlots(compiled, allSlots, stepFactor), chosenDiam, lanes);
+                    }
+                    compiled.manualSlots = ms;
+                }
+                else
+                {
+                    compiled.manualSlots = BuildManualTrackSlots(allSlots, chosenDiam, lanes);
+                }
+            }
+
+            // Elle dizim: yine de yer kalmadıysa pisti biraz büyütüp tekrar dene
+            if (useManualLayout && compiled != null && manualRetry < 8)
+            {
+                if (compiled.manualSlots.Count < need)
+                {
+                    // Küçük adımlarla büyüt: oto-sığdırma topu gereğinden fazla küçültmesin
+                    int grown = targetCount + Mathf.Max(2, Mathf.CeilToInt((need - compiled.manualSlots.Count) * 0.6f));
+                    BuildForLevel(preset, customBranches, bottomToTopGroups, manualBalls, true, lanesAcrossSetting,
+                        autoFitToBalls, manualScale, wallThickness, hiddenRatio, entryRoadTopLocalY,
+                        out compiled, out layout, grown, manualRetry + 1, need);
+                    return;
+                }
+            }
+
+            layout = useManualLayout
+                ? BuildManualResult(compiled, compiled != null ? compiled.manualSlots : BuildManualTrackSlots(allSlots, chosenDiam, lanes), manualBalls, chosenDiam, lanes)
+                : BuildOrderedResultFromSlots(allSlots, orderedColors, bottomToTopGroups, false, chosenDiam, lanes, compiled, targetCount);
+        }
+
+        /// <summary>
+        /// Pist slotlarına elle dizim adresi verir: çıkışa en yakından uzağa sıralanır; column = kol*şerit+şerit,
+        /// row = çıkışa uzaklık bandı (aynı adrese düşen slot bir sonraki boş sıraya kayar). Sıra 0 = çıkışa en yakın.
+        /// </summary>
+        public static List<OrderedPoolLayout.Slot> BuildManualTrackSlots(List<TrackSlot> allSlots, float ballDiam, int lanes)
+        {
+            var res = new List<OrderedPoolLayout.Slot>();
+            if (allSlots == null || allSlots.Count == 0) return res;
+            float bandSize = Mathf.Max(0.05f, ballDiam * 0.98f);
+            int laneCount = Mathf.Max(1, lanes);
+            var sorted = new List<TrackSlot>(allSlots);
+            sorted.Sort((a, b) =>
+            {
+                int bandA = Mathf.RoundToInt(a.distToExit / bandSize);
+                int bandB = Mathf.RoundToInt(b.distToExit / bandSize);
+                if (bandA != bandB) return bandA.CompareTo(bandB);
+                if (a.branchId != b.branchId) return a.branchId.CompareTo(b.branchId);
+                return a.laneIndex.CompareTo(b.laneIndex);
+            });
+            var used = new HashSet<(int, int)>();
+            // Halka şeritleri iç virajlarda ve kol birleşimlerinde iç içe slot üretebiliyor: elle dizimde üst üste binen
+            // slotları ele (çıkışa yakın olan kalır) ki iki top aynı yere konamasın
+            // Eşik, sıkılaştırılmış şerit adımının (en az 0.82d) altında kalır ki aynı şeritteki komşular elenmesin
+            float minSepSq = (ballDiam * 0.78f) * (ballDiam * 0.78f);
+            var accepted = new List<Vector2>(sorted.Count);
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                var s = sorted[i];
+                bool overlaps = false;
+                for (int k = 0; k < accepted.Count; k++)
+                {
+                    if ((accepted[k] - s.localPos).sqrMagnitude < minSepSq) { overlaps = true; break; }
+                }
+                if (overlaps) continue;
+                accepted.Add(s.localPos);
+                int col = Mathf.Max(0, s.branchId) * laneCount + s.laneIndex;
+                int row = Mathf.Max(0, Mathf.RoundToInt(s.distToExit / bandSize));
+                while (!used.Add((col, row))) row++;
+                res.Add(new OrderedPoolLayout.Slot { column = col, row = row, localPos = s.localPos });
+            }
+            return res;
+        }
+
+        /// <summary>
+        /// Halka pist (kemer, kalp, O, oval) için elle dizim slotları. Bant slotları orta çizgiye göre eşit açılır:
+        /// virajda dış şerit seyrekleşir (aralarda boşluk), iç şerit iç içe geçer. Burada her şerit kendi eğrisi boyunca
+        /// top çapı aralıkla, komşu şeritler yarım adım kaydırılarak (petek) dizilir. Halka dışı kollar (giriş yolu) aynen kalır.
+        /// Oyunda toplar fizikle hareket ettiği için bu konumlar yalnızca doğma noktasıdır.
+        /// </summary>
+        private static List<TrackSlot> GenerateManualRingSlots(CompiledTrack track, List<TrackSlot> baseSlots, float stepFactor = 1.01f)
+        {
+            int ring = track.closedLoopBranch;
+            if (ring < 0 || ring >= track.polylines.Count) return baseSlots;
+            var poly = new List<Vector2>(track.polylines[ring]);
+            if (poly.Count > 1 && (poly[0] - poly[poly.Count - 1]).sqrMagnitude < 1e-6f) poly.RemoveAt(poly.Count - 1);
+            if (poly.Count < 4) return baseSlots;
+
+            float d = Mathf.Max(0.02f, track.ballDiameter);
+            float r = d * 0.5f;
+            var center = ResampleClosedByStep(poly, d * 0.12f);
+            int n = center.Count;
+            if (n < 8) return baseSlots;
+
+            int lanes = Mathf.Max(1, track.lanesAcross);
+            // Bant ile aynı enine şerit aralığı (petek: ~0.87d)
+            float maxSpan = Mathf.Max(0f, track.innerHalfWidth * 2f - d * 1.12f);
+            float idealSpan = d * 0.87f * Mathf.Max(0, lanes - 1);
+            float minSpan = Mathf.Min(maxSpan, d * 0.76f * Mathf.Max(0, lanes - 1));
+            float span = lanes > 1 ? Mathf.Clamp(idealSpan, minSpan, Mathf.Max(minSpan, maxSpan)) : 0f;
+            float laneSpacing = lanes > 1 ? span / (lanes - 1) : 0f;
+            float exitStopperTop = (track.exitPoint.y - track.innerHalfWidth) - 0.045f + 0.04f;
+
+            var res = new List<TrackSlot>();
+            foreach (var s in baseSlots) if (s.branchId != ring) res.Add(s);
+
+            for (int l = 0; l < lanes; l++)
+            {
+                float off = (l - (lanes - 1) * 0.5f) * laneSpacing;
+                var lane = new List<Vector2>(n);
+                for (int i = 0; i < n; i++)
+                {
+                    Vector2 tang = (center[(i + 1) % n] - center[(i - 1 + n) % n]).normalized;
+                    lane.Add(center[i] + new Vector2(-tang.y, tang.x) * off);
+                }
+                float len = 0f;
+                for (int i = 0; i < n; i++) len += Vector2.Distance(lane[i], lane[(i + 1) % n]);
+                int count = Mathf.Max(1, Mathf.FloorToInt(len / (d * Mathf.Clamp(stepFactor, 0.8f, 1.2f))));
+                float step = len / count;
+                float start = (l % 2 == 1) ? step * 0.5f : 0f;
+
+                int seg = 0;
+                float segStart = 0f;
+                for (int k = 0; k < count; k++)
+                {
+                    float target = start + k * step;
+                    while (seg < n)
+                    {
+                        float segLen = Vector2.Distance(lane[seg], lane[(seg + 1) % n]);
+                        if (segStart + segLen >= target || seg == n - 1) break;
+                        segStart += segLen;
+                        seg++;
+                    }
+                    Vector2 a = lane[seg], b = lane[(seg + 1) % n];
+                    float sl = Vector2.Distance(a, b);
+                    Vector2 p = sl > 1e-6f ? Vector2.Lerp(a, b, Mathf.Clamp01((target - segStart) / sl)) : a;
+
+                    track.SampleField(p, out float sDist, out _, out float exitDist, out _);
+                    if (sDist > -r * 1.02f) continue;
+                    if (p.y - r < exitStopperTop + 0.012f) continue;
+                    res.Add(new TrackSlot { localPos = p, branchId = ring, rowIndex = k, laneIndex = l, distToExit = exitDist });
+                }
+            }
+            return res;
+        }
+
+        private static List<Vector2> ResampleClosedByStep(List<Vector2> pts, float step)
+        {
+            var res = new List<Vector2>();
+            int n = pts.Count;
+            float total = 0f;
+            for (int i = 0; i < n; i++) total += Vector2.Distance(pts[i], pts[(i + 1) % n]);
+            int count = Mathf.Clamp(Mathf.CeilToInt(total / Mathf.Max(0.005f, step)), 8, 4000);
+            float dl = total / count;
+            int seg = 0;
+            float segStart = 0f;
+            for (int k = 0; k < count; k++)
+            {
+                float target = k * dl;
+                while (seg < n - 1 && segStart + Vector2.Distance(pts[seg], pts[(seg + 1) % n]) < target)
+                {
+                    segStart += Vector2.Distance(pts[seg], pts[(seg + 1) % n]);
+                    seg++;
+                }
+                Vector2 a = pts[seg], b = pts[(seg + 1) % n];
+                float sl = Vector2.Distance(a, b);
+                res.Add(sl > 1e-6f ? Vector2.Lerp(a, b, Mathf.Clamp01((target - segStart) / sl)) : a);
+            }
+            return res;
+        }
+
+        /// <summary>
+        /// Halka pistte noktanın halka orta çizgisi boyunca konumu (0..1, tek yön). Halka yoksa -1.
+        /// Çıkışa uzaklıktan farklı olarak sol ve sağ kolu karıştırmaz.
+        /// </summary>
+        public static float RingParam(CompiledTrack track, Vector2 p)
+        {
+            if (track == null || track.closedLoopBranch < 0 || track.closedLoopBranch >= track.polylines.Count) return -1f;
+            var poly = track.polylines[track.closedLoopBranch];
+            int n = poly.Count;
+            if (n < 3) return -1f;
+            bool closed = (poly[0] - poly[n - 1]).sqrMagnitude < 1e-6f;
+            int segs = closed ? n - 1 : n;
+            float total = 0f, best = float.MaxValue, bestAt = 0f;
+            for (int i = 0; i < segs; i++)
+            {
+                Vector2 a = poly[i], b = poly[(i + 1) % n];
+                Vector2 ab = b - a;
+                float len = ab.magnitude;
+                float t = len > 1e-6f ? Mathf.Clamp01(Vector2.Dot(p - a, ab) / (len * len)) : 0f;
+                float dsq = (a + ab * t - p).sqrMagnitude;
+                if (dsq < best) { best = dsq; bestAt = total + t * len; }
+                total += len;
+            }
+            return total > 1e-6f ? bestAt / total : -1f;
+        }
+
+        /// <summary>Pist yerel konumunu pist dış sınırlarına göre 0..1 aralığına çevirir (pist ölçeklense de değişmez).</summary>
+        public static Vector2 NormalizeTrackPos(CompiledTrack track, Vector2 local)
+        {
+            Rect b = track.outerBounds;
+            return new Vector2((local.x - b.xMin) / Mathf.Max(1e-4f, b.width), (local.y - b.yMin) / Mathf.Max(1e-4f, b.height));
+        }
+
+        public static Vector2 DenormalizeTrackPos(CompiledTrack track, Vector2 norm)
+        {
+            Rect b = track.outerBounds;
+            return new Vector2(b.xMin + norm.x * b.width, b.yMin + norm.y * b.height);
+        }
+
+        /// <summary>
+        /// Elle dizilen her topun hangi pist slotuna oturacağını bulur (sonuç: top başına slot indeksi, -1 = yer yok).
+        /// 1) Konumu kayıtlı ve adresi hâlâ o konumdaki slotu gösteren toplar doğrudan yerleşir.
+        /// 2) Konumu kayıtlı olmayan eski toplar adresleriyle eşleşir.
+        /// 3) Konumu kayıtlı ama slot düzeni değişmiş toplar kayıtlı konuma en yakın boş slota oturur.
+        /// 4) Kalanlar çıkışa en yakın boş slota geçer.
+        /// Oyun ve Level Design aynı fonksiyonu kullanır.
+        /// </summary>
+        public static int[] ResolveManualAssignments(CompiledTrack track, List<OrderedPoolLayout.Slot> slots, List<ManualPoolBallEntry> manualBalls)
+        {
+            int n = manualBalls != null ? manualBalls.Count : 0;
+            var result = new int[n];
+            for (int i = 0; i < n; i++) result[i] = -1;
+            if (n == 0 || slots == null || slots.Count == 0) return result;
+
+            var index = new Dictionary<(int, int), int>(slots.Count);
+            for (int i = 0; i < slots.Count; i++) index[(slots[i].column, slots[i].row)] = i;
+            var taken = new bool[slots.Count];
+            float d = track != null ? Mathf.Max(0.02f, track.ballDiameter) : 0.1f;
+            float snapTolSq = (d * 0.45f) * (d * 0.45f);
+            var wanted = new Vector2[n];
+
+            // 1) ve 2): adres eşleşmesi
+            for (int i = 0; i < n; i++)
+            {
+                var mb = manualBalls[i];
+                if (mb == null) continue;
+                if (mb.hasTrackPos && track != null) wanted[i] = DenormalizeTrackPos(track, mb.trackPos);
+                if (!index.TryGetValue((mb.column, mb.row), out int si) || taken[si]) continue;
+                if (mb.hasTrackPos && track != null && (slots[si].localPos - wanted[i]).sqrMagnitude > snapTolSq) continue;
+                taken[si] = true;
+                result[i] = si;
+            }
+
+            // 3) kayıtlı konuma en yakın boş slot (en yakın çiftler önce)
+            var pairs = new List<(float dist, int ball, int slot)>();
+            for (int i = 0; i < n; i++)
+            {
+                var mb = manualBalls[i];
+                if (result[i] >= 0 || mb == null || !mb.hasTrackPos || track == null) continue;
+                for (int s = 0; s < slots.Count; s++)
+                    if (!taken[s]) pairs.Add(((slots[s].localPos - wanted[i]).sqrMagnitude, i, s));
+            }
+            if (pairs.Count > 0)
+            {
+                pairs.Sort((a, b) => a.dist.CompareTo(b.dist));
+                foreach (var p in pairs)
+                {
+                    if (result[p.ball] >= 0 || taken[p.slot]) continue;
+                    taken[p.slot] = true;
+                    result[p.ball] = p.slot;
+                }
+            }
+
+            // 4) kalanlar sıradaki boş slota
+            int next = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (result[i] >= 0 || manualBalls[i] == null) continue;
+                while (next < slots.Count && taken[next]) next++;
+                if (next >= slots.Count) break;
+                taken[next] = true;
+                result[i] = next;
+            }
+            return result;
+        }
+
+        /// <summary>Elle dizilen topları ResolveManualAssignments ile pist slotlarına koyar; yer kalmayanlar taşar.</summary>
+        private static OrderedPoolLayout.Result BuildManualResult(
+            CompiledTrack track, List<OrderedPoolLayout.Slot> slots, List<ManualPoolBallEntry> manualBalls, float ballDiam, int lanes)
+        {
+            var res = new OrderedPoolLayout.Result
+            {
+                balls = new List<OrderedPoolLayout.PoolBall>(),
+                diameter = ballDiam,
+                laneWidth = lanes,
+                totalColumns = Mathf.Max(1, lanes * 2),
+                overflowColors = new List<PuzzleColor>()
+            };
+            if (slots == null || slots.Count == 0 || manualBalls == null || manualBalls.Count == 0) return res;
+
+            int[] assign = ResolveManualAssignments(track, slots, manualBalls);
+            for (int i = 0; i < manualBalls.Count; i++)
+            {
+                var mb = manualBalls[i];
+                if (mb == null) continue;
+                if (assign[i] < 0) { res.overflowColors.Add(mb.color); continue; }
+                var s = slots[assign[i]];
+                res.balls.Add(new OrderedPoolLayout.PoolBall { color = mb.color, ballColumn = s.column, row = s.row, localPos = s.localPos });
+            }
+            return res;
         }
 
         /// <summary>Giriş yolunun boyu (pist ölçeği öncesi birim).</summary>

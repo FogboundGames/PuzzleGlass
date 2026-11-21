@@ -293,7 +293,9 @@ namespace PuzzleGlass
             float dt = Time.unscaledDeltaTime;
             _time += dt;
 
-            for (int i = 0; i < _floaters.Length; i++)
+            // Play sırasında script yeniden yüklenirse Floater dizisi serileştirilemez ve null kalır
+            int floaterCount = _floaters != null ? _floaters.Length : 0;
+            for (int i = 0; i < floaterCount; i++)
             {
                 ref Floater f = ref _floaters[i];
                 float w = _time * f.freq * Mathf.PI * 2f + f.phase;
@@ -311,6 +313,7 @@ namespace PuzzleGlass
             }
 
             // Logo boşta çok hafif nefes alır
+            if (_logo == null || _fillRect == null || _shine == null) return;
             if (!DOTween.IsTweening(_logo))
             {
                 float b = 1f + Mathf.Sin(_time * 1.7f) * 0.012f;
