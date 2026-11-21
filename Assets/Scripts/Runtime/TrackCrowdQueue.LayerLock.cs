@@ -24,6 +24,54 @@ namespace PuzzleGlass
         private static float[] s_LayerOutOff = new float[256];
         private static Vector2[] s_LayerOutDir = new Vector2[256];
 
+        /// <summary>Sert duvarın bant dış kenarından ötedeki toleransı (top çapı oranı): normal itişmede tetiklenmesin.</summary>
+        public static float LayerWallTolerance = 0.15f;
+        /// <summary>Teşhis: sert duvarın topu geri aldığı toplam sayı (level başında sıfırlanır).</summary>
+        public static int LayerWallClamps { get; private set; }
+        /// <summary>Teşhis: duvarın geri aldığı toplam / en büyük enine mesafe (top çapı cinsinden).</summary>
+        public static float LayerWallCorrectionSum { get; private set; }
+        public static float LayerWallCorrectionMax { get; private set; }
+        /// <summary>Teşhis: hatalı ölçüm şüphesiyle atlanan (yarım çaptan büyük) düzeltme sayısı.</summary>
+        public static int LayerWallSkipped { get; private set; }
+
+        /// <summary>
+        /// Sert duvar: kilitli katmandaki (açık katmandan içteki) top, bandının dış kenarını (+tolerans) aşarsa enine
+        /// duvara geri alınır ve dışa doğru hızı silinir. Sadece dış taraf sınırlanır (içe hareket serbest); kanal boyunca
+        /// ilerleme korunur. Düzeltme yapıldıysa true döner ve p güncellenir.
+        /// </summary>
+        private static bool ClampToLayerWall(BallPhysicsController b, ref Vector2 p, float outOffset, Vector2 outDir,
+            GlassTrackLayout.CompiledTrack track, float d, Transform ct, float localZ)
+        {
+            if (!s_LayerLock || b == null || b.trackLayer < 0 || b.trackLayer <= OpenLayer) return false;
+            float half = Mathf.Max(1e-4f, track.innerHalfWidth - d * 0.56f);
+            float edge = half * 0.33f;
+            float pad = d * 0.08f;
+            // Bandın dış kenarı: orta için +edge-pad, iç için -edge-pad
+            float bandOuter = b.trackLayer == 1 ? (edge - pad) : (-edge - pad);
+            float wall = bandOuter + d * LayerWallTolerance;
+            if (outOffset <= wall) return false;
+            // Güvenlik: gerçek taşma adım adım büyür ve duvar onu erken yakalar. Tek adımda yarım çaptan büyük taşma
+            // ancak hatalı ölçümden gelir (ör. en yakın orta çizgi noktası, birbirine yakın iki kolun karşı tarafından
+            // seçildiyse); o durumda topu ışınlama, yaya bırak.
+            if (outOffset - wall > d * 0.5f) { LayerWallSkipped++; return false; }
+
+            p += outDir * (wall - outOffset);
+            b.rb.position = ct.TransformPoint(new Vector3(p.x, p.y, localZ));
+            Vector3 vLocal = ct.InverseTransformDirection(b.rb.linearVelocity);
+            Vector2 v2 = new Vector2(vLocal.x, vLocal.y);
+            float vLat = Vector2.Dot(v2, outDir);
+            if (vLat > 0f)
+            {
+                v2 -= outDir * vLat;
+                b.rb.linearVelocity = ct.TransformDirection(new Vector3(v2.x, v2.y, vLocal.z));
+            }
+            LayerWallClamps++;
+            float corr = (outOffset - wall) / Mathf.Max(1e-4f, d);
+            LayerWallCorrectionSum += corr;
+            if (corr > LayerWallCorrectionMax) LayerWallCorrectionMax = corr;
+            return true;
+        }
+
         /// <summary>
         /// Topun kendi katman bandında kalması için enine ivme. Bantlar ComputeRingLayer ile aynı: kanal yarı genişliği üçe
         /// bölünür (dış: +0.33..+1, orta: -0.33..+0.33, iç: -1..-0.33). Bant içindeyken ivme yok; taşınca yay + sönüm.
@@ -66,6 +114,10 @@ namespace PuzzleGlass
             s_LayerLock = active;
             s_OpenLayer = int.MaxValue;
             s_LayerFrame = -1;
+            LayerWallClamps = 0;
+            LayerWallCorrectionSum = 0f;
+            LayerWallCorrectionMax = 0f;
+            LayerWallSkipped = 0;
             if (active) RefreshLayerLock(force: true);
         }
 

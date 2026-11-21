@@ -154,6 +154,15 @@ namespace PuzzleGlass
                     // Katman kilidi için: adadan dışa doğru enine konum (ComputeRingLayer ile aynı yön)
                     s_LayerOutDir[n] = loop.centerNorm[ci];
                     s_LayerOutOff[n] = Vector2.Dot(p - loop.centerPts[ci], loop.centerNorm[ci]);
+
+                    // Katman kilidi sert duvarı: kilitli katmandaki top dış şeride geçemez (taşarsa enine geri alınır)
+                    if (s_LayerLock && b.trackLayer >= 0 &&
+                        ClampToLayerWall(b, ref p, s_LayerOutOff[n], s_LayerOutDir[n], track, d, ct, lp.z))
+                    {
+                        b.trackQueueLocalPos = p;
+                        s_LayerOutOff[n] = Vector2.Dot(p - loop.centerPts[ci], loop.centerNorm[ci]);
+                        offset = Vector2.Dot(p - loop.centerPts[ci], new Vector2(-tang.y, tang.x));
+                    }
                 }
                 else
                 {
@@ -270,11 +279,19 @@ namespace PuzzleGlass
                     // ekstra -Y çökelme sadece alt manifoldda (t.y <= 0.05f) uygulanır ki üst inişte toplar birbirinden kopmasın.
                     float downG = PhysDownGravity * speedMul;
                     float latGrav = Vector2.Dot(new Vector2(0f, -downG), nrm);
-                    accel += nrm * latGrav;
+                    Vector2 grav = nrm * latGrav;
                     if (Mathf.Abs(p.y - track.exitPoint.y) <= track.innerHalfWidth * 2.2f && t.y <= 0.05f)
                     {
-                        accel.y -= downG * 0.42f;
+                        grav.y -= downG * 0.42f;
                     }
+                    // Katman kilidi: kilitli topu duvara bastıran (adadan dışa) yerçekimi bileşeni silinir; kanal boyunca ve
+                    // içe doğru ağırlık kalır. Yoksa içteki toplar ağırlıklarıyla ortadakileri sürekli duvara yaslıyordu.
+                    if (s_LayerLock && b.trackLayer >= 0 && b.trackLayer > OpenLayer)
+                    {
+                        float gOut = Vector2.Dot(grav, s_LayerOutDir[i]);
+                        if (gOut > 0f) grav -= s_LayerOutDir[i] * gOut;
+                    }
+                    accel += grav;
 
                     // Yakın komşular hareket halindeyken hafifçe birbirini çekip hızını hizalar
                     if (cohCount > 0) accel += (cohSum / cohCount) * (PhysCohesionAccel * speedMul);
@@ -282,7 +299,8 @@ namespace PuzzleGlass
 
                     // Katman kilidi: top kendi katman bandının (dış/orta/iç) içinde serbest; banttan taşınca yay geri iter.
                     // Yoksa enine yerçekimi ve açılan boşluklar iç topları dışa (ya da tersi) taşıyıp katmanları karıştırıyordu.
-                    if (s_LayerLock && b.trackLayer >= 0)
+                    // Açık katmanın topları serbest: dış katmanlar boşaldığı için doğal olarak dışa/çıkışa yerleşirler.
+                    if (s_LayerLock && b.trackLayer >= 0 && b.trackLayer > OpenLayer)
                         accel += LayerBandAccel(b.trackLayer, s_LayerOutOff[i], s_LayerOutDir[i], v, track, d);
                 }
 
