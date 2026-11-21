@@ -102,6 +102,11 @@ namespace PuzzleGlass
                 s_GOnRing = new bool[s_All.Length];
                 s_GOffset = new float[s_All.Length];
             }
+            if (s_LayerOutOff.Length < s_All.Length)
+            {
+                s_LayerOutOff = new float[s_All.Length];
+                s_LayerOutDir = new Vector2[s_All.Length];
+            }
 
             float d = Mathf.Max(0.04f, track.ballDiameter);
             float r = d * 0.5f;
@@ -146,6 +151,9 @@ namespace PuzzleGlass
                 {
                     tang = loop.centerTang[ci];
                     offset = Vector2.Dot(p - loop.centerPts[ci], new Vector2(-tang.y, tang.x));
+                    // Katman kilidi için: adadan dışa doğru enine konum (ComputeRingLayer ile aynı yön)
+                    s_LayerOutDir[n] = loop.centerNorm[ci];
+                    s_LayerOutOff[n] = Vector2.Dot(p - loop.centerPts[ci], loop.centerNorm[ci]);
                 }
                 else
                 {
@@ -271,6 +279,11 @@ namespace PuzzleGlass
                     // Yakın komşular hareket halindeyken hafifçe birbirini çekip hızını hizalar
                     if (cohCount > 0) accel += (cohSum / cohCount) * (PhysCohesionAccel * speedMul);
                     if (velCount > 0) accel += (velDiffSum / velCount) * (PhysVelAlignGain * speedMul);
+
+                    // Katman kilidi: top kendi katman bandının (dış/orta/iç) içinde serbest; banttan taşınca yay geri iter.
+                    // Yoksa enine yerçekimi ve açılan boşluklar iç topları dışa (ya da tersi) taşıyıp katmanları karıştırıyordu.
+                    if (s_LayerLock && b.trackLayer >= 0)
+                        accel += LayerBandAccel(b.trackLayer, s_LayerOutOff[i], s_LayerOutDir[i], v, track, d);
                 }
 
                 if (accel.sqrMagnitude > 1e-6f)

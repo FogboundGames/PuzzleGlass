@@ -1337,6 +1337,8 @@ namespace PuzzleGlass
                     var ball = balls[b];
                     if (ball == null || ball.state != BallState.InContainer || !ball.gameObject.activeInHierarchy) continue;
                     if (ball.colorType != m.colorType) continue;
+                    // Katman kilidi: kilitli katmandaki top bu kutuya gelemez; sadece açık katman sayılır
+                    if (!TrackCrowdQueue.IsLayerOpen(ball)) continue;
                     // Sadece banttaki toplar; giriş yolundakiler bant doluyken giremez (ayrıca kontrol edilir)
                     if (ball.trackLoopSlot >= 0) return true;
                 }

@@ -110,6 +110,8 @@ namespace PuzzleGlass
         /// <summary>Top bantta ve şu an fiziksel olarak çıkışın önünden mi geçiyor?</summary>
         public static bool IsAtExit(BallPhysicsController ball)
         {
+            // Katman kilidi: daha dış katmanda top varken içteki katmanın topu çıkıştan ayrılamaz
+            if (!IsLayerOpen(ball)) return false;
             var loop = s_Loop;
             if (UseGranularFlow || UseRigidbodyPhysics) return IsAtExitGranular(loop, ball);
             if (loop == null || ball == null || ball.trackLoopSlot < 0 || ball.trackLoopSlot >= loop.totalSlots) return false;
@@ -423,6 +425,7 @@ namespace PuzzleGlass
         {
             IsMoving = false;
             if (container == null || activeBalls == null || dt <= 0f) return false;
+            RefreshLayerLock();
             if (container.compiledTrack == null) container.RebuildTrackCompiledData();
             var track = container.compiledTrack;
             if (track == null) return false;

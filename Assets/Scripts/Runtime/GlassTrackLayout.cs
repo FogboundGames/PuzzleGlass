@@ -761,6 +761,38 @@ namespace PuzzleGlass
             return total > 1e-6f ? bestAt / total : -1f;
         }
 
+        /// <summary>
+        /// Halka pistte noktanın katmanı: 0 = dış (çıkışta ağza en yakın, altta), 1 = orta, 2 = iç (adaya yakın).
+        /// Kanal genişliği üçe bölünür. Halka yoksa -1.
+        /// </summary>
+        public static int ComputeRingLayer(CompiledTrack track, Vector2 p)
+        {
+            if (track == null || track.closedLoopBranch < 0 || track.closedLoopBranch >= track.polylines.Count) return -1;
+            var ring = track.polylines[track.closedLoopBranch];
+            int n = ring.Count;
+            if (n < 3) return -1;
+            float area = 0f;
+            for (int i = 0; i < n; i++) { Vector2 a = ring[i], b = ring[(i + 1) % n]; area += a.x * b.y - b.x * a.y; }
+            float best = float.MaxValue;
+            Vector2 bc = p, bt = Vector2.right;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 a = ring[i], b = ring[(i + 1) % n];
+                Vector2 ab = b - a;
+                float l2 = ab.sqrMagnitude;
+                if (l2 < 1e-9f) continue;
+                float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / l2);
+                Vector2 c = a + ab * t;
+                float dsq = (c - p).sqrMagnitude;
+                if (dsq < best) { best = dsq; bc = c; bt = ab / Mathf.Sqrt(l2); }
+            }
+            // Saat yönünün tersine dönen halkada iç bölge solda kalır; dış normal sağdadır
+            Vector2 outward = area > 0f ? new Vector2(bt.y, -bt.x) : new Vector2(-bt.y, bt.x);
+            float half = Mathf.Max(1e-4f, track.innerHalfWidth - track.ballDiameter * 0.56f);
+            float lat = Vector2.Dot(p - bc, outward) / half;
+            return lat > 0.33f ? 0 : (lat < -0.33f ? 2 : 1);
+        }
+
         /// <summary>Pist yerel konumunu pist dış sınırlarına göre 0..1 aralığına çevirir (pist ölçeklense de değişmez).</summary>
         public static Vector2 NormalizeTrackPos(CompiledTrack track, Vector2 local)
         {

@@ -106,6 +106,7 @@ MonoBehaviour:
   useManualBallLayout: 1
   manualLaneWidth: 4
   manualTrackCapacity: 270
+  trackLayerLock: 1
   manualBalls:
   - color: 5
     column: 0

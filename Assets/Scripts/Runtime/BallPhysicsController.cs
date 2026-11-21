@@ -77,6 +77,8 @@ namespace PuzzleGlass
         [System.NonSerialized] public float trackQueueSpeed;
         /// <summary>Boşluğun etrafında dönen banttaki yuva indeksi (-1: bantta değil, kuyrukta bekliyor).</summary>
         [System.NonSerialized] public int trackLoopSlot = -1;
+        /// <summary>Katman kilidi: topun doğduğu katman (0 dış, 1 orta, 2 iç; -1 = kilitsiz).</summary>
+        [System.NonSerialized] public int trackLayer = -1;
         /// <summary>Pist fiziği: topun cam yerel düzlemdeki hızı (yay takibi + çarpışmalar).</summary>
         [System.NonSerialized] public Vector2 trackVel;
         public bool IsGpuSquashing => _isGpuSquashing;
@@ -386,6 +388,7 @@ namespace PuzzleGlass
             _attractionStartTime = -1f;
             _isTrackMode = false;
             ResetTrackQueueState(false);
+            trackLayer = -1;
             layerIndex = 0;
             hasHomeX = false;
 

@@ -337,6 +337,12 @@ namespace PuzzleGlass
                 ? Mathf.Clamp01(headroom / desiredTopLift)
                 : 0f;
 
+            // Katman kilidi: halka pistte her top doğduğu şeride göre dış/orta/iç katmanını alır
+            var gmLock = PuzzleGlassGameManager.Instance;
+            var lockTrack = glassContainer != null && glassContainer.IsTrackShape ? glassContainer.compiledTrack : null;
+            bool useLayerLock = Application.isPlaying && gmLock != null && gmLock.currentLevel != null
+                && gmLock.currentLevel.trackLayerLock && lockTrack != null && lockTrack.closedLoopBranch >= 0;
+
             for (int i = 0; i < ballSpawns.Count; i++)
             {
                 var entry = ballSpawns[i];
@@ -374,6 +380,7 @@ namespace PuzzleGlass
                 {
                     ball.ConfigurePoolLayer(layerIdx, worldPos.x, worldFloorY, worldRowStepY);
                     ball.ConfigureForTrackMode(isTrack);
+                    ball.trackLayer = useLayerLock ? GlassTrackLayout.ComputeRingLayer(lockTrack, entry.pos) : -1;
                     if (hasSlopedDivider)
                     {
                         // Allow balls to roll sideways along sloped shelves/ramps
@@ -391,6 +398,9 @@ namespace PuzzleGlass
                     spawnedBalls.Add(ball);
                 }
             }
+
+            // Katman kilidini başlat (kilit kapalı levelde önceki levelin kilidi sıfırlanır)
+            if (Application.isPlaying) TrackCrowdQueue.SetLayerLock(useLayerLock);
 
             // Pist: banda sığmayan toplar (gizli kuyruk) girişte bekler, bantta boşluk açıldıkça girer
             if (Application.isPlaying)

@@ -460,6 +460,9 @@ namespace PuzzleGlass
         [Tooltip("Kanal camında elle dizim: pistin kaç topa göre boyutlanacağı (0 = top sayısına göre). Elle dizime geçerken " +
                  "sabitlenir; böylece top ekleyip silmek pisti yeniden boyutlandırıp diğer topları kaydırmaz.")]
         public int manualTrackCapacity = 0;
+        [Tooltip("Kanal camında katman kilidi: toplar doğdukları şeride göre dış / orta / iç katmandadır. Daha dış " +
+                 "katmanda top kaldıkça içteki katmanın topları çıkamaz; dış katman bitince sıradaki açılır.")]
+        public bool trackLayerLock = false;
         public List<ManualPoolBallEntry> manualBalls = new List<ManualPoolBallEntry>();
 
         [Tooltip("Cam haznedeki top gruplarının En Alttan (0) En Üste doğru renk sırası (Eski/uyumluluk listesi)")]

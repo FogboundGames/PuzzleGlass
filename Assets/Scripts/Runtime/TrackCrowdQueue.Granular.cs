@@ -84,6 +84,9 @@ namespace PuzzleGlass
                 if (o.state == BallState.InContainer)
                 {
                     if (!o.trackQueuePosValid || o.trackLoopSlot < 0) continue;
+                    // Katman kilidi: kilitli katmandaki top açık katmanın önünü kesmez (kavramsal olarak arkadadır);
+                    // yoksa kanalın ortasına kaymış son dış toplar altlarındaki kilitli toplar yüzünden çıkamıyordu
+                    if (!IsLayerOpen(o)) continue;
                     q = o.trackQueueLocalPos;
                 }
                 else if (o.state == BallState.AttractingToExit && ct != null)
