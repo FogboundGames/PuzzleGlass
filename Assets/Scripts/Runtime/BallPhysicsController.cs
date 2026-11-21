@@ -172,6 +172,8 @@ namespace PuzzleGlass
                 new Keyframe(0.55f, 0.42f),
                 new Keyframe(1f, 0f));
             _flightTrail.emitting = false;
+            // Uçmayan topta iz renderer'ı tamamen kapalı: camdaki 100+ topun boş izi her kare güncellenmesin
+            _flightTrail.enabled = false;
         }
 
         private void SetFlightTrailActive(bool active)
@@ -184,8 +186,10 @@ namespace PuzzleGlass
             {
                 _flightTrail.emitting = false;
                 _flightTrail.Clear();
+                _flightTrail.enabled = false;
                 return;
             }
+            _flightTrail.enabled = true;
 
             if (BlockClearCelebration.SpriteMaterial != null && _flightTrail.sharedMaterial == null)
             {

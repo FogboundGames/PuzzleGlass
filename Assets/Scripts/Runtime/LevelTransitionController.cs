@@ -2,14 +2,20 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using DG.Tweening;
 
 namespace PuzzleGlass
 {
     /// <summary>
-    /// Level geçişi:
-    /// 1) Temaya uygun düz renkli (#E8E7F5) geçiş perdesi açılır; üzerinde oyun adı ve "LOADING" barı dolar.
-    /// 2) Perde kapalıyken sonraki level arka planda yüklenir.
-    /// 3) Bar dolunca perde kalkar ve renkli 3D toplar ekranın üstünden aşağı doğru yumuşakça süzülerek yeni leveli ortaya çıkarır.
+    /// Level geçişi (useGlassSwapTransition):
+    /// 1) Kutlama: boş cam sıkışıp esner, merkezinde kısa parıltı patlaması (BlockClearCelebration) + titreşim.
+    /// 2) showLoadingBetweenLevels açıksa: tema perdesi + oyun adı + LOADING barı; bar dolarken sonraki level yüklenir.
+    ///    Kapalıysa: eski cam yukarı fırlar, sonraki level anında yüklenir.
+    /// 3) Perde kalkarken yeni cam yukarıdan düşer ve inişte sıkışır; kutular sırayla pop yapar, toplar alttan dolar,
+    ///    üstteki LEVEL hapı pop yapar (HUD). Her şey yerine oturunca girdi açılır.
+    /// Oyun açılışında da (showStartupLoading) aynı perde + bar gösterilir, ilk level aynı giriş animasyonuyla açılır.
+    /// Sadece görseller canlandırılır (cam görsel kökü, topların Visual alt objesi, kutu ölçeği); fizik ve oyun mantığı aynıdır.
+    /// Eski geçiş (düz perde + LOADING barı + top yağmuru) useGlassSwapTransition kapatılırsa çalışır.
     /// </summary>
     public class LevelTransitionController : MonoBehaviour
     {
@@ -52,6 +58,32 @@ namespace PuzzleGlass
         public float ballPlaneZ = -4f;
         public float maxDrainDuration = 2.2f;
 
+        [Header("Cam Geçişi (varsayılan)")]
+        public bool useGlassSwapTransition = true;
+        [Tooltip("Kutlama (cam sıkışması + parıltı) ile eski camın fırlaması arasındaki süre")]
+        public float swapWinBeat = 0.18f;
+        public float swapGlassExitDuration = 0.26f;
+        [Tooltip("Yeni camın yukarıdan düşüş süresi (inişte sıkışma ayrıca oynar)")]
+        public float swapGlassDropDuration = 0.30f;
+        [Tooltip("Topların alttan yukarı dolma süresi")]
+        public float swapBallFillDuration = 0.42f;
+        [Tooltip("Tek bir topun belirme süresi")]
+        public float swapBallPopDuration = 0.14f;
+        [Tooltip("Kutuların yeni cam düşmeye başladıktan ne kadar sonra pop yapmaya başlayacağı")]
+        public float swapBlocksDelay = 0.16f;
+        [Tooltip("Kutuların sırayla ızgaraya oturma aralığı")]
+        public float swapBlockStagger = 0.028f;
+        public float swapBlockPopDuration = 0.2f;
+        public Color swapCelebrationColor = new Color(0.80f, 0.78f, 1.00f, 1f);
+
+        [Header("Loading Ekranı")]
+        [Tooltip("Level geçişlerinde kutlamadan sonra perde + LOADING barı gösterilsin")]
+        public bool showLoadingBetweenLevels = true;
+        [Tooltip("Oyun açılırken perde + LOADING barı gösterilsin")]
+        public bool showStartupLoading = true;
+        [Tooltip("Açılışta barın gerçek ilerlemeye yetişme hızı: bar en erken bu sürede dolar (ilerlemenin önüne geçmez)")]
+        public float startupLoadingDuration = 1.1f;
+
         [Header("UI Üstü Çizim")]
         public int overlaySortingOrder = 30000;
 
@@ -90,6 +122,9 @@ namespace PuzzleGlass
         private float _barFullWidth = 580f;
         private Text _titleText;
         private Text _loadingText;
+        private LoadingScreenView _loadingView;
+        /// <summary>Gerçek yükleme ilerlemesi: tamamlanan yükleme adımı / toplam adım. Bar bunu asla geçmez.</summary>
+        private float _loadTarget;
         private RawImage _overlayImage;
 
         private Sprite _pillSprite;
@@ -137,7 +172,7 @@ namespace PuzzleGlass
         public void PlayNextLevelTransition(List<PuzzleColor> colors)
         {
             if (_isPlaying) return;
-            _routine = StartCoroutine(TransitionRoutine(colors));
+            _routine = StartCoroutine(useGlassSwapTransition ? GlassSwapRoutine() : TransitionRoutine(colors));
         }
 
         /// <summary>Geçişi anında iptal eder ve tüm geçiş objelerini gizler.</summary>
@@ -148,6 +183,9 @@ namespace PuzzleGlass
             RecycleAllActive();
             if (_curtainGroup != null) _curtainGroup.alpha = 0f;
             EndOverlay();
+            RestoreSwapHidden();
+            if (_swapGlass != null) { _swapGlass.DOKill(); _swapGlass.position = _swapGlassTarget; _swapGlass = null; }
+            if (_overlayImage != null) _overlayImage.enabled = true;
             _isPlaying = false;
         }
 
@@ -157,6 +195,7 @@ namespace PuzzleGlass
         public void BeginWarmUp()
         {
             if (_warmedUp || _warming || !Application.isPlaying) return;
+            if (useGlassSwapTransition) return; // cam geçişi ek kaynak gerektirmez (top havuzu / perde kamerası kurulmaz)
             StartCoroutine(WarmUpRoutine());
         }
 
@@ -373,6 +412,405 @@ namespace PuzzleGlass
             _routine = null;
         }
 
+        // ===================================== CAM GEÇİŞİ =====================================
+
+        private struct HiddenVisual
+        {
+            public Transform tr;
+            public Vector3 baseScale;
+            public float delay;
+        }
+
+        private readonly List<HiddenVisual> _swapBalls = new List<HiddenVisual>();
+        private readonly HashSet<Transform> _swapBallSet = new HashSet<Transform>();
+        private readonly List<HiddenVisual> _swapBlocks = new List<HiddenVisual>();
+
+        private IEnumerator GlassSwapRoutine()
+        {
+            _isPlaying = true;
+            var gm = PuzzleGlassGameManager.Instance;
+            Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
+            if (gm == null || cam == null)
+            {
+                _isPlaying = false;
+                if (gm != null) gm.LoadNextLevel();
+                yield break;
+            }
+            float screenH = cam.orthographicSize * 2f;
+
+            // 1. Kutlama: boş cam sıkışıp esner + merkezinde kısa parıltı patlaması (kutu dolma efektinin büyüğü)
+            Transform oldGlass = GetGlassVisualRoot(gm);
+            if (oldGlass != null)
+            {
+                oldGlass.DOKill(true);
+                oldGlass.DOPunchScale(new Vector3(0.07f, -0.06f, 0f), 0.22f, 6, 0.55f).SetLink(oldGlass.gameObject);
+                BlockClearCelebration.Play(GetVisualCenter(oldGlass), swapCelebrationColor, 1.8f);
+            }
+            if (swapWinBeat > 0f) yield return new WaitForSeconds(swapWinBeat);
+
+            if (showLoadingBetweenLevels)
+            {
+                // 2a. Perde + oyun adı + LOADING barı; bar dolarken perde arkasında sonraki level yüklenir
+                yield return CurtainLoadingRoutine(curtainFadeIn, loadingBarDuration, NextLevelLoadWork(gm, screenH));
+            }
+            else
+            {
+                // 2b. Eski cam yukarı fırlar (hafif geri çekilip); camda kalan top varsa küçülür
+                if (oldGlass != null)
+                {
+                    oldGlass.DOKill(true);
+                    oldGlass.DOMoveY(oldGlass.position.y + screenH * 1.1f, swapGlassExitDuration)
+                        .SetEase(Ease.InBack, 1.4f).SetLink(oldGlass.gameObject);
+                }
+                var pool = BallObjectPool.Instance;
+                if (pool != null && pool.ActiveBalls != null)
+                {
+                    foreach (var b in pool.ActiveBalls)
+                    {
+                        if (b == null || b.visualTransform == null || b.visualTransform == b.transform) continue;
+                        b.visualTransform.DOScale(Vector3.zero, swapGlassExitDuration * 0.8f).SetEase(Ease.InBack).SetLink(b.gameObject);
+                    }
+                }
+                yield return new WaitForSeconds(swapGlassExitDuration);
+                gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
+                gm.LoadNextLevel();
+                PrepareEntrance(gm, screenH);
+            }
+
+            // 3. Perde kalkarken yeni level girer
+            yield return EntranceRoutine(fadeCurtainOut: showLoadingBetweenLevels);
+            _isPlaying = false;
+            _routine = null;
+        }
+
+        /// <summary>Oyun açılışında: perde + oyun adı + LOADING barı, sonra ilk level giriş animasyonuyla açılır.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void StartupBoot()
+        {
+            var gm = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance : FindFirstObjectByType<PuzzleGlassGameManager>();
+            if (gm == null || !gm.useBallPourTransition) return;
+            var c = GetOrCreate();
+            if (!c.showStartupLoading || !c.useGlassSwapTransition) return;
+            c._routine = c.StartCoroutine(c.StartupLoadingRoutine());
+        }
+
+        private IEnumerator StartupLoadingRoutine()
+        {
+            _isPlaying = true;
+            // İlk kareden itibaren perde tam kapalı (oyun hiç görünmeden)
+            ShowCurtain(1f);
+            yield return CurtainLoadingRoutine(0f, startupLoadingDuration, StartupLoadWork());
+            yield return EntranceRoutine(fadeCurtainOut: true);
+            _isPlaying = false;
+            _routine = null;
+        }
+
+        /// <summary>Açılıştaki gerçek yükleme adımları (her biri tamamlanınca ilerleme artar).</summary>
+        private IEnumerator StartupLoadWork()
+        {
+            const float steps = 4f;
+            // 1) Sahnedeki yöneticilerin Start'ı çalıştı: ilk level (cam, toplar, kutular, slotlar) kuruldu
+            yield return null;
+            var gm = PuzzleGlassGameManager.Instance;
+            Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
+            if (gm != null && cam != null) PrepareEntrance(gm, cam.orthographicSize * 2f);
+            _loadTarget = 1f / steps;
+            // 2) İlk kare çizildi: shader'lar, mesh'ler ve dokular GPU'ya yüklendi
+            yield return new WaitForEndOfFrame();
+            _loadTarget = 2f / steps;
+            // 3) Yeni collider'larla ilk fizik adımı tamamlandı
+            yield return new WaitForFixedUpdate();
+            _loadTarget = 3f / steps;
+            // 4) Bir kare daha: geç doğan nesneler (top havuzu, HUD) yerleşti
+            yield return null;
+            _loadTarget = 1f;
+        }
+
+        /// <summary>Level geçişindeki gerçek yükleme adımları.</summary>
+        private IEnumerator NextLevelLoadWork(PuzzleGlassGameManager gm, float screenH)
+        {
+            const float steps = 3f;
+            // 1) Sonraki level üretildi/yüklendi ve sahnede kuruldu
+            gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
+            gm.LoadNextLevel();
+            PrepareEntrance(gm, screenH);
+            _loadTarget = 1f / steps;
+            // 2) Yeni level'ın ilk karesi çizildi (yeni şekil, mesafe dokusu, malzemeler GPU'da)
+            yield return new WaitForEndOfFrame();
+            _loadTarget = 2f / steps;
+            // 3) Yeni collider'larla ilk fizik adımı tamamlandı
+            yield return new WaitForFixedUpdate();
+            _loadTarget = 1f;
+        }
+
+        /// <summary>
+        /// Perdeyi açar (fadeIn &gt; 0 ise yumuşakça), yükleme işini çalıştırır ve barı GERÇEK ilerlemeyle doldurur:
+        /// gösterilen değer _loadTarget'a (tamamlanan adım / toplam adım) doğru akıcı ilerler ama onu asla geçmez.
+        /// minFillTime yalnızca barın en hızlı dolma süresidir. %100'de kısa tamamlanma animasyonu oynar; perde açık kalır.
+        /// </summary>
+        private IEnumerator CurtainLoadingRoutine(float fadeIn, float minFillTime, IEnumerator work)
+        {
+            _loadTarget = 0f;
+            if (fadeIn > 0f)
+            {
+                ShowCurtain(0f);
+                float ft = 0f;
+                while (ft < fadeIn)
+                {
+                    ft += Time.deltaTime;
+                    _curtainGroup.alpha = Mathf.SmoothStep(0f, 1f, ft / fadeIn);
+                    yield return null;
+                }
+            }
+            ShowCurtain(1f);
+            SetLoadingProgress(0f);
+
+            bool workDone = false;
+            StartCoroutine(RunLoadWork(work, () => workDone = true));
+            float shown = 0f;
+            float speed = 1f / Mathf.Max(0.1f, minFillTime);
+            while (!workDone || shown < 0.9999f)
+            {
+                shown = Mathf.MoveTowards(shown, _loadTarget, Time.deltaTime * speed);
+                SetLoadingProgress(shown);
+                HideNewBalls(); // perde arkasında doğan toplar da gizli başlasın
+                yield return null;
+            }
+            SetLoadingProgress(1f);
+            if (_loadingView != null) yield return _loadingView.PlayComplete();
+            else if (completeHoldDuration > 0f) yield return new WaitForSeconds(completeHoldDuration);
+        }
+
+        private IEnumerator RunLoadWork(IEnumerator work, System.Action onDone)
+        {
+            if (work != null) yield return work;
+            _loadTarget = 1f;
+            onDone();
+        }
+
+        /// <summary>Sadece tema perdesi (başlık + bar). Eski geçişin kamera/RenderTexture'ı kurulmaz.</summary>
+        private void ShowCurtain(float alpha)
+        {
+            EnsureResources();
+            if (_overlayCanvas == null) BuildTransitionCanvas();
+            if (_overlayImage != null) _overlayImage.enabled = false;
+            _overlayCanvas.sortingOrder = overlaySortingOrder;
+            if (_curtainBg != null) _curtainBg.color = themeBackdropColor;
+            if (_titleText != null) { _titleText.text = gameTitle; _titleText.color = titleColor; }
+            bool wasHidden = !_overlayCanvas.gameObject.activeSelf || (_curtainGroup != null && _curtainGroup.alpha <= 0.001f);
+            if (_curtainGroup != null)
+            {
+                _curtainGroup.DOKill();
+                _curtainGroup.alpha = alpha;
+                _curtainGroup.blocksRaycasts = true;
+            }
+            _overlayCanvas.gameObject.SetActive(true);
+            if (wasHidden && _loadingView != null) _loadingView.PlayIntro();
+        }
+
+        private void HideCurtain(float duration)
+        {
+            if (_overlayCanvas == null || !_overlayCanvas.gameObject.activeSelf || _curtainGroup == null) return;
+            _curtainGroup.DOKill();
+            _curtainGroup.blocksRaycasts = false;
+            if (_loadingView != null) _loadingView.PlayOutro(duration);
+            var canvasGo = _overlayCanvas.gameObject;
+            _curtainGroup.DOFade(0f, duration).SetEase(Ease.OutQuad).OnComplete(() =>
+            {
+                if (canvasGo != null) canvasGo.SetActive(false);
+                if (_overlayImage != null) _overlayImage.enabled = true;
+            });
+        }
+
+        private Transform _swapGlass;
+        private Vector3 _swapGlassTarget;
+
+        /// <summary>Yeni level'ın görsellerini gizli başlatır: cam ekranın üstünde, toplar ve kutular sıfır boyutta.</summary>
+        private void PrepareEntrance(PuzzleGlassGameManager gm, float screenH)
+        {
+            _swapBalls.Clear();
+            _swapBallSet.Clear();
+            _swapBlocks.Clear();
+            _swapGlass = GetGlassVisualRoot(gm);
+            _swapGlassTarget = _swapGlass != null ? _swapGlass.position : Vector3.zero;
+            if (_swapGlass != null)
+            {
+                _swapGlass.DOKill(true);
+                _swapGlass.position = _swapGlassTarget + Vector3.up * screenH * 0.75f;
+            }
+            HideNewBalls();
+            HideNewBlocks(gm);
+        }
+
+        /// <summary>Yeni cam düşer ve inişte sıkışır; kutular pop yapar, toplar alttan dolar. Bitince her şey tam boyutta.</summary>
+        private IEnumerator EntranceRoutine(bool fadeCurtainOut)
+        {
+            if (fadeCurtainOut) HideCurtain(Mathf.Max(0.05f, curtainFadeOut));
+
+            Transform newGlass = _swapGlass;
+            if (newGlass != null)
+            {
+                Sequence drop = DOTween.Sequence().SetLink(newGlass.gameObject);
+                drop.Append(newGlass.DOMove(_swapGlassTarget, swapGlassDropDuration).SetEase(Ease.InQuad));
+                drop.Append(newGlass.DOPunchScale(new Vector3(0.08f, -0.09f, 0f), 0.24f, 5, 0.6f));
+            }
+            float t = 0f;
+            bool blocksStarted = false;
+            while (t < swapGlassDropDuration)
+            {
+                t += Time.deltaTime;
+                HideNewBalls();
+                if (!blocksStarted && t >= swapBlocksDelay)
+                {
+                    blocksStarted = true;
+                    PopBlocks();
+                }
+                yield return null;
+            }
+            if (!blocksStarted) PopBlocks();
+            float blocksEnd = swapBlocksDelay + _swapBlocks.Count * swapBlockStagger + swapBlockPopDuration;
+
+            // Cam yere oturur oturmaz toplar alttan yukarı (sıvı dolar gibi) belirir
+            AssignBallFillDelays();
+            float fillT = 0f;
+            float fillEnd = swapBallFillDuration + swapBallPopDuration;
+            while (fillT < fillEnd)
+            {
+                fillT += Time.deltaTime;
+                HideNewBalls(lateDelay: fillT);
+                for (int i = 0; i < _swapBalls.Count; i++)
+                {
+                    var h = _swapBalls[i];
+                    if (h.tr == null) continue;
+                    float u = Mathf.Clamp01((fillT - h.delay) / Mathf.Max(0.01f, swapBallPopDuration));
+                    h.tr.localScale = h.baseScale * EaseOutBack(u);
+                }
+                yield return null;
+            }
+            RestoreSwapBalls();
+
+            // Kutuların hepsi oturana kadar girdi kilitli (yarım ölçekte sürükleme/kayıt olmasın)
+            float remaining = blocksEnd - (swapGlassDropDuration + fillT);
+            if (remaining > 0f) yield return new WaitForSeconds(remaining);
+            foreach (var h in _swapBlocks) if (h.tr != null) { h.tr.DOKill(); h.tr.localScale = h.baseScale; }
+            _swapBlocks.Clear();
+            _swapGlass = null;
+        }
+
+        /// <summary>Cam görsellerinin ekrandaki merkezi (kök pivotu camın ortasında olmayabilir).</summary>
+        private static Vector3 GetVisualCenter(Transform root)
+        {
+            var rends = root.GetComponentsInChildren<MeshRenderer>();
+            bool any = false;
+            Bounds b = new Bounds(root.position, Vector3.zero);
+            foreach (var r in rends)
+            {
+                if (r == null || !r.enabled) continue;
+                string n = r.gameObject.name;
+                if (n.Contains("Shadow") || n.Contains("Backdrop") || n.Contains("Showcase")) continue;
+                if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+            }
+            return any ? b.center : root.position;
+        }
+
+        private static Transform GetGlassVisualRoot(PuzzleGlassGameManager gm)
+        {
+            var container = gm != null && gm.glassContainer != null ? gm.glassContainer : FindFirstObjectByType<ShapedGlassContainer>();
+            return container != null ? container.GlassVisualRoot : null;
+        }
+
+        /// <summary>Henüz işlenmemiş aktif topların görselini gizler (temel ölçeğini saklar).</summary>
+        private void HideNewBalls(float lateDelay = -1f)
+        {
+            var pool = BallObjectPool.Instance;
+            if (pool == null || pool.ActiveBalls == null) return;
+            foreach (var b in pool.ActiveBalls)
+            {
+                if (b == null) continue;
+                Transform v = b.visualTransform;
+                if (v == null || v == b.transform || _swapBallSet.Contains(v)) continue;
+                v.DOKill();
+                Vector3 baseScale = v.localScale.sqrMagnitude > 1e-6f ? v.localScale : Vector3.one;
+                _swapBallSet.Add(v);
+                _swapBalls.Add(new HiddenVisual { tr = v, baseScale = baseScale, delay = lateDelay >= 0f ? lateDelay : 0f });
+                v.localScale = Vector3.zero;
+            }
+        }
+
+        /// <summary>Toplara alttan yukarı (sıvı dolar gibi) belirme gecikmesi verir.</summary>
+        private void AssignBallFillDelays()
+        {
+            float minY = float.MaxValue, maxY = float.MinValue;
+            foreach (var h in _swapBalls)
+            {
+                if (h.tr == null) continue;
+                float y = h.tr.position.y;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            float span = Mathf.Max(0.01f, maxY - minY);
+            float window = Mathf.Max(0f, swapBallFillDuration - swapBallPopDuration * 0.5f);
+            for (int i = 0; i < _swapBalls.Count; i++)
+            {
+                var h = _swapBalls[i];
+                if (h.tr == null) continue;
+                float t01 = (h.tr.position.y - minY) / span;
+                float jitter = (Mathf.Abs(Mathf.Sin(i * 12.9898f) * 43758.547f) % 1f) * 0.08f;
+                h.delay = Mathf.Clamp01(t01 + jitter) * window;
+                _swapBalls[i] = h;
+            }
+        }
+
+        private void HideNewBlocks(PuzzleGlassGameManager gm)
+        {
+            if (gm.activeMonsters == null) return;
+            // Kutulara slota yakın (üst) sıradan başlayarak oturma sırası ver
+            var list = new List<MonsterCharacter>();
+            foreach (var m in gm.activeMonsters) if (m != null && m.gameObject.activeInHierarchy) list.Add(m);
+            list.Sort((a, b) =>
+            {
+                int c = b.transform.position.y.CompareTo(a.transform.position.y);
+                return c != 0 ? c : a.transform.position.x.CompareTo(b.transform.position.x);
+            });
+            for (int i = 0; i < list.Count; i++)
+            {
+                Transform tr = list[i].transform;
+                tr.DOKill();
+                _swapBlocks.Add(new HiddenVisual { tr = tr, baseScale = tr.localScale, delay = i * swapBlockStagger });
+                tr.localScale = Vector3.zero;
+            }
+        }
+
+        private void PopBlocks()
+        {
+            foreach (var h in _swapBlocks)
+            {
+                if (h.tr == null) continue;
+                h.tr.DOScale(h.baseScale, swapBlockPopDuration).SetDelay(h.delay).SetEase(Ease.OutBack, 1.6f).SetLink(h.tr.gameObject);
+            }
+            PuzzleSoundManager.Instance?.PlayBlockSnap();
+        }
+
+        private void RestoreSwapBalls()
+        {
+            foreach (var h in _swapBalls) if (h.tr != null) h.tr.localScale = h.baseScale;
+            _swapBalls.Clear();
+            _swapBallSet.Clear();
+        }
+
+        /// <summary>Geçiş yarıda kesilirse gizlenen her şeyi eski boyutuna döndürür.</summary>
+        private void RestoreSwapHidden()
+        {
+            RestoreSwapBalls();
+            foreach (var h in _swapBlocks)
+            {
+                if (h.tr == null) continue;
+                h.tr.DOKill();
+                h.tr.localScale = h.baseScale;
+            }
+            _swapBlocks.Clear();
+        }
+
         private void ComputeFullScreenGridParams(Camera cam, out int colsPlusOne, out int rows, out float colStep, out float rowStep, out float diameter, out float left, out float bottom)
         {
             float halfH = cam.orthographicSize;
@@ -576,6 +1014,7 @@ namespace PuzzleGlass
 
         private void SetLoadingProgress(float progress01)
         {
+            if (_loadingView != null) { _loadingView.SetProgress(progress01); return; }
             if (_barFillRect == null) return;
             float p = Mathf.Clamp01(progress01);
             float minW = p > 0.001f ? Mathf.Max(28f, _barFullWidth * p) : 0f;
@@ -653,109 +1092,13 @@ namespace PuzzleGlass
 
             canvasGo.AddComponent<GraphicRaycaster>();
 
-            // 1) Düz renkli tema perdesi + Başlık + Loading bar
-            var curtainGo = new GameObject("ThemeCurtain");
-            curtainGo.transform.SetParent(canvasGo.transform, false);
-            var curtainRT = curtainGo.AddComponent<RectTransform>();
-            StretchFill(curtainRT);
-            _curtainBg = curtainGo.AddComponent<Image>();
-            _curtainBg.color = themeBackdropColor;
-            _curtainBg.raycastTarget = true;
-            _curtainGroup = curtainGo.AddComponent<CanvasGroup>();
-            _curtainGroup.alpha = 0f;
-
-            var centerGo = new GameObject("CenterContent");
-            centerGo.transform.SetParent(curtainGo.transform, false);
-            var centerRT = centerGo.AddComponent<RectTransform>();
-            centerRT.anchorMin = new Vector2(0.5f, 0.5f);
-            centerRT.anchorMax = new Vector2(0.5f, 0.5f);
-            centerRT.sizeDelta = new Vector2(860f, 360f);
-            centerRT.anchoredPosition = new Vector2(0f, 30f);
-
-            // Oyun İsmi ("PUZZLE GLASS")
-            var titleGo = new GameObject("GameTitle");
-            titleGo.transform.SetParent(centerGo.transform, false);
-            var titleRT = titleGo.AddComponent<RectTransform>();
-            titleRT.anchorMin = new Vector2(0.5f, 1f);
-            titleRT.anchorMax = new Vector2(0.5f, 1f);
-            titleRT.sizeDelta = new Vector2(840f, 120f);
-            titleRT.anchoredPosition = new Vector2(0f, -68f);
-            _titleText = titleGo.AddComponent<Text>();
-            _titleText.font = _uiFont;
-            _titleText.text = gameTitle;
-            _titleText.fontSize = 90;
-            _titleText.fontStyle = FontStyle.Bold;
-            _titleText.color = titleColor;
-            _titleText.alignment = TextAnchor.MiddleCenter;
-            _titleText.raycastTarget = false;
-            var titleShadow = titleGo.AddComponent<Shadow>();
-            titleShadow.effectColor = new Color(barFillColor.r, barFillColor.g, barFillColor.b, 0.25f);
-            titleShadow.effectDistance = new Vector2(0f, -5f);
-
-            // "LOADING..." yazısı
-            var loadTxtGo = new GameObject("LoadingLabel");
-            loadTxtGo.transform.SetParent(centerGo.transform, false);
-            var loadTxtRT = loadTxtGo.AddComponent<RectTransform>();
-            loadTxtRT.anchorMin = new Vector2(0.5f, 0.5f);
-            loadTxtRT.anchorMax = new Vector2(0.5f, 0.5f);
-            loadTxtRT.sizeDelta = new Vector2(600f, 52f);
-            loadTxtRT.anchoredPosition = new Vector2(0f, -24f);
-            _loadingText = loadTxtGo.AddComponent<Text>();
-            _loadingText.font = _uiFont;
-            _loadingText.text = loadingLabel;
-            _loadingText.fontSize = 30;
-            _loadingText.fontStyle = FontStyle.Bold;
-            _loadingText.color = Color.Lerp(titleColor, barFillColor, 0.45f);
-            _loadingText.alignment = TextAnchor.MiddleCenter;
-            _loadingText.raycastTarget = false;
-
-            // Yuvarlak Loading Bar arka gölge
-            const float barW = 600f;
-            const float barH = 42f;
-            const float pad = 6f;
-            _barFullWidth = barW - pad * 2f;
-
-            var barShadowGo = new GameObject("BarShadow");
-            barShadowGo.transform.SetParent(centerGo.transform, false);
-            var barShadowRT = barShadowGo.AddComponent<RectTransform>();
-            barShadowRT.anchorMin = new Vector2(0.5f, 0.5f);
-            barShadowRT.anchorMax = new Vector2(0.5f, 0.5f);
-            barShadowRT.sizeDelta = new Vector2(barW + 6f, barH + 6f);
-            barShadowRT.anchoredPosition = new Vector2(0f, -86f);
-            var barShadowImg = barShadowGo.AddComponent<Image>();
-            barShadowImg.sprite = _pillSprite;
-            barShadowImg.type = Image.Type.Sliced;
-            barShadowImg.color = new Color(0.52f, 0.51f, 0.74f, 0.30f);
-            barShadowImg.raycastTarget = false;
-
-            // Track (krem beyaz yuvarlak çerçeve)
-            var trackGo = new GameObject("LoadingBarTrack");
-            trackGo.transform.SetParent(centerGo.transform, false);
-            var trackRT = trackGo.AddComponent<RectTransform>();
-            trackRT.anchorMin = new Vector2(0.5f, 0.5f);
-            trackRT.anchorMax = new Vector2(0.5f, 0.5f);
-            trackRT.sizeDelta = new Vector2(barW, barH);
-            trackRT.anchoredPosition = new Vector2(0f, -82f);
-            var trackImg = trackGo.AddComponent<Image>();
-            trackImg.sprite = _pillSprite;
-            trackImg.type = Image.Type.Sliced;
-            trackImg.color = barTrackColor;
-            trackImg.raycastTarget = false;
-
-            // Fill bar (periwinkle tema mavisi + yuvarlak uçlu dolgu)
-            var fillGo = new GameObject("LoadingBarFill");
-            fillGo.transform.SetParent(trackGo.transform, false);
-            _barFillRect = fillGo.AddComponent<RectTransform>();
-            _barFillRect.anchorMin = new Vector2(0f, 0.5f);
-            _barFillRect.anchorMax = new Vector2(0f, 0.5f);
-            _barFillRect.pivot = new Vector2(0f, 0.5f);
-            _barFillRect.anchoredPosition = new Vector2(pad, 0f);
-            _barFillRect.sizeDelta = new Vector2(0f, barH - pad * 2f);
-            var fillImg = fillGo.AddComponent<Image>();
-            fillImg.sprite = _pillSprite;
-            fillImg.type = Image.Type.Sliced;
-            fillImg.color = barFillColor;
-            fillImg.raycastTarget = false;
+            // 1) Loading ekranı (degrade arka plan, süzülen cam objeler, logo, kapsül bar) — LoadingScreenView
+            _loadingView = LoadingScreenView.Create(canvasGo.transform, _uiFont, gameTitle, _pillSprite);
+            _curtainGroup = _loadingView.Group;
+            _curtainBg = null;
+            _titleText = null;
+            _loadingText = null;
+            _barFillRect = null;
 
             // 2) En üstte şeffaf arka planlı 3D süzülen top katmanı
             var imgGo = new GameObject("TransitionBallsOverlay");

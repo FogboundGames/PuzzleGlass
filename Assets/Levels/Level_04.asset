@@ -20,7 +20,7 @@ MonoBehaviour:
   slotSpacing: 0.59
   useCustomGlassShape: 1
   glassIsBottle: 0
-  glassPreset: 15
+  glassPreset: 13
   colorTheme: 4
   layerPattern: 2
   symmetricMode: 1
@@ -67,6 +67,7 @@ MonoBehaviour:
   trackAutoFitToBalls: 1
   trackScale: 1
   trackWallThickness: 0.082
+  trackHiddenRatio: 0
   trackBranches: []
   compartmentPreset: 7
   dividers: []
@@ -115,6 +116,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 5
     count: 30
     blockShape: 0
@@ -123,6 +126,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 30
     blockShape: 0
@@ -131,6 +136,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 3
     count: 30
     blockShape: 0
@@ -139,6 +146,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 3
     count: 30
     blockShape: 0
@@ -147,6 +156,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 1
     count: 30
     blockShape: 0
@@ -155,6 +166,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 5
     count: 24
     blockShape: 0
@@ -163,6 +176,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 30
     blockShape: 0
@@ -171,6 +186,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   monsters:
   - color: 1
     count: 36
@@ -180,6 +197,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 5
     count: 30
     blockShape: 0
@@ -188,6 +207,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 30
     blockShape: 0
@@ -196,6 +217,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 3
     count: 30
     blockShape: 0
@@ -204,6 +227,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 3
     count: 30
     blockShape: 0
@@ -212,6 +237,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 1
     count: 30
     blockShape: 0
@@ -220,6 +247,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 5
     count: 24
     blockShape: 0
@@ -228,6 +257,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 30
     blockShape: 0
@@ -236,3 +267,5 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0

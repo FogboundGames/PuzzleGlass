@@ -577,6 +577,15 @@ namespace PuzzleGlass
 
             if (force || levelNum != _lastShownLevel || remainingBalls != _lastRemainingBalls)
             {
+                // Level değişince üstteki LEVEL hapı kısa bir pop yapar (geçiş ekranı yerine tek level geri bildirimi)
+                bool levelChanged = _lastShownLevel >= 0 && levelNum != _lastShownLevel;
+                if (levelChanged && Application.isPlaying && _levelTitleText != null && _levelTitleText.transform.parent != null)
+                {
+                    Transform pill = _levelTitleText.transform.parent;
+                    pill.DOKill(true);
+                    pill.localScale = Vector3.one;
+                    pill.DOPunchScale(new Vector3(0.18f, 0.18f, 0f), 0.34f, 6, 0.6f).SetLink(pill.gameObject);
+                }
                 _lastShownLevel = levelNum;
                 _lastRemainingBalls = remainingBalls;
                 if (_levelTitleText != null) _levelTitleText.text = $"LEVEL {levelNum}";

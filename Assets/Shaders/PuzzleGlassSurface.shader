@@ -34,6 +34,12 @@ Shader "PuzzleGlass/GlassChamberLit"
         _TrackWallThick ("Track Wall Thickness (P-Space)", Float) = 0.06
         _TrackFillet ("Track Junction Fillet", Float) = 0.04
         _TrackExitPos ("Track Exit (pX, pY, mouthHalfW, on)", Vector) = (0, -0.5, 0.16, 0)
+        _TrackBake ("Bake Track SDF Into Render Texture", Float) = 0.0
+        _TrackBoxMode ("Tube-Style Square Glass (box SDF instead of track)", Float) = 0.0
+        _TrackBox ("Tube Box Inner (cx, cy, halfW, halfH) P-Space", Vector) = (0, 0, 1, 1)
+        _TrackBoxRad ("Tube Box Inner Corner Radius", Float) = 0.15
+        [HideInInspector] _SrcBlend ("Src Blend", Float) = 5.0
+        [HideInInspector] _DstBlend ("Dst Blend", Float) = 10.0
         _TrackNeck ("Track Exit Neck (mouthY, innerHalfW, lipHalfH, on)", Vector) = (0, 0, 0, 0)
         _SleeveParams ("Exit Sleeve (halfW, halfH, neckOuterHalfW, unused)", Vector) = (0.5, 0.2, 0.3, 0)
     }
@@ -51,7 +57,7 @@ Shader "PuzzleGlass/GlassChamberLit"
         Pass
         {
             Name "GlassChamberForward"
-            Blend SrcAlpha OneMinusSrcAlpha
+            Blend [_SrcBlend] [_DstBlend]
             Cull Off
             ZWrite Off
             ZTest LEqual
@@ -95,6 +101,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _TrackWallThick;
                 float _TrackFillet;
                 float4 _TrackExitPos;
+                float _TrackBake;
+                float _TrackBoxMode;
+                float4 _TrackBox;
+                float _TrackBoxRad;
                 float4 _TrackNeck;
                 float4 _SleeveParams;
             CBUFFER_END
@@ -104,6 +114,12 @@ Shader "PuzzleGlass/GlassChamberLit"
             float4 _PolyPoints[48];
             // Eğrisel cam pist/kanal segmentleri: (ax, ay, bx, by) P-uzayında, max 64 segment.
             float4 _TrackSegs[64];
+            // Pist mesafe alanı, level kurulurken bir kez bu dokuya pişirilir (ShapedGlassContainer.BakeTrackSdf):
+            // r = kanal iç mesafesi, gb = yumuşak dış normal. Her pikselde 64 segmentlik döngü yerine tek örnek okunur
+            // (mobil GPU'da asıl darboğaz buydu). Global: malzemelere serileşmez; 0 ise eski döngüye düşülür.
+            TEXTURE2D(_TrackSDFTex);
+            SAMPLER(sampler_TrackSDFTex);
+            float _UseTrackSDF;
             // Her segmentin kol kimliği (4 segment bir float4 içinde): aynı kol exact min, farklı kollar SmoothUnion.
             float4 _TrackBranchPacked[16];
 
@@ -809,6 +825,45 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return sdTrackChannelNearest(p, nearestA, nearestB, g);
             }
 
+            // Pist mesafesi: pişirilmiş dokudan (hızlı) ya da segment döngüsünden (pişirme sırasında / doku yoksa)
+            // Kare cam (kutu modu): iç boşluk yuvarlak köşeli kutu; cidar/zemin/boyun gölgelendirmesi pistle aynı
+            float TubeBoxSDF(float2 p)
+            {
+                float2 h = max(_TrackBox.zw, float2(0.05, 0.05));
+                float r = clamp(_TrackBoxRad, 0.01, min(h.x, h.y));
+                return sdRoundBox2D(p - _TrackBox.xy, h, r);
+            }
+
+            float TrackSDF(float2 p, out float2 g)
+            {
+                if (_TrackBoxMode > 0.5)
+                {
+                    const float e = 0.002;
+                    float d = TubeBoxSDF(p);
+                    float2 gg = float2(TubeBoxSDF(p + float2(e, 0.0)) - TubeBoxSDF(p - float2(e, 0.0)),
+                                       TubeBoxSDF(p + float2(0.0, e)) - TubeBoxSDF(p - float2(0.0, e)));
+                    g = dot(gg, gg) > 1e-12 ? normalize(gg) : float2(0.0, 1.0);
+                    return d;
+                }
+                if (_UseTrackSDF > 0.5 && _TrackBake < 0.5)
+                {
+                    float aspect = max(_BoxAspect, 0.25);
+                    float2 uv = float2(p.x / (2.0 * aspect) + 0.5, p.y * 0.5 + 0.5);
+                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { g = float2(0.0, 1.0); return 10.0; }
+                    float4 t = SAMPLE_TEXTURE2D_LOD(_TrackSDFTex, sampler_TrackSDFTex, uv, 0);
+                    g = dot(t.gb, t.gb) > 1e-6 ? normalize(t.gb) : float2(0.0, 1.0);
+                    return t.r;
+                }
+                float2 a, b;
+                return sdTrackChannelNearest(p, a, b, g);
+            }
+
+            float TrackSDF(float2 p)
+            {
+                float2 g;
+                return TrackSDF(p, g);
+            }
+
             half4 EvaluateTrackChannel(Varyings IN)
             {
                 float aspect = max(_BoxAspect, 0.25);
@@ -819,8 +874,16 @@ Shader "PuzzleGlass/GlassChamberLit"
                                    * smoothstep(0.0, 0.04, IN.uv.y) * smoothstep(1.0, 0.96, IN.uv.y);
 
                 float wallThick = max(_TrackWallThick, 0.025);
-                float2 nearA, nearB, smoothGrad;
-                float dInner = sdTrackChannelNearest(p, nearA, nearB, smoothGrad);
+                if (_TrackBake > 0.5)
+                {
+                    // Pişirme: ham kanal mesafesi + yumuşak normal (karışım yok: _SrcBlend One, _DstBlend Zero)
+                    float2 bA, bB, bG;
+                    float bD = sdTrackChannelNearest(p, bA, bB, bG);
+                    return half4(bD, bG.x, bG.y, 1.0);
+                }
+
+                float2 smoothGrad;
+                float dInner = TrackSDF(p, smoothGrad);
 
                 // Çıkış boynu: kanal, çıkış noktasından aşağı doğru aynı cidar kalınlığıyla kısa bir boru olarak devam eder.
                 // İç boşluk (dInner) yumuşak birleşimle uzatılır; böylece cidar, gölgelendirme ve koyu zemin boyna kesintisiz akar.
@@ -984,9 +1047,9 @@ Shader "PuzzleGlass/GlassChamberLit"
                 {
                     // ARKA CAM (topların arkasında)
                     // Gölge: tüp zeminden hafif yüksekte
-                    float dNearRaw  = sdTrackChannel(p - float2(0.0, -0.040));
+                    float dNearRaw  = TrackSDF(p - float2(0.0, -0.040));
                     float dShadNear = dNearRaw - wallThick;
-                    float dShadFar  = sdTrackChannel(p - float2(0.0, -0.085)) - wallThick;
+                    float dShadFar  = TrackSDF(p - float2(0.0, -0.085)) - wallThick;
                     if (hasNeck)
                     {
                         // Boyun + dudak da zemine gölge düşürür

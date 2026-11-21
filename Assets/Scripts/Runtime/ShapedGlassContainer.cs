@@ -222,6 +222,8 @@ namespace PuzzleGlass
         public Color boxFrameEdgeShadeColor = new Color(0.35f, 0.32f, 0.78f, 1.0f);
         public Color dropShadowColor = new Color(0.64f, 0.56f, 0.78f, 0.28f);
         public bool showBottomExitCollar = true;
+        [Tooltip("Düz tabanlı kare/dikdörtgen cam, pist camıyla aynı görünümde çizilsin (kalın cam cidar, koyu zemin, çıkış boynu + bilezik). Besleme tüplü camlarda eski görünüm kullanılır.")]
+        public bool squareGlassTubeStyle = true;
         public bool showGlassShowcaseBackdrop = true;
 
         [Header("Üst Cam Besleme Tüpleri (Per-Level)")]
@@ -471,6 +473,8 @@ namespace PuzzleGlass
 
         private GameObject _trackRootObj;
         private GameObject _glassWallsObj;
+        /// <summary>Camın tüm görsel parçalarının (cam katmanları, yaka, vitrin) kökü. Collider içermez; level geçişi bunu kaydırır.</summary>
+        public Transform GlassVisualRoot => _glassWallsObj != null ? _glassWallsObj.transform : null;
         private GameObject _cubesContainer;
         private Dictionary<PuzzleColor, Material> _cubeMaterials = new Dictionary<PuzzleColor, Material>();
         private Mesh _roundedCubeMesh;
@@ -603,6 +607,98 @@ namespace PuzzleGlass
             };
         }
 #endif
+
+        // ---- Pist mesafe alanının dokuya pişirilmesi (mobil GPU performansı) ----
+        private static readonly int TrackSdfTexId = Shader.PropertyToID("_TrackSDFTex");
+        private static readonly int UseTrackSdfId = Shader.PropertyToID("_UseTrackSDF");
+        private const int TrackSdfLongSide = 1024;
+        private RenderTexture _trackSdfRT;
+        private Material _trackSdfBakeMat;
+        private bool _trackSdfHasParams;
+        private Vector2 _trackSdfQuadCenter;
+        private float _trackSdfQuadHalfW, _trackSdfQuadHalfH;
+
+        /// <summary>
+        /// Cam pist shader'ı her pikselde 64 segmentlik mesafe döngüsünü (gölgeler için 3 kez) çalıştırıyordu; mobil GPU'da
+        /// asıl darboğaz buydu. Pist şekli level boyunca değişmediği için aynı shader fonksiyonu bir kez bir dokuya
+        /// çizilir, shader her karede bu dokudan okur. Doku global bir shader özelliğidir (malzemelere/sahneye serileşmez);
+        /// pişirilemezse shader eski döngüye düşer, görüntü aynı kalır.
+        /// </summary>
+        private void BakeTrackSdf(Vector2 quadCenter, float quadHalfW, float quadHalfH)
+        {
+            _trackSdfHasParams = true;
+            _trackSdfQuadCenter = quadCenter;
+            _trackSdfQuadHalfW = quadHalfW;
+            _trackSdfQuadHalfH = quadHalfH;
+
+            Shader.SetGlobalFloat(UseTrackSdfId, 0f);
+            Shader chamber = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamber == null || compiledTrack == null || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf))
+                return;
+
+            float aspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
+            int w = aspect >= 1f ? TrackSdfLongSide : Mathf.Max(64, Mathf.RoundToInt(TrackSdfLongSide * aspect));
+            int h = aspect >= 1f ? Mathf.Max(64, Mathf.RoundToInt(TrackSdfLongSide / aspect)) : TrackSdfLongSide;
+            if (_trackSdfRT == null || _trackSdfRT.width != w || _trackSdfRT.height != h)
+            {
+                ReleaseTrackSdf();
+                _trackSdfRT = new RenderTexture(w, h, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear)
+                {
+                    name = "TrackSDF",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+            if (!_trackSdfRT.IsCreated()) _trackSdfRT.Create();
+
+            if (_trackSdfBakeMat == null)
+                _trackSdfBakeMat = new Material(chamber) { name = "Mat_TrackSDFBake", hideFlags = HideFlags.HideAndDontSave };
+            ApplyTrackShaderProperties(_trackSdfBakeMat, quadCenter, quadHalfW, quadHalfH);
+            _trackSdfBakeMat.SetFloat("_IsFrontLens", 0f);
+            _trackSdfBakeMat.SetFloat("_TrackBake", 1f);
+            _trackSdfBakeMat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            _trackSdfBakeMat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
+
+            var prevActive = RenderTexture.active;
+            Graphics.Blit(null, _trackSdfRT, _trackSdfBakeMat, 0);
+            RenderTexture.active = prevActive; // Blit hedefi aktif bırakır; sonra serbest bırakırken uyarı vermesin
+
+            Shader.SetGlobalTexture(TrackSdfTexId, _trackSdfRT);
+            Shader.SetGlobalFloat(UseTrackSdfId, 1f);
+        }
+
+        private void ReleaseTrackSdf()
+        {
+            if (_trackSdfRT != null)
+            {
+                if (RenderTexture.active == _trackSdfRT) RenderTexture.active = null;
+                _trackSdfRT.Release();
+                if (Application.isPlaying) Destroy(_trackSdfRT); else DestroyImmediate(_trackSdfRT);
+                _trackSdfRT = null;
+            }
+        }
+
+        private void OnDisable()
+        {
+            Shader.SetGlobalFloat(UseTrackSdfId, 0f);
+            ReleaseTrackSdf();
+            if (_trackSdfBakeMat != null)
+            {
+                if (Application.isPlaying) Destroy(_trackSdfBakeMat); else DestroyImmediate(_trackSdfBakeMat);
+                _trackSdfBakeMat = null;
+            }
+            _trackSdfHasParams = false;
+        }
+
+        private void LateUpdate()
+        {
+            // Android'de uygulama arka plana gidip dönünce GPU içeriği kaybolabilir: doku yoksa yeniden pişir
+            if (_trackSdfHasParams && IsTrackShape && (_trackSdfRT == null || !_trackSdfRT.IsCreated()))
+                BakeTrackSdf(_trackSdfQuadCenter, _trackSdfQuadHalfW, _trackSdfQuadHalfH);
+        }
 
         private void Update()
         {
@@ -1189,6 +1285,48 @@ namespace PuzzleGlass
             return m;
         }
 
+        /// <summary>
+        /// Kare/dikdörtgen camı pist camının shader yoluyla çizer (kutu modu): iç boşluk eski kutuyla birebir aynı
+        /// (fizik duvarları değişmez), cidar = kutu çerçeve kalınlığı, alt ortada çıkış boynu.
+        /// </summary>
+        private void ApplyTubeBoxShaderProperties(Material mat, float centerY, float quadHalfW, float quadHalfH)
+        {
+            if (mat == null) return;
+            if (enforceUnifiedCrystalTheme) ApplyCrystalLavenderThemeColors();
+            float qh = Mathf.Max(0.01f, quadHalfH);
+            float aspect = quadHalfW / qh;
+            float ft = Mathf.Clamp(boxFrameThickness, 0.035f, 0.24f);           // kart uzayı (eski kutu shader'ıyla aynı)
+            Vector2 outerHalf = new Vector2(aspect * 0.80f, 0.76f);
+            Vector2 innerHalf = outerHalf - new Vector2(ft, ft);
+            float outerRad = Mathf.Clamp(boxCornerRadius, 0.04f, Mathf.Min(outerHalf.x, outerHalf.y) * 0.95f);
+            float innerRad = Mathf.Clamp(outerRad - ft * 0.65f, 0.03f, Mathf.Min(innerHalf.x, innerHalf.y) * 0.92f);
+            _tubeBoxWallWorld = ft * qh;
+            _tubeBoxInnerBottomY = centerY - innerHalf.y * qh;
+
+            mat.SetFloat("_IsRoundedBoxPool", 0f);
+            if (mat.HasProperty("_PolyCount")) mat.SetFloat("_PolyCount", 0f);
+            if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
+            if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
+            if (mat.HasProperty("_JarNeckParams")) mat.SetVector("_JarNeckParams", Vector4.zero);
+            mat.SetFloat("_IsTrackChannel", 1f);
+            mat.SetFloat("_TrackBoxMode", 1f);
+            mat.SetFloat("_BoxAspect", aspect);
+            mat.SetVector("_TrackBox", new Vector4(0f, 0f, innerHalf.x, innerHalf.y));
+            mat.SetFloat("_TrackBoxRad", innerRad);
+            mat.SetFloat("_TrackSegCount", 0f);
+            mat.SetFloat("_TrackWallThick", ft);
+            mat.SetFloat("_TrackHalfWidth", 0.22f / qh);   // cam kesit gölgelendirme bandı (pistteki kanal yarı genişliği kadar)
+            mat.SetFloat("_TrackFillet", 0.04f);
+            if (mat.HasProperty("_FrameColor")) mat.SetColor("_FrameColor", boxFrameColor);
+            if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
+
+            GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out _, out _);
+            mat.SetVector("_TrackExitPos", new Vector4(0f, -innerHalf.y, neckInnerHalfW * 0.85f / qh, showBottomExitCollar ? 1f : 0f));
+            mat.SetVector("_TrackNeck", showBottomExitCollar
+                ? new Vector4((mouthY - centerY) / qh, neckInnerHalfW / qh, lipHalfH / qh, 1f)
+                : Vector4.zero);
+        }
+
         private void ApplyRoundedBoxShaderProperties(Material mat, float boxAspect)
         {
             if (mat == null) return;
@@ -1210,6 +1348,7 @@ namespace PuzzleGlass
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
             if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
             if (mat.HasProperty("_IsTrackChannel")) mat.SetFloat("_IsTrackChannel", 0f);
+            if (mat.HasProperty("_TrackBoxMode")) mat.SetFloat("_TrackBoxMode", 0f);
 
             // Feed tube openings on the container's top rim: exactly where the tube's walls cross the rim line
             // (gatePoint = middle of the tube's horizontal cut at ceilY, gateWidth = distance between its inner walls)
@@ -1754,6 +1893,7 @@ namespace PuzzleGlass
             mat.SetFloat("_IsFeedTube", 0f);
             if (mat.HasProperty("_PolyCount")) mat.SetFloat("_PolyCount", 0f);
             if (mat.HasProperty("_IsTrackChannel")) mat.SetFloat("_IsTrackChannel", 1f);
+            if (mat.HasProperty("_TrackBoxMode")) mat.SetFloat("_TrackBoxMode", 0f);
             mat.SetFloat("_BoxAspect", boxAspect);
             if (mat.HasProperty("_FrameColor")) mat.SetColor("_FrameColor", boxFrameColor);
             if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
@@ -1810,8 +1950,24 @@ namespace PuzzleGlass
         private const float TrackNeckDrop = 0.17f;
 
         /// <summary>Çıkış boynu ölçüleri (pist yerel koordinatlarında). Sadece görsel; fizik pist alanından gelir.</summary>
+        /// <summary>Kare/dikdörtgen cam pist camı görünümünde mi çiziliyor?</summary>
+        public bool UsesTubeBoxStyle => IsFlatBottomBox && squareGlassTubeStyle && !useBallFeedTubes;
+        private float _tubeBoxInnerBottomY = -0.6f;
+        private float _tubeBoxWallWorld = 0.08f;
+
         private void GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out float neckOuterHalfW, out float outerBottomY)
         {
+            if (UsesTubeBoxStyle)
+            {
+                // Kare cam: çıkış alt kenarın ortasında, ağız birkaç top genişliğinde
+                float wall = _tubeBoxWallWorld;
+                outerBottomY = _tubeBoxInnerBottomY - wall;
+                mouthY = outerBottomY - TrackNeckDrop;
+                neckInnerHalfW = Mathf.Max(particleSize * 1.6f, 0.14f);
+                neckOuterHalfW = neckInnerHalfW + wall;
+                lipHalfH = wall * 0.36f;
+                return;
+            }
             var t = compiledTrack;
             outerBottomY = t.exitPoint.y - t.innerHalfWidth - t.wallThickness;
             mouthY = outerBottomY - TrackNeckDrop;
@@ -1826,7 +1982,7 @@ namespace PuzzleGlass
         /// </summary>
         private void BuildTrackExitSleeve()
         {
-            if (_glassWallsObj == null || compiledTrack == null) return;
+            if (_glassWallsObj == null || (compiledTrack == null && !UsesTubeBoxStyle)) return;
             Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
             if (chamberShader == null) return;
 
@@ -1845,7 +2001,8 @@ namespace PuzzleGlass
 
             var root = new GameObject("TrackExitSleeve");
             root.transform.SetParent(_glassWallsObj.transform, false);
-            root.transform.localPosition = new Vector3(compiledTrack.exitPoint.x, sleeveCenterY, 0f);
+            float exitX = UsesTubeBoxStyle || compiledTrack == null ? 0f : compiledTrack.exitPoint.x;
+            root.transform.localPosition = new Vector3(exitX, sleeveCenterY, 0f);
 
             for (int layer = 0; layer < 2; layer++)
             {
@@ -1946,6 +2103,7 @@ namespace PuzzleGlass
 
                 if (_chamberInnerGlowMat != null) ApplyTrackShaderProperties(_chamberInnerGlowMat, quadCenter, quadHalfW, quadHalfH);
                 if (_frontGlassLensMat != null) ApplyTrackShaderProperties(_frontGlassLensMat, quadCenter, quadHalfW, quadHalfH);
+                BakeTrackSdf(quadCenter, quadHalfW, quadHalfH);
 
                 Mesh trackQuadMesh = CreateTrackQuadMesh(quadCenter, quadHalfW, quadHalfH);
 
@@ -1992,18 +2150,22 @@ namespace PuzzleGlass
                 GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out float visibleHalfW, out float visibleHalfH);
                 float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
 
-                if (_chamberInnerGlowMat != null)
+                bool tubeBox = UsesTubeBoxStyle;
+                if (tubeBox)
                 {
-                    ApplyRoundedBoxShaderProperties(_chamberInnerGlowMat, boxAspect);
+                    // Pist camıyla aynı görünüm (kalın cam cidar, koyu zemin, çıkış boynu); eski mor vitrin çizilmez
+                    ApplyTubeBoxShaderProperties(_chamberInnerGlowMat, centerY, quadHalfW, quadHalfH);
+                    ApplyTubeBoxShaderProperties(_frontGlassLensMat, centerY, quadHalfW, quadHalfH);
                 }
-                if (_frontGlassLensMat != null)
+                else
                 {
-                    ApplyRoundedBoxShaderProperties(_frontGlassLensMat, boxAspect);
+                    if (_chamberInnerGlowMat != null) ApplyRoundedBoxShaderProperties(_chamberInnerGlowMat, boxAspect);
+                    if (_frontGlassLensMat != null) ApplyRoundedBoxShaderProperties(_frontGlassLensMat, boxAspect);
                 }
 
                 Mesh boxQuadMesh = CreateRoundedBoxPoolQuadMesh(quadHalfW, quadHalfH, centerY);
 
-                BuildGlassShowcaseBackdrop(0f, centerY, visibleHalfW * 2f, visibleHalfH * 2f);
+                if (!tubeBox) BuildGlassShowcaseBackdrop(0f, centerY, visibleHalfW * 2f, visibleHalfH * 2f);
 
                 GameObject poolBackObj = new GameObject("FlaskInnerCenterGlow");
                 poolBackObj.transform.SetParent(_glassWallsObj.transform, false);
@@ -2025,7 +2187,8 @@ namespace PuzzleGlass
 
                 if (showBottomExitCollar)
                 {
-                    BuildBottomExitCollar(centerY - visibleHalfH);
+                    if (tubeBox) BuildTrackExitSleeve();
+                    else BuildBottomExitCollar(centerY - visibleHalfH);
                 }
 
                 BuildGlassDividersGeometry();
