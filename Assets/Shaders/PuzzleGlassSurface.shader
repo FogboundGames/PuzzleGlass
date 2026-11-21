@@ -42,6 +42,10 @@ Shader "PuzzleGlass/GlassChamberLit"
         [HideInInspector] _DstBlend ("Dst Blend", Float) = 10.0
         _TrackNeck ("Track Exit Neck (mouthY, innerHalfW, lipHalfH, on)", Vector) = (0, 0, 0, 0)
         _SleeveParams ("Exit Sleeve (halfW, halfH, neckOuterHalfW, unused)", Vector) = (0.5, 0.2, 0.3, 0)
+        _ExitChannelCount ("Exit Channel Count", Float) = 0.0
+        _ExitChannelHalfW ("Exit Channel Inner Half Width (P-Space)", Float) = 0.04
+        _ExitChannelWallThick ("Exit Channel Wall Thickness (P-Space)", Float) = 0.03
+        _IsExitChannels ("Thin Per-Slot Exit Channels Pass", Float) = 0.0
     }
 
     SubShader
@@ -107,6 +111,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _TrackBoxRad;
                 float4 _TrackNeck;
                 float4 _SleeveParams;
+                float _ExitChannelCount;
+                float _ExitChannelHalfW;
+                float _ExitChannelWallThick;
+                float _IsExitChannels;
             CBUFFER_END
 
             // Özel şekilli havuz: iç hattın köşeleri (yarıçap kadar içeri alınmış), iki köşe bir float4'te.
@@ -114,6 +122,14 @@ Shader "PuzzleGlass/GlassChamberLit"
             float4 _PolyPoints[48];
             // Eğrisel cam pist/kanal segmentleri: (ax, ay, bx, by) P-uzayında, max 64 segment.
             float4 _TrackSegs[64];
+            // Her slota uzanan ince cam çıkış kanalları: en fazla 6 kanal * 16 segment = 96 segment, P-uzayında.
+            float4 _ExitChanSegs[96];
+            // Her çıkış kanalının alt ağzı: (mouthX, mouthY, lipHalfH, active) P-uzayında.
+            float4 _ExitMouths[6];
+            // Çıkış kanalları pişirilmiş mesafe dokusu:
+            TEXTURE2D(_ExitChanSDFTex);
+            SAMPLER(sampler_ExitChanSDFTex);
+            float _UseExitChanSDF;
             // Pist mesafe alanı, level kurulurken bir kez bu dokuya pişirilir (ShapedGlassContainer.BakeTrackSdf):
             // r = kanal iç mesafesi, gb = yumuşak dış normal. Her pikselde 64 segmentlik döngü yerine tek örnek okunur
             // (mobil GPU'da asıl darboğaz buydu). Global: malzemelere serileşmez; 0 ise eski döngüye düşülür.
@@ -834,17 +850,101 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return sdRoundBox2D(p - _TrackBox.xy, h, r);
             }
 
+            float2 TubeBoxGrad(float2 p)
+            {
+                const float e = 0.002;
+                float2 gg = float2(TubeBoxSDF(p + float2(e, 0.0)) - TubeBoxSDF(p - float2(e, 0.0)),
+                                   TubeBoxSDF(p + float2(0.0, e)) - TubeBoxSDF(p - float2(0.0, e)));
+                return dot(gg, gg) > 1e-12 ? normalize(gg) : float2(0.0, 1.0);
+            }
+
+            // Her slota uzanan ince egimli cikis kanallarinin SDF'i (en fazla 6 kanal * 16 segment = 96)
+            float sdExitChannels(float2 p, out float2 chanGrad)
+            {
+                int count = clamp((int)_ExitChannelCount, 0, 6);
+                chanGrad = float2(0.0, 1.0);
+                if (count <= 0) return 10.0;
+
+                float halfW = max(_ExitChannelHalfW, 0.012);
+                float bestDist = 1e9, secondDist = 1e9;
+                float2 bestA = p, bestB = p, secondA = p, secondB = p;
+
+                [loop]
+                for (int c = 0; c < 6; c++)
+                {
+                    if (c >= count) break;
+                    int baseIdx = c * 16;
+                    for (int s = 0; s < 16; s++)
+                    {
+                        float4 seg = _ExitChanSegs[baseIdx + s];
+                        float d = sdSegment2D(p, seg.xy, seg.zw) - halfW;
+                        if (d < bestDist)
+                        {
+                            secondDist = bestDist; secondA = bestA; secondB = bestB;
+                            bestDist = d; bestA = seg.xy; bestB = seg.zw;
+                        }
+                        else if (d < secondDist)
+                        {
+                            secondDist = d; secondA = seg.xy; secondB = seg.zw;
+                        }
+                    }
+
+                    // Agiz ucunda dudak altina kadar dikey kalmasi icin kisa uzanti
+                    float4 m = _ExitMouths[c];
+                    if (m.w > 0.5)
+                    {
+                        float2 stubA = float2(m.x, m.y + 0.015);
+                        float2 stubB = float2(m.x, m.y - 0.045);
+                        float dStub = sdSegment2D(p, stubA, stubB) - halfW;
+                        if (dStub < bestDist)
+                        {
+                            secondDist = bestDist; secondA = bestA; secondB = bestB;
+                            bestDist = dStub; bestA = stubA; bestB = stubB;
+                        }
+                        else if (dStub < secondDist)
+                        {
+                            secondDist = dStub; secondA = stubA; secondB = stubB;
+                        }
+                    }
+                }
+
+                float2 g1 = SegOutwardNormal(p, bestA, bestB);
+                if (secondDist < 1e8)
+                {
+                    float2 g2 = SegOutwardNormal(p, secondA, secondB);
+                    float w = 0.5 * (1.0 - saturate((secondDist - bestDist) / 0.025));
+                    float2 g = lerp(g1, g2, w);
+                    chanGrad = dot(g, g) > 1e-8 ? normalize(g) : g1;
+                }
+                else
+                {
+                    chanGrad = g1;
+                }
+                return bestDist;
+            }
+
+            float ExitChanSDF(float2 p, out float2 g)
+            {
+                if (_UseExitChanSDF > 0.5 && _TrackBake < 0.5)
+                {
+                    float aspect = max(_BoxAspect, 0.25);
+                    float2 uv = float2(p.x / (2.0 * aspect) + 0.5, p.y * 0.5 + 0.5);
+                    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { g = float2(0.0, 1.0); return 10.0; }
+                    float4 t = SAMPLE_TEXTURE2D_LOD(_ExitChanSDFTex, sampler_ExitChanSDFTex, uv, 0);
+                    g = dot(t.gb, t.gb) > 1e-6 ? normalize(t.gb) : float2(0.0, 1.0);
+                    return t.r;
+                }
+                return sdExitChannels(p, g);
+            }
+
+            float ExitChanSDF(float2 p)
+            {
+                float2 g;
+                return ExitChanSDF(p, g);
+            }
+
             float TrackSDF(float2 p, out float2 g)
             {
-                if (_TrackBoxMode > 0.5)
-                {
-                    const float e = 0.002;
-                    float d = TubeBoxSDF(p);
-                    float2 gg = float2(TubeBoxSDF(p + float2(e, 0.0)) - TubeBoxSDF(p - float2(e, 0.0)),
-                                       TubeBoxSDF(p + float2(0.0, e)) - TubeBoxSDF(p - float2(0.0, e)));
-                    g = dot(gg, gg) > 1e-12 ? normalize(gg) : float2(0.0, 1.0);
-                    return d;
-                }
                 if (_UseTrackSDF > 0.5 && _TrackBake < 0.5)
                 {
                     float aspect = max(_BoxAspect, 0.25);
@@ -853,6 +953,15 @@ Shader "PuzzleGlass/GlassChamberLit"
                     float4 t = SAMPLE_TEXTURE2D_LOD(_TrackSDFTex, sampler_TrackSDFTex, uv, 0);
                     g = dot(t.gb, t.gb) > 1e-6 ? normalize(t.gb) : float2(0.0, 1.0);
                     return t.r;
+                }
+                if (_TrackBoxMode > 0.5)
+                {
+                    const float e = 0.002;
+                    float d = TubeBoxSDF(p);
+                    float2 gg = float2(TubeBoxSDF(p + float2(e, 0.0)) - TubeBoxSDF(p - float2(e, 0.0)),
+                                       TubeBoxSDF(p + float2(0.0, e)) - TubeBoxSDF(p - float2(0.0, e)));
+                    g = dot(gg, gg) > 1e-12 ? normalize(gg) : float2(0.0, 1.0);
+                    return d;
                 }
                 float2 a, b;
                 return sdTrackChannelNearest(p, a, b, g);
@@ -877,8 +986,8 @@ Shader "PuzzleGlass/GlassChamberLit"
                 if (_TrackBake > 0.5)
                 {
                     // Pişirme: ham kanal mesafesi + yumuşak normal (karışım yok: _SrcBlend One, _DstBlend Zero)
-                    float2 bA, bB, bG;
-                    float bD = sdTrackChannelNearest(p, bA, bB, bG);
+                    float2 bG;
+                    float bD = TrackSDF(p, bG);
                     return half4(bD, bG.x, bG.y, 1.0);
                 }
 
@@ -1065,7 +1174,6 @@ Shader "PuzzleGlass/GlassChamberLit"
 
                     // İç boşluk: borunun arka yarısı. Şeffaf, soğuk tonlu; gölgedeki yana doğru koyulaşır,
                     // cidara yaklaştıkça (daha çok cam) yoğunlaşır.
-                    // Merkez en şeffaf; cidara doğru cam yoğunlaşır; gölgedeki yan koyulaşır (silindir hissi)
                     // Koyu lacivert kanal zemini (topların kontrastı için opak), cidara yakın AO + ince kostik
                     float3 bedTopCol = float3(0.050, 0.062, 0.140);
                     float3 bedBotCol = float3(0.026, 0.034, 0.090);
@@ -1135,8 +1243,214 @@ Shader "PuzzleGlass/GlassChamberLit"
                 }
             }
 
+            // Her slota uzanan bagimsiz ince cam tup kanallari (2. gorseldeki ref gibi puruzsuz ve yari saydam)
+            half4 EvaluateThinExitChannels(Varyings IN)
+            {
+                float aspect = max(_BoxAspect, 0.25);
+                float2 p = (IN.uv - 0.5) * 2.0;
+                p.x *= aspect;
+
+                float quadEdgeFade = smoothstep(0.0, 0.04, IN.uv.x) * smoothstep(1.0, 0.96, IN.uv.x)
+                                   * smoothstep(0.0, 0.04, IN.uv.y) * smoothstep(1.0, 0.96, IN.uv.y);
+
+                if (_TrackBake > 1.5)
+                {
+                    float2 bG;
+                    float bD = sdExitChannels(p, bG);
+                    return half4(bD, bG.x, bG.y, 1.0);
+                }
+
+                float2 smoothGrad;
+                float dInner = ExitChanSDF(p, smoothGrad);
+
+                float2 dpx = ddx(p), dpy = ddy(p);
+                float ddxD = ddx(dInner), ddyD = ddy(dInner);
+                float aa = max((abs(ddxD) + abs(ddyD)) * 1.15, 0.0012);
+                float det = dpx.x * dpy.y - dpx.y * dpy.x;
+                float2 derivGrad = abs(det) > 1e-10
+                    ? float2(ddxD * dpy.y - ddyD * dpx.y, dpx.x * ddyD - dpy.x * ddxD) / det
+                    : smoothGrad;
+                float derivLenSq = dot(derivGrad, derivGrad);
+                if (derivLenSq > 1e-5)
+                {
+                    float2 normDeriv = derivGrad * rsqrt(derivLenSq);
+                    float gradConfidence = smoothstep(0.08, 0.55, derivLenSq);
+                    float2 blendedGrad = lerp(smoothGrad, normDeriv, gradConfidence);
+                    smoothGrad = dot(blendedGrad, blendedGrad) > 1e-6 ? normalize(blendedGrad) : smoothGrad;
+                }
+
+                float halfW = max(_ExitChannelHalfW, 0.012);
+                float wallThick = max(_ExitChannelWallThick, 0.005);
+                if (dInner > wallThick + 0.16) discard;
+
+                float dOuter = dInner - wallThick;
+                float2 grad = smoothGrad;
+                float tubeR = halfW + wallThick;
+                float u = saturate((dInner + halfW) / tubeR);
+                float uIn = halfW / tubeR;
+                float nz = sqrt(saturate(1.0 - u * u));
+                float3 N = normalize(float3(grad * u, max(nz, 0.02)));
+                float3 V = float3(0.0, 0.0, 1.0);
+                float3 L1 = normalize(float3(-0.42, 0.78, 0.95));
+                float3 L2 = normalize(float3(0.60, -0.62, 0.50));
+                float3 H1 = normalize(L1 + V);
+                float3 H2 = normalize(L2 + V);
+                float diff = saturate(dot(N, L1));
+                float spec1 = pow(saturate(dot(N, H1)), 85.0);
+                float spec2 = pow(saturate(dot(N, H2)), 40.0);
+                float fres = pow(1.0 - nz, 2.0);
+                float facing = dot(grad, normalize(L1.xy));
+                float sheenMul = max(0.65, _SheenIntensity);
+
+                float wRefr = max(0.018, 0.0024 / max(tubeR, 0.03));
+                float wBev  = max(0.022, 0.0032 / max(tubeR, 0.03));
+                float oBev  = max(0.032, 0.0050 / max(tubeR, 0.03));
+                float wRim  = max(0.024, 0.0035 / max(tubeR, 0.03));
+                float wZone = max(0.014, 0.0018 / max(tubeR, 0.03));
+                float innerRefract = exp(-pow((u - uIn) / wRefr, 2.0));
+                float innerBevel   = exp(-pow((u - (uIn - oBev)) / wBev, 2.0));
+                float outerRim     = exp(-pow((u - 0.955) / wRim, 2.0));
+                float wallZone     = smoothstep(uIn - wZone, uIn + wZone, u);
+
+                float3 pureWhite  = float3(1.00, 1.00, 1.00);
+                float3 glassLight = lerp(float3(0.70, 0.78, 0.98), _EdgeColor.rgb, 0.12);
+                float3 glassMid   = float3(0.45, 0.52, 0.84);
+                float3 glassDeep  = lerp(float3(0.18, 0.21, 0.48), _InnerGrooveColor.rgb, 0.25);
+
+                // Ustte ana cam yakasinin icine temizce girer, altta her slot agzinda duzgun acik dudak ile biter
+                float topY = _TrackExitPos.y;
+                float topClip = 1.0 - smoothstep(topY - aa * 2.0, topY + aa * 2.0, p.y);
+
+                int mCount = clamp((int)_ExitChannelCount, 0, 6);
+                float cLipOver = wallThick * 0.22;
+                float cBandHW = tubeR + cLipOver + 0.012;
+                float mouthClip = 1.0;
+                float lipMask = 0.0;
+                float lipV = 0.0;
+                float lipOverHole = 0.0;
+                float lipLitDx = 0.0;
+                float activeLipHH = 0.006;
+                [loop]
+                for (int c = 0; c < 6; c++)
+                {
+                    if (c >= mCount) break;
+                    float4 m = _ExitMouths[c];
+                    if (m.w < 0.5) continue;
+                    float mX = m.x;
+                    float mY = m.y;
+                    float mLipHH = max(m.z, 0.004);
+                    float dxM = abs(p.x - mX);
+                    float bandM = (1.0 - smoothstep(cBandHW, cBandHW + 0.018, dxM))
+                                * (1.0 - smoothstep(mY + mLipHH * 2.5, mY + mLipHH * 4.5, p.y));
+                    mouthClip *= 1.0 - bandM * (1.0 - smoothstep(mY - aa, mY + aa, p.y));
+
+                    float dLipM = sdRoundBox2D(p - float2(mX, mY + mLipHH), float2(tubeR + cLipOver, mLipHH), mLipHH);
+                    float lMaskM = 1.0 - smoothstep(-aa, aa, dLipM);
+                    if (lMaskM > lipMask)
+                    {
+                        lipMask = lMaskM;
+                        lipV = saturate((p.y - mY) / (2.0 * mLipHH));
+                        lipOverHole = 1.0 - smoothstep(halfW - aa * 2.0, halfW + aa * 2.0, dxM);
+                        lipLitDx = p.x - mX;
+                        activeLipHH = mLipHH;
+                    }
+                }
+
+                float clipMask = topClip * mouthClip;
+                float outerMask = (1.0 - smoothstep(-aa, aa, dOuter)) * clipMask;
+
+                if (_IsFrontLens > 0.5)
+                {
+                    float bandMain = spec1 * 0.88 * sheenMul;
+                    float bandFill = spec2 * 0.34;
+                    float edgeGlass = fres * wallZone * 0.24;
+                    float rimGlint  = outerRim * (0.35 + 0.45 * saturate(facing));
+                    float bevelGlint = innerBevel * (0.28 + 0.36 * saturate(facing));
+                    float litBand    = exp(-pow((u - 0.88) / 0.045, 2.0)) * saturate(facing) * 0.65 * sheenMul;
+                    float tubeGloss  = exp(-pow((u - 0.36) / 0.19, 2.0)) * saturate(facing + 0.45) * (1.0 - wallZone) * 0.46 * sheenMul;
+                    float frontA = saturate(0.02 + bandMain + bandFill + edgeGlass + rimGlint + bevelGlint + litBand + tubeGloss);
+                    frontA *= outerMask * quadEdgeFade;
+
+                    float whiteness = saturate(bandMain * 1.3 + bandFill + rimGlint * 1.2 + bevelGlint * 1.2 + litBand * 1.4 + tubeGloss * 1.4);
+                    float3 frontRgb = lerp(glassLight, pureWhite, whiteness);
+
+                    if (lipMask > 0.001)
+                    {
+                        float lpx = aa / max(2.0 * activeLipHH, 0.001) * 1.5;
+                        float lipTopHi  = smoothstep(0.55 - lpx, 0.55 + lpx, lipV) * (1.0 - smoothstep(0.85 - lpx, 0.85 + lpx, lipV));
+                        float lipBotLn  = 1.0 - smoothstep(0.22 - lpx, 0.22 + lpx, lipV);
+                        float lipLitSide = saturate(0.55 - lipLitDx / max(tubeR + cLipOver, 0.01) * 0.45);
+                        float lipA = lipMask * saturate(0.14 + (1.0 - lipOverHole) * 0.38 + lipTopHi * (0.42 + 0.28 * lipLitSide) + lipBotLn * 0.25) * quadEdgeFade;
+                        float3 lipRgb = lerp(glassLight, pureWhite, saturate(lipTopHi * (0.65 + 0.35 * lipLitSide)));
+                        lipRgb = lerp(lipRgb, glassDeep * 0.75, lipBotLn * 0.50);
+                        float outA = lipA + frontA * (1.0 - lipA);
+                        frontRgb = (lipRgb * lipA + frontRgb * frontA * (1.0 - lipA)) / max(outA, 0.004);
+                        frontA = outA;
+                    }
+                    if (frontA < 0.003) discard;
+                    return half4(saturate(frontRgb), frontA);
+                }
+                else
+                {
+                    float dNearRaw  = ExitChanSDF(p - float2(0.0, -0.025));
+                    float dShadNear = dNearRaw - wallThick;
+                    float dShadFar  = ExitChanSDF(p - float2(0.0, -0.055)) - wallThick;
+                    float contactShad = pow(1.0 - smoothstep(-0.010, 0.050, dShadNear), 1.6);
+                    float dropShad    = pow(1.0 - smoothstep(-0.015, 0.110, dShadFar), 1.8);
+                    float shadowAlpha = saturate(contactShad * 0.55 + dropShad * 0.38) * 0.16 * clipMask * quadEdgeFade;
+                    float3 shadowRGB = float3(0.16, 0.18, 0.38);
+
+                    float3 bedTopCol = float3(0.30, 0.33, 0.52);
+                    float3 bedBotCol = float3(0.23, 0.26, 0.44);
+                    float depthFromWall = max(0.0, -dInner);
+                    float innerWallAO = exp(-depthFromWall / max(halfW * 0.26, 0.010));
+                    float shadowSide = saturate(-facing) * u;
+                    float3 interiorRgb = lerp(bedBotCol, bedTopCol, saturate(IN.uv.y));
+                    interiorRgb = lerp(interiorRgb, glassDeep * 0.72, saturate(innerWallAO * 0.45 + shadowSide * 0.22));
+                    float interiorA = 0.36;
+
+                    float lit = saturate(0.5 + 0.5 * facing);
+                    float3 wallRgb = lerp(glassDeep * 1.15, glassLight, saturate(0.32 + 0.68 * lit * (0.55 + 0.45 * diff)));
+                    wallRgb = lerp(wallRgb, glassDeep * 0.75, saturate(-facing) * fres * 0.45);
+                    wallRgb = lerp(wallRgb, pureWhite, outerRim * lit * 0.38);
+                    float wallA = 0.46 + 0.34 * fres;
+                    float edgeLine = smoothstep(0.91, 1.0, u);
+                    wallRgb = lerp(wallRgb, glassDeep * 0.58, edgeLine * 0.68);
+                    wallA = saturate(wallA + edgeLine * 0.24);
+
+                    float3 backRgb = lerp(interiorRgb, wallRgb, wallZone);
+                    float backA = lerp(interiorA, wallA, wallZone);
+                    backRgb = lerp(backRgb, glassDeep * 0.62, innerRefract * 0.36);
+                    backA = saturate(backA + innerRefract * 0.18);
+
+                    float glassAlpha = backA * outerMask * quadEdgeFade;
+                    float3 glassRgb = backRgb;
+
+                    if (lipMask > 0.001)
+                    {
+                        float lipLit = saturate(0.5 - lipLitDx / max(tubeR + cLipOver, 0.01) * 0.5);
+                        float3 lipBackRgb = lerp(glassMid, glassLight, saturate(0.35 + lipV * 0.45 + lipLit * 0.25));
+                        lipBackRgb = lerp(lipBackRgb, glassDeep * 0.65, smoothstep(0.30, 0.0, lipV) * 0.45);
+                        float lipBackA = lipMask * (1.0 - lipOverHole) * 0.78 * quadEdgeFade;
+                        glassRgb = lerp(glassRgb, lipBackRgb, lipBackA);
+                        glassAlpha = max(glassAlpha, lipBackA);
+                    }
+
+                    float finalAlpha = saturate(glassAlpha + shadowAlpha * (1.0 - glassAlpha));
+                    if (finalAlpha < 0.002) discard;
+
+                    float3 premul = glassRgb * glassAlpha + shadowRGB * shadowAlpha * (1.0 - glassAlpha);
+                    float3 finalRgb = premul / max(finalAlpha, 0.004);
+                    return half4(saturate(finalRgb), finalAlpha);
+                }
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
+                if (_IsExitChannels > 0.5)
+                {
+                    return EvaluateThinExitChannels(IN);
+                }
                 if (_IsCollar > 1.5)
                 {
                     return EvaluateExitSleeve(IN);

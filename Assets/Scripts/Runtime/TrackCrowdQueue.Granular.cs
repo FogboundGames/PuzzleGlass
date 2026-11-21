@@ -50,7 +50,7 @@ namespace PuzzleGlass
             h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
             float a = (h & 0xffff) / 65535f * Mathf.PI * 2f;
             float m = ((h >> 16) & 0xffff) / 65535f;
-            return new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * (m * d * 0.16f);
+            return new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * (m * d * 0.06f);
         }
 
         private static bool IsAtExitGranular(BeltLoop loop, BallPhysicsController ball)
@@ -59,7 +59,8 @@ namespace PuzzleGlass
             var track = loop.source;
             float d = track.ballDiameter;
             Vector2 rel = ball.trackQueueLocalPos - track.exitPoint;
-            if (Mathf.Abs(rel.x) > d * 1.6f || Mathf.Abs(rel.y) > track.innerHalfWidth + d * 0.6f) return false;
+            float exitHalfX = Mathf.Max(d * 1.6f, 0.30f);
+            if (Mathf.Abs(rel.x) > exitHalfX || Mathf.Abs(rel.y) > track.innerHalfWidth + d * 0.6f) return false;
             // Ağız aşağıda: topla ağız arasında (altında) onu kapatan başka bir top varsa çıkamaz.
             // Aksi halde üst sıradaki top, alttaki farklı renkli topun üstünden atlayıp çıkıyordu.
             return !IsBlockedTowardExit(ball, d);
@@ -71,8 +72,8 @@ namespace PuzzleGlass
             if (pool == null || pool.ActiveBalls == null) return false;
             var balls = pool.ActiveBalls;
             Vector2 p = ball.trackQueueLocalPos;
-            float laneHalf = d * 0.80f;   // yatayda bu kadar örtüşen top yolu kapatır
-            float minDrop = d * 0.35f;    // en az bu kadar aşağıdaysa "altında" sayılır
+            float laneHalf = d * 0.92f;   // alttan iki top arasına yaslanan üst top da engelli sayılır
+            float minDrop = d * 0.28f;    // en az bu kadar aşağıdaysa "altında" sayılır
             for (int i = 0; i < balls.Count; i++)
             {
                 var o = balls[i];

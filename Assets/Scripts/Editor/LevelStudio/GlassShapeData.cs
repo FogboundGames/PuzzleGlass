@@ -129,13 +129,21 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (var b in lvl.manualBalls)
                     if (b != null && b.row > maxRow) maxRow = b.row;
             }
-            return OrderedPoolLayout.GetBoxSlots(lw, maxRow + 1, d.innerHalfW, d.floorY, d.ceilY, 0f, out diameter);
+            // Elle dizimde en az 12 satır (ve dolu en üst satırın 6 satır üstü) açılır; böylece istenildiği kadar top dizilebilir.
+            int targetRows = Mathf.Max(maxRow + 6, 12);
+            float safeW = Mathf.Max(0.60f, d.innerHalfW * 2f - 0.14f);
+            float maxDia = Mathf.Clamp(safeW / (lw * 3), OrderedPoolLayout.MinDiameter, OrderedPoolLayout.MaxDiameter);
+            float neededCeilY = d.floorY + maxDia + (targetRows - 1) * (maxDia * OrderedPoolLayout.RowFactor) + 0.02f;
+            float effCeilY = Mathf.Max(d.ceilY, neededCeilY);
+            return OrderedPoolLayout.GetBoxSlots(lw, targetRows, d.innerHalfW, d.floorY, effCeilY, 0f, out diameter);
         }
 
         /// <summary>Verilen düzeni üst besleme tüpleri açıkken Wave 1 (hazne) + Wave 2 (tüpler) olarak ayırır.</summary>
         public static OrderedPoolLayout.FeedTubeWaveSplit SplitForFeedTubes(PuzzleGlassLevelData lvl, OrderedPoolLayout.Result layout)
         {
-            if (lvl == null) return OrderedPoolLayout.SplitFeedTubeWaves(layout.balls, false, BallFeedTubeMode.BothLeftAndRight, 0, null, 12);
+            int totalCols = Mathf.Max(1, layout.totalColumns);
+            if (lvl == null || !lvl.useBallFeedTubes)
+                return OrderedPoolLayout.SplitFeedTubeWaves(layout.balls, false, BallFeedTubeMode.BothLeftAndRight, 0, null, totalCols);
             int lw = Mathf.Clamp(layout.laneWidth > 0 ? layout.laneWidth : 4, 3, 8);
             List<OrderedPoolLayout.Slot> slots;
             if (IsShapedPool(lvl))

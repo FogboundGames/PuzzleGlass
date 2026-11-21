@@ -162,11 +162,22 @@ namespace PuzzleGlass
                 PuzzleColor launchColor = m.filledBallColor;
                 Vector3 startPos = m.PopOneFilledSupplyBallVisual(out Vector3 startScale);
                 Vector3 targetWorld = ComputeSupplyLandingWorldPos(container, ballRadius, out Vector3 mouthWorld, out bool isTrack, out Vector2 flowDir);
+                Vector3[] reverseChanPts = null;
+                if (container.HasPerSlotExitChannels)
+                {
+                    int chIdx = container.GetChannelIndexForMonster(m);
+                    if (chIdx >= 0)
+                    {
+                        mouthWorld = container.GetChannelMouthWorldPosition(chIdx);
+                        mouthWorld.z = -0.10f;
+                        reverseChanPts = container.GetChannelWorldPathPoints(chIdx, reverse: true, steps: 7);
+                    }
+                }
 
                 var ball = BallObjectPool.Instance.SpawnBall(launchColor, startPos, ballRadius);
                 if (ball != null)
                 {
-                    ball.LaunchIntoContainer(startPos, startScale, container, mouthWorld, targetWorld, isTrack, flowDir);
+                    ball.LaunchIntoContainer(startPos, startScale, container, mouthWorld, targetWorld, isTrack, flowDir, reverseChanPts);
                     PuzzleSoundManager.Instance?.PlayBallTap(0.55f);
                 }
 
@@ -556,6 +567,13 @@ namespace PuzzleGlass
         private bool IsBallInMonsterCollectionZone(MonsterCharacter monster, BallPhysicsController ball)
         {
             if (monster == null || ball == null) return false;
+            ShapedGlassContainer zoneContainer = BallContainerManager.Instance != null
+                ? BallContainerManager.Instance.glassContainer
+                : null;
+            if (zoneContainer != null && zoneContainer.HasPerSlotExitChannels)
+            {
+                return monster.assignedSlot != null && zoneContainer.GetChannelIndexForMonster(monster) >= 0;
+            }
             if (monster.assignedSlot != null) return true;
 
             var grid = StagingGridBoard.Instance;
@@ -877,6 +895,10 @@ namespace PuzzleGlass
                 if (stream.inTransitBalls.Count >= maxInTransit) continue;
 
                 float monsterWorldX = monster.transform.position.x;
+                bool hasChannels = trackContainer != null && trackContainer.HasPerSlotExitChannels;
+                int monsterChanIdx = hasChannels ? trackContainer.GetChannelIndexForMonster(monster) : -1;
+                if (hasChannels && monsterChanIdx < 0) continue;
+                Vector3 chanEntrance = hasChannels ? trackContainer.GetChannelManifoldEntranceWorldPosition(monsterChanIdx) : Vector3.zero;
 
                 for (int i = 0; i < bottomCandidates.Count; i++)
                 {
@@ -886,18 +908,21 @@ namespace PuzzleGlass
                     if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
-                    // Pist modunda çıkış ağzına en yakın top önce gelir; kare havuzda merkez deliğe
-                    // en yakın top önce gelir (böylece toplar yanlardan merkeze sürüklenmez).
+                    // Alttan üste ve kendi kanal ağzına en yakın top önceliklidir
                     float score;
                     if (isTrack)
                     {
                         Vector3 lp = trackContainer.transform.InverseTransformPoint(cand.transform.position);
                         trackContainer.SampleTrackField(lp, out _, out _, out float exDist, out _);
-                        score = exDist;
+                        score = hasChannels
+                            ? (exDist * 0.7f + Vector2.Distance(cand.transform.position, chanEntrance) * 0.8f + cand.transform.position.y * 1.4f)
+                            : exDist;
                     }
                     else if (isFlatBottomPool)
                     {
-                        score = Mathf.Abs(cand.transform.position.x - drainExitWorld.x);
+                        score = hasChannels
+                            ? (Mathf.Abs(cand.transform.position.x - chanEntrance.x) + cand.transform.position.y * 1.8f)
+                            : Mathf.Abs(cand.transform.position.x - drainExitWorld.x);
                     }
                     else
                     {
@@ -1054,10 +1079,19 @@ namespace PuzzleGlass
             return true;
         }
 
-        private Vector3 GetExitWorldPosForBall(ShapedGlassContainer container, BallPhysicsController ball)
+        private Vector3 GetExitWorldPosForBall(ShapedGlassContainer container, BallPhysicsController ball, MonsterCharacter monster = null)
         {
             if (container != null)
             {
+                if (container.HasPerSlotExitChannels)
+                {
+                    MonsterCharacter target = monster ?? ball?.TargetMonster;
+                    int chanIdx = container.GetChannelIndexForMonster(target);
+                    if (chanIdx >= 0)
+                    {
+                        return container.GetChannelManifoldEntranceWorldPosition(chanIdx);
+                    }
+                }
                 return container.GetBottomExitWorldPosition();
             }
 
@@ -1077,7 +1111,7 @@ namespace PuzzleGlass
                 ? BallContainerManager.Instance.glassContainer
                 : FindFirstObjectByType<ShapedGlassContainer>();
 
-            Vector3 exitPos = GetExitWorldPosForBall(container, ball);
+            Vector3 exitPos = GetExitWorldPosForBall(container, ball, monster);
 
             ball.BeginAttraction(monster, exitPos);
 
@@ -1115,9 +1149,10 @@ namespace PuzzleGlass
                         _attractingBalls.RemoveAt(i);
                         continue;
                     }
+                    ball.SetAttractionTarget(targetMonster);
                 }
 
-                Vector3 exitPos = GetExitWorldPosForBall(container, ball);
+                Vector3 exitPos = GetExitWorldPosForBall(container, ball, targetMonster);
 
                 bool isFever = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive;
                 bool isFastForward = PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsEndgameFastForward;
@@ -1139,10 +1174,40 @@ namespace PuzzleGlass
 
                     if (targetMonster != null)
                     {
-                        ball.LaunchToMonsterMouth(ballPos, targetMonster, (b) =>
+                        bool hasChannels = container != null && container.HasPerSlotExitChannels;
+                        int chanIdx = hasChannels
+                            ? container.GetChannelIndexForMonster(targetMonster)
+                            : -1;
+                        if (chanIdx >= 0)
                         {
-                            OnBallReachedMonster(b, targetMonster);
-                        });
+                            ball.LaunchThroughChannelToMonsterMouth(container, chanIdx, targetMonster, (b) =>
+                            {
+                                OnBallReachedMonster(b, targetMonster);
+                            });
+                        }
+                        else if (!hasChannels)
+                        {
+                            ball.LaunchToMonsterMouth(ballPos, targetMonster, (b) =>
+                            {
+                                OnBallReachedMonster(b, targetMonster);
+                            });
+                        }
+                        else
+                        {
+                            // Kanal yoksa top kanal dışından havadan uçmamalı; kabın içine geri bırak.
+                            if (_activeStreams.TryGetValue(targetMonster.monsterId, out var stream))
+                                stream.inTransitBalls.Remove(ball);
+                            ball.state = BallState.InContainer;
+                            if (ball.sphereCollider != null) ball.sphereCollider.isTrigger = false;
+                            if (ball.rb != null)
+                            {
+                                Vector3 resetPos = ball.transform.position;
+                                resetPos.z = -0.10f;
+                                ball.transform.position = resetPos;
+                                ball.rb.linearVelocity = Vector3.zero;
+                            }
+                            MarkBallFieldDirty();
+                        }
                     }
                     else
                     {

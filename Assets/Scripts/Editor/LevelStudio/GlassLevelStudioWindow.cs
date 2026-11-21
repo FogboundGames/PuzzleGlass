@@ -86,7 +86,14 @@ namespace PuzzleGlass.Editor.Studio
         private bool m_BallPainting;
         private int m_BallPaintButton = -1;
         private bool m_BallStrokeRecorded;
+        private bool m_AutoShapeBoxesFromBalls = true;
         private readonly List<(VisualElement el, int col, int row)> m_BallSlotElements = new List<(VisualElement, int, int)>();
+        private readonly Dictionary<(int col, int row), VisualElement> m_BallSlotByKey = new Dictionary<(int, int), VisualElement>();
+        private readonly List<(Vector2 localCenter, float radius, int col, int row)> m_BallSlotHitCache = new List<(Vector2, float, int, int)>();
+        private readonly Dictionary<PuzzleColor, (VisualElement chip, Label label)> m_BallToolbarChips = new Dictionary<PuzzleColor, (VisualElement, Label)>();
+        private PuzzleColor? m_GlassFocusColor;
+        private bool m_GlassHasFeedSplit;
+        private readonly HashSet<(int col, int row)> m_GlassChamberSet = new HashSet<(int, int)>();
 
         // Çözüm
         private SolveResult m_Solve;
@@ -94,7 +101,7 @@ namespace PuzzleGlass.Editor.Studio
         private PuzzleLevelSolver.Run m_SolveRun;   // arka planda (her karede birkaç ms) ilerleyen çözüm
         private bool m_LiveSync;
         private double m_SceneSyncDue = -1;        // sahne güncellemesi: son değişiklikten kısa süre sonra tek sefer
-        private const double SceneSyncDelay = 0.6;
+        private const double SceneSyncDelay = 1.0;
         private Vector2Int? m_HoverCell;            // fırçayla gezinirken hayalet önizleme
 
         // UI
@@ -1124,6 +1131,145 @@ namespace PuzzleGlass.Editor.Studio
             }
         }
 
+        /// <summary>
+        /// Elle dizilen toplara göre tepsideki kutuları otomatik şekillendirir:
+        /// mevcut kutuların sayılarını koyulan top adedine göre böler, topları silinen rengin kutularını kaldırır,
+        /// yeni eklenen renkler için boş tepsi hücresine kutu açar (yer kalmazsa tepsi satırını büyütür).
+        /// </summary>
+        private void SyncBoxesFromManualBalls(PuzzleGlassLevelData lvl)
+        {
+            if (!m_AutoShapeBoxesFromBalls || lvl == null || !lvl.useManualBallLayout) return;
+            if (lvl.manualBalls == null || lvl.manualBalls.Count == 0) return;
+            if (lvl.monsters == null) lvl.monsters = new List<LevelMonsterEntry>();
+
+            var glassCount = new Dictionary<PuzzleColor, int>();
+            for (int i = 0; i < lvl.manualBalls.Count; i++)
+            {
+                var b = lvl.manualBalls[i];
+                if (b != null) glassCount[b.color] = (glassCount.TryGetValue(b.color, out int v) ? v : 0) + 1;
+            }
+
+            var toRemove = new HashSet<int>();
+            for (int pass = 0; pass < 2; pass++)
+            {
+                toRemove.Clear();
+                var supplyCount = new Dictionary<PuzzleColor, int>();
+                for (int i = 0; i < lvl.monsters.Count; i++)
+                {
+                    var m = lvl.monsters[i];
+                    if (m != null && m.isFilledBox)
+                        supplyCount[m.filledBallColor] = (supplyCount.TryGetValue(m.filledBallColor, out int sv) ? sv : 0) + Mathf.Max(1, m.count);
+                }
+
+                var needed = new Dictionary<PuzzleColor, int>();
+                foreach (var kv in glassCount) needed[kv.Key] = kv.Value;
+                foreach (var kv in supplyCount) needed[kv.Key] = (needed.TryGetValue(kv.Key, out int v) ? v : 0) + kv.Value;
+
+                var byColor = new Dictionary<PuzzleColor, List<int>>();
+                for (int i = 0; i < lvl.monsters.Count; i++)
+                {
+                    var m = lvl.monsters[i];
+                    if (m == null) { toRemove.Add(i); continue; }
+                    if (!byColor.TryGetValue(m.color, out var list))
+                        byColor[m.color] = list = new List<int>();
+                    list.Add(i);
+                }
+
+                foreach (var kv in byColor)
+                {
+                    needed.TryGetValue(kv.Key, out int targetTotal);
+                    var idxs = kv.Value;
+                    if (targetTotal <= 0)
+                    {
+                        foreach (int idx in idxs) toRemove.Add(idx);
+                        continue;
+                    }
+
+                    int activeBoxes = Mathf.Min(idxs.Count, targetTotal);
+                    for (int k = activeBoxes; k < idxs.Count; k++) toRemove.Add(idxs[k]);
+
+                    int baseCnt = targetTotal / activeBoxes;
+                    int rem = targetTotal % activeBoxes;
+                    for (int k = 0; k < activeBoxes; k++)
+                    {
+                        var box = lvl.monsters[idxs[k]];
+                        box.count = Mathf.Clamp(baseCnt + (k < rem ? 1 : 0), 1, LevelMonsterEntry.MaxBallsPerEntry);
+                    }
+                }
+            }
+
+            if (toRemove.Count > 0)
+            {
+                for (int i = lvl.monsters.Count - 1; i >= 0; i--)
+                    if (toRemove.Contains(i)) lvl.monsters.RemoveAt(i);
+            }
+
+            var finalSupply = new Dictionary<PuzzleColor, int>();
+            var collectorCap = new Dictionary<PuzzleColor, int>();
+            for (int i = 0; i < lvl.monsters.Count; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null) continue;
+                int c = Mathf.Max(1, m.count);
+                collectorCap[m.color] = (collectorCap.TryGetValue(m.color, out int cv) ? cv : 0) + c;
+                if (m.isFilledBox)
+                    finalSupply[m.filledBallColor] = (finalSupply.TryGetValue(m.filledBallColor, out int sv) ? sv : 0) + c;
+            }
+
+            var finalNeeded = new Dictionary<PuzzleColor, int>();
+            foreach (var kv in glassCount) finalNeeded[kv.Key] = kv.Value;
+            foreach (var kv in finalSupply) finalNeeded[kv.Key] = (finalNeeded.TryGetValue(kv.Key, out int v) ? v : 0) + kv.Value;
+
+            var orderedSpawnColors = new List<PuzzleColor>();
+            foreach (var c in BrushColors)
+                if (finalNeeded.ContainsKey(c)) orderedSpawnColors.Add(c);
+
+            int gridCols = Mathf.Max(2, lvl.stagingGridCols);
+            int gridRows = Mathf.Max(2, lvl.stagingGridRows);
+            var occupiedCells = new HashSet<Vector2Int>();
+            if (lvl.gridWalls != null)
+                foreach (var w in lvl.gridWalls) occupiedCells.Add(w);
+            for (int i = 0; i < lvl.monsters.Count; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null) continue;
+                foreach (var c in CarrierBlockShapeUtility.GetCells(m.blockShape))
+                    occupiedCells.Add(m.gridAnchor + c);
+            }
+
+            Vector2Int NextFreeTrayCell()
+            {
+                for (int y = gridRows - 1; y >= 0; y--)
+                {
+                    for (int x = 0; x < gridCols; x++)
+                    {
+                        var cell = new Vector2Int(x, y);
+                        if (!occupiedCells.Contains(cell)) return cell;
+                    }
+                }
+                gridRows = Mathf.Min(12, gridRows + 1);
+                lvl.stagingGridRows = gridRows;
+                return new Vector2Int(0, gridRows - 1);
+            }
+
+            foreach (var c in orderedSpawnColors)
+            {
+                finalNeeded.TryGetValue(c, out int need);
+                collectorCap.TryGetValue(c, out int have);
+                int deficit = need - have;
+                while (deficit > 0)
+                {
+                    int chunk = Mathf.Min(deficit, LevelMonsterEntry.MaxBallsPerEntry);
+                    var cell = NextFreeTrayCell();
+                    occupiedCells.Add(cell);
+                    lvl.monsters.Add(new LevelMonsterEntry(c, chunk, CarrierBlockShape.Rect1x1, cell) { hasGridAnchor = true });
+                    deficit -= chunk;
+                }
+            }
+
+            ClampSelection();
+        }
+
         private void SyncGlassAfterBoxChange(bool forceRebuild)
         {
             if (m_Level == null) return;
@@ -1542,9 +1688,12 @@ namespace PuzzleGlass.Editor.Studio
         /// <summary>Her editör karesi: çözümü birkaç ms ilerlet, zamanı gelen sahne güncellemesini yap.</summary>
         private void OnEditorUpdate()
         {
+            // Fırça boyama veya sürükleme sırasında arka plan çözücü/sahne senkronizasyonu arayüzü dondurmasın
+            if (m_BallPainting || m_DragBallSlot.HasValue || m_DragBlock >= 0 || m_TrayPainting) return;
+
             if (m_SolveRun != null)
             {
-                if (m_SolveRun.Step(6.0))
+                if (m_SolveRun.Step(3.0))
                 {
                     m_Solve = m_SolveRun.Result;
                     m_SolveRun = null;
@@ -1875,8 +2024,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 if (m_HoverBallSlot.HasValue && !m_BallPainting && !m_DragBallSlot.HasValue)
                 {
-                    m_HoverBallSlot = null;
-                    RedrawGlass();
+                    SetHoverBallSlot(null);
                 }
             });
             m_BoardContent.Add(m_Glass);
@@ -2142,6 +2290,7 @@ namespace PuzzleGlass.Editor.Studio
         private void RefreshBallToolbar(PuzzleGlassLevelData lvl)
         {
             m_BallToolbar.Clear();
+            m_BallToolbarChips.Clear();
             if (lvl == null) return;
 
             var moveChip = BallChip(() =>
@@ -2212,7 +2361,16 @@ namespace PuzzleGlass.Editor.Studio
                 sw.style.backgroundColor = PuzzleColorPalette.GetBodyColor(color);
                 if (need == 0 && have == 0 && sup == 0) sw.style.marginRight = 0;
                 chip.Add(sw);
-                if (need > 0 || have > 0 || sup > 0) chip.Add(new Label($"{have}/{need}"));
+                if (need > 0 || have > 0 || sup > 0)
+                {
+                    var countLbl = new Label($"{have}/{need}");
+                    chip.Add(countLbl);
+                    m_BallToolbarChips[color] = (chip, countLbl);
+                }
+                else
+                {
+                    m_BallToolbarChips[color] = (chip, null);
+                }
                 chip.tooltip = overSupplied
                     ? $"{PuzzleLevelSolver.ColorName(color)}: dolu kutularda {sup} top var ama toplam toplayıcı yuva {sc}!"
                     : (need > 0 || have > 0 || sup > 0)
@@ -2268,6 +2426,24 @@ namespace PuzzleGlass.Editor.Studio
             clearBtn.Add(new Label("✕ Boşalt"));
             clearBtn.tooltip = "Camdaki tüm topları temizler (sıfırdan kendin koy).";
             m_BallToolbar.Add(clearBtn);
+
+            var autoBoxBtn = BallChip(() =>
+            {
+                m_AutoShapeBoxesFromBalls = !m_AutoShapeBoxesFromBalls;
+                if (m_AutoShapeBoxesFromBalls && m_Level != null)
+                {
+                    Record("Kutuları toplara uydur");
+                    SyncBoxesFromManualBalls(m_Level);
+                    OnEdited(syncScene: true);
+                }
+                else
+                {
+                    RefreshBallToolbar(lvl);
+                }
+            }, m_AutoShapeBoxesFromBalls);
+            autoBoxBtn.Add(new Label("🔄 Kutuları uydur"));
+            autoBoxBtn.tooltip = "Açıkken koyduğun veya sildiğin toplara göre tepsideki kutuların sayısı/rengi otomatik ayarlanır.";
+            m_BallToolbar.Add(autoBoxBtn);
         }
 
         private static Button BallChip(System.Action onClick, bool active)
@@ -2322,17 +2498,64 @@ namespace PuzzleGlass.Editor.Studio
             OnEdited(syncScene: true);
         }
 
+        private void UpdateBallToolbarCounts(PuzzleGlassLevelData lvl)
+        {
+            if (lvl == null || m_BallToolbarChips.Count == 0) return;
+
+            var placedByColor = new Dictionary<PuzzleColor, int>();
+            if (lvl.manualBalls != null)
+            {
+                foreach (var b in lvl.manualBalls)
+                    if (b != null) placedByColor[b.color] = (placedByColor.TryGetValue(b.color, out int v) ? v : 0) + 1;
+            }
+            var socketsByColor = new Dictionary<PuzzleColor, int>();
+            var supplyByColor = new Dictionary<PuzzleColor, int>();
+            if (lvl.monsters != null)
+            {
+                foreach (var m in lvl.monsters)
+                {
+                    if (m == null) continue;
+                    int cnt = Mathf.Max(1, m.count);
+                    socketsByColor[m.color] = (socketsByColor.TryGetValue(m.color, out int v) ? v : 0) + cnt;
+                    if (m.isFilledBox)
+                        supplyByColor[m.filledBallColor] = (supplyByColor.TryGetValue(m.filledBallColor, out int sv) ? sv : 0) + cnt;
+                }
+            }
+
+            foreach (var kv in m_BallToolbarChips)
+            {
+                PuzzleColor color = kv.Key;
+                var (chip, lbl) = kv.Value;
+                if (lbl == null)
+                {
+                    // Yeni bir renk ilk kez boyandıysa etiket eklemek için tek seferlik yenile
+                    if (placedByColor.ContainsKey(color)) { RefreshBallToolbar(lvl); return; }
+                    continue;
+                }
+                socketsByColor.TryGetValue(color, out int sc);
+                supplyByColor.TryGetValue(color, out int sup);
+                placedByColor.TryGetValue(color, out int have);
+                int need = Mathf.Max(0, sc - sup);
+                bool overSupplied = sup > sc;
+                lbl.text = $"{have}/{need}";
+                chip.EnableInClassList("ball-chip--warn", need != have || overSupplied);
+            }
+        }
+
         private void RedrawGlass()
         {
             m_Glass.Clear();
             m_BallSlotElements.Clear();
+            m_BallSlotByKey.Clear();
+            m_BallSlotHitCache.Clear();
+            m_GlassChamberSet.Clear();
             var lvl = Shown;
             if (lvl == null) return;
 
             var dims = GetGlassDims(lvl);
             int cols = lvl.stagingGridCols;
-            float width = cols * CellPx;
             bool manual = lvl.useManualBallLayout && m_Pending == null;
+            float width = manual ? Mathf.Max(cols * CellPx, 460f) : (cols * CellPx);
 
             var layout = GlassShapeData.BuildLayout(lvl);
             var split = GlassShapeData.SplitForFeedTubes(lvl, layout);
@@ -2347,14 +2570,30 @@ namespace PuzzleGlass.Editor.Studio
                 slots = GlassShapeData.GetManualSlots(lvl, out drawDiam, out _, out _);
             }
 
-            float scale = width / Mathf.Max(0.01f, dims.innerHalfW * 2f);
+            float viewHalfW = dims.innerHalfW;
+            float slotsTop = dims.floorY + 0.6f;
+            if (manual && slots != null && slots.Count > 0)
+            {
+                float maxAbsX = 0f;
+                foreach (var s in slots)
+                {
+                    maxAbsX = Mathf.Max(maxAbsX, Mathf.Abs(s.localPos.x));
+                    slotsTop = Mathf.Max(slotsTop, s.localPos.y + drawDiam * 0.85f);
+                }
+                if (!GlassShapeData.IsShapedPool(lvl) && !GlassShapeData.IsBox(lvl))
+                {
+                    viewHalfW = Mathf.Max(maxAbsX + drawDiam * 0.90f, drawDiam * 2.5f);
+                }
+            }
+
+            float scale = width / Mathf.Max(0.01f, viewHalfW * 2f);
             float ballsTop = dims.floorY + 0.6f;
             foreach (var bb in (manual ? layout.balls : chamberBalls)) ballsTop = Mathf.Max(ballsTop, bb.localPos.y + drawDiam);
             float extraTop = hasFeedSplit ? 0.38f : 0.35f;
             float shownTop = manual
-                ? Mathf.Min(dims.ceilY, Mathf.Max(ballsTop + drawDiam * 1.4f, dims.floorY + Mathf.Max(0.85f, drawDiam * 3.5f)))
+                ? Mathf.Max(ballsTop + drawDiam * 1.6f, slotsTop)
                 : Mathf.Min(dims.ceilY, ballsTop + extraTop);
-            float height = Mathf.Max(80f, (shownTop - dims.floorY) * scale);
+            float height = Mathf.Max(manual ? 260f : 80f, (shownTop - dims.floorY) * scale);
 
             m_Glass.style.width = width + 6f;   // + kenarlık (UI Toolkit genişliği kenarlığı içerir)
             m_Glass.style.height = height + 6f;
@@ -2374,6 +2613,7 @@ namespace PuzzleGlass.Editor.Studio
                 focusColor = lvl.bottomToTopGroups[m_SelectedGroup].color;
             }
 
+            float colPx = width / Mathf.Max(1, cols);
             for (int c = 0; c < cols; c++)
             {
                 if (focusCols != null && focusCols.Contains(c))
@@ -2381,8 +2621,8 @@ namespace PuzzleGlass.Editor.Studio
                     var col = new VisualElement();
                     col.AddToClassList("glass__column");
                     col.pickingMode = PickingMode.Ignore;
-                    col.style.left = c * CellPx;
-                    col.style.width = CellPx;
+                    col.style.left = c * colPx;
+                    col.style.width = colPx;
                     m_Glass.Add(col);
                 }
                 if (c > 0)
@@ -2390,18 +2630,20 @@ namespace PuzzleGlass.Editor.Studio
                     var guide = new VisualElement();
                     guide.AddToClassList("glass__guide");
                     guide.pickingMode = PickingMode.Ignore;
-                    guide.style.left = c * CellPx;
+                    guide.style.left = c * colPx;
                     m_Glass.Add(guide);
                 }
             }
 
+            m_GlassFocusColor = focusColor;
+            m_GlassHasFeedSplit = hasFeedSplit;
             float d = drawDiam * scale;
+            float hitRadius = Mathf.Max(12f, d * 0.55f);
             if (manual && slots != null)
             {
-                var chamberSet = new HashSet<(int col, int row)>();
                 if (hasFeedSplit)
                 {
-                    foreach (var cb in chamberBalls) chamberSet.Add((cb.ballColumn, cb.row));
+                    foreach (var cb in chamberBalls) m_GlassChamberSet.Add((cb.ballColumn, cb.row));
                 }
 
                 var occupied = new Dictionary<(int col, int row), PuzzleColor>();
@@ -2415,7 +2657,7 @@ namespace PuzzleGlass.Editor.Studio
                 var drawnKeys = new HashSet<(int col, int row)>();
                 foreach (var s in slots)
                 {
-                    float cx = (s.localPos.x + dims.innerHalfW) * scale;
+                    float cx = (s.localPos.x + viewHalfW) * scale;
                     float cy = height - (s.localPos.y - dims.floorY) * scale;
                     if (cy < -d * 0.25f || cy > height + d * 0.25f) continue;
 
@@ -2436,7 +2678,7 @@ namespace PuzzleGlass.Editor.Studio
                     {
                         el.AddToClassList("ball");
                         el.style.backgroundColor = PuzzleColorPalette.GetBodyColor(ballColor);
-                        if (hasFeedSplit && !chamberSet.Contains(key)) el.AddToClassList("ball--tube");
+                        if (hasFeedSplit && !m_GlassChamberSet.Contains(key)) el.AddToClassList("ball--tube");
                         if (focusColor.HasValue && ballColor != focusColor.Value && !m_BallBrushColor.HasValue && !m_BallEraser)
                             el.AddToClassList("ball--dim");
                         if (selected) el.AddToClassList("ball--selected");
@@ -2450,6 +2692,8 @@ namespace PuzzleGlass.Editor.Studio
                     }
                     m_Glass.Add(el);
                     m_BallSlotElements.Add((el, s.column, s.row));
+                    m_BallSlotByKey[key] = el;
+                    m_BallSlotHitCache.Add((new Vector2(cx, cy), hitRadius, s.column, s.row));
                 }
 
                 // Taşma varsa (kontur küçüldüyse) görünmeyen topları da çiz
@@ -2458,9 +2702,9 @@ namespace PuzzleGlass.Editor.Studio
                     if (drawnKeys.Contains((b.ballColumn, b.row))) continue;
                     var ball = new VisualElement();
                     ball.AddToClassList("ball");
-                    if (hasFeedSplit && !chamberSet.Contains((b.ballColumn, b.row))) ball.AddToClassList("ball--tube");
+                    if (hasFeedSplit && !m_GlassChamberSet.Contains((b.ballColumn, b.row))) ball.AddToClassList("ball--tube");
                     ball.pickingMode = PickingMode.Ignore;
-                    float cx = (b.localPos.x + dims.innerHalfW) * scale;
+                    float cx = (b.localPos.x + viewHalfW) * scale;
                     float cy = height - (b.localPos.y - dims.floorY) * scale;
                     ball.style.left = cx - d * 0.5f;
                     ball.style.top = cy - d * 0.5f;
@@ -2468,7 +2712,10 @@ namespace PuzzleGlass.Editor.Studio
                     ball.style.height = d;
                     ball.style.backgroundColor = PuzzleColorPalette.GetBodyColor(b.color);
                     m_Glass.Add(ball);
+                    var key = (b.ballColumn, b.row);
                     m_BallSlotElements.Add((ball, b.ballColumn, b.row));
+                    m_BallSlotByKey[key] = ball;
+                    m_BallSlotHitCache.Add((new Vector2(cx, cy), hitRadius, b.ballColumn, b.row));
                 }
             }
             else
@@ -2478,7 +2725,7 @@ namespace PuzzleGlass.Editor.Studio
                     var ball = new VisualElement();
                     ball.AddToClassList("ball");
                     ball.pickingMode = PickingMode.Ignore;
-                    float cx = (b.localPos.x + dims.innerHalfW) * scale;
+                    float cx = (b.localPos.x + viewHalfW) * scale;
                     float cy = height - (b.localPos.y - dims.floorY) * scale;
                     ball.style.left = cx - d * 0.5f;
                     ball.style.top = cy - d * 0.5f;
@@ -2511,7 +2758,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_TubeCanvas.style.height = tubeH;
                 m_TubeHeight = tubeH;
                 m_TubeScale = scale;
-                m_TubeHalfW = dims.innerHalfW;
+                m_TubeHalfW = viewHalfW;
                 m_TubeBallDiam = drawDiam;
                 m_TubeLeftColors = split.leftTubeColors;
                 m_TubeRightColors = split.rightTubeColors;
@@ -2620,20 +2867,85 @@ namespace PuzzleGlass.Editor.Studio
 
         private (int col, int row)? BallSlotAtPanel(Vector2 panelPos)
         {
+            Vector2 localPos = m_Glass.WorldToLocal(panelPos) - m_Glass.contentRect.position;
             float best = float.MaxValue;
             (int col, int row)? hit = null;
-            foreach (var (el, col, row) in m_BallSlotElements)
+            for (int i = 0; i < m_BallSlotHitCache.Count; i++)
             {
-                Rect r = el.worldBound;
-                float radius = Mathf.Max(12f, r.width * 0.55f);
-                float d2 = (r.center - panelPos).sqrMagnitude;
-                if (d2 <= radius * radius && d2 < best)
+                var entry = m_BallSlotHitCache[i];
+                float d2 = (entry.localCenter - localPos).sqrMagnitude;
+                if (d2 <= entry.radius * entry.radius && d2 < best)
                 {
                     best = d2;
-                    hit = (col, row);
+                    hit = (entry.col, entry.row);
                 }
             }
             return hit;
+        }
+
+        private void ApplyBallHoverClass((int col, int row) key, bool hovered)
+        {
+            if (!m_BallSlotByKey.TryGetValue(key, out var el)) return;
+            if (el.ClassListContains("ball"))
+            {
+                el.EnableInClassList("ball--hover", hovered && m_DragBallSlot.HasValue && m_BallDragMoved);
+                el.RemoveFromClassList("ball-slot--hover");
+            }
+            else
+            {
+                el.EnableInClassList("ball-slot--hover", hovered);
+                el.RemoveFromClassList("ball--hover");
+            }
+        }
+
+        private void SetHoverBallSlot((int col, int row)? nextSlot)
+        {
+            if (nextSlot == m_HoverBallSlot) return;
+            var prev = m_HoverBallSlot;
+            m_HoverBallSlot = nextSlot;
+            if (prev.HasValue) ApplyBallHoverClass(prev.Value, false);
+            if (nextSlot.HasValue) ApplyBallHoverClass(nextSlot.Value, true);
+        }
+
+        private void SetSelectedBallSlot((int col, int row)? nextSlot)
+        {
+            if (nextSlot == m_SelectedBallSlot) return;
+            var prev = m_SelectedBallSlot;
+            m_SelectedBallSlot = nextSlot;
+            if (prev.HasValue && m_BallSlotByKey.TryGetValue(prev.Value, out var prevEl))
+                prevEl.RemoveFromClassList("ball--selected");
+            if (nextSlot.HasValue && m_BallSlotByKey.TryGetValue(nextSlot.Value, out var nextEl) && nextEl.ClassListContains("ball"))
+                nextEl.AddToClassList("ball--selected");
+        }
+
+        private bool UpdateManualBallSlotVisual((int col, int row) key)
+        {
+            if (!m_BallSlotByKey.TryGetValue(key, out var el)) return false;
+            int idx = FindManualBallIndex(key.col, key.row);
+            bool hasBall = idx >= 0;
+            bool hovered = m_HoverBallSlot.HasValue && m_HoverBallSlot.Value == key;
+            bool selected = m_SelectedBallSlot.HasValue && m_SelectedBallSlot.Value == key;
+
+            el.ClearClassList();
+            el.style.opacity = 1f;
+            if (hasBall)
+            {
+                PuzzleColor ballColor = m_Level.manualBalls[idx].color;
+                el.AddToClassList("ball");
+                el.style.backgroundColor = PuzzleColorPalette.GetBodyColor(ballColor);
+                if (m_GlassHasFeedSplit && !m_GlassChamberSet.Contains(key)) el.AddToClassList("ball--tube");
+                if (m_GlassFocusColor.HasValue && ballColor != m_GlassFocusColor.Value && !m_BallBrushColor.HasValue && !m_BallEraser)
+                    el.AddToClassList("ball--dim");
+                if (selected) el.AddToClassList("ball--selected");
+                if (hovered && m_DragBallSlot.HasValue && m_BallDragMoved) el.AddToClassList("ball--hover");
+            }
+            else
+            {
+                el.AddToClassList("ball-slot");
+                el.style.backgroundColor = StyleKeyword.Null;
+                if (hovered) el.AddToClassList("ball-slot--hover");
+            }
+            return true;
         }
 
         private int FindManualBallIndex(int col, int row)
@@ -2710,12 +3022,12 @@ namespace PuzzleGlass.Editor.Studio
                 m_BallPainting = true;
                 m_BallPaintButton = 1;
                 m_BallStrokeRecorded = false;
-                m_SelectedBallSlot = null;
+                SetSelectedBallSlot(null);
                 m_Glass.CapturePointer(e.pointerId);
                 if (slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: true))
                 {
-                    RefreshBallToolbar(m_Level);
-                    RedrawGlass();
+                    UpdateBallToolbarCounts(m_Level);
+                    if (!UpdateManualBallSlotVisual(slot.Value)) RedrawGlass();
                 }
                 e.StopPropagation();
                 return;
@@ -2731,8 +3043,8 @@ namespace PuzzleGlass.Editor.Studio
                 m_Glass.CapturePointer(e.pointerId);
                 if (slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: m_BallEraser))
                 {
-                    RefreshBallToolbar(m_Level);
-                    RedrawGlass();
+                    UpdateBallToolbarCounts(m_Level);
+                    if (!UpdateManualBallSlotVisual(slot.Value)) RedrawGlass();
                 }
                 e.StopPropagation();
                 return;
@@ -2740,7 +3052,7 @@ namespace PuzzleGlass.Editor.Studio
 
             if (!slot.HasValue)
             {
-                if (m_SelectedBallSlot.HasValue) { m_SelectedBallSlot = null; RedrawGlass(); }
+                if (m_SelectedBallSlot.HasValue) SetSelectedBallSlot(null);
                 return;
             }
 
@@ -2748,15 +3060,14 @@ namespace PuzzleGlass.Editor.Studio
             if (hitIdx >= 0)
             {
                 m_DragBallSlot = slot.Value;
-                m_HoverBallSlot = slot.Value;
                 m_BallDragMoved = false;
+                SetHoverBallSlot(slot.Value);
                 m_Glass.CapturePointer(e.pointerId);
-                RedrawGlass();
             }
             else if (m_SelectedBallSlot.HasValue)
             {
                 var from = m_SelectedBallSlot.Value;
-                m_SelectedBallSlot = null;
+                SetSelectedBallSlot(null);
                 MoveOrSwapManualBall(from, slot.Value);
             }
             e.StopPropagation();
@@ -2770,31 +3081,28 @@ namespace PuzzleGlass.Editor.Studio
             if (m_BallPainting)
             {
                 bool changed = slot.HasValue && ApplyPaintOrEraseAt(slot.Value, erase: m_BallPaintButton == 1 || m_BallEraser);
-                if (slot != m_HoverBallSlot || changed)
+                if (slot != m_HoverBallSlot) SetHoverBallSlot(slot);
+                if (changed)
                 {
-                    m_HoverBallSlot = slot;
-                    if (changed) RefreshBallToolbar(m_Level);
-                    RedrawGlass();
+                    UpdateBallToolbarCounts(m_Level);
+                    if (!UpdateManualBallSlotVisual(slot.Value)) RedrawGlass();
                 }
                 return;
             }
 
             if (m_DragBallSlot.HasValue)
             {
-                if (slot.HasValue && slot.Value != m_DragBallSlot.Value) m_BallDragMoved = true;
-                if (slot != m_HoverBallSlot)
+                if (!m_BallDragMoved && slot.HasValue && slot.Value != m_DragBallSlot.Value)
                 {
-                    m_HoverBallSlot = slot;
-                    RedrawGlass();
+                    m_BallDragMoved = true;
+                    if (m_BallSlotByKey.TryGetValue(m_DragBallSlot.Value, out var srcEl))
+                        srcEl.style.opacity = 0.45f;
                 }
+                if (slot != m_HoverBallSlot) SetHoverBallSlot(slot);
                 return;
             }
 
-            if (slot != m_HoverBallSlot)
-            {
-                m_HoverBallSlot = slot;
-                RedrawGlass();
-            }
+            if (slot != m_HoverBallSlot) SetHoverBallSlot(slot);
         }
 
         private void OnGlassPointerUp(PointerUpEvent e)
@@ -2808,6 +3116,7 @@ namespace PuzzleGlass.Editor.Studio
                 if (m_BallStrokeRecorded)
                 {
                     m_BallStrokeRecorded = false;
+                    SyncBoxesFromManualBalls(m_Level);
                     OnEdited(syncScene: true);
                 }
                 return;
@@ -2815,29 +3124,32 @@ namespace PuzzleGlass.Editor.Studio
 
             if (!m_DragBallSlot.HasValue) return;
             var from = m_DragBallSlot.Value;
+            bool moved = m_BallDragMoved;
             m_DragBallSlot = null;
+            m_BallDragMoved = false;
+            if (m_BallSlotByKey.TryGetValue(from, out var srcEl)) srcEl.style.opacity = 1f;
             var drop = BallSlotAtPanel(e.position) ?? m_HoverBallSlot;
 
-            if (m_BallDragMoved && drop.HasValue && drop.Value != from)
+            if (moved && drop.HasValue && drop.Value != from)
             {
-                m_SelectedBallSlot = null;
+                SetSelectedBallSlot(null);
                 MoveOrSwapManualBall(from, drop.Value);
                 return;
             }
 
-            if (!m_BallDragMoved)
+            if (!moved)
             {
-                if (!m_SelectedBallSlot.HasValue) m_SelectedBallSlot = from;
-                else if (m_SelectedBallSlot.Value == from) m_SelectedBallSlot = null;
+                if (!m_SelectedBallSlot.HasValue) SetSelectedBallSlot(from);
+                else if (m_SelectedBallSlot.Value == from) SetSelectedBallSlot(null);
                 else
                 {
                     var prev = m_SelectedBallSlot.Value;
-                    m_SelectedBallSlot = null;
+                    SetSelectedBallSlot(null);
                     MoveOrSwapManualBall(prev, from);
                     return;
                 }
             }
-            RedrawGlass();
+            if (m_HoverBallSlot.HasValue) ApplyBallHoverClass(m_HoverBallSlot.Value, true);
         }
 
         private void PlaceCell(VisualElement el, int x, int y, int rows, float inset)
@@ -4093,6 +4405,7 @@ namespace PuzzleGlass.Editor.Studio
                         Record("Camdan top sil");
                         m_Level.manualBalls.RemoveAt(idx);
                         m_SelectedBallSlot = null;
+                        SyncBoxesFromManualBalls(m_Level);
                         OnEdited(syncScene: true);
                         e.StopPropagation();
                     }

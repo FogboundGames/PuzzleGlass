@@ -158,6 +158,21 @@ namespace PuzzleGlass
 
             FitRowToScreen(totalSlots);
             BuildTrayFrame(totalSlots); // tabla genişliği satır ölçeğine göre ekrandan taşacak şekilde hesaplanır
+            NotifyGlassExitChannels();
+        }
+
+        private void NotifyGlassExitChannels(ShapedGlassContainer glass = null)
+        {
+            if (glass == null)
+            {
+                glass = BallContainerManager.Instance != null
+                    ? BallContainerManager.Instance.glassContainer
+                    : FindFirstObjectByType<ShapedGlassContainer>();
+            }
+            if (glass != null && glass.HasPerSlotExitChannels)
+            {
+                glass.SyncExitChannelsToSlots(this);
+            }
         }
 
         /// <summary>Slot sırasının ekrana sığması için uygulanan ölçek (1 = tam boy).</summary>
@@ -322,6 +337,14 @@ namespace PuzzleGlass
                     }
                 }
             }
+            if (!Application.isPlaying || duration <= 0.01f)
+            {
+                NotifyGlassExitChannels();
+            }
+            else
+            {
+                DOVirtual.DelayedCall(duration, () => NotifyGlassExitChannels()).SetTarget(this);
+            }
         }
 
         public void OnSlotUnlocked(SlotPlatform platform)
@@ -444,7 +467,9 @@ namespace PuzzleGlass
             }
 
             float halfH = FrameHalfHeight * RowFitScale;
-            float minCollarGap = (glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.50f : 0.30f;
+            float minCollarGap = glass.HasPerSlotExitChannels
+                ? 0.62f
+                : ((glass.showBottomExitCollar && (glass.IsPoolShape || glass.IsTrackShape)) ? 0.50f : 0.30f);
             float topGap = Mathf.Max(minCollarGap, gapBelowGlass);
             float targetY = glassBottomY - topGap - halfH;
             // Kısa cam şekillerinde slot tablası ekran ortasından yukarı fazla çıkmasın
@@ -454,13 +479,14 @@ namespace PuzzleGlass
                 targetY = maxDockCenterY;
             }
             // Çok uzun camlarda bile yaka ile dok arasında en az 0.32 birim nefes payı korunsun
-            float maxAllowedY = glassBottomY - 0.32f - halfH;
+            float maxAllowedY = glassBottomY - (glass.HasPerSlotExitChannels ? 0.48f : 0.32f) - halfH;
             if (targetY > maxAllowedY)
             {
                 targetY = maxAllowedY;
             }
 
             transform.position = new Vector3(glassCenterX, targetY, 0.05f);
+            NotifyGlassExitChannels(glass);
         }
 
         private void EnsureMaterials()

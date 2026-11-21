@@ -27,7 +27,7 @@ namespace PuzzleGlass
 
         [Header("Physical Settings")]
         public float ballRadius = 0.052f;
-        public float defaultMass = 0.32f;
+        public float defaultMass = 0.75f;
         public float defaultDrag = 0.20f;
         public float defaultAngularDrag = 0.42f;
         [Tooltip("Top havuzu toplarının akıcı ve doyurucu düşmesi için ek yerçekimi ivmesi")]
@@ -123,13 +123,15 @@ namespace PuzzleGlass
             {
                 if (defaultDrag >= 0.39f) defaultDrag = 0.20f;
                 if (defaultAngularDrag >= 0.60f) defaultAngularDrag = 0.42f;
+                if (defaultMass < 0.70f) defaultMass = 0.75f;
                 if (Mathf.Approximately(extraGravity, 14f)) extraGravity = 9.5f;
 
                 rb.mass = defaultMass;
-                rb.linearDamping = 0.88f;
-                rb.angularDamping = 1.05f;
+                rb.linearDamping = 1.05f;
+                rb.angularDamping = 1.15f;
                 rb.useGravity = false;
                 rb.sleepThreshold = 0.0f;
+                rb.maxDepenetrationVelocity = 0.95f;
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
                 // Lock strictly to the Z = -0.10f plane while allowing free X, Y movement and 3D rolling rotation!
@@ -263,19 +265,19 @@ namespace PuzzleGlass
                 rb.linearVelocity = vel;
             }
 
-            // 2. Hafif yatay/mikro salınım (sıkışan topların birbirinin yanından kayıp boşluklara doğal yerleşmesini destekler)
+            // 2. Hafif yatay mikro salınım (sıkışan topların birbirinin yanından kayıp boşluklara yerleşmesini destekler;
+            //    yukarı yönlü salınım yok ki toplar birbirinden bağımsız havaya zıplamasın)
             float t = Time.time;
             float p1 = _wobblePhase;
             float p2 = _wobblePhase * 1.73f;
             float ax = Mathf.Sin(t * 4.6f + p1) + 0.65f * Mathf.Cos(t * 7.4f - p2);
-            float ay = Mathf.Cos(t * 4.2f + p2) + 0.65f * Mathf.Sin(t * 6.9f + p1);
-            Vector2 agitateAccel = new Vector2(ax * 1.10f, ay * 0.35f);
+            Vector2 agitateAccel = new Vector2(ax * 0.45f, 0f);
 
             // 3. Tutarlı aşağı (-Y) yerçekimi ve ağırlık/momentum akışı
             {
                 float downSpeed = Mathf.Max(0f, -vel.y);
                 float slideBoost = Mathf.Clamp01((downSpeed - 0.08f) / 0.45f);
-                float downAccel = Mathf.Lerp(5.8f, 10.6f, slideBoost);
+                float downAccel = Mathf.Lerp(12.0f, 17.0f, slideBoost);
                 Vector2 totalAccel = Vector2.down * downAccel + agitateAccel;
                 rb.AddForce(new Vector3(totalAccel.x, totalAccel.y, 0f), ForceMode.Acceleration);
             }
@@ -559,6 +561,11 @@ namespace PuzzleGlass
             BallCollectionController.Instance?.MarkBallFieldDirty();
         }
 
+        public void SetAttractionTarget(MonsterCharacter targetMonster)
+        {
+            _targetMonster = targetMonster;
+        }
+
         /// <summary>
         /// Begins the smooth attraction flow toward the bottom exit.
         /// </summary>
@@ -624,16 +631,16 @@ namespace PuzzleGlass
                         if (_isTrackMode && other.trackQueueDriven)
                         {
                             float distSq = dx * dx + dy * dy;
-                            float maxWakeDist = ballRadius * 5.2f;
-                            if (distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
+                            float maxWakeDist = ballRadius * 4.6f;
+                            if (dy >= -ballRadius * 0.35f && distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
                             {
                                 float dist = Mathf.Sqrt(distSq);
-                                Vector2 toGap = new Vector2(dx / dist, dy / dist);
+                                // dy = op.y - vacatedPos.y olduğundan boşluğa doğru çekiş -dy yönündedir (asla yukarı itme).
+                                Vector2 toGap = new Vector2(dx / dist, Mathf.Min(0f, -dy / dist));
                                 float falloff = 1f - Mathf.Clamp01(dist / maxWakeDist);
-                                other.trackVel += toGap * (0.65f * falloff);
-                                // Gerçek fizikte: çıkan topun bıraktığı boşluğa komşulara hafif bir itki
+                                other.trackVel += toGap * (0.38f * falloff);
                                 if (other.rb != null && !other.rb.isKinematic)
-                                    other.rb.AddForce(new Vector3(toGap.x, toGap.y, 0f) * (0.25f * falloff), ForceMode.VelocityChange);
+                                    other.rb.AddForce(new Vector3(toGap.x, toGap.y, 0f) * (0.18f * falloff), ForceMode.VelocityChange);
                                 if (dist <= ballRadius * 3.0f && Time.time >= other._nextCollisionSquashTime)
                                 {
                                     other._nextCollisionSquashTime = Time.time + 0.14f;
@@ -649,11 +656,13 @@ namespace PuzzleGlass
                         if (_isTrackMode)
                         {
                             float distSq = dx * dx + dy * dy;
-                            float maxWakeDist = ballRadius * 5.5f;
-                            if (distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
+                            float maxWakeDist = ballRadius * 4.6f;
+                            if (dy >= -ballRadius * 0.30f && distSq <= maxWakeDist * maxWakeDist && distSq > 1e-5f)
                             {
                                 Vector3 toGap = (vacatedPos - op).normalized;
-                                other.rb.linearVelocity += new Vector3(toGap.x, toGap.y, 0f) * 0.22f;
+                                toGap.y = Mathf.Min(0f, toGap.y);
+                                float falloff = 1f - Mathf.Clamp01(Mathf.Sqrt(distSq) / maxWakeDist);
+                                other.rb.linearVelocity += new Vector3(toGap.x, toGap.y, 0f) * (0.20f * falloff + 0.06f);
                             }
                         }
                         else if (dy >= -ballRadius * 0.4f && dy <= ballRadius * 5.2f && Mathf.Abs(dx) <= wakeRangeX)
@@ -786,6 +795,97 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Topu seçili slota uzanan cam çıkış kanalının içinden kaydırarak kanal ağzından doğrudan blok yuvasına bırakır.
+        /// </summary>
+        public void LaunchThroughChannelToMonsterMouth(
+            ShapedGlassContainer container,
+            int channelIndex,
+            MonsterCharacter targetMonster,
+            Action<BallPhysicsController> onEatenCallback)
+        {
+            if (state == BallState.FlyingToMonster || state == BallState.FlyingIntoContainer || state == BallState.Pooled) return;
+
+            Vector3[] channelPts = (container != null) ? container.GetChannelWorldPathPoints(channelIndex, reverse: false, steps: 7) : null;
+            if (channelPts == null || channelPts.Length < 2)
+            {
+                LaunchToMonsterMouth(transform.position, targetMonster, onEatenCallback);
+                return;
+            }
+
+            state = BallState.FlyingToMonster;
+            _targetMonster = targetMonster;
+            _onEatenCallback = onEatenCallback;
+
+            StopAndMakeKinematic();
+
+            if (sphereCollider != null)
+            {
+                sphereCollider.enabled = false;
+                sphereCollider.isTrigger = false;
+            }
+
+            transform.DOKill();
+
+            Vector3 startPos = transform.position;
+            startPos.z = -0.16f;
+            transform.position = startPos;
+
+            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex() : 0;
+            Vector3 mouthPos = channelPts[channelPts.Length - 1];
+            Vector3 socketPos = (targetMonster != null)
+                ? targetMonster.GetSocketWorldPosition(socketIndex)
+                : mouthPos;
+            Vector3 settledScale = (targetMonster != null)
+                ? targetMonster.GetSocketBallWorldScale()
+                : _originalScale * 0.58f;
+
+            if (targetMonster != null)
+            {
+                targetMonster.OnBallIncoming(this);
+            }
+
+            // Kanal girişinden ağıza kadar olan yol + ağızdan bloğun yuvasına kısa iniş
+            var pathPts = new Vector3[channelPts.Length];
+            pathPts[0] = Vector3.Lerp(startPos, channelPts[0], 0.5f);
+            float pathLen = Vector3.Distance(startPos, pathPts[0]);
+            for (int k = 1; k < channelPts.Length; k++)
+            {
+                pathPts[k] = channelPts[k];
+                pathLen += Vector3.Distance(pathPts[k - 1], pathPts[k]);
+            }
+
+            bool fast = PuzzleGlassGameManager.Instance != null &&
+                        (PuzzleGlassGameManager.Instance.IsFeverActive || PuzzleGlassGameManager.Instance.IsEndgameFastForward);
+            float channelDur = Mathf.Clamp(pathLen * 0.21f, 0.18f, 0.34f);
+            float dropDur = Mathf.Clamp(Vector3.Distance(mouthPos, socketPos) * 0.24f, 0.12f, 0.22f);
+            if (fast)
+            {
+                channelDur *= 0.60f;
+                dropDur *= 0.60f;
+            }
+
+            Sequence flightSeq = DOTween.Sequence();
+            flightSeq.Append(transform.DOPath(pathPts, channelDur, PathType.CatmullRom).SetEase(Ease.InQuad));
+            flightSeq.Join(transform.DORotate(new Vector3(260f, 0f, 45f), channelDur, RotateMode.FastBeyond360));
+            flightSeq.Join(transform.DOScale(_originalScale * 1.02f, channelDur).SetEase(Ease.OutQuad));
+
+            Vector3 dropTarget = new Vector3(socketPos.x, socketPos.y, -0.22f);
+            flightSeq.Append(transform.DOJump(dropTarget, jumpPower: 0.06f, numJumps: 1, duration: dropDur).SetEase(Ease.OutQuad));
+            flightSeq.Join(transform.DORotate(new Vector3(120f, 0f, 45f), dropDur, RotateMode.FastBeyond360));
+            flightSeq.Join(transform.DOScale(settledScale, dropDur).SetEase(Ease.InOutQuad));
+
+            flightSeq.OnComplete(() =>
+            {
+                if (_targetMonster != null)
+                {
+                    _targetMonster.FeedBallIntoSocket(this, socketIndex);
+                }
+                _onEatenCallback?.Invoke(this);
+                RecycleSelf();
+            });
+        }
+
+        /// <summary>
         /// Dolu kutudan çıkan bir topu slot üzerindeki kutudan alt giriş ağzına getirip camın içine sokar.
         /// </summary>
         public void LaunchIntoContainer(
@@ -795,7 +895,8 @@ namespace PuzzleGlass
             Vector3 mouthWorldPos,
             Vector3 targetWorldPos,
             bool isTrackMode,
-            Vector2 trackFlowDir)
+            Vector2 trackFlowDir,
+            Vector3[] reverseChannelWaypoints = null)
         {
             if (state == BallState.Pooled) return;
 
@@ -822,9 +923,29 @@ namespace PuzzleGlass
             Vector3 landPos = new Vector3(targetWorldPos.x, targetWorldPos.y, -0.10f);
 
             float leg1Dist = Vector3.Distance(transform.position, entryPos);
-            float leg2Dist = Vector3.Distance(entryPos, landPos);
-            float leg1Dur = Mathf.Clamp(leg1Dist * 0.20f, 0.16f, 0.30f);
-            float leg2Dur = Mathf.Clamp(leg2Dist * 0.32f, 0.10f, 0.18f);
+            float leg1Dur = Mathf.Clamp(leg1Dist * 0.20f, 0.14f, 0.26f);
+
+            Vector3[] upPath;
+            float leg2Dist;
+            if (reverseChannelWaypoints != null && reverseChannelWaypoints.Length >= 2)
+            {
+                upPath = new Vector3[reverseChannelWaypoints.Length + 1];
+                leg2Dist = Vector3.Distance(entryPos, reverseChannelWaypoints[0]);
+                for (int i = 0; i < reverseChannelWaypoints.Length; i++)
+                {
+                    upPath[i] = reverseChannelWaypoints[i];
+                    if (i > 0) leg2Dist += Vector3.Distance(reverseChannelWaypoints[i - 1], reverseChannelWaypoints[i]);
+                }
+                upPath[reverseChannelWaypoints.Length] = landPos;
+                leg2Dist += Vector3.Distance(reverseChannelWaypoints[reverseChannelWaypoints.Length - 1], landPos);
+            }
+            else
+            {
+                upPath = new[] { throatPos, landPos };
+                leg2Dist = Vector3.Distance(entryPos, landPos);
+            }
+
+            float leg2Dur = Mathf.Clamp(leg2Dist * 0.28f, 0.10f, 0.34f);
             if (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive)
             {
                 leg1Dur *= 0.65f;
@@ -832,12 +953,12 @@ namespace PuzzleGlass
             }
 
             // 1. Aşama: Kutudan alt giriş ağzının önüne uç
-            // 2. Aşama: Doğrudan giriş boğazından yukarı geçip camın içine yerleş
+            // 2. Aşama: Doğrudan giriş boğazından / kanalından yukarı geçip camın içine yerleş
             Sequence flightSeq = DOTween.Sequence();
             flightSeq.Append(transform.DOJump(entryPos, jumpPower: 0.09f, numJumps: 1, duration: leg1Dur).SetEase(Ease.InOutQuad));
             flightSeq.Join(transform.DORotate(new Vector3(140f, 0f, 60f), leg1Dur, RotateMode.FastBeyond360));
             flightSeq.Join(transform.DOScale(_originalScale * 0.96f, leg1Dur).SetEase(Ease.OutQuad));
-            flightSeq.Append(transform.DOPath(new[] { throatPos, landPos }, leg2Dur, PathType.CatmullRom).SetEase(Ease.OutQuad));
+            flightSeq.Append(transform.DOPath(upPath, leg2Dur, PathType.CatmullRom).SetEase(Ease.OutQuad));
             flightSeq.Join(transform.DORotate(new Vector3(220f, 0f, 120f), leg2Dur, RotateMode.FastBeyond360));
             flightSeq.Join(transform.DOScale(_originalScale, leg2Dur).SetEase(Ease.OutQuad));
             flightSeq.SetLink(gameObject, LinkBehaviour.KillOnDisable);
@@ -871,7 +992,7 @@ namespace PuzzleGlass
                     }
                     else
                     {
-                        rb.linearVelocity = new Vector3(UnityEngine.Random.Range(-0.24f, 0.24f), 0.90f, 0f);
+                        rb.linearVelocity = new Vector3(UnityEngine.Random.Range(-0.12f, 0.12f), -0.35f, 0f);
                     }
                 }
 

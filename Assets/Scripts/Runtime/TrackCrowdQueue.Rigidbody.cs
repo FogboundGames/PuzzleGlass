@@ -24,6 +24,15 @@ namespace PuzzleGlass
         /// <summary>Kanal kenarına fazla yığılan topa çok hafif içe ivme (yalnızca kenar bandında).</summary>
         public static float PhysSpreadAccel = 1.6f;
 
+        /// <summary>Tırmanışı durdurmadan toplara ağırlık ve aşağı çökelme veren yerçekimi ivmesi.</summary>
+        public static float PhysDownGravity = 6.5f;
+
+        /// <summary>Yakın komşu topların hareket halinde birbirinden kopmayıp hafifçe çekmesi için kohezyon ivmesi.</summary>
+        public static float PhysCohesionAccel = 2.4f;
+
+        /// <summary>Komşu topların hız farkını yumuşatan hizalanma kazancı (birlikte akış).</summary>
+        public static float PhysVelAlignGain = 3.4f;
+
         // Top–top: hafif sürtünme ile yuvarlanma/devrilme, düşük sekme. Cam duvar: kaygan, çok az sekme.
         public static float PhysBallFriction = 0.22f;
         public static float PhysBallBounce = 0.08f;
@@ -42,12 +51,13 @@ namespace PuzzleGlass
             if (b == null || b.rb == null) return;
             var rb = b.rb;
             rb.isKinematic = false;
-            rb.useGravity = false;                       // üstten bakış: "aşağı" yol boyunca sürüş kuvvetidir
+            rb.useGravity = false;                       // üstten/eğimli pist: ağırlık StepRigidbody içinde yönlü uygulanır
             rb.constraints = RigidbodyConstraints.FreezePositionZ;
-            rb.linearDamping = 0.45f;                    // hafif hava/zemin direnci: momentum korunur ama sonsuz kaymaz
-            rb.angularDamping = 0.35f;
+            rb.mass = Mathf.Max(b.defaultMass, 0.75f);   // ağırlık hissi: çarpışmalarda hafif toplar gibi savrulmaz
+            rb.linearDamping = 0.78f;                    // kontrollü direnç: birbirinden bağımsız uçmayı önler
+            rb.angularDamping = 0.55f;
             rb.maxAngularVelocity = 35f;
-            rb.maxDepenetrationVelocity = 1.2f;          // sıkışmada patlama/teleport olmasın
+            rb.maxDepenetrationVelocity = 0.90f;         // sıkışmada patlama/teleport olmasın
             rb.sleepThreshold = 0.004f;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
@@ -174,11 +184,19 @@ namespace PuzzleGlass
                 float along = Vector2.Dot(v, t);
 
                 bool blocked = false;
+                Vector2 cohSum = Vector2.zero;
+                int cohCount = 0;
+                Vector2 velDiffSum = Vector2.zero;
+                int velCount = 0;
+                float cohMin = d * 1.03f;
+                float cohMax = d * 2.00f;
+                float alignMaxSq = (d * 1.60f) * (d * 1.60f);
+
                 int cx = Mathf.Clamp(Mathf.FloorToInt((p.x - fr.xMin) / d), 0, cols - 1);
                 int cy = Mathf.Clamp(Mathf.FloorToInt((p.y - fr.yMin) / d), 0, rows - 1);
-                for (int gy = Mathf.Max(0, cy - 1); gy <= Mathf.Min(rows - 1, cy + 1) && !blocked; gy++)
+                for (int gy = Mathf.Max(0, cy - 1); gy <= Mathf.Min(rows - 1, cy + 1); gy++)
                 {
-                    for (int gx = Mathf.Max(0, cx - 1); gx <= Mathf.Min(cols - 1, cx + 1) && !blocked; gx++)
+                    for (int gx = Mathf.Max(0, cx - 1); gx <= Mathf.Min(cols - 1, cx + 1); gx++)
                     {
                         int j = s_CellHead[gy * cols + gx];
                         while (j != -1)
@@ -186,11 +204,31 @@ namespace PuzzleGlass
                             if (j != i)
                             {
                                 Vector2 diff = s_Pos[j] - p;
-                                float al = Vector2.Dot(diff, t);
-                                if (al > 0f && al < aheadMax && Mathf.Abs(Vector2.Dot(diff, nrm)) < aheadLat)
+                                float dSq = diff.sqrMagnitude;
+                                if (!blocked)
                                 {
-                                    // Öndeki top da yavaşsa gerçekten tıkalı (sıkışık kuyruk)
-                                    if (Vector2.Dot(s_Vel[j], t) < beltSpeed * 0.25f) { blocked = true; break; }
+                                    float al = Vector2.Dot(diff, t);
+                                    if (al > 0f && al < aheadMax && Mathf.Abs(Vector2.Dot(diff, nrm)) < aheadLat)
+                                    {
+                                        // Öndeki top da yavaşsa gerçekten tıkalı (sıkışık kuyruk)
+                                        if (Vector2.Dot(s_Vel[j], t) < beltSpeed * 0.25f) blocked = true;
+                                    }
+                                }
+
+                                if (s_GOnRing[i] && dSq > cohMin * cohMin && dSq < cohMax * cohMax)
+                                {
+                                    float dist = Mathf.Sqrt(dSq);
+                                    float pullFactor = Mathf.Clamp01((dist - cohMin) / Mathf.Max(0.01f, d));
+                                    // Öndeki komşuya doğru hafifçe daha güçlü çekim: inişlerde kuyruk dağılıp boşluk bırakmaz
+                                    float aheadWeight = Vector2.Dot(diff, t) > 0f ? 1.35f : 0.75f;
+                                    cohSum += (diff / dist) * (pullFactor * aheadWeight);
+                                    cohCount++;
+                                }
+
+                                if (s_GOnRing[i] && dSq < alignMaxSq)
+                                {
+                                    velDiffSum += (s_Vel[j] - v);
+                                    velCount++;
                                 }
                             }
                             j = s_Next[j];
@@ -216,6 +254,23 @@ namespace PuzzleGlass
                         float excess = Mathf.Abs(s_GOffset[i]) - band;
                         if (excess > 0f) accel -= nrm * (Mathf.Sign(s_GOffset[i]) * spreadAccel * Mathf.Clamp01(excess / Mathf.Max(0.01f, r)));
                     }
+                }
+
+                if (s_GOnRing[i])
+                {
+                    // Ağırlık hissi: tırmanışa karşı koymadan enine (-Y) aşağı bastırır;
+                    // ekstra -Y çökelme sadece alt manifoldda (t.y <= 0.05f) uygulanır ki üst inişte toplar birbirinden kopmasın.
+                    float downG = PhysDownGravity * speedMul;
+                    float latGrav = Vector2.Dot(new Vector2(0f, -downG), nrm);
+                    accel += nrm * latGrav;
+                    if (Mathf.Abs(p.y - track.exitPoint.y) <= track.innerHalfWidth * 2.2f && t.y <= 0.05f)
+                    {
+                        accel.y -= downG * 0.42f;
+                    }
+
+                    // Yakın komşular hareket halindeyken hafifçe birbirini çekip hızını hizalar
+                    if (cohCount > 0) accel += (cohSum / cohCount) * (PhysCohesionAccel * speedMul);
+                    if (velCount > 0) accel += (velDiffSum / velCount) * (PhysVelAlignGain * speedMul);
                 }
 
                 if (accel.sqrMagnitude > 1e-6f)

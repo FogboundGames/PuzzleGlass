@@ -696,77 +696,43 @@ namespace PuzzleGlass
         {
             if (groups == null || boxes == null) return false;
 
-            bool hasAnyFilled = false;
+            // Tüm kutuların net top talebi (dolu kutu stoğu düşülerek) ile camdaki renk toplamlarını karşılaştır;
+            // böylece aynı renk toplamını koruyan aralıklı/parçalı grup dizilimleri de OnValidate'de ezilmez.
+            Dictionary<PuzzleColor, int> expectedGlass = new Dictionary<PuzzleColor, int>();
             for (int i = 0; i < boxes.Count; i++)
             {
-                if (boxes[i] != null && boxes[i].isFilledBox)
+                var b = boxes[i];
+                if (b == null) return false;
+                int cnt = Mathf.Max(1, b.count);
+                expectedGlass[b.color] = expectedGlass.TryGetValue(b.color, out int cur) ? cur + cnt : cnt;
+                if (b.isFilledBox)
                 {
-                    hasAnyFilled = true;
-                    break;
+                    expectedGlass[b.filledBallColor] = (expectedGlass.TryGetValue(b.filledBallColor, out int curS) ? curS : 0) - cnt;
                 }
             }
-
-            if (hasAnyFilled)
+            foreach (var kv in expectedGlass)
             {
-                // Dolu kutular önce içindekileri cama aktarır, sonra kendi rengindeki topları toplar:
-                // camda başlayan top sayısı = tüm kutuların talebi - dolu kutu stoğu
-                Dictionary<PuzzleColor, int> expectedGlass = new Dictionary<PuzzleColor, int>();
-                for (int i = 0; i < boxes.Count; i++)
-                {
-                    var b = boxes[i];
-                    if (b == null) return false;
-                    int cnt = Mathf.Max(1, b.count);
-                    expectedGlass[b.color] = expectedGlass.TryGetValue(b.color, out int cur) ? cur + cnt : cnt;
-                    if (b.isFilledBox)
-                    {
-                        expectedGlass[b.filledBallColor] = (expectedGlass.TryGetValue(b.filledBallColor, out int curS) ? curS : 0) - cnt;
-                    }
-                }
-                foreach (var kv in expectedGlass)
-                {
-                    if (kv.Value < 0) return true; // Geçersiz fazla stok durumunda otomatik ezme yapma; solver uyarır
-                }
-
-                Dictionary<PuzzleColor, int> actualGlass = new Dictionary<PuzzleColor, int>();
-                for (int i = 0; i < groups.Count; i++)
-                {
-                    var g = groups[i];
-                    if (g == null) return false;
-                    int cnt = Mathf.Max(1, g.count);
-                    actualGlass[g.color] = actualGlass.TryGetValue(g.color, out int cur) ? cur + cnt : cnt;
-                }
-
-                foreach (var kv in expectedGlass)
-                {
-                    actualGlass.TryGetValue(kv.Key, out int ac);
-                    if (ac != Mathf.Max(0, kv.Value)) return false;
-                }
-                foreach (var kv in actualGlass)
-                {
-                    expectedGlass.TryGetValue(kv.Key, out int ec);
-                    if (kv.Value != Mathf.Max(0, ec)) return false;
-                }
-                return true;
+                if (kv.Value < 0) return true; // Geçersiz fazla stok durumunda otomatik ezme yapma; solver uyarır
             }
 
-            if (groups.Count != boxes.Count) return false;
-
-            Dictionary<(PuzzleColor, int), int> diff = new Dictionary<(PuzzleColor, int), int>();
+            Dictionary<PuzzleColor, int> actualGlass = new Dictionary<PuzzleColor, int>();
             for (int i = 0; i < groups.Count; i++)
             {
-                if (groups[i] == null) return false;
-                var key = (groups[i].color, Mathf.Max(1, groups[i].count));
-                diff[key] = diff.TryGetValue(key, out int cur) ? cur + 1 : 1;
+                var g = groups[i];
+                if (g == null) return false;
+                int cnt = Mathf.Max(1, g.count);
+                actualGlass[g.color] = actualGlass.TryGetValue(g.color, out int cur) ? cur + cnt : cnt;
             }
-            for (int i = 0; i < boxes.Count; i++)
+
+            foreach (var kv in expectedGlass)
             {
-                if (boxes[i] == null) return false;
-                var key = (boxes[i].color, Mathf.Max(1, boxes[i].count));
-                diff[key] = diff.TryGetValue(key, out int cur) ? cur - 1 : -1;
+                actualGlass.TryGetValue(kv.Key, out int ac);
+                if (ac != Mathf.Max(0, kv.Value)) return false;
             }
-            foreach (var kv in diff)
+            foreach (var kv in actualGlass)
             {
-                if (kv.Value != 0) return false;
+                expectedGlass.TryGetValue(kv.Key, out int ec);
+                if (kv.Value != Mathf.Max(0, ec)) return false;
             }
             return true;
         }

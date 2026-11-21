@@ -222,6 +222,58 @@ namespace PuzzleGlass
         public Color boxFrameEdgeShadeColor = new Color(0.35f, 0.32f, 0.78f, 1.0f);
         public Color dropShadowColor = new Color(0.64f, 0.56f, 0.78f, 0.28f);
         public bool showBottomExitCollar = true;
+        [Tooltip("Açıkken tek alt çıkış boynu yerine her slota uzanan 5 ayrı cam çıkış kanalı oluşturulur.")]
+        public bool usePerSlotExitChannels = true;
+        public bool HasPerSlotExitChannels => usePerSlotExitChannels && showBottomExitCollar && (IsTrackShape || UsesTubeBoxStyle);
+
+        [Serializable]
+        public struct ExitChannelCurve
+        {
+            public int slotIndex;
+            public Vector2 p0;
+            public Vector2 p1;
+            public Vector2 p2;
+            public Vector2 p3;
+            public float innerHalfWidth;
+            public float wallThickness;
+            public float mouthLipHalfH;
+
+            public Vector2 EvaluatePoint(float t)
+            {
+                t = Mathf.Clamp01(t);
+                float u = 1f - t;
+                return u * u * u * p0
+                    + 3f * u * u * t * p1
+                    + 3f * u * t * t * p2
+                    + t * t * t * p3;
+            }
+
+            public Vector2 EvaluateTangent(float t)
+            {
+                t = Mathf.Clamp01(t);
+                float u = 1f - t;
+                Vector2 d = 3f * u * u * (p1 - p0)
+                    + 6f * u * t * (p2 - p1)
+                    + 3f * t * t * (p3 - p2);
+                return d.sqrMagnitude > 1e-8f ? d.normalized : Vector2.down;
+            }
+
+            public float EstimateLength()
+            {
+                float len = 0f;
+                Vector2 prev = p0;
+                const int steps = 10;
+                for (int i = 1; i <= steps; i++)
+                {
+                    Vector2 cur = EvaluatePoint((float)i / steps);
+                    len += Vector2.Distance(prev, cur);
+                    prev = cur;
+                }
+                return len;
+            }
+        }
+
+        [NonSerialized] public readonly List<ExitChannelCurve> exitChannels = new List<ExitChannelCurve>(6);
         [Tooltip("Düz tabanlı kare/dikdörtgen cam, pist camıyla aynı görünümde çizilsin (kalın cam cidar, koyu zemin, çıkış boynu + bilezik). Besleme tüplü camlarda eski görünüm kullanılır.")]
         public bool squareGlassTubeStyle = true;
         public bool showGlassShowcaseBackdrop = true;
@@ -611,12 +663,22 @@ namespace PuzzleGlass
         // ---- Pist mesafe alanının dokuya pişirilmesi (mobil GPU performansı) ----
         private static readonly int TrackSdfTexId = Shader.PropertyToID("_TrackSDFTex");
         private static readonly int UseTrackSdfId = Shader.PropertyToID("_UseTrackSDF");
+        private static readonly int ExitChanSdfTexId = Shader.PropertyToID("_ExitChanSDFTex");
+        private static readonly int UseExitChanSdfId = Shader.PropertyToID("_UseExitChanSDF");
         private const int TrackSdfLongSide = 1024;
         private RenderTexture _trackSdfRT;
         private Material _trackSdfBakeMat;
         private bool _trackSdfHasParams;
         private Vector2 _trackSdfQuadCenter;
         private float _trackSdfQuadHalfW, _trackSdfQuadHalfH;
+
+        private RenderTexture _exitChanSdfRT;
+        private Material _exitChanBakeMat;
+        private Material _exitChanBackMat;
+        private Material _exitChanFrontMat;
+        private bool _exitChanSdfHasParams;
+        private Vector2 _exitChanQuadCenter;
+        private float _exitChanQuadHalfW, _exitChanQuadHalfH;
 
         /// <summary>
         /// Cam pist shader'ı her pikselde 64 segmentlik mesafe döngüsünü (gölgeler için 3 kez) çalıştırıyordu; mobil GPU'da
@@ -633,7 +695,8 @@ namespace PuzzleGlass
 
             Shader.SetGlobalFloat(UseTrackSdfId, 0f);
             Shader chamber = Shader.Find("PuzzleGlass/GlassChamberLit");
-            if (chamber == null || compiledTrack == null || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf))
+            bool isBoxMode = !IsTrackShape && UsesTubeBoxStyle;
+            if (chamber == null || (!isBoxMode && compiledTrack == null) || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf))
                 return;
 
             float aspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
@@ -656,8 +719,12 @@ namespace PuzzleGlass
 
             if (_trackSdfBakeMat == null)
                 _trackSdfBakeMat = new Material(chamber) { name = "Mat_TrackSDFBake", hideFlags = HideFlags.HideAndDontSave };
-            ApplyTrackShaderProperties(_trackSdfBakeMat, quadCenter, quadHalfW, quadHalfH);
+            if (isBoxMode)
+                ApplyTubeBoxShaderProperties(_trackSdfBakeMat, quadCenter, quadHalfW, quadHalfH);
+            else
+                ApplyTrackShaderProperties(_trackSdfBakeMat, quadCenter, quadHalfW, quadHalfH);
             _trackSdfBakeMat.SetFloat("_IsFrontLens", 0f);
+            _trackSdfBakeMat.SetFloat("_IsExitChannels", 0f);
             _trackSdfBakeMat.SetFloat("_TrackBake", 1f);
             _trackSdfBakeMat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
             _trackSdfBakeMat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
@@ -668,6 +735,51 @@ namespace PuzzleGlass
 
             Shader.SetGlobalTexture(TrackSdfTexId, _trackSdfRT);
             Shader.SetGlobalFloat(UseTrackSdfId, 1f);
+        }
+
+        private void BakeExitChannelsSdf(Vector2 quadCenter, float quadHalfW, float quadHalfH)
+        {
+            _exitChanSdfHasParams = true;
+            _exitChanQuadCenter = quadCenter;
+            _exitChanQuadHalfW = quadHalfW;
+            _exitChanQuadHalfH = quadHalfH;
+
+            Shader.SetGlobalFloat(UseExitChanSdfId, 0f);
+            Shader chamber = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamber == null || exitChannels.Count == 0 || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf))
+                return;
+
+            float aspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
+            int w = aspect >= 1f ? TrackSdfLongSide : Mathf.Max(64, Mathf.RoundToInt(TrackSdfLongSide * aspect));
+            int h = aspect >= 1f ? Mathf.Max(64, Mathf.RoundToInt(TrackSdfLongSide / aspect)) : TrackSdfLongSide;
+            if (_exitChanSdfRT == null || _exitChanSdfRT.width != w || _exitChanSdfRT.height != h)
+            {
+                ReleaseExitChanSdf();
+                _exitChanSdfRT = new RenderTexture(w, h, 0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear)
+                {
+                    name = "ExitChanSDF",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+            if (!_exitChanSdfRT.IsCreated()) _exitChanSdfRT.Create();
+
+            if (_exitChanBakeMat == null)
+                _exitChanBakeMat = new Material(chamber) { name = "Mat_ExitChanSDFBake", hideFlags = HideFlags.HideAndDontSave };
+            ApplyExitChannelMaterialProperties(_exitChanBakeMat, quadCenter, quadHalfW, quadHalfH, isFrontLens: false);
+            _exitChanBakeMat.SetFloat("_TrackBake", 2f);
+            _exitChanBakeMat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            _exitChanBakeMat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
+
+            var prevActive = RenderTexture.active;
+            Graphics.Blit(null, _exitChanSdfRT, _exitChanBakeMat, 0);
+            RenderTexture.active = prevActive;
+
+            Shader.SetGlobalTexture(ExitChanSdfTexId, _exitChanSdfRT);
+            Shader.SetGlobalFloat(UseExitChanSdfId, 1f);
         }
 
         private void ReleaseTrackSdf()
@@ -681,23 +793,44 @@ namespace PuzzleGlass
             }
         }
 
+        private void ReleaseExitChanSdf()
+        {
+            if (_exitChanSdfRT != null)
+            {
+                if (RenderTexture.active == _exitChanSdfRT) RenderTexture.active = null;
+                _exitChanSdfRT.Release();
+                if (Application.isPlaying) Destroy(_exitChanSdfRT); else DestroyImmediate(_exitChanSdfRT);
+                _exitChanSdfRT = null;
+            }
+        }
+
         private void OnDisable()
         {
             Shader.SetGlobalFloat(UseTrackSdfId, 0f);
+            Shader.SetGlobalFloat(UseExitChanSdfId, 0f);
             ReleaseTrackSdf();
+            ReleaseExitChanSdf();
             if (_trackSdfBakeMat != null)
             {
                 if (Application.isPlaying) Destroy(_trackSdfBakeMat); else DestroyImmediate(_trackSdfBakeMat);
                 _trackSdfBakeMat = null;
             }
+            if (_exitChanBakeMat != null)
+            {
+                if (Application.isPlaying) Destroy(_exitChanBakeMat); else DestroyImmediate(_exitChanBakeMat);
+                _exitChanBakeMat = null;
+            }
             _trackSdfHasParams = false;
+            _exitChanSdfHasParams = false;
         }
 
         private void LateUpdate()
         {
             // Android'de uygulama arka plana gidip dönünce GPU içeriği kaybolabilir: doku yoksa yeniden pişir
-            if (_trackSdfHasParams && IsTrackShape && (_trackSdfRT == null || !_trackSdfRT.IsCreated()))
+            if (_trackSdfHasParams && (IsTrackShape || UsesTubeBoxStyle) && (_trackSdfRT == null || !_trackSdfRT.IsCreated()))
                 BakeTrackSdf(_trackSdfQuadCenter, _trackSdfQuadHalfW, _trackSdfQuadHalfH);
+            if (_exitChanSdfHasParams && HasPerSlotExitChannels && (_exitChanSdfRT == null || !_exitChanSdfRT.IsCreated()))
+                BakeExitChannelsSdf(_exitChanQuadCenter, _exitChanQuadHalfW, _exitChanQuadHalfH);
         }
 
         private void Update()
@@ -1289,41 +1422,50 @@ namespace PuzzleGlass
         /// Kare/dikdörtgen camı pist camının shader yoluyla çizer (kutu modu): iç boşluk eski kutuyla birebir aynı
         /// (fizik duvarları değişmez), cidar = kutu çerçeve kalınlığı, alt ortada çıkış boynu.
         /// </summary>
-        private void ApplyTubeBoxShaderProperties(Material mat, float centerY, float quadHalfW, float quadHalfH)
+        private void ApplyTubeBoxShaderProperties(Material mat, Vector2 quadCenter, float quadHalfW, float quadHalfH)
         {
             if (mat == null) return;
             if (enforceUnifiedCrystalTheme) ApplyCrystalLavenderThemeColors();
-            float qh = Mathf.Max(0.01f, quadHalfH);
-            float aspect = quadHalfW / qh;
+
+            GetRoundedBoxPoolExtents(out float boxCenterY, out float boxQuadHalfW, out float boxQuadHalfH, out _, out _);
+            float boxQH = Mathf.Max(0.01f, boxQuadHalfH);
+            float boxAspect = boxQuadHalfW / boxQH;
             float ft = Mathf.Clamp(boxFrameThickness, 0.035f, 0.24f);           // kart uzayı (eski kutu shader'ıyla aynı)
-            Vector2 outerHalf = new Vector2(aspect * 0.80f, 0.76f);
+            Vector2 outerHalf = new Vector2(boxAspect * 0.80f, 0.76f);
             Vector2 innerHalf = outerHalf - new Vector2(ft, ft);
             float outerRad = Mathf.Clamp(boxCornerRadius, 0.04f, Mathf.Min(outerHalf.x, outerHalf.y) * 0.95f);
             float innerRad = Mathf.Clamp(outerRad - ft * 0.65f, 0.03f, Mathf.Min(innerHalf.x, innerHalf.y) * 0.92f);
-            _tubeBoxWallWorld = ft * qh;
-            _tubeBoxInnerBottomY = centerY - innerHalf.y * qh;
+            _tubeBoxWallWorld = ft * boxQH;
+            _tubeBoxInnerBottomY = boxCenterY - innerHalf.y * boxQH;
+
+            Vector2 innerHalfWorld = innerHalf * boxQH;
+            float innerRadWorld = innerRad * boxQH;
+
+            float qh = Mathf.Max(0.01f, quadHalfH);
+            float aspect = quadHalfW / qh;
 
             mat.SetFloat("_IsRoundedBoxPool", 0f);
             if (mat.HasProperty("_PolyCount")) mat.SetFloat("_PolyCount", 0f);
             if (mat.HasProperty("_IsCollar")) mat.SetFloat("_IsCollar", 0f);
             if (mat.HasProperty("_IsFeedTube")) mat.SetFloat("_IsFeedTube", 0f);
+            if (mat.HasProperty("_IsExitChannels")) mat.SetFloat("_IsExitChannels", 0f);
             if (mat.HasProperty("_JarNeckParams")) mat.SetVector("_JarNeckParams", Vector4.zero);
             mat.SetFloat("_IsTrackChannel", 1f);
             mat.SetFloat("_TrackBoxMode", 1f);
             mat.SetFloat("_BoxAspect", aspect);
-            mat.SetVector("_TrackBox", new Vector4(0f, 0f, innerHalf.x, innerHalf.y));
-            mat.SetFloat("_TrackBoxRad", innerRad);
+            mat.SetVector("_TrackBox", new Vector4(-quadCenter.x / qh, (boxCenterY - quadCenter.y) / qh, innerHalfWorld.x / qh, innerHalfWorld.y / qh));
+            mat.SetFloat("_TrackBoxRad", innerRadWorld / qh);
             mat.SetFloat("_TrackSegCount", 0f);
-            mat.SetFloat("_TrackWallThick", ft);
+            mat.SetFloat("_TrackWallThick", _tubeBoxWallWorld / qh);
             mat.SetFloat("_TrackHalfWidth", 0.22f / qh);   // cam kesit gölgelendirme bandı (pistteki kanal yarı genişliği kadar)
             mat.SetFloat("_TrackFillet", 0.04f);
             if (mat.HasProperty("_FrameColor")) mat.SetColor("_FrameColor", boxFrameColor);
             if (mat.HasProperty("_FakeShadowColor")) mat.SetColor("_FakeShadowColor", dropShadowColor);
 
             GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out _, out _);
-            mat.SetVector("_TrackExitPos", new Vector4(0f, -innerHalf.y, neckInnerHalfW * 0.85f / qh, showBottomExitCollar ? 1f : 0f));
+            mat.SetVector("_TrackExitPos", new Vector4(-quadCenter.x / qh, (_tubeBoxInnerBottomY - quadCenter.y) / qh, neckInnerHalfW * 0.85f / qh, showBottomExitCollar ? 1f : 0f));
             mat.SetVector("_TrackNeck", showBottomExitCollar
-                ? new Vector4((mouthY - centerY) / qh, neckInnerHalfW / qh, lipHalfH / qh, 1f)
+                ? new Vector4((mouthY - quadCenter.y) / qh, neckInnerHalfW / qh, lipHalfH / qh, 1f)
                 : Vector4.zero);
         }
 
@@ -1870,6 +2012,261 @@ namespace PuzzleGlass
             return true;
         }
 
+        private static readonly Vector4[] _exitChanSegBuffer = new Vector4[96];
+        private static readonly Vector4[] _exitMouthBuffer = new Vector4[6];
+        private const int MaxExitChannels = 6;
+        private const int SegmentsPerExitChannel = 16;
+
+        private void ComputeExitChannels(SlotSystem slotSys)
+        {
+            exitChannels.Clear();
+            if (!HasPerSlotExitChannels) return;
+
+            bool isTrack = IsTrackShape && compiledTrack != null;
+            bool isTubeBox = !IsTrackShape && UsesTubeBoxStyle;
+            if (!isTrack && !isTubeBox) return;
+
+            Vector2 topCenter;
+            float mainWall;
+            float ballD;
+            float outerBottomY;
+
+            if (isTrack)
+            {
+                topCenter = compiledTrack.exitPoint;
+                mainWall = compiledTrack.wallThickness;
+                ballD = compiledTrack.ballDiameter;
+                outerBottomY = compiledTrack.exitPoint.y - compiledTrack.innerHalfWidth - compiledTrack.wallThickness;
+            }
+            else
+            {
+                GetRoundedBoxPoolExtents(out float boxCenterY, out float boxQuadHalfW, out float boxQuadHalfH, out _, out _);
+                float boxQH = Mathf.Max(0.01f, boxQuadHalfH);
+                float boxAspect = boxQuadHalfW / boxQH;
+                float ft = Mathf.Clamp(boxFrameThickness, 0.035f, 0.24f);
+                Vector2 innerHalf = new Vector2(boxAspect * 0.80f, 0.76f) - new Vector2(ft, ft);
+                _tubeBoxWallWorld = ft * boxQH;
+                _tubeBoxInnerBottomY = boxCenterY - innerHalf.y * boxQH;
+
+                topCenter = new Vector2(0f, _tubeBoxInnerBottomY + 0.05f);
+                mainWall = _tubeBoxWallWorld;
+                ballD = Mathf.Clamp(particleSize, 0.08f, 0.14f);
+                outerBottomY = _tubeBoxInnerBottomY - _tubeBoxWallWorld;
+            }
+
+            GetTrackNeckGeometry(out float neckMouthY, out _, out _, out _, out _);
+            float chanHalfW = Mathf.Clamp(ballD * 0.54f, 0.052f, 0.064f);
+            float chanWall = Mathf.Clamp(mainWall * 0.18f, 0.011f, 0.015f);
+            float lipHH = Mathf.Clamp(chanWall * 0.52f, 0.006f, 0.009f);
+
+            // Hedef slot ağız noktalarını (cam yerel koordinatlarında) topla
+            var slotTargets = new List<(int slotIdx, Vector2 localEnd)>(MaxExitChannels);
+            if (slotSys != null && slotSys.slotsEnabled && slotSys.slots != null && slotSys.slots.Count > 0 && slotSys.gameObject.activeInHierarchy)
+            {
+                float rowScale = slotSys.RowFitScale;
+                float slotVis = TrayTileVisuals.SlotVisualSize(Mathf.Max(0.1f, slotSys.slotSpacing)) * rowScale;
+                for (int i = 0; i < slotSys.slots.Count && slotTargets.Count < MaxExitChannels; i++)
+                {
+                    var sl = slotSys.slots[i];
+                    if (sl == null || !sl.gameObject.activeInHierarchy) continue;
+                    Vector3 worldMouth = sl.transform.position + new Vector3(0f, slotVis * 0.5f + 0.015f, 0f);
+                    Vector3 localMouth = transform.InverseTransformPoint(worldMouth);
+                    slotTargets.Add((sl.slotIndex, new Vector2(localMouth.x, localMouth.y)));
+                }
+            }
+
+            if (slotTargets.Count == 0)
+            {
+                const int fallbackCount = 5;
+                const float fallbackSpacing = 0.72f;
+                float startFX = topCenter.x - (fallbackCount - 1) * fallbackSpacing * 0.5f;
+                float fallbackEndY = outerBottomY - 0.74f;
+                for (int i = 0; i < fallbackCount; i++)
+                {
+                    slotTargets.Add((i, new Vector2(startFX + i * fallbackSpacing, fallbackEndY)));
+                }
+            }
+
+            int n = slotTargets.Count;
+            float manifoldHalfSpan = n <= 1 ? 0f : Mathf.Min(0.32f, 0.076f * (n - 1));
+            float startY = neckMouthY + 0.045f;
+
+            for (int i = 0; i < n; i++)
+            {
+                float u = n <= 1 ? 0f : (2f * i / (n - 1) - 1f);
+                float startX = topCenter.x + u * manifoldHalfSpan;
+
+                Vector2 p0 = new Vector2(startX, startY);
+                Vector2 p3 = slotTargets[i].localEnd;
+                float dy = Mathf.Max(0.22f, p0.y - p3.y);
+                Vector2 p1 = new Vector2(startX, p0.y - dy * 0.34f);
+                Vector2 p2 = new Vector2(p3.x, p3.y + dy * 0.34f);
+
+                exitChannels.Add(new ExitChannelCurve
+                {
+                    slotIndex = slotTargets[i].slotIdx,
+                    p0 = p0,
+                    p1 = p1,
+                    p2 = p2,
+                    p3 = p3,
+                    innerHalfWidth = chanHalfW,
+                    wallThickness = chanWall,
+                    mouthLipHalfH = lipHH
+                });
+            }
+        }
+
+        private void GetExitChannelsQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH)
+        {
+            if (exitChannels.Count == 0)
+            {
+                quadCenter = Vector2.zero;
+                quadHalfW = 1.5f;
+                quadHalfH = 0.8f;
+                return;
+            }
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minY = float.MaxValue, maxY = float.MinValue;
+            const float chanShadowPad = 0.22f;
+
+            for (int i = 0; i < exitChannels.Count; i++)
+            {
+                var ch = exitChannels[i];
+                float pad = ch.innerHalfWidth + ch.wallThickness + chanShadowPad;
+                for (int s = 0; s <= SegmentsPerExitChannel; s++)
+                {
+                    Vector2 pt = ch.EvaluatePoint((float)s / SegmentsPerExitChannel);
+                    minX = Mathf.Min(minX, pt.x - pad);
+                    maxX = Mathf.Max(maxX, pt.x + pad);
+                    minY = Mathf.Min(minY, pt.y - pad);
+                    maxY = Mathf.Max(maxY, pt.y + pad);
+                }
+            }
+
+            quadCenter = new Vector2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+            quadHalfW = Mathf.Max(0.45f, (maxX - minX) * 0.5f);
+            quadHalfH = Mathf.Max(0.45f, (maxY - minY) * 0.5f);
+        }
+
+        private void ApplyExitChannelMaterialProperties(Material mat, Vector2 quadCenter, float quadHalfW, float quadHalfH, bool isFrontLens)
+        {
+            if (mat == null) return;
+            if (enforceUnifiedCrystalTheme) ApplyCrystalLavenderThemeColors();
+
+            float qh = Mathf.Max(0.01f, quadHalfH);
+            float aspect = quadHalfW / qh;
+
+            mat.SetFloat("_IsRoundedBoxPool", 0f);
+            mat.SetFloat("_IsCollar", 0f);
+            mat.SetFloat("_IsFeedTube", 0f);
+            mat.SetFloat("_IsTrackChannel", 0f);
+            mat.SetFloat("_IsExitChannels", 1f);
+            mat.SetFloat("_IsFrontLens", isFrontLens ? 1f : 0f);
+            mat.SetFloat("_TrackBake", 0f);
+            mat.SetFloat("_BoxAspect", aspect);
+            mat.SetFloat("_SheenIntensity", Mathf.Clamp(specularIntensity, 0.35f, 1.30f));
+
+            Color edgeCol = glassBodyColor;
+            edgeCol.a = Mathf.Clamp(glassBodyColor.a, 0.62f, 0.82f);
+            mat.SetColor("_EdgeColor", edgeCol);
+            mat.SetColor("_InnerGrooveColor", new Color(0.24f, 0.23f, 0.64f, 0.90f));
+
+            System.Array.Clear(_exitChanSegBuffer, 0, _exitChanSegBuffer.Length);
+            System.Array.Clear(_exitMouthBuffer, 0, _exitMouthBuffer.Length);
+
+            int count = Mathf.Min(exitChannels.Count, MaxExitChannels);
+            if (!HasPerSlotExitChannels || count == 0)
+            {
+                mat.SetFloat("_ExitChannelCount", 0f);
+                return;
+            }
+
+            float chanHalfW = exitChannels[0].innerHalfWidth;
+            float chanWall = exitChannels[0].wallThickness;
+            float topClipY = exitChannels[0].p0.y;
+
+            for (int c = 0; c < count; c++)
+            {
+                var ch = exitChannels[c];
+                Vector2 prev = (ch.p0 - quadCenter) / qh;
+                for (int s = 1; s <= SegmentsPerExitChannel; s++)
+                {
+                    Vector2 cur = (ch.EvaluatePoint((float)s / SegmentsPerExitChannel) - quadCenter) / qh;
+                    _exitChanSegBuffer[c * SegmentsPerExitChannel + (s - 1)] = new Vector4(prev.x, prev.y, cur.x, cur.y);
+                    prev = cur;
+                }
+                Vector2 mouthP = (ch.p3 - quadCenter) / qh;
+                _exitMouthBuffer[c] = new Vector4(mouthP.x, mouthP.y, ch.mouthLipHalfH / qh, 1f);
+            }
+
+            mat.SetFloat("_ExitChannelCount", count);
+            mat.SetFloat("_ExitChannelHalfW", chanHalfW / qh);
+            mat.SetFloat("_ExitChannelWallThick", chanWall / qh);
+            mat.SetVector("_TrackExitPos", new Vector4(0f, (topClipY - quadCenter.y) / qh, 0f, 1f));
+            mat.SetVectorArray("_ExitChanSegs", _exitChanSegBuffer);
+            Shader.SetGlobalVectorArray("_ExitChanSegs", _exitChanSegBuffer);
+            mat.SetVectorArray("_ExitMouths", _exitMouthBuffer);
+            Shader.SetGlobalVectorArray("_ExitMouths", _exitMouthBuffer);
+        }
+
+        private void ClearExitChannelsVisuals()
+        {
+            if (_glassWallsObj == null) return;
+            var existing = _glassWallsObj.transform.Find("ExitGlassChannels");
+            if (existing != null)
+            {
+                if (Application.isPlaying) Destroy(existing.gameObject);
+                else DestroyImmediate(existing.gameObject);
+            }
+        }
+
+        private void BuildExitChannelsVisuals()
+        {
+            ClearExitChannelsVisuals();
+            if (_glassWallsObj == null || !HasPerSlotExitChannels || exitChannels.Count == 0) return;
+
+            Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
+            if (chamberShader == null) return;
+
+            GetExitChannelsQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH);
+
+            if (_exitChanBackMat == null)
+                _exitChanBackMat = new Material(chamberShader) { name = "Mat_ExitChannelsBack" };
+            if (_exitChanFrontMat == null)
+                _exitChanFrontMat = new Material(chamberShader) { name = "Mat_ExitChannelsFront" };
+
+            ApplyExitChannelMaterialProperties(_exitChanBackMat, quadCenter, quadHalfW, quadHalfH, isFrontLens: false);
+            _exitChanBackMat.renderQueue = 1996;
+
+            ApplyExitChannelMaterialProperties(_exitChanFrontMat, quadCenter, quadHalfW, quadHalfH, isFrontLens: true);
+            _exitChanFrontMat.renderQueue = 3019;
+
+            BakeExitChannelsSdf(quadCenter, quadHalfW, quadHalfH);
+
+            Mesh chanMesh = CreateTrackQuadMesh(quadCenter, quadHalfW, quadHalfH);
+            var root = new GameObject("ExitGlassChannels");
+            root.transform.SetParent(_glassWallsObj.transform, false);
+
+            var backObj = new GameObject("ExitChannelsBack");
+            backObj.transform.SetParent(root.transform, false);
+            backObj.transform.localPosition = new Vector3(0f, 0f, 0.09f);
+            backObj.AddComponent<MeshFilter>().sharedMesh = chanMesh;
+            var backMr = backObj.AddComponent<MeshRenderer>();
+            backMr.sharedMaterial = _exitChanBackMat;
+            backMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            backMr.receiveShadows = false;
+
+            var frontObj = new GameObject("ExitChannelsFront");
+            frontObj.transform.SetParent(root.transform, false);
+            frontObj.transform.localPosition = new Vector3(0f, 0f, -0.23f);
+            frontObj.AddComponent<MeshFilter>().sharedMesh = chanMesh;
+            var frontMr = frontObj.AddComponent<MeshRenderer>();
+            frontMr.sharedMaterial = _exitChanFrontMat;
+            frontMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            frontMr.receiveShadows = false;
+        }
+
         private void GetTrackQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH)
         {
             if (compiledTrack == null) RebuildTrackCompiledData();
@@ -1878,6 +2275,14 @@ namespace PuzzleGlass
             quadCenter = ob.center;
             quadHalfW = Mathf.Max(0.45f, ob.width * 0.5f + shadowPad);
             quadHalfH = Mathf.Max(0.45f, ob.height * 0.5f + shadowPad);
+        }
+
+        private void GetTubeBoxQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH, out float boxCenterY, out float visibleHalfW, out float visibleHalfH)
+        {
+            GetRoundedBoxPoolExtents(out boxCenterY, out float boxHalfW, out float boxHalfH, out visibleHalfW, out visibleHalfH);
+            quadCenter = new Vector2(0f, boxCenterY);
+            quadHalfW = boxHalfW;
+            quadHalfH = boxHalfH;
         }
 
         private void ApplyTrackShaderProperties(Material mat, Vector2 quadCenter, float quadHalfW, float quadHalfH)
@@ -1891,6 +2296,7 @@ namespace PuzzleGlass
             mat.SetFloat("_IsRoundedBoxPool", 0f);
             mat.SetFloat("_IsCollar", 0f);
             mat.SetFloat("_IsFeedTube", 0f);
+            if (mat.HasProperty("_IsExitChannels")) mat.SetFloat("_IsExitChannels", 0f);
             if (mat.HasProperty("_PolyCount")) mat.SetFloat("_PolyCount", 0f);
             if (mat.HasProperty("_IsTrackChannel")) mat.SetFloat("_IsTrackChannel", 1f);
             if (mat.HasProperty("_TrackBoxMode")) mat.SetFloat("_TrackBoxMode", 0f);
@@ -1957,13 +2363,14 @@ namespace PuzzleGlass
 
         private void GetTrackNeckGeometry(out float mouthY, out float neckInnerHalfW, out float lipHalfH, out float neckOuterHalfW, out float outerBottomY)
         {
+            float manifoldMinHalfW = HasPerSlotExitChannels ? 0.36f : 0f;
             if (UsesTubeBoxStyle)
             {
                 // Kare cam: çıkış alt kenarın ortasında, ağız birkaç top genişliğinde
                 float wall = _tubeBoxWallWorld;
                 outerBottomY = _tubeBoxInnerBottomY - wall;
                 mouthY = outerBottomY - TrackNeckDrop;
-                neckInnerHalfW = Mathf.Max(particleSize * 1.6f, 0.14f);
+                neckInnerHalfW = Mathf.Max(Mathf.Max(particleSize * 1.6f, 0.14f), manifoldMinHalfW);
                 neckOuterHalfW = neckInnerHalfW + wall;
                 lipHalfH = wall * 0.36f;
                 return;
@@ -1971,9 +2378,36 @@ namespace PuzzleGlass
             var t = compiledTrack;
             outerBottomY = t.exitPoint.y - t.innerHalfWidth - t.wallThickness;
             mouthY = outerBottomY - TrackNeckDrop;
-            neckInnerHalfW = t.innerHalfWidth * 1.05f; // geniş ağız
+            neckInnerHalfW = Mathf.Max(t.innerHalfWidth * 1.05f, manifoldMinHalfW); // geniş ağız
             neckOuterHalfW = neckInnerHalfW + t.wallThickness;
             lipHalfH = t.wallThickness * 0.36f;
+        }
+
+        private void ClearTrackExitSleeves()
+        {
+            if (_glassWallsObj == null) return;
+            for (int i = _glassWallsObj.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = _glassWallsObj.transform.GetChild(i);
+                if (child == null) continue;
+                if (child.name == "TrackExitSleeve" || child.name.StartsWith("TrackExitSleeve_", StringComparison.Ordinal))
+                {
+                    if (Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Slot sırası hizalandıktan veya slot aralığı değiştikten sonra 5 çıkış kanalını gerçek slot konumlarına senkronize eder.
+        /// </summary>
+        public void SyncExitChannelsToSlots(SlotSystem slotSys)
+        {
+            if (!HasPerSlotExitChannels || _glassWallsObj == null) return;
+            if (IsTrackShape && compiledTrack == null) return;
+
+            ComputeExitChannels(slotSys);
+            BuildExitChannelsVisuals();
         }
 
         /// <summary>
@@ -1982,6 +2416,7 @@ namespace PuzzleGlass
         /// </summary>
         private void BuildTrackExitSleeve()
         {
+            ClearTrackExitSleeves();
             if (_glassWallsObj == null || (compiledTrack == null && !UsesTubeBoxStyle)) return;
             Shader chamberShader = Shader.Find("PuzzleGlass/GlassChamberLit");
             if (chamberShader == null) return;
@@ -2099,6 +2534,7 @@ namespace PuzzleGlass
             if (IsTrackShape)
             {
                 RebuildTrackCompiledData();
+                ComputeExitChannels(SlotSystem.Instance);
                 GetTrackQuadExtents(out Vector2 quadCenter, out float quadHalfW, out float quadHalfH);
 
                 if (_chamberInnerGlowMat != null) ApplyTrackShaderProperties(_chamberInnerGlowMat, quadCenter, quadHalfW, quadHalfH);
@@ -2127,8 +2563,9 @@ namespace PuzzleGlass
 
                 if (showBottomExitCollar && compiledTrack != null)
                 {
-                    // Pistte çıkış: camın kendi boynu (shader) + boynu saran yarı saydam bilezik
+                    // Pistte çıkış: camın kendi boynu (shader) + boynu saran yarı saydam bilezik + 5 ince çıkış kanalı
                     BuildTrackExitSleeve();
+                    if (HasPerSlotExitChannels) BuildExitChannelsVisuals();
                 }
                 return;
             }
@@ -2147,25 +2584,31 @@ namespace PuzzleGlass
             if (IsPoolShape)
             {
                 // Kutu ve düz tabanlı özel şekiller aynı shader çerçevesiyle çizilir (parlak kristal cam duvarlar, yuvarlak köşe, gölge)
-                GetRoundedBoxPoolExtents(out float centerY, out float quadHalfW, out float quadHalfH, out float visibleHalfW, out float visibleHalfH);
-                float boxAspect = quadHalfW / Mathf.Max(0.01f, quadHalfH);
-
                 bool tubeBox = UsesTubeBoxStyle;
+                Vector2 boxQuadCenter;
+                float boxQuadHalfW, boxQuadHalfH, centerY, visibleHalfW, visibleHalfH;
+                Mesh boxQuadMesh;
+
                 if (tubeBox)
                 {
-                    // Pist camıyla aynı görünüm (kalın cam cidar, koyu zemin, çıkış boynu); eski mor vitrin çizilmez
-                    ApplyTubeBoxShaderProperties(_chamberInnerGlowMat, centerY, quadHalfW, quadHalfH);
-                    ApplyTubeBoxShaderProperties(_frontGlassLensMat, centerY, quadHalfW, quadHalfH);
+                    ComputeExitChannels(SlotSystem.Instance);
+                    GetTubeBoxQuadExtents(out boxQuadCenter, out boxQuadHalfW, out boxQuadHalfH, out centerY, out visibleHalfW, out visibleHalfH);
+                    // Pist camıyla aynı görünüm (kalın cam cidar, koyu zemin, 5 çıkış kanalı); eski mor vitrin çizilmez
+                    ApplyTubeBoxShaderProperties(_chamberInnerGlowMat, boxQuadCenter, boxQuadHalfW, boxQuadHalfH);
+                    ApplyTubeBoxShaderProperties(_frontGlassLensMat, boxQuadCenter, boxQuadHalfW, boxQuadHalfH);
+                    BakeTrackSdf(boxQuadCenter, boxQuadHalfW, boxQuadHalfH);
+                    boxQuadMesh = CreateTrackQuadMesh(boxQuadCenter, boxQuadHalfW, boxQuadHalfH);
                 }
                 else
                 {
+                    exitChannels.Clear();
+                    GetRoundedBoxPoolExtents(out centerY, out boxQuadHalfW, out boxQuadHalfH, out visibleHalfW, out visibleHalfH);
+                    float boxAspect = boxQuadHalfW / Mathf.Max(0.01f, boxQuadHalfH);
                     if (_chamberInnerGlowMat != null) ApplyRoundedBoxShaderProperties(_chamberInnerGlowMat, boxAspect);
                     if (_frontGlassLensMat != null) ApplyRoundedBoxShaderProperties(_frontGlassLensMat, boxAspect);
+                    boxQuadMesh = CreateRoundedBoxPoolQuadMesh(boxQuadHalfW, boxQuadHalfH, centerY);
+                    BuildGlassShowcaseBackdrop(0f, centerY, visibleHalfW * 2f, visibleHalfH * 2f);
                 }
-
-                Mesh boxQuadMesh = CreateRoundedBoxPoolQuadMesh(quadHalfW, quadHalfH, centerY);
-
-                if (!tubeBox) BuildGlassShowcaseBackdrop(0f, centerY, visibleHalfW * 2f, visibleHalfH * 2f);
 
                 GameObject poolBackObj = new GameObject("FlaskInnerCenterGlow");
                 poolBackObj.transform.SetParent(_glassWallsObj.transform, false);
@@ -2187,7 +2630,11 @@ namespace PuzzleGlass
 
                 if (showBottomExitCollar)
                 {
-                    if (tubeBox) BuildTrackExitSleeve();
+                    if (tubeBox)
+                    {
+                        BuildTrackExitSleeve();
+                        if (HasPerSlotExitChannels) BuildExitChannelsVisuals();
+                    }
                     else BuildBottomExitCollar(centerY - visibleHalfH);
                 }
 
@@ -3386,6 +3833,75 @@ namespace PuzzleGlass
             }
 
             return transform.TransformPoint(new Vector3(collarX, exitLocalY, -0.16f));
+        }
+
+        public int GetChannelIndexForMonster(MonsterCharacter monster)
+        {
+            if (!HasPerSlotExitChannels || exitChannels.Count == 0) return -1;
+
+            if (monster != null && monster.assignedSlot != null)
+            {
+                int slotIdx = monster.assignedSlot.slotIndex;
+                for (int i = 0; i < exitChannels.Count; i++)
+                {
+                    if (exitChannels[i].slotIndex == slotIdx) return i;
+                }
+                return Mathf.Clamp(slotIdx, 0, exitChannels.Count - 1);
+            }
+
+            if (monster != null)
+            {
+                Vector3 localM = transform.InverseTransformPoint(monster.transform.position);
+                int bestIdx = 0;
+                float bestDx = float.MaxValue;
+                for (int i = 0; i < exitChannels.Count; i++)
+                {
+                    float dx = Mathf.Abs(exitChannels[i].p3.x - localM.x);
+                    if (dx < bestDx)
+                    {
+                        bestDx = dx;
+                        bestIdx = i;
+                    }
+                }
+                return bestIdx;
+            }
+
+            return exitChannels.Count / 2;
+        }
+
+        public Vector3 GetChannelManifoldEntranceWorldPosition(int channelIndex)
+        {
+            if (channelIndex >= 0 && channelIndex < exitChannels.Count)
+            {
+                Vector2 p0 = exitChannels[channelIndex].p0;
+                return transform.TransformPoint(new Vector3(p0.x, p0.y, -0.16f));
+            }
+            return GetBottomExitWorldPosition();
+        }
+
+        public Vector3 GetChannelMouthWorldPosition(int channelIndex)
+        {
+            if (channelIndex >= 0 && channelIndex < exitChannels.Count)
+            {
+                Vector2 p3 = exitChannels[channelIndex].p3;
+                return transform.TransformPoint(new Vector3(p3.x, p3.y, -0.16f));
+            }
+            return GetBottomExitWorldPosition();
+        }
+
+        public Vector3[] GetChannelWorldPathPoints(int channelIndex, bool reverse = false, int steps = 8)
+        {
+            if (channelIndex < 0 || channelIndex >= exitChannels.Count) return null;
+            var ch = exitChannels[channelIndex];
+            int count = Mathf.Max(2, steps);
+            var pts = new Vector3[count + 1];
+            for (int i = 0; i <= count; i++)
+            {
+                float t = reverse ? 1f - (float)i / count : (float)i / count;
+                Vector2 lp = ch.EvaluatePoint(t);
+                pts[i] = transform.TransformPoint(new Vector3(lp.x, lp.y, -0.16f));
+            }
+            return pts;
         }
 
         private void GetRoundedBoxPoolExtents(
