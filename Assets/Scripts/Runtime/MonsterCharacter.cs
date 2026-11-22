@@ -2261,10 +2261,10 @@ namespace PuzzleGlass
             if (showKey)
             {
                 if (_keyOverlayRoot == null) _keyOverlayRoot = BuildKeyOverlay(bodyPivot);
-                // Anahtar rozeti bloğun sağ üst köşesine asılı durur (top deliklerini kapatmaz)
+                // Anahtar ikonu bloğun sağ üst köşesine net şekilde oturur (sayıyı kapatmaz)
                 Vector2 corner = GetTopRightCornerLocal();
-                _keyOverlayRoot.transform.localPosition = new Vector3(corner.x - 0.10f, corner.y - 0.10f, -0.30f);
-                _keyOverlayRoot.transform.localScale = Vector3.one * 0.82f;
+                _keyOverlayRoot.transform.localPosition = new Vector3(corner.x - 0.06f, corner.y - 0.05f, -0.32f);
+                _keyOverlayRoot.transform.localScale = Vector3.one;
                 _keyOverlayRoot.SetActive(true);
             }
             else if (_keyOverlayRoot != null)
@@ -2277,6 +2277,14 @@ namespace PuzzleGlass
                 if (_lockOverlayRoot == null) _lockOverlayRoot = BuildLockOverlay(bodyPivot, out _lockCountText);
                 _lockOverlayRoot.transform.localPosition = new Vector3(center.x, center.y, -0.31f);
                 _lockOverlayRoot.transform.localScale = Vector3.one;
+                Transform lockSpriteT = _lockOverlayRoot.transform.Find("LockSprite");
+                if (lockSpriteT != null && !_unlockAnimPlaying)
+                {
+                    Sprite lockSp = LockKeyVisuals.GetLockSprite();
+                    lockSpriteT.localPosition = new Vector3(0f, 0.01f, -0.02f);
+                    lockSpriteT.localRotation = Quaternion.identity;
+                    if (lockSp != null) lockSpriteT.localScale = LockKeyVisuals.GetIconScale(lockSp, 0.44f);
+                }
                 _lockOverlayRoot.SetActive(true);
                 if (_lockCountText != null)
                 {
@@ -2329,13 +2337,14 @@ namespace PuzzleGlass
             if (Application.isPlaying)
             {
                 _unlockAnimPlaying = true;
+                Transform lockVisual = _lockOverlayRoot != null ? _lockOverlayRoot.transform.Find("LockSprite") : null;
                 LockKeyVisuals.PlayUnlock(this, GetLockWorldPosition(), GetCarrierFrameColor(colorType), () =>
                 {
                     _unlockAnimPlaying = false;
                     if (_lockOverlayRoot != null) _lockOverlayRoot.SetActive(false);
                     RefreshSpecialMechanicVisuals();
                     StagingGridBoard.Instance?.MarkGridDirty();
-                });
+                }, lockVisual);
             }
             else if (_lockOverlayRoot != null)
             {
@@ -2423,7 +2432,8 @@ namespace PuzzleGlass
 
             if (IsLockedByKey && _lockOverlayRoot != null)
             {
-                LockKeyVisuals.PlayLockWiggle(this);
+                Transform lockVisual = _lockOverlayRoot.transform.Find("LockSprite");
+                LockKeyVisuals.PlayLockWiggle(this, lockVisual);
 
                 // İpucu: anahtarı taşıyan bloklar zıplar
                 var gm = PuzzleGlassGameManager.Instance;
@@ -2492,11 +2502,17 @@ namespace PuzzleGlass
                 GetCarrierDarkColor(colorType), "KeyOverlay");
         }
 
-        /// <summary>Kilidin kendisi shader'da çizilir; burada sadece birden fazla anahtar gerekiyorsa sayı rozeti var.</summary>
+        /// <summary>Kapak shader'da çizilir; üstünde Silver Lock ikonu ve çoklu anahtar sayacı yer alır.</summary>
         private GameObject BuildLockOverlay(Transform parent, out TextMeshPro countLabel)
         {
             GameObject root = new GameObject("LockOverlay");
             root.transform.SetParent(parent, false);
+
+            Sprite lockSprite = LockKeyVisuals.GetLockSprite();
+            if (lockSprite != null)
+            {
+                LockKeyVisuals.CreateSpriteIcon("LockSprite", root.transform, lockSprite, 0.44f, new Vector3(0f, 0.01f, -0.02f), 15);
+            }
 
             GameObject textObj = new GameObject("LockCountText");
             textObj.transform.SetParent(root.transform, false);
@@ -2509,7 +2525,7 @@ namespace PuzzleGlass
             countLabel.color = Color.white;
             countLabel.text = remainingLockKeys.ToString();
             countLabel.rectTransform.sizeDelta = new Vector2(0.5f, 0.5f);
-            countLabel.sortingOrder = 12;
+            countLabel.sortingOrder = 16;
             ApplyTmpOutline(countLabel, GetCarrierDarkColor(colorType), 0.30f);
             textObj.SetActive(lockKeyCount > 1);
 
@@ -2528,19 +2544,27 @@ namespace PuzzleGlass
             AddMeshPart("FrostGlintLeft", root.transform, new Vector3(-0.22f, 0.20f, 0f), ProceduralMeshUtils.CreatePillBadge(0.18f, 0.048f, 0.02f, 0.022f), s_SharedFrostMat);
             AddMeshPart("FrostGlintRight", root.transform, new Vector3(0.20f, 0.18f, 0f), ProceduralMeshUtils.CreatePillBadge(0.12f, 0.042f, 0.02f, 0.020f), s_SharedFrostMat);
 
+            float yOffset = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? -0.032f : 0.01f;
             GameObject textObj = new GameObject("IceCountText");
             textObj.transform.SetParent(root.transform, false);
-            textObj.transform.localPosition = new Vector3(0f, -0.02f, -0.04f);
+            textObj.transform.localPosition = new Vector3(0f, yOffset, -0.04f);
 
             countLabel = textObj.AddComponent<TextMeshPro>();
+            if (counterText != null && counterText.font != null)
+            {
+                countLabel.font = counterText.font;
+            }
             countLabel.alignment = TextAlignmentOptions.Center;
-            countLabel.fontSize = 3.8f;
+            float baseSize = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? 3.8f : 4.6f;
+            countLabel.fontSize = (remainingIceCount >= 100) ? (baseSize - 0.7f) : baseSize;
             countLabel.fontStyle = FontStyles.Bold;
             countLabel.color = Color.white;
             countLabel.text = remainingIceCount.ToString();
-            countLabel.rectTransform.sizeDelta = new Vector2(1.2f, 0.8f);
+            countLabel.rectTransform.sizeDelta = new Vector2(1.1f, 0.7f);
             countLabel.sortingOrder = 14;
-            ApplyTmpOutline(countLabel, new Color(0.07f, 0.31f, 0.52f, 1f), 0.30f);
+            countLabel.extraPadding = true;
+            countLabel.characterSpacing = -4f;
+            ApplyBoxNumberStyle(countLabel, new Color(0.04f, 0.05f, 0.10f, 1f));
 
             return root;
         }

@@ -2158,7 +2158,7 @@ namespace PuzzleGlass
 
             float minX = float.MaxValue, maxX = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
-            const float chanShadowPad = 0.22f;
+            const float chanShadowPad = 0.32f;
 
             for (int i = 0; i < exitChannels.Count; i++)
             {
@@ -2301,7 +2301,7 @@ namespace PuzzleGlass
         {
             if (compiledTrack == null) RebuildTrackCompiledData();
             Rect ob = compiledTrack != null ? compiledTrack.outerBounds : Rect.MinMaxRect(-1.4f, -0.7f, 1.4f, 1.1f);
-            const float shadowPad = 0.48f;
+            const float shadowPad = 0.88f;
             quadCenter = ob.center;
             quadHalfW = Mathf.Max(0.45f, ob.width * 0.5f + shadowPad);
             quadHalfH = Mathf.Max(0.45f, ob.height * 0.5f + shadowPad);
@@ -2460,8 +2460,8 @@ namespace PuzzleGlass
             float sleeveCenterY = bottom + sleeveHalfH;
             float sleeveHalfW = neckOuterHalfW + 0.035f;
 
-            float quadHalfW = sleeveHalfW + 0.08f;
-            float quadHalfH = sleeveHalfH + 0.10f;
+            float quadHalfW = sleeveHalfW + 0.16f;
+            float quadHalfH = sleeveHalfH + 0.16f;
             var sleeveParams = new Vector4(sleeveHalfW / quadHalfH, sleeveHalfH / quadHalfH, neckOuterHalfW / quadHalfH, 0f);
 
             var root = new GameObject("TrackExitSleeve");

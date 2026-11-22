@@ -393,6 +393,23 @@ namespace PuzzleGlass
             return true;
         }
 
+        /// <summary>Visible vertical bounds of the slot squares themselves (without dock bay margin).</summary>
+        public bool TryGetSlotSquaresVerticalBounds(out float minY, out float maxY)
+        {
+            if (!slotsEnabled || !gameObject.activeInHierarchy || slots == null || slots.Count == 0)
+            {
+                minY = transform.position.y;
+                maxY = transform.position.y;
+                return false;
+            }
+            float cy = transform.position.y;
+            float slotVis = TrayTileVisuals.SlotVisualSize(Mathf.Max(0.1f, slotSpacing));
+            float halfSlot = slotVis * 0.5f * 0.86f * RowFitScale;
+            minY = cy - halfSlot;
+            maxY = cy + halfSlot;
+            return true;
+        }
+
         /// <summary>
         /// Kademeli arka planın (___/‾‾‾\___) slot sırasını saran yükseltilmiş orta bölüm sınırlarını dünya uzayında döndürür.
         /// </summary>

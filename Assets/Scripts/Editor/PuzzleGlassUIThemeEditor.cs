@@ -84,7 +84,7 @@ namespace PuzzleGlass.Editor
             dirty |= Assign(ref theme.iconRight,          Root + "White Icons/White Right.png");
             dirty |= Assign(ref theme.iconClose,          Root + "White Icons/White Close 2.png");
             dirty |= Assign(ref theme.iconCheck,          Root + "White Icons/White Check.png");
-            dirty |= Assign(ref theme.iconHandClick,      Root + "White Icons/White Click.png");
+            dirty |= Assign(ref theme.iconHandClick,      Root + "Colored Icons/Touch.png");
             dirty |= Assign(ref theme.iconSnow,           Root + "White Icons/White Snow.png");
             dirty |= Assign(ref theme.iconLock,           Root + "White Icons/White Lock.png");
             dirty |= Assign(ref theme.iconKey,            Root + "White Icons/White Key.png");

@@ -25,7 +25,6 @@ namespace PuzzleGlass
         private PuzzleGlassUITheme _theme;
         private Canvas _canvas;
         private Text _levelTitleText;
-        private Text _levelSubText;
         private Image _soundIconImg;
 
         private GameObject _resultOverlay;
@@ -60,7 +59,6 @@ namespace PuzzleGlass
         private static readonly Color ColPeriwinkle   = new Color(0.416f, 0.451f, 0.925f, 1.00f);
         private static readonly Color ColPeriwinkleDk = new Color(0.285f, 0.314f, 0.745f, 1.00f);
         private static readonly Color ColGreenTop     = new Color(0.290f, 0.808f, 0.365f, 1.00f);
-        private static readonly Color ColSubtleViolet = new Color(0.935f, 0.920f, 1.000f, 0.95f);
         private static readonly Color ColBodySlate    = new Color(0.300f, 0.315f, 0.500f, 1.00f);
         private static readonly Color ColFailCoral    = new Color(0.920f, 0.300f, 0.360f, 1.00f);
 
@@ -173,8 +171,8 @@ namespace PuzzleGlass
             topBar.anchorMin = new Vector2(0f, 1f);
             topBar.anchorMax = new Vector2(1f, 1f);
             topBar.pivot = new Vector2(0.5f, 1f);
-            topBar.anchoredPosition = new Vector2(0f, -64f);
-            topBar.sizeDelta = new Vector2(0f, 110f);
+            topBar.anchoredPosition = new Vector2(0f, -72f);
+            topBar.sizeDelta = new Vector2(0f, 124f);
 
             Sprite sqViolet = _theme != null ? _theme.smallSquareViolet : null;
             Sprite sqBlue = _theme != null ? _theme.smallSquareBlue : null;
@@ -183,7 +181,7 @@ namespace PuzzleGlass
 
             // Left: Sound Toggle Button
             Button soundBtn = CreateSquareIconButton(
-                "Btn_Sound", topBar, new Vector2(-416f, 0f), 74f,
+                "Btn_Sound", topBar, new Vector2(-394f, 0f), 104f,
                 sqViolet, shadowSpr, _iconSoundOn,
                 usingVioletSquare ? Color.white : ColIndigoDeep,
                 out _soundIconImg);
@@ -198,7 +196,7 @@ namespace PuzzleGlass
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Sprite leftIcon = _theme != null ? _theme.iconLeft : null;
             Sprite rightIcon = _theme != null ? _theme.iconRight : null;
-            CreateMiniStepButton("Btn_PrevLevel", topBar, new Vector2(-198f, 0f), sqBlue, shadowSpr, leftIcon, "<", () =>
+            CreateMiniStepButton("Btn_PrevLevel", topBar, new Vector2(-228f, 0f), sqBlue, shadowSpr, leftIcon, "<", () =>
             {
                 PuzzleSoundManager.GetOrCreate().PlayUiClick();
                 PuzzleGlassGameManager.Instance?.LoadPreviousLevel();
@@ -210,14 +208,14 @@ namespace PuzzleGlass
             levelPill.anchorMin = new Vector2(0.5f, 0.5f);
             levelPill.anchorMax = new Vector2(0.5f, 0.5f);
             levelPill.anchoredPosition = new Vector2(0f, 0f);
-            levelPill.sizeDelta = new Vector2(280f, 80f);
+            levelPill.sizeDelta = new Vector2(340f, 104f);
 
             Sprite levelBg = _theme != null ? _theme.buttonViolet : null;
             if (levelBg != null)
             {
                 RectTransform dropRt = CreateRect("PillShadow", levelPill);
                 StretchFill(dropRt);
-                dropRt.anchoredPosition = new Vector2(0f, -7f);
+                dropRt.anchoredPosition = new Vector2(0f, -8f);
                 Image dropImg = dropRt.gameObject.AddComponent<Image>();
                 dropImg.sprite = shadowSpr;
                 dropImg.type = Image.Type.Sliced;
@@ -229,7 +227,7 @@ namespace PuzzleGlass
                 Image faceImg = faceRt.gameObject.AddComponent<Image>();
                 faceImg.sprite = levelBg;
                 faceImg.type = Image.Type.Sliced;
-                faceImg.pixelsPerUnitMultiplier = 1.40f;
+                faceImg.pixelsPerUnitMultiplier = 1.18f;
                 faceImg.color = Color.white;
                 faceImg.raycastTarget = false;
             }
@@ -237,7 +235,7 @@ namespace PuzzleGlass
             {
                 RectTransform pillLip = CreateRect("PillLip", levelPill);
                 StretchFill(pillLip);
-                pillLip.anchoredPosition = new Vector2(0f, -6f);
+                pillLip.anchoredPosition = new Vector2(0f, -7f);
                 Image lipImg = pillLip.gameObject.AddComponent<Image>();
                 lipImg.sprite = _roundedPillSprite;
                 lipImg.type = Image.Type.Sliced;
@@ -253,22 +251,15 @@ namespace PuzzleGlass
                 faceImg.raycastTarget = false;
             }
 
-            _levelTitleText = CreateText("LevelTitle", levelPill, "LEVEL 1", 32, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            _levelTitleText.rectTransform.anchorMin = new Vector2(0.04f, 0.36f);
-            _levelTitleText.rectTransform.anchorMax = new Vector2(0.96f, 0.92f);
+            _levelTitleText = CreateText("LevelTitle", levelPill, "LEVEL 1", 44, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            _levelTitleText.rectTransform.anchorMin = new Vector2(0.04f, 0.18f);
+            _levelTitleText.rectTransform.anchorMax = new Vector2(0.96f, 1.00f);
             _levelTitleText.rectTransform.offsetMin = Vector2.zero;
             _levelTitleText.rectTransform.offsetMax = Vector2.zero;
-            AddSoftTextShadow(_levelTitleText.gameObject, new Color(0.14f, 0.10f, 0.36f, 0.58f), new Vector2(0f, -2f));
-
-            _levelSubText = CreateText("LevelSub", levelPill, "EASY", 16, FontStyle.Bold, ColSubtleViolet, TextAnchor.MiddleCenter);
-            _levelSubText.rectTransform.anchorMin = new Vector2(0.04f, 0.12f);
-            _levelSubText.rectTransform.anchorMax = new Vector2(0.96f, 0.42f);
-            _levelSubText.rectTransform.offsetMin = Vector2.zero;
-            _levelSubText.rectTransform.offsetMax = Vector2.zero;
-            AddSoftTextShadow(_levelSubText.gameObject, new Color(0.14f, 0.10f, 0.36f, 0.40f), new Vector2(0f, -1.5f));
+            AddSoftTextShadow(_levelTitleText.gameObject, new Color(0.14f, 0.10f, 0.36f, 0.58f), new Vector2(0f, -2.5f));
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            CreateMiniStepButton("Btn_NextLevel", topBar, new Vector2(198f, 0f), sqBlue, shadowSpr, rightIcon, ">", () =>
+            CreateMiniStepButton("Btn_NextLevel", topBar, new Vector2(228f, 0f), sqBlue, shadowSpr, rightIcon, ">", () =>
             {
                 PuzzleSoundManager.GetOrCreate().PlayUiClick();
                 PuzzleGlassGameManager.Instance?.LoadNextLevel();
@@ -277,7 +268,7 @@ namespace PuzzleGlass
 
             // Right: Restart Button
             Button restartBtn = CreateSquareIconButton(
-                "Btn_Restart", topBar, new Vector2(416f, 0f), 74f,
+                "Btn_Restart", topBar, new Vector2(394f, 0f), 104f,
                 sqViolet, shadowSpr, _iconRestart,
                 usingVioletSquare ? Color.white : ColIndigoDeep,
                 out _);
@@ -515,12 +506,6 @@ namespace PuzzleGlass
                 }
                 _lastShownLevel = levelNum;
                 if (_levelTitleText != null) _levelTitleText.text = $"LEVEL {levelNum}";
-
-                if (_levelSubText != null)
-                {
-                    string diffStr = GetDifficultyLabel(gm != null && gm.currentLevel != null ? gm.currentLevel.difficulty : LevelDifficulty.Easy);
-                    _levelSubText.text = diffStr;
-                }
             }
 
             if (force || muted != _lastMutedState)
@@ -636,18 +621,6 @@ namespace PuzzleGlass
             }
         }
 
-        private static string GetDifficultyLabel(LevelDifficulty d)
-        {
-            switch (d)
-            {
-                case LevelDifficulty.Easy:   return "EASY";
-                case LevelDifficulty.Medium: return "MEDIUM";
-                case LevelDifficulty.Hard:   return "HARD";
-                case LevelDifficulty.Boss:   return "BOSS";
-                default:                     return "CLASSIC";
-            }
-        }
-
         private static void PunchButton(Transform target)
         {
             if (target == null) return;
@@ -686,7 +659,7 @@ namespace PuzzleGlass
             Image face = faceRect.gameObject.AddComponent<Image>();
             face.sprite = squareBg != null ? squareBg : _roundedCircleSprite;
             face.type = squareBg != null ? Image.Type.Sliced : Image.Type.Simple;
-            face.pixelsPerUnitMultiplier = squareBg != null ? 1.45f : 1f;
+            face.pixelsPerUnitMultiplier = squareBg != null ? 1.15f : 1f;
             face.color = squareBg != null ? Color.white : ColPillWhite;
 
             Button btn = btnRect.gameObject.AddComponent<Button>();
@@ -720,13 +693,13 @@ namespace PuzzleGlass
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = pos;
-            rect.sizeDelta = new Vector2(50f, 50f);
+            rect.sizeDelta = new Vector2(70f, 70f);
 
             if (squareBg != null)
             {
                 RectTransform shRt = CreateRect("Shadow", rect);
                 StretchFill(shRt);
-                shRt.anchoredPosition = new Vector2(0f, -4f);
+                shRt.anchoredPosition = new Vector2(0f, -5f);
                 Image shImg = shRt.gameObject.AddComponent<Image>();
                 shImg.sprite = shadowSpr;
                 shImg.type = Image.Type.Sliced;
@@ -737,7 +710,7 @@ namespace PuzzleGlass
             Image bg = rect.gameObject.AddComponent<Image>();
             bg.sprite = squareBg != null ? squareBg : _roundedCircleSprite;
             bg.type = squareBg != null ? Image.Type.Sliced : Image.Type.Simple;
-            bg.pixelsPerUnitMultiplier = squareBg != null ? 1.65f : 1f;
+            bg.pixelsPerUnitMultiplier = squareBg != null ? 1.35f : 1f;
             bg.color = squareBg != null ? Color.white : new Color(1f, 1f, 1f, 0.85f);
 
             Button btn = rect.gameObject.AddComponent<Button>();
@@ -753,7 +726,7 @@ namespace PuzzleGlass
                 RectTransform icoRt = CreateRect("Icon", rect);
                 icoRt.anchorMin = icoRt.anchorMax = new Vector2(0.5f, 0.53f);
                 icoRt.anchoredPosition = Vector2.zero;
-                icoRt.sizeDelta = new Vector2(20f, 20f);
+                icoRt.sizeDelta = new Vector2(28f, 28f);
                 Image icoImg = icoRt.gameObject.AddComponent<Image>();
                 icoImg.sprite = iconSprite;
                 icoImg.preserveAspect = true;

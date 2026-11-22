@@ -100,14 +100,19 @@ namespace PuzzleGlass
             RaycastHit[] allHits = Physics.RaycastAll(ray, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
             Vector3 worldTouch = ScreenToWorldOnPlane(screenPos, 0f);
 
+            bool spotlightActive = TutorialOverlay.Instance != null && TutorialOverlay.Instance.IsSpotlightTutorialActive;
+
             // 0. Check if a locked "+" slot platform was tapped directly
-            for (int i = 0; i < allHits.Length; i++)
+            if (!spotlightActive)
             {
-                var hitSlot = allHits[i].collider.GetComponentInParent<SlotPlatform>();
-                if (hitSlot != null && hitSlot.isLocked)
+                for (int i = 0; i < allHits.Length; i++)
                 {
-                    hitSlot.TryUnlockSlot();
-                    return;
+                    var hitSlot = allHits[i].collider.GetComponentInParent<SlotPlatform>();
+                    if (hitSlot != null && hitSlot.isLocked)
+                    {
+                        hitSlot.TryUnlockSlot();
+                        return;
+                    }
                 }
             }
 
@@ -145,6 +150,11 @@ namespace PuzzleGlass
             }
 
             if (selectedMonster == null || selectedMonster.IsCompleted || selectedMonster.remainingCount <= 0) return;
+
+            if (TutorialOverlay.Instance != null && !TutorialOverlay.Instance.CanInteractWithBlock(selectedMonster))
+            {
+                return;
+            }
 
             if (selectedMonster.IsMovementOrCollectionBlocked)
             {
@@ -197,6 +207,11 @@ namespace PuzzleGlass
             if (_draggedMonster == null)
             {
                 _isDragging = false;
+                return;
+            }
+
+            if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.IsSpotlightTutorialActive)
+            {
                 return;
             }
 

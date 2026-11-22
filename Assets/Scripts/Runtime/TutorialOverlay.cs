@@ -10,12 +10,11 @@ namespace PuzzleGlass
 {
     /// <summary>
     /// Öğretici katman (Violet Theme UI assetleri + pastel lavanta teması):
-    ///  1. El ipucu: levelde tutorialHint açıksa Violet el ikonu ve dokunma halkası ile bloğu işaret eder.
-    ///  2. Mekanik tanıtımı: buz, kilit & anahtar ve içi dolu kutu bir levelde İLK kez görüldüğünde
-    ///     kısa bir tanıtım kartı çıkar; el ve halka o mekaniğin olduğu bloğu gösterir. Kart dokununca kapanır
-    ///     (o sırada bloklara dokunulamaz) ve ancak kapanınca "görüldü" sayılır.
-    ///  3. İlk levellerde oyuncu bir süre ilerleyemezse el, camdaki toplara uyan bir bloğu yeniden gösterir.
-    ///  4. Slotlar ilk kez dolmak üzereyken (1 boş slot kaldı) bir kez uyarı balonu çıkar.
+    ///  1. Level 1 spotlight tutorial: yalnızca hedef mavi kutu aydınlık/tıklanabilir kalır, diğer tüm alanlar
+    ///     karartılır ve kilitlenir; kutu slota yerleşince karartma akıcı biçimde kalkar ve oyun devam eder.
+    ///  2. El ipucu: ilk levellerde oyuncu ilerleyemezse camdaki toplara uyan bir bloğu parmakla işaret eder.
+    ///  3. Mekanik tanıtımı: buz, kilit & anahtar ve içi dolu kutu bir levelde İLK kez görüldüğünde
+    ///     kısa bir tanıtım kartı çıkar.
     /// Kendi canvas'ı vardır (HUD'un üstünde, level geçişinin altında).
     /// </summary>
     public class TutorialOverlay : MonoBehaviour
@@ -27,12 +26,12 @@ namespace PuzzleGlass
         public const string PrefFilledBox = "PG_Intro_FilledBox";
         public const string PrefSlotWarning = "PG_Intro_SlotWarning";
         private const float CycleSeconds = 2.2f;
+        private const float TapCycleSeconds = 1.25f;
         /// <summary>Kart açıldıktan sonra bu süre dolmadan dokunuş kartı kapatmaz (yanlışlıkla geçmeyi önler).</summary>
         private const float CardMinSeconds = 0.6f;
         /// <summary>Takılınca ipucu bu level numarasına kadar (dahil) verilir.</summary>
         private const int IdleHintMaxLevel = 5;
         private const float IdleHintSeconds = 6f;
-        private const float ToastSeconds = 4.2f;
 
         private enum IntroMechanic
         {
@@ -46,8 +45,6 @@ namespace PuzzleGlass
         private RectTransform _root;
         private RectTransform _finger, _ring;
         private Image _fingerImg, _ringImg;
-        private RectTransform _bubble;
-        private Image _bubbleIconImg;
         private CanvasGroup _handGroup;
         private Sprite _circle;
         private Sprite _ringSprite;
@@ -57,8 +54,18 @@ namespace PuzzleGlass
         private Vector2Int _hintFrom, _hintTarget;
         private bool _hintActive;
         private bool _hintToSlot;
-        private Text _hintLabel;
         private float _hintTime;
+
+        private GameObject _spotlightRoot;
+        private Image _spotlightDimImg;
+        private Material _spotlightMat;
+        private RectTransform _blockTop, _blockBottom, _blockLeft, _blockRight;
+        private Image _blockTopImg, _blockBottomImg, _blockLeftImg, _blockRightImg;
+        private MonsterCharacter _spotlightTarget;
+        private bool _spotlightActive;
+        private bool _spotlightShown;
+        private float _spotlightAlpha;
+        private Tween _spotlightTween;
 
         private struct IntroCard
         {
@@ -77,13 +84,23 @@ namespace PuzzleGlass
         private float _idleTime;
         private int _lastProgress = -1;
 
-        private RectTransform _toast;
-        private CanvasGroup _toastGroup;
-        private float _toastTime = -1f;
-
         private static readonly Color ColIndigoDeep = new Color(0.240f, 0.255f, 0.580f, 1.00f);
         private static readonly Color ColCardBody   = new Color(0.270f, 0.285f, 0.540f, 1.00f);
         private static readonly Color ColVioletFallback = new Color(0.420f, 0.340f, 0.880f, 0.96f);
+        private static readonly Color ColSpotlightDim = new Color(0.06f, 0.05f, 0.16f, 0.72f);
+
+        private static readonly int ShaderCanvasSizeId = Shader.PropertyToID("_CanvasSize");
+        private static readonly int ShaderHoleRectId = Shader.PropertyToID("_HoleRect");
+        private static readonly int ShaderHoleParamsId = Shader.PropertyToID("_HoleParams");
+
+        public bool IsSpotlightTutorialActive => _spotlightActive;
+
+        public bool CanInteractWithBlock(MonsterCharacter block)
+        {
+            if (!_spotlightActive) return true;
+            if (LevelTransitionController.IsTransitioning) return false;
+            return block != null && block == _spotlightTarget && !block.IsMovingToSlot && block.assignedSlot == null;
+        }
 
         public static TutorialOverlay GetOrCreate()
         {
@@ -101,6 +118,8 @@ namespace PuzzleGlass
 
         private void OnDestroy()
         {
+            _spotlightTween?.Kill();
+            if (_spotlightMat != null) Destroy(_spotlightMat);
             if (Instance == this) Instance = null;
         }
 
@@ -109,24 +128,34 @@ namespace PuzzleGlass
         {
             StopHint();
             ClearCards();
-            HideToast();
+            ClearSpotlight();
             _level = lvl;
             _blocks = blocks;
             _idleTime = 0f;
             _lastProgress = -1;
             if (lvl == null) return;
 
-            // 1) El ipucu
-            if (lvl.tutorialHint && blocks != null && SlotSystem.IsActive)
+            // 1) Level 1 Spotlight Tutorial veya el ipucu
+            if (lvl.levelNumber == 1 && blocks != null && SlotSystem.IsActive)
+            {
+                var pick = PickLevel1BlueSpotlightBlock(blocks) ?? PickSlotHintBlock(lvl, blocks);
+                if (pick != null)
+                {
+                    _spotlightTarget = pick;
+                    _spotlightActive = true;
+                    _spotlightShown = false;
+                    _spotlightAlpha = 0f;
+                    StartSlotHint(pick);
+                    _hintTime = -0.25f;
+                }
+            }
+            else if (lvl.tutorialHint && blocks != null && SlotSystem.IsActive)
             {
                 _hintBlock = PickSlotHintBlock(lvl, blocks);
                 if (_hintBlock != null)
                 {
-                    _hintFrom = _hintBlock.gridAnchor;
-                    _hintToSlot = true;
-                    _hintActive = true;
+                    StartSlotHint(_hintBlock);
                     _hintTime = -0.8f;
-                    if (_hintLabel != null) _hintLabel.text = "Tap to send it up";
                 }
             }
             else if (lvl.tutorialHint && blocks != null && lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
@@ -147,7 +176,6 @@ namespace PuzzleGlass
                     _hintToSlot = false;
                     _hintActive = true;
                     _hintTime = -0.8f;
-                    if (_hintLabel != null) _hintLabel.text = "Drag the block here";
                 }
             }
 
@@ -213,6 +241,23 @@ namespace PuzzleGlass
                    && (grid == null || grid.IsBlockExitClearToSlots(b, blocks));
         }
 
+        private static MonsterCharacter PickLevel1BlueSpotlightBlock(List<MonsterCharacter> blocks)
+        {
+            if (blocks == null) return null;
+            MonsterCharacter best = null;
+            foreach (var b in blocks)
+            {
+                if (!IsSendable(b, blocks) || b.colorType != PuzzleColor.Blue) continue;
+                if (best == null
+                    || b.gridAnchor.y > best.gridAnchor.y
+                    || (b.gridAnchor.y == best.gridAnchor.y && b.gridAnchor.x < best.gridAnchor.x))
+                {
+                    best = b;
+                }
+            }
+            return best;
+        }
+
         private static MonsterCharacter PickSlotHintBlock(PuzzleGlassLevelData lvl, List<MonsterCharacter> blocks)
         {
             var grid = StagingGridBoard.Instance;
@@ -246,6 +291,7 @@ namespace PuzzleGlass
 
         private void Update()
         {
+            UpdateSpotlight();
             if (_cardObj != null)
             {
                 // Kart açıkken el ipucu bekler; el/halka kartın anlattığı bloğu gösterir
@@ -254,11 +300,9 @@ namespace PuzzleGlass
             }
             else
             {
-                if (_bubble != null && !_bubble.gameObject.activeSelf) _bubble.gameObject.SetActive(true);
                 UpdateIdleHint();
                 UpdateHint();
             }
-            UpdateSlotWarning();
         }
 
         // ==================== El ipucu ====================
@@ -270,7 +314,6 @@ namespace PuzzleGlass
             _hintToSlot = true;
             _hintActive = true;
             _hintTime = -0.4f;
-            if (_hintLabel != null) _hintLabel.text = "Tap to send it up";
         }
 
         /// <summary>
@@ -280,7 +323,7 @@ namespace PuzzleGlass
         private void UpdateIdleHint()
         {
             var gm = PuzzleGlassGameManager.Instance;
-            if (_hintActive || _level == null || _level.levelNumber > IdleHintMaxLevel || _blocks == null || !SlotSystem.IsActive
+            if (_spotlightActive || _hintActive || _level == null || _level.levelNumber > IdleHintMaxLevel || _blocks == null || !SlotSystem.IsActive
                 || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)) || LevelTransitionController.IsTransitioning
                 || PointerPressedThisFrame())
             {
@@ -358,7 +401,6 @@ namespace PuzzleGlass
                 if (_handGroup != null) _handGroup.alpha = 0f;
                 return;
             }
-            if (_bubble != null && _bubble.gameObject.activeSelf) _bubble.gameObject.SetActive(false);
 
             float t = Mathf.Max(0f, _cardTime - 0.25f);
             float press = 0.5f + 0.5f * Mathf.Sin(t * 5.2f);
@@ -376,71 +418,190 @@ namespace PuzzleGlass
             _ringImg.color = new Color(1f, 0.92f, 0.45f, Mathf.Lerp(0.95f, 0.55f, press));
         }
 
-        // ==================== Slot uyarısı ====================
+        // ==================== Level 1 Spotlight ====================
 
-        /// <summary>Oyunda ilk kez yalnızca 1 boş slot kaldığında bir kez uyarı balonu gösterir.</summary>
-        private void UpdateSlotWarning()
+        private void UpdateSpotlight()
         {
-            if (_toast == null) return;
-            if (_toastTime >= 0f)
-            {
-                _toastTime += Time.unscaledDeltaTime;
-                float a = _toastTime < 0.25f ? _toastTime / 0.25f
-                        : _toastTime > ToastSeconds - 0.4f ? Mathf.Clamp01((ToastSeconds - _toastTime) / 0.4f) : 1f;
-                _toastGroup.alpha = a;
-                PositionToast();
-                if (_toastTime >= ToastSeconds) HideToast();
-                return;
-            }
+            if (_spotlightRoot == null) return;
+            if (!_spotlightActive) return;
 
             var gm = PuzzleGlassGameManager.Instance;
-            if (_level == null || _cardObj != null || !SlotSystem.IsActive || PlayerPrefs.GetInt(PrefSlotWarning, 0) != 0
-                || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)) || LevelTransitionController.IsTransitioning)
+            if (_spotlightTarget == null || _spotlightTarget.IsCompleted || !_spotlightTarget.gameObject.activeInHierarchy
+                || _spotlightTarget.assignedSlot != null || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)))
+            {
+                EndSpotlightTutorial();
+                return;
+            }
+
+            if (LevelTransitionController.IsTransitioning)
+            {
+                if (_spotlightRoot.activeSelf) _spotlightRoot.SetActive(false);
+                if (_handGroup != null) _handGroup.alpha = 0f;
+                return;
+            }
+
+            if (!_spotlightRoot.activeSelf) _spotlightRoot.SetActive(true);
+
+            if (!_spotlightShown)
+            {
+                _spotlightShown = true;
+                _spotlightTween?.Kill();
+                _spotlightAlpha = 0f;
+                _spotlightTween = DOTween.To(() => _spotlightAlpha, v => _spotlightAlpha = v, 1f, 0.22f)
+                    .SetEase(Ease.OutQuad).SetUpdate(true);
+                SetBlockersActive(true);
+            }
+
+            if (_spotlightTarget.IsMovingToSlot)
+            {
+                if (_hintActive) StopHint();
+            }
+            else if (!_hintActive)
+            {
+                var drag = MonsterDragController.Instance;
+                if (drag == null || !drag.IsBlockCurrentlyDragged(_spotlightTarget))
+                {
+                    StartSlotHint(_spotlightTarget);
+                    _hintTime = -0.1f;
+                }
+            }
+
+            var cam = Camera.main;
+            if (cam == null || !TryGetTargetCanvasRect(_spotlightTarget, cam, out Vector2 holeCenter, out Vector2 holeSize))
                 return;
 
-            int open = 0, empty = 0;
-            foreach (var sl in SlotSystem.Instance.slots)
-            {
-                if (sl == null || sl.isLocked) continue;
-                open++;
-                if (!sl.isOccupied && sl.currentMonster == null) empty++;
-            }
-            if (open < 3 || empty != 1) return;
-
-            PlayerPrefs.SetInt(PrefSlotWarning, 1);
-            PlayerPrefs.Save();
-            _toastTime = 0f;
-            _toast.gameObject.SetActive(true);
-            _toast.localScale = Vector3.one * 0.9f;
-            _toast.DOKill();
-            _toast.DOScale(1f, 0.25f).SetEase(Ease.OutBack).SetUpdate(true);
-            PositionToast();
+            UpdateSpotlightVisualAndBlockers(holeCenter, holeSize);
         }
 
-        private void PositionToast()
+        private void UpdateSpotlightVisualAndBlockers(Vector2 holeCenter, Vector2 holeSize)
         {
-            var cam = Camera.main;
-            if (cam == null || !SlotSystem.IsActive) return;
-            Vector3 sum = Vector3.zero;
-            int n = 0;
-            foreach (var sl in SlotSystem.Instance.slots)
+            float halfW = holeSize.x * 0.5f;
+            float halfH = holeSize.y * 0.5f;
+            float xMin = holeCenter.x - halfW;
+            float xMax = holeCenter.x + halfW;
+            float yMin = holeCenter.y - halfH;
+            float yMax = holeCenter.y + halfH;
+
+            float canvasHalfW = Mathf.Max(600f, _root.rect.width * 0.5f + 120f);
+            float canvasHalfH = Mathf.Max(1000f, _root.rect.height * 0.5f + 120f);
+
+            SetRectBounds(_blockTop,    -canvasHalfW, yMax,         canvasHalfW, canvasHalfH);
+            SetRectBounds(_blockBottom, -canvasHalfW, -canvasHalfH, canvasHalfW, yMin);
+            SetRectBounds(_blockLeft,   -canvasHalfW, yMin,         xMin,        yMax);
+            SetRectBounds(_blockRight,  xMax,         yMin,         canvasHalfW, yMax);
+
+            if (_spotlightMat != null && _spotlightDimImg != null)
             {
-                if (sl == null || sl.isLocked) continue;
-                sum += sl.transform.position;
-                n++;
+                _spotlightDimImg.enabled = true;
+                _spotlightDimImg.color = new Color(1f, 1f, 1f, _spotlightAlpha);
+                _spotlightMat.SetVector(ShaderCanvasSizeId, new Vector4(_root.rect.width, _root.rect.height, 0f, 0f));
+                _spotlightMat.SetVector(ShaderHoleRectId, new Vector4(holeCenter.x, holeCenter.y, halfW, halfH));
+                _spotlightMat.SetVector(ShaderHoleParamsId, new Vector4(34f, 14f, 0f, 0f));
             }
-            if (n == 0) return;
-            Vector2 p = WorldToCanvas(cam, sum / n);
-            _toast.anchoredPosition = new Vector2(0f, p.y + 150f);
+            else
+            {
+                if (_spotlightDimImg != null) _spotlightDimImg.enabled = false;
+                Color fallbackCol = new Color(ColSpotlightDim.r, ColSpotlightDim.g, ColSpotlightDim.b, ColSpotlightDim.a * _spotlightAlpha);
+                if (_blockTopImg != null) _blockTopImg.color = fallbackCol;
+                if (_blockBottomImg != null) _blockBottomImg.color = fallbackCol;
+                if (_blockLeftImg != null) _blockLeftImg.color = fallbackCol;
+                if (_blockRightImg != null) _blockRightImg.color = fallbackCol;
+            }
         }
 
-        private void HideToast()
+        private void SetBlockersActive(bool active)
         {
-            _toastTime = -1f;
-            if (_toast == null) return;
-            _toast.DOKill();
-            _toastGroup.alpha = 0f;
-            _toast.gameObject.SetActive(false);
+            if (_blockTopImg != null) _blockTopImg.raycastTarget = active;
+            if (_blockBottomImg != null) _blockBottomImg.raycastTarget = active;
+            if (_blockLeftImg != null) _blockLeftImg.raycastTarget = active;
+            if (_blockRightImg != null) _blockRightImg.raycastTarget = active;
+        }
+
+        private void EndSpotlightTutorial()
+        {
+            _spotlightActive = false;
+            _spotlightTarget = null;
+            StopHint();
+            SetBlockersActive(false);
+
+            if (_spotlightRoot == null || !_spotlightRoot.activeSelf)
+            {
+                ClearSpotlight();
+                return;
+            }
+
+            _spotlightTween?.Kill();
+            _spotlightTween = DOTween.To(() => _spotlightAlpha, v =>
+                {
+                    _spotlightAlpha = v;
+                    if (_spotlightDimImg != null && _spotlightDimImg.enabled)
+                    {
+                        _spotlightDimImg.color = new Color(1f, 1f, 1f, _spotlightAlpha);
+                    }
+                    else
+                    {
+                        Color fallbackCol = new Color(ColSpotlightDim.r, ColSpotlightDim.g, ColSpotlightDim.b, ColSpotlightDim.a * _spotlightAlpha);
+                        if (_blockTopImg != null) _blockTopImg.color = fallbackCol;
+                        if (_blockBottomImg != null) _blockBottomImg.color = fallbackCol;
+                        if (_blockLeftImg != null) _blockLeftImg.color = fallbackCol;
+                        if (_blockRightImg != null) _blockRightImg.color = fallbackCol;
+                    }
+                }, 0f, 0.22f)
+                .SetEase(Ease.OutQuad)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    if (!_spotlightActive && _spotlightRoot != null) _spotlightRoot.SetActive(false);
+                });
+        }
+
+        private void ClearSpotlight()
+        {
+            _spotlightTween?.Kill();
+            _spotlightTween = null;
+            _spotlightActive = false;
+            _spotlightShown = false;
+            _spotlightTarget = null;
+            _spotlightAlpha = 0f;
+            SetBlockersActive(false);
+            if (_spotlightRoot != null) _spotlightRoot.SetActive(false);
+        }
+
+        private bool TryGetTargetCanvasRect(MonsterCharacter target, Camera cam, out Vector2 center, out Vector2 size)
+        {
+            center = Vector2.zero;
+            size = new Vector2(200f, 200f);
+            if (target == null || cam == null || _root == null) return false;
+
+            CarrierBlockShapeUtility.GetRectParts(target.blockShape, out Vector4 r0, out Vector4 r1, out int rectCount, out _, out _);
+            float minX = r0.x - r0.z;
+            float maxX = r0.x + r0.z;
+            float minY = r0.y - r0.w - CarrierBlockShapeUtility.LipDepthOffset;
+            float maxY = r0.y + r0.w;
+            if (rectCount > 1)
+            {
+                minX = Mathf.Min(minX, r1.x - r1.z);
+                maxX = Mathf.Max(maxX, r1.x + r1.z);
+                minY = Mathf.Min(minY, r1.y - r1.w - CarrierBlockShapeUtility.LipDepthOffset);
+                maxY = Mathf.Max(maxY, r1.y + r1.w);
+            }
+
+            Vector3 wMin = target.transform.TransformPoint(new Vector3(minX, minY, 0f));
+            Vector3 wMax = target.transform.TransformPoint(new Vector3(maxX, maxY, 0f));
+            Vector2 cMin = WorldToCanvas(cam, wMin);
+            Vector2 cMax = WorldToCanvas(cam, wMax);
+
+            const float pad = 16f;
+            center = (cMin + cMax) * 0.5f;
+            size = new Vector2(Mathf.Abs(cMax.x - cMin.x) + pad * 2f, Mathf.Abs(cMax.y - cMin.y) + pad * 2f);
+            return true;
+        }
+
+        private static void SetRectBounds(RectTransform rt, float xMin, float yMin, float xMax, float yMax)
+        {
+            if (rt == null) return;
+            rt.anchoredPosition = new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
+            rt.sizeDelta = new Vector2(Mathf.Max(0f, xMax - xMin), Mathf.Max(0f, yMax - yMin));
         }
 
         private void UpdateHint()
@@ -451,7 +612,7 @@ namespace PuzzleGlass
             var cam = Camera.main;
             if (_hintBlock == null || grid == null || cam == null || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed))
                 || _hintBlock.gridAnchor != _hintFrom || _hintBlock.isCollectingInGrid || _hintBlock.assignedSlot != null
-                || LevelTransitionController.IsTransitioning)
+                || _hintBlock.IsMovingToSlot || LevelTransitionController.IsTransitioning)
             {
                 StopHint();
                 return;
@@ -461,57 +622,61 @@ namespace PuzzleGlass
             if (drag != null && drag.IsBlockCurrentlyDragged(_hintBlock)) { StopHint(); return; }
 
             _hintTime += Time.unscaledDeltaTime;
-            float t = Mathf.Repeat(Mathf.Max(0f, _hintTime), CycleSeconds);
-
             Vector3 fromW = grid.GetWorldPositionForAnchor(_hintFrom, _hintBlock.blockShape);
-            Vector3 toW;
+            Vector2 from = WorldToCanvas(cam, fromW);
+            bool hasHandSprite = _theme != null && _theme.iconHandClick != null;
+
             if (_hintToSlot)
             {
                 var slot = SlotSystem.IsActive ? SlotSystem.Instance.GetFirstEmptySlot() : null;
                 if (slot == null) { StopHint(); return; }
-                toW = slot.transform.position;
+
+                if (_hintTime < 0f)
+                {
+                    _handGroup.alpha = 0f;
+                    return;
+                }
+
+                float fadeIn = Mathf.Clamp01(_hintTime / 0.22f);
+                float cycle = Mathf.Repeat(_hintTime, TapCycleSeconds) / TapCycleSeconds;
+                float press = Mathf.Sin(Mathf.Clamp01(cycle / 0.55f) * Mathf.PI);
+                float ringT = Mathf.Clamp01(cycle / 0.78f);
+
+                _handGroup.alpha = fadeIn;
+                Vector2 tapOffset = hasHandSprite ? new Vector2(18f, -20f) : new Vector2(34f, -44f);
+                _finger.anchoredPosition = from + tapOffset + new Vector2(0f, -6f * press);
+                _finger.localScale = Vector3.one * Mathf.Lerp(1.06f, 0.88f, press);
+                _finger.localRotation = hasHandSprite ? Quaternion.Euler(0f, 0f, Mathf.Lerp(-10f, -20f, press)) : Quaternion.identity;
+
+                _ring.anchoredPosition = from;
+                _ring.localScale = Vector3.one * Mathf.Lerp(0.75f, 1.38f, ringT);
+                _ringImg.color = new Color(1f, 0.94f, 0.55f, (1f - ringT) * 0.85f * fadeIn);
+                return;
             }
-            else
-            {
-                toW = grid.GetWorldPositionForAnchor(_hintTarget, _hintBlock.blockShape);
-            }
-            Vector2 from = WorldToCanvas(cam, fromW), to = WorldToCanvas(cam, toW);
+
+            float t = Mathf.Repeat(Mathf.Max(0f, _hintTime), CycleSeconds);
+            Vector3 toW = grid.GetWorldPositionForAnchor(_hintTarget, _hintBlock.blockShape);
+            Vector2 to = WorldToCanvas(cam, toW);
 
             // 0-0.35 belir + bas, 0.35-1.45 sürükle, 1.45-1.85 bırak + sön, kalan bekle
-            float alpha, move, press;
-            if (_hintTime < 0f) { alpha = 0f; move = 0f; press = 0f; }
-            else if (t < 0.35f) { alpha = t / 0.35f; move = 0f; press = t / 0.35f; }
-            else if (t < 1.45f) { alpha = 1f; move = Mathf.SmoothStep(0f, 1f, (t - 0.35f) / 1.10f); press = 1f; }
-            else if (t < 1.85f) { alpha = 1f - (t - 1.45f) / 0.40f; move = 1f; press = 1f - (t - 1.45f) / 0.40f; }
-            else { alpha = 0f; move = 1f; press = 0f; }
+            float alpha, move, dragPress;
+            if (_hintTime < 0f) { alpha = 0f; move = 0f; dragPress = 0f; }
+            else if (t < 0.35f) { alpha = t / 0.35f; move = 0f; dragPress = t / 0.35f; }
+            else if (t < 1.45f) { alpha = 1f; move = Mathf.SmoothStep(0f, 1f, (t - 0.35f) / 1.10f); dragPress = 1f; }
+            else if (t < 1.85f) { alpha = 1f - (t - 1.45f) / 0.40f; move = 1f; dragPress = 1f - (t - 1.45f) / 0.40f; }
+            else { alpha = 0f; move = 1f; dragPress = 0f; }
 
             _handGroup.alpha = alpha;
             Vector2 pos = Vector2.Lerp(from, to, move);
 
-            bool hasHandSprite = _theme != null && _theme.iconHandClick != null;
             _finger.anchoredPosition = hasHandSprite ? pos : (pos + new Vector2(18f, -26f));
-            _finger.localScale = Vector3.one * Mathf.Lerp(1.08f, 0.90f, press);
-            _finger.localRotation = hasHandSprite ? Quaternion.Euler(0f, 0f, Mathf.Lerp(-8f, -18f, press)) : Quaternion.identity;
+            _finger.localScale = Vector3.one * Mathf.Lerp(1.08f, 0.90f, dragPress);
+            _finger.localRotation = hasHandSprite ? Quaternion.Euler(0f, 0f, Mathf.Lerp(-8f, -18f, dragPress)) : Quaternion.identity;
 
             _ring.anchoredPosition = pos;
-            float ringScale = Mathf.Lerp(0.55f, 1.28f, press);
+            float ringScale = Mathf.Lerp(0.55f, 1.28f, dragPress);
             _ring.localScale = Vector3.one * ringScale;
-            _ringImg.color = new Color(0.54f, 0.46f, 1.00f, 0.72f * press);
-
-            Vector2 bubblePos;
-            if (_hintToSlot)
-            {
-                Vector3 trayBottomW = grid.GetWorldPositionForAnchor(new Vector2Int(_hintFrom.x, 0), _hintBlock.blockShape)
-                                      - new Vector3(0f, grid.cellSize * 0.5f + 0.34f, 0f);
-                bubblePos = new Vector2(0f, WorldToCanvas(cam, trayBottomW).y);
-            }
-            else
-            {
-                bubblePos = Vector2.Lerp(from, to, 0.5f) + new Vector2(0f, 128f);
-            }
-            float halfW = _root.rect.width * 0.5f - _bubble.sizeDelta.x * 0.5f - 16f;
-            if (halfW > 0f) bubblePos.x = Mathf.Clamp(bubblePos.x, -halfW, halfW);
-            _bubble.anchoredPosition = bubblePos;
+            _ringImg.color = new Color(0.54f, 0.46f, 1.00f, 0.72f * dragPress);
         }
 
         private Vector2 WorldToCanvas(Camera cam, Vector3 world)
@@ -760,6 +925,8 @@ namespace PuzzleGlass
             scaler.matchWidthOrHeight = 0.5f;
             _root = (RectTransform)canvasGo.transform;
 
+            BuildSpotlight();
+
             // El ipucu grubu (tıklamaları engellemez)
             var hand = new GameObject("Hand", typeof(RectTransform), typeof(CanvasGroup));
             hand.transform.SetParent(_root, false);
@@ -784,98 +951,74 @@ namespace PuzzleGlass
             _fingerImg.preserveAspect = true;
             if (hasHandSprite)
             {
-                // İşaret parmağının ucu spritenın üst sol-ortasında (0.42, 0.92)
-                _finger.pivot = new Vector2(0.42f, 0.92f);
+                // Touch.png işaret parmağının ucu spritenın üst solunda (0.34, 0.95)
+                _finger.pivot = new Vector2(0.34f, 0.95f);
             }
             var shadow = _finger.gameObject.AddComponent<Shadow>();
             shadow.effectColor = new Color(0.16f, 0.12f, 0.42f, 0.48f);
             shadow.effectDistance = new Vector2(4f, -8f);
 
             foreach (var r in new[] { _ring, _finger }) { r.anchorMin = r.anchorMax = new Vector2(0.5f, 0.5f); }
-
-            // İpucu balonu
-            var bubbleGo = new GameObject("Bubble", typeof(RectTransform), typeof(Image));
-            bubbleGo.transform.SetParent(handRt, false);
-            _bubble = (RectTransform)bubbleGo.transform;
-            _bubble.anchorMin = _bubble.anchorMax = new Vector2(0.5f, 0.5f);
-            _bubble.sizeDelta = new Vector2(540f, 96f);
-
-            Sprite bubbleSpr = _theme != null && _theme.buttonViolet != null ? _theme.buttonViolet : _circle;
-            var bImg = bubbleGo.GetComponent<Image>();
-            bImg.sprite = bubbleSpr;
-            bImg.type = Image.Type.Sliced;
-            bImg.pixelsPerUnitMultiplier = bubbleSpr != _circle ? 1.15f : 1f;
-            bImg.color = bubbleSpr != _circle ? Color.white : ColVioletFallback;
-            bImg.raycastTarget = false;
-
-            var bShadow = bubbleGo.AddComponent<Shadow>();
-            bShadow.effectColor = new Color(0.14f, 0.10f, 0.36f, 0.34f);
-            bShadow.effectDistance = new Vector2(0f, -6f);
-
-            Sprite infoIco = _theme != null ? (_theme.iconInfo != null ? _theme.iconInfo : _theme.iconHandClick) : null;
-            if (infoIco != null)
-            {
-                var icoGo = new GameObject("BubbleIcon", typeof(RectTransform), typeof(Image));
-                icoGo.transform.SetParent(_bubble, false);
-                var iRt = (RectTransform)icoGo.transform;
-                iRt.anchorMin = iRt.anchorMax = new Vector2(0f, 0.54f);
-                iRt.anchoredPosition = new Vector2(48f, 0f);
-                iRt.sizeDelta = new Vector2(40f, 40f);
-                _bubbleIconImg = icoGo.GetComponent<Image>();
-                _bubbleIconImg.sprite = infoIco;
-                _bubbleIconImg.preserveAspect = true;
-                _bubbleIconImg.color = Color.white;
-                _bubbleIconImg.raycastTarget = false;
-            }
-
-            _hintLabel = AddText(_bubble, "Drag the block here", 35, FontStyle.Bold, Color.white, new Vector2(infoIco != null ? 18f : 0f, 4f), new Vector2(440f, 76f), TextAnchor.MiddleCenter);
-            var lblRt = (RectTransform)_hintLabel.transform;
-            lblRt.anchorMin = lblRt.anchorMax = new Vector2(0.5f, 0.5f);
-            lblRt.pivot = new Vector2(0.5f, 0.5f);
-            _hintLabel.raycastTarget = false;
-            var lShadow = _hintLabel.gameObject.AddComponent<Shadow>();
-            lShadow.effectColor = new Color(0.14f, 0.08f, 0.38f, 0.52f);
-            lShadow.effectDistance = new Vector2(0f, -2f);
-
-            BuildToast(bubbleSpr);
         }
 
-        /// <summary>Slot uyarı balonu (dokunmaları engellemez).</summary>
-        private void BuildToast(Sprite bubbleSpr)
+        private void BuildSpotlight()
         {
-            var go = new GameObject("SlotWarning", typeof(RectTransform), typeof(CanvasGroup), typeof(Image));
-            go.transform.SetParent(_root, false);
-            _toast = (RectTransform)go.transform;
-            _toast.anchorMin = _toast.anchorMax = new Vector2(0.5f, 0.5f);
-            _toast.pivot = new Vector2(0.5f, 0.5f);
-            _toast.sizeDelta = new Vector2(820f, 132f);
-            _toastGroup = go.GetComponent<CanvasGroup>();
-            _toastGroup.blocksRaycasts = false;
-            _toastGroup.interactable = false;
-            _toastGroup.alpha = 0f;
+            _spotlightRoot = new GameObject("SpotlightLayer", typeof(RectTransform));
+            _spotlightRoot.transform.SetParent(_root, false);
+            var spRt = (RectTransform)_spotlightRoot.transform;
+            spRt.anchorMin = Vector2.zero;
+            spRt.anchorMax = Vector2.one;
+            spRt.offsetMin = spRt.offsetMax = Vector2.zero;
 
-            var img = go.GetComponent<Image>();
-            img.sprite = bubbleSpr;
-            img.type = Image.Type.Sliced;
-            img.pixelsPerUnitMultiplier = bubbleSpr != _circle ? 1.15f : 1f;
-            img.color = bubbleSpr != _circle ? new Color(1f, 0.80f, 0.80f, 1f) : new Color(0.86f, 0.30f, 0.42f, 0.96f);
+            var dimGo = new GameObject("SpotlightDim", typeof(RectTransform), typeof(Image));
+            dimGo.transform.SetParent(spRt, false);
+            var dimRt = (RectTransform)dimGo.transform;
+            dimRt.anchorMin = Vector2.zero;
+            dimRt.anchorMax = Vector2.one;
+            dimRt.offsetMin = dimRt.offsetMax = Vector2.zero;
+            _spotlightDimImg = dimGo.GetComponent<Image>();
+            _spotlightDimImg.raycastTarget = false;
+
+            Material baseMat = Resources.Load<Material>("TutorialSpotlightMat");
+            if (baseMat != null)
+            {
+                _spotlightMat = new Material(baseMat);
+            }
+            else
+            {
+                Shader sh = Shader.Find("PuzzleGlass/TutorialSpotlight");
+                if (sh != null) _spotlightMat = new Material(sh);
+            }
+            if (_spotlightMat != null)
+            {
+                _spotlightMat.color = ColSpotlightDim;
+                _spotlightDimImg.material = _spotlightMat;
+                _spotlightDimImg.color = new Color(1f, 1f, 1f, 0f);
+            }
+            else
+            {
+                _spotlightDimImg.enabled = false;
+            }
+
+            _blockTop    = MakeSpotlightBlocker(spRt, "BlockTop",    out _blockTopImg);
+            _blockBottom = MakeSpotlightBlocker(spRt, "BlockBottom", out _blockBottomImg);
+            _blockLeft   = MakeSpotlightBlocker(spRt, "BlockLeft",   out _blockLeftImg);
+            _blockRight  = MakeSpotlightBlocker(spRt, "BlockRight",  out _blockRightImg);
+
+            _spotlightRoot.SetActive(false);
+        }
+
+        private static RectTransform MakeSpotlightBlocker(RectTransform parent, string name, out Image img)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            img = go.GetComponent<Image>();
+            img.color = Color.clear;
             img.raycastTarget = false;
-            var sh = go.AddComponent<Shadow>();
-            sh.effectColor = new Color(0.14f, 0.10f, 0.36f, 0.34f);
-            sh.effectDistance = new Vector2(0f, -6f);
-
-            var txt = AddText(_toast, "Only 1 slot left!\nIf all slots fill up, you're stuck.", 32, FontStyle.Bold, Color.white,
-                Vector2.zero, new Vector2(760f, 112f), TextAnchor.MiddleCenter);
-            var tRt = (RectTransform)txt.transform;
-            tRt.anchorMin = tRt.anchorMax = new Vector2(0.5f, 0.5f);
-            tRt.pivot = new Vector2(0.5f, 0.5f);
-            tRt.anchoredPosition = new Vector2(0f, 4f);
-            txt.lineSpacing = 1.05f;
-            var tSh = txt.gameObject.AddComponent<Shadow>();
-            tSh.effectColor = new Color(0.30f, 0.06f, 0.20f, 0.55f);
-            tSh.effectDistance = new Vector2(0f, -2f);
-
-            go.SetActive(false);
+            return rt;
         }
 
         private RectTransform MakeImage(RectTransform parent, string name, float size, Color color, Sprite sprite, out Image img)

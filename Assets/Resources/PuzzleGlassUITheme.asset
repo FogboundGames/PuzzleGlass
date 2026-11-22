@@ -29,7 +29,7 @@ MonoBehaviour:
   iconRight: {fileID: -6219010595072361576, guid: aa74ae4519ce50f408e46eb517d1ce34, type: 3}
   iconClose: {fileID: -4497578210200758736, guid: 578fc686cfcf7b848b77f202915a9e02, type: 3}
   iconCheck: {fileID: 170680371954149730, guid: cfd28c4685f7c504c8541bb8903d4ec8, type: 3}
-  iconHandClick: {fileID: -8566248467332192918, guid: 2f4af7272a8a2d84e9c9495b43d4b057, type: 3}
+  iconHandClick: {fileID: -7786579738626157732, guid: 311c2d5a384d93e49b14d80905a024fc, type: 3}
   iconSnow: {fileID: -4474710661713538717, guid: 4ca4131db50a5f042aab2fb63aa1a2c4, type: 3}
   iconLock: {fileID: -4651609163538782172, guid: 8475a027dba8b0f4aabc4ddb1462b53c, type: 3}
   iconKey: {fileID: -4120535925080400364, guid: decd9f9d258a2a846af4921e94195170, type: 3}
