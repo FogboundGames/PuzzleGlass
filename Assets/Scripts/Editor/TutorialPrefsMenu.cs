@@ -18,5 +18,13 @@ namespace PuzzleGlass.Editor
             PlayerPrefs.Save();
             Debug.Log("PuzzleGlass: tutorial kartları sıfırlandı (buz, kilit & anahtar, içi dolu kutu). Levele tekrar girince yeniden gösterilir.");
         }
+
+        [MenuItem("Tools/PuzzleGlass/🔄 Level İlerlemesini Sıfırla", false, 41)]
+        public static void ResetLevelProgress()
+        {
+            PlayerPrefs.DeleteKey(PuzzleGlassGameManager.SavedLevelPrefKey);
+            PlayerPrefs.Save();
+            Debug.Log("PuzzleGlass: level ilerlemesi sıfırlandı. Oyun Level 1'den başlar.");
+        }
     }
 }

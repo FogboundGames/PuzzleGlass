@@ -8,7 +8,7 @@ namespace PuzzleGlass.Editor.Studio
     /// Ezgi'nin 1-14 levelleri gibi: tepsi tamamen 1x1 bloklarla dolu, her sütun bir kuyruk; üstteki blok tıklanınca slota gider,
     /// arkasındaki öne kayar. Top sırası bir "örnek oynanış" üzerinden kurulur, bu yüzden her level çözülebilir;
     /// zorluk, aynı anda kaç bloğun topunun karıştığı (iç içe geçme) ile ayarlanır ve rastgele oynayan oyuncunun
-    /// kilitlenme oranıyla (PuzzleLevelSolver.EstimateRandomFailRate) ölçülür.
+    /// kilitlenme oranlarıyla (PuzzleLevelSolver.DifficultyFromRates: akıllı + rastgele oyuncu) ölçülür.
     /// </summary>
     public static class SlotLevelGenerator
     {
@@ -18,8 +18,6 @@ namespace PuzzleGlass.Editor.Studio
             public int colors = 4;
             public int minCount = 6, maxCount = 10;
             public LevelDifficulty difficulty = LevelDifficulty.Medium;
-            /// <summary>Hedef rastgele kilitlenme oranı aralığı.</summary>
-            public float failLo = 0.1f, failHi = 0.35f;
             /// <summary>Buzlu blok sayısı (0 = yok).</summary>
             public int iceBlocks;
             public IceMeltMode iceMode = IceMeltMode.PerBallCollected;
@@ -39,7 +37,10 @@ namespace PuzzleGlass.Editor.Studio
         {
             public bool ok;
             public int seed;
+            /// <summary>Rastgele oyuncunun kilitlenme oranı; &lt; 0 ise çözülebilir aday bulunamadı.</summary>
             public float failRate;
+            public float smartFailRate = -1f;
+            public LevelDifficulty measured;
             public SolveResult solve;
             public int balls;
             public int tries;
@@ -61,13 +62,18 @@ namespace PuzzleGlass.Editor.Studio
                 var dims = GlassShapeData.GetDims(lvl);
                 var r = PuzzleLevelSolver.Solve(lvl, dims, 20000);
                 if (r == null || r.status != SolveStatus.Solved) continue;
-                float fr = PuzzleLevelSolver.EstimateRandomFailRate(lvl, dims, 300, seed);
-                float dist = fr < spec.failLo ? spec.failLo - fr : (fr > spec.failHi ? fr - spec.failHi : 0f);
+                // Zorluk: akıllı + rastgele oyuncunun kilitlenme oranından ölçülen sınıf (PuzzleLevelSolver.DifficultyFromRates)
+                float fr = PuzzleLevelSolver.EstimateRandomFailRate(lvl, dims, 200, seed);
+                float sfr = PuzzleLevelSolver.EstimateSmartFailRate(lvl, dims, 200, seed);
+                var measured = PuzzleLevelSolver.DifficultyFromRates(fr, sfr);
+                float dist = Mathf.Abs(PuzzleLevelSolver.DifficultyRank(measured) - PuzzleLevelSolver.DifficultyRank(spec.difficulty));
                 if (dist < bestDist)
                 {
                     bestDist = dist;
                     bestSeed = seed;
-                    best = new Outcome { ok = dist == 0f, seed = seed, failRate = fr, solve = r, tries = t + 1 };
+                    r.randomFailRate = fr;
+                    r.smartFailRate = sfr;
+                    best = new Outcome { ok = dist == 0f, seed = seed, failRate = fr, smartFailRate = sfr, measured = measured, solve = r, tries = t + 1 };
                 }
                 if (dist == 0f) break;
             }

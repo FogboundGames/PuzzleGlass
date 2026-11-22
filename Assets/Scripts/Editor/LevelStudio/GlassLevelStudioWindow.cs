@@ -507,11 +507,25 @@ namespace PuzzleGlass.Editor.Studio
                 layoutCard.Add(r);
             }
 
-            AddAutoStepper("Tepsi Sütun", m_GenOptions.customGridCols, 4, 7, 5, v => m_GenOptions.customGridCols = v);
-            AddAutoStepper("Tepsi Satır", m_GenOptions.customGridRows, 4, 7, 5, v => m_GenOptions.customGridRows = v);
-            AddAutoStepper("Küp (Blok)", m_GenOptions.customBoxCount, 3, 16, 8, v => m_GenOptions.customBoxCount = v);
-            AddAutoStepper("Renk Çeşidi", m_GenOptions.customColorCount, 2, 8, 4, v => m_GenOptions.customColorCount = v);
-            AddAutoStepper("Üst Yuva", m_GenOptions.customSlotCount, 2, 5, 3, v => m_GenOptions.customSlotCount = v);
+            bool slotMode = PuzzleLevelSolver.UseSlotModel;
+            if (slotMode)
+            {
+                // Slot sistemi: tepsi tamamen 1x1 sütun kuyrukları; blok sayısı = sütun × satır, slot sayısı sabit (5)
+                AddAutoStepper("Tepsi Sütun", m_GenOptions.customGridCols, 3, 6, 4, v => m_GenOptions.customGridCols = v);
+                AddAutoStepper("Tepsi Satır", m_GenOptions.customGridRows, 2, 4, 3, v => m_GenOptions.customGridRows = v);
+                AddAutoStepper("Renk Çeşidi", m_GenOptions.customColorCount, 3, 7, 5, v => m_GenOptions.customColorCount = v);
+                var slotHint = new Label("Oto: zorluğa göre (Kolay 4×2 · Orta 4×3 · Zor 5×3 · Boss 5×4). Toplam top ~240 kalacak şekilde blok başı top ayarlanır.");
+                slotHint.AddToClassList("smart-gen__intro");
+                layoutCard.Add(slotHint);
+            }
+            else
+            {
+                AddAutoStepper("Tepsi Sütun", m_GenOptions.customGridCols, 4, 7, 5, v => m_GenOptions.customGridCols = v);
+                AddAutoStepper("Tepsi Satır", m_GenOptions.customGridRows, 4, 7, 5, v => m_GenOptions.customGridRows = v);
+                AddAutoStepper("Küp (Blok)", m_GenOptions.customBoxCount, 3, 16, 8, v => m_GenOptions.customBoxCount = v);
+                AddAutoStepper("Renk Çeşidi", m_GenOptions.customColorCount, 2, 8, 4, v => m_GenOptions.customColorCount = v);
+                AddAutoStepper("Üst Yuva", m_GenOptions.customSlotCount, 2, 5, 3, v => m_GenOptions.customSlotCount = v);
+            }
             m_SmartGenForm.Add(layoutCard);
 
             // 2. Mekanik Oranları
@@ -572,7 +586,7 @@ namespace PuzzleGlass.Editor.Studio
             // Anahtar & Kilit
             AddPctCard("🔑 Anahtar & Kilit", m_GenOptions.keyLockChancePct,
                 v => m_GenOptions.keyLockChancePct = v,
-                sub => AddSubSlider(sub, "Maks. Anahtar", 1, 3, m_GenOptions.maxKeyPairs, "", v => m_GenOptions.maxKeyPairs = v));
+                sub => AddSubSlider(sub, slotMode ? "Kilitteki Anahtar" : "Maks. Anahtar", 1, 3, m_GenOptions.maxKeyPairs, "", v => m_GenOptions.maxKeyPairs = v));
 
             // Buz
             AddPctCard("❄ Buzlu Blok", m_GenOptions.iceChancePct,
@@ -580,7 +594,8 @@ namespace PuzzleGlass.Editor.Studio
                 sub =>
                 {
                     AddSubSlider(sub, "Maks. Blok", 1, 3, m_GenOptions.maxIceBlocks, "", v => m_GenOptions.maxIceBlocks = v);
-                    AddSubSlider(sub, "Yoğunluk %", 25, 90, m_GenOptions.iceRatioPct, "%", v => m_GenOptions.iceRatioPct = v);
+                    if (!slotMode)
+                        AddSubSlider(sub, "Yoğunluk %", 25, 90, m_GenOptions.iceRatioPct, "%", v => m_GenOptions.iceRatioPct = v);
 
                     var meltSeg = new VisualElement();
                     meltSeg.AddToClassList("segmented");
@@ -599,6 +614,9 @@ namespace PuzzleGlass.Editor.Studio
                     sub.Add(meltSeg);
                 });
 
+            // Tüp / tepsi bölmesi / cam şekli eski tepsi sistemine ait: slot sisteminde üretici kullanmaz
+            if (!slotMode)
+            {
             // Üst Besleme Tüpü
             AddPctCard("🧪 Üst Besleme Tüpü", m_GenOptions.feedTubeChancePct,
                 v => m_GenOptions.feedTubeChancePct = v,
@@ -634,6 +652,7 @@ namespace PuzzleGlass.Editor.Studio
                     AddShapeBtn(FullMechanicsLevelGenerator.GlassShapeFilter.CustomPoolsOnly, "Özel");
                     sub.Add(shapeSeg);
                 });
+            }
 
             // El İpucu
             var hintCard = new VisualElement();
@@ -810,14 +829,20 @@ namespace PuzzleGlass.Editor.Studio
         {
             var gm = FindFirstObjectByType<PuzzleGlassGameManager>();
             if (gm == null) return;
+            Undo.RecordObject(gm, "Level listesi");
             gm.levels = new List<PuzzleGlassLevelData>(m_All);
             EditorUtility.SetDirty(gm);
+            // Sahne nesnesi: SetDirty tek başına sahneyi kaydedilecek diye işaretlemez
+            if (!Application.isPlaying) EditorSceneManager.MarkSceneDirty(gm.gameObject.scene);
         }
 
         private void CreateEmptyLevel()
         {
             int next = NextLevelNumber();
             var lvl = CreateInstance<PuzzleGlassLevelData>();
+            // Slot sistemi: camı/pisti/temayı son pist levelden al (boş level hemen oyundaki gibi görünsün)
+            var template = PuzzleLevelSolver.UseSlotModel ? FindSlotTemplate(null) : null;
+            if (IsSlotTrackLevel(template)) EditorUtility.CopySerialized(template, lvl);
             lvl.levelNumber = next;
             lvl.levelName = $"Level {next}";
             lvl.difficulty = PuzzleLevelGenerator.GetProgressiveDifficulty(next);
@@ -828,8 +853,12 @@ namespace PuzzleGlass.Editor.Studio
             lvl.useManualBallLayout = false;
             lvl.manualLaneWidth = 0;
             lvl.manualBalls = new List<ManualPoolBallEntry>();
-            lvl.stagingGridCols = 5;
-            lvl.stagingGridRows = 4;
+            if (lvl.gridWalls != null) lvl.gridWalls.Clear();
+            lvl.tutorialHint = false;
+            lvl.tutorialBlockIndex = -1;
+            bool slot = PuzzleLevelSolver.UseSlotModel;
+            lvl.stagingGridCols = slot ? 4 : 5;
+            lvl.stagingGridRows = slot ? 3 : 4;
             CreateAsset(lvl, next);
         }
 
@@ -839,7 +868,7 @@ namespace PuzzleGlass.Editor.Studio
             int next = NextLevelNumber();
             var copy = Instantiate(m_Level);
             copy.levelNumber = next;
-            copy.levelName = $"{ShortName(m_Level)} (Kopya)";
+            copy.levelName = $"Level {next}";
             CreateAsset(copy, next);
         }
 
@@ -883,9 +912,139 @@ namespace PuzzleGlass.Editor.Studio
 
         // ==================== Otomatik üretim (önizlemeli) ====================
 
+        // ---------- Slot sistemi üretimi (pist cam + slot sırası + 1x1 sütun kuyrukları) ----------
+
+        private static readonly GlassTrackPreset[] SlotTracks =
+        {
+            GlassTrackPreset.ArchLoop, GlassTrackPreset.HeartLoop, GlassTrackPreset.UChannel,
+            GlassTrackPreset.ORing, GlassTrackPreset.SCurve, GlassTrackPreset.DoubleArch
+        };
+
+        private static readonly GlassColorTheme[] SlotThemes =
+        {
+            GlassColorTheme.SkyBlueGlossy, GlassColorTheme.CrystalClear, GlassColorTheme.EmeraldGreen,
+            GlassColorTheme.RoseQuartz, GlassColorTheme.AmethystPurple, GlassColorTheme.AmberGold
+        };
+
+        /// <summary>Slot sistemi levellerinin camı: özel cam + pist kanal.</summary>
+        private static bool IsSlotTrackLevel(PuzzleGlassLevelData lvl) =>
+            lvl != null && lvl.useCustomGlassShape && lvl.glassPreset == GlassShapePreset.TrackChannel;
+
+        /// <summary>Cam/pist ayarlarının alınacağı level: tercih edilen pist levelse o, değilse en son numaralı pist level.</summary>
+        private PuzzleGlassLevelData FindSlotTemplate(PuzzleGlassLevelData prefer)
+        {
+            if (IsSlotTrackLevel(prefer)) return prefer;
+            PuzzleGlassLevelData best = null;
+            foreach (var l in m_All)
+                if (IsSlotTrackLevel(l) && (best == null || l.levelNumber > best.levelNumber)) best = l;
+            return best ?? prefer;
+        }
+
+        /// <summary>
+        /// Zorluğa göre slot leveli tarifi (mevcut levellerin ortalaması): Kolay 4x2, Orta 4x3, Zor 5x3, Boss 5x4;
+        /// toplam top ~240 kalacak şekilde blok başı top sayısı tepsi boyutuna göre ayarlanır.
+        /// </summary>
+        private SlotLevelGenerator.Spec BuildSlotSpec(LevelDifficulty diff, int iceBlocks, int lockKeys, IceMeltMode iceMode,
+            bool useOptionsGrid, GlassTrackPreset track, GlassColorTheme theme)
+        {
+            var s = new SlotLevelGenerator.Spec { difficulty = diff, iceBlocks = iceBlocks, lockKeys = lockKeys, iceMode = iceMode, track = track, theme = theme };
+            switch (diff)
+            {
+                case LevelDifficulty.Easy: s.cols = 4; s.rows = 2; s.colors = 4; break;
+                case LevelDifficulty.Medium: s.cols = 4; s.rows = 3; s.colors = 5; break;
+                case LevelDifficulty.Hard: s.cols = 5; s.rows = 3; s.colors = 6; break;
+                default: s.cols = 5; s.rows = 4; s.colors = 6; break;
+            }
+            if (useOptionsGrid)
+            {
+                if (m_GenOptions.customGridCols > 0) s.cols = Mathf.Clamp(m_GenOptions.customGridCols, 3, 6);
+                if (m_GenOptions.customGridRows > 0) s.rows = Mathf.Clamp(m_GenOptions.customGridRows, 2, 4);
+                if (m_GenOptions.customColorCount > 0) s.colors = Mathf.Clamp(m_GenOptions.customColorCount, 3, 7);
+            }
+            float avg = 240f / (s.cols * s.rows);
+            s.minCount = Mathf.Max(4, Mathf.RoundToInt(avg * 0.8f));
+            s.maxCount = Mathf.Max(s.minCount + 1, Mathf.RoundToInt(avg * 1.2f));
+            return s;
+        }
+
+        private static IceMeltMode PickIceMode(FullMechanicsLevelGenerator.IceMeltPreference pref, System.Random rng)
+        {
+            switch (pref)
+            {
+                case FullMechanicsLevelGenerator.IceMeltPreference.PerBallCollected: return IceMeltMode.PerBallCollected;
+                case FullMechanicsLevelGenerator.IceMeltPreference.PerBoxCompleted: return IceMeltMode.PerBoxCompleted;
+                default: return rng.Next(2) == 0 ? IceMeltMode.PerBallCollected : IceMeltMode.PerBoxCompleted;
+            }
+        }
+
+        /// <summary>Slot leveli üretir (en fazla maxTries tohum dener). Çözülebilir aday bulunamazsa outcome.failRate &lt; 0.</summary>
+        private SlotLevelGenerator.Outcome RunSlotGenerator(PuzzleGlassLevelData lvl, PuzzleGlassLevelData template, SlotLevelGenerator.Spec spec, bool tutorialHint, int maxTries)
+        {
+            var outcome = SlotLevelGenerator.Generate(lvl, template ?? lvl, spec, Random.Range(1, 1000000), maxTries);
+            if (outcome.failRate >= 0f) lvl.tutorialHint = tutorialHint;
+            return outcome;
+        }
+
+        private void ProposeSlot(LevelDifficulty diff, int iceBlocks, int lockKeys, IceMeltMode iceMode, bool useOptionsGrid, bool tutorialHint, bool fullMechanics)
+        {
+            DiscardPending();
+            m_PendingFullMechanics = fullMechanics;
+            m_PendingDifficulty = diff;
+            m_Pending = CreateInstance<PuzzleGlassLevelData>();
+            m_Pending.hideFlags = HideFlags.DontSave;
+            EditorUtility.CopySerialized(m_Level, m_Pending);
+
+            var template = FindSlotTemplate(m_Level);
+            var track = IsSlotTrackLevel(m_Level) ? m_Level.trackPreset : SlotTracks[Random.Range(0, SlotTracks.Length)];
+            var theme = IsSlotTrackLevel(m_Level) ? m_Level.colorTheme : SlotThemes[Random.Range(0, SlotThemes.Length)];
+            var spec = BuildSlotSpec(diff, iceBlocks, lockKeys, iceMode, useOptionsGrid, track, theme);
+
+            SlotLevelGenerator.Outcome outcome;
+            try
+            {
+                EditorUtility.DisplayProgressBar("Level üretiliyor", $"{DifficultyName(diff)} slot leveli aranıyor ve doğrulanıyor (10-15 sn sürebilir)…", 0.5f);
+                outcome = RunSlotGenerator(m_Pending, template, spec, tutorialHint, 40);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            if (outcome.failRate < 0f)
+                ShowNotification(new GUIContent("Çözülebilir level bulunamadı, 'Yeniden üret' ile tekrar dene"));
+            else if (!outcome.ok)
+                ShowNotification(new GUIContent($"{DifficultyName(diff)} tutmadı, en yakın: {DifficultyName(outcome.measured)}. 'Yeniden üret' ile tekrar dene"));
+
+            m_SelectedBlock = -1;
+            m_SelectedGroup = -1;
+            m_Solve = null;
+            ScheduleSolve();
+            RefreshAll();
+        }
+
+        private static void CountMechanics(PuzzleGlassLevelData lvl, out int iceBlocks, out int lockKeys)
+        {
+            iceBlocks = 0;
+            lockKeys = 0;
+            if (lvl?.monsters == null) return;
+            foreach (var m in lvl.monsters)
+            {
+                if (m == null) continue;
+                if (m.iceCount > 0) iceBlocks++;
+                lockKeys = Mathf.Max(lockKeys, m.lockKeyCount);
+            }
+        }
+
         private void ProposeGenerated(LevelDifficulty diff)
         {
             if (m_Level == null) return;
+            if (PuzzleLevelSolver.UseSlotModel)
+            {
+                // Şimdiki levelin mekaniklerini (buz/kilit sayısı) ve camını koruyarak bu zorlukta yeniden üret
+                CountMechanics(m_Level, out int ice, out int locks);
+                ProposeSlot(diff, ice, locks, m_Level.iceMeltMode, useOptionsGrid: false, tutorialHint: m_Level.tutorialHint, fullMechanics: false);
+                return;
+            }
             DiscardPending();
             m_PendingFullMechanics = false;
             m_Pending = CreateInstance<PuzzleGlassLevelData>();
@@ -905,6 +1064,14 @@ namespace PuzzleGlass.Editor.Studio
         private void ProposeFullMechanics(LevelDifficulty diff)
         {
             if (m_Level == null) return;
+            if (PuzzleLevelSolver.UseSlotModel)
+            {
+                var rng = new System.Random(Random.Range(1, int.MaxValue));
+                RollSlotMechanics(m_GenOptions, rng, out int ice, out int locks);
+                ProposeSlot(diff, ice, locks, PickIceMode(m_GenOptions.iceMeltPreference, rng), useOptionsGrid: true,
+                    tutorialHint: m_GenOptions.addTutorialHint, fullMechanics: true);
+                return;
+            }
             DiscardPending();
             m_PendingFullMechanics = true;
             m_Pending = CreateInstance<PuzzleGlassLevelData>();
@@ -920,10 +1087,122 @@ namespace PuzzleGlass.Editor.Studio
             RefreshAll();
         }
 
-        private void GenerateBatchLevels(int count)
+        /// <summary>Oranlar %'lik şans: açık çıkan mekanik için 1..maks adet seçilir.</summary>
+        private static void RollSlotMechanics(FullMechanicsLevelGenerator.Options opt, System.Random rng, out int iceBlocks, out int lockKeys)
+        {
+            iceBlocks = opt.iceChancePct > 0 && rng.Next(0, 100) < opt.iceChancePct ? rng.Next(1, Mathf.Clamp(opt.maxIceBlocks, 1, 3) + 1) : 0;
+            lockKeys = opt.keyLockChancePct > 0 && rng.Next(0, 100) < opt.keyLockChancePct ? rng.Next(1, Mathf.Clamp(opt.maxKeyPairs, 1, 3) + 1) : 0;
+        }
+
+        /// <summary>
+        /// Slot sistemi toplu üretim: her level çözücüyle doğrulanır; çözülemeyen aday kaydedilmez (bir tur daha denenir).
+        /// Pist ve renk teması bir önceki levelden farklı seçilir.
+        /// </summary>
+        private void GenerateSlotBatchLevels(int count)
         {
             if (!Directory.Exists(LevelsFolder)) Directory.CreateDirectory(LevelsFolder);
-            count = Mathf.Clamp(count, 1, 20);
+            count = Mathf.Clamp(count, 1, 15);
+            int next = NextLevelNumber();
+            var createdList = new List<PuzzleGlassLevelData>(count);
+            var batchPlan = FullMechanicsLevelGenerator.PlanBatch(m_GenOptions, count, Random.Range(1, int.MaxValue));
+            var rng = new System.Random(Random.Range(1, int.MaxValue));
+            var template = FindSlotTemplate(m_Level);
+            GlassTrackPreset? prevTrack = IsSlotTrackLevel(template) ? template.trackPreset : (GlassTrackPreset?)null;
+            GlassColorTheme? prevTheme = IsSlotTrackLevel(template) ? template.colorTheme : (GlassColorTheme?)null;
+            int inBand = 0, skipped = 0, keysCount = 0, iceCount = 0;
+
+            try
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar(
+                        "Akıllı Level Üretici",
+                        $"Level {next} üretiliyor ve doğrulanıyor ({i + 1}/{count})...",
+                        (float)i / count))
+                        break;
+
+                    var diff = m_GenProgressive ? PuzzleLevelGenerator.GetProgressiveDifficulty(next) : m_GenDifficulty;
+                    var plan = batchPlan[i];
+                    int ice = plan.iceChancePct >= 100 ? rng.Next(1, Mathf.Clamp(plan.maxIceBlocks, 1, 3) + 1) : 0;
+                    int locks = plan.keyLockChancePct >= 100 ? rng.Next(1, Mathf.Clamp(plan.maxKeyPairs, 1, 3) + 1) : 0;
+
+                    GlassTrackPreset track;
+                    do track = SlotTracks[rng.Next(SlotTracks.Length)]; while (prevTrack.HasValue && track == prevTrack.Value);
+                    GlassColorTheme theme;
+                    do theme = SlotThemes[rng.Next(SlotThemes.Length)]; while (prevTheme.HasValue && theme == prevTheme.Value);
+
+                    var spec = BuildSlotSpec(diff, ice, locks, PickIceMode(plan.iceMeltPreference, rng), useOptionsGrid: true, track, theme);
+                    var lvl = CreateInstance<PuzzleGlassLevelData>();
+                    lvl.levelNumber = next;
+                    lvl.levelName = $"Level {next}";
+
+                    SlotLevelGenerator.Outcome outcome = null;
+                    // Her deneme ~0.3 sn (çözücü + 300 rastgele oyun): level başına en fazla ~2 x 60 deneme
+                    for (int attempt = 0; attempt < 2; attempt++)
+                    {
+                        outcome = RunSlotGenerator(lvl, template, spec, m_GenOptions.addTutorialHint, 60);
+                        if (outcome.failRate >= 0f) break;
+                    }
+                    if (outcome == null || outcome.failRate < 0f)
+                    {
+                        // Çözülebilir aday çıkmadı: kaydetme, numarayı bir sonrakine bırak
+                        DestroyImmediate(lvl);
+                        skipped++;
+                        continue;
+                    }
+
+                    if (outcome.ok) inBand++;
+                    if (locks > 0) keysCount++;
+                    if (ice > 0) iceCount++;
+                    prevTrack = track;
+                    prevTheme = theme;
+
+                    string path = AssetDatabase.GenerateUniqueAssetPath($"{LevelsFolder}/Level_{next:00}.asset");
+                    AssetDatabase.CreateAsset(lvl, path);
+                    createdList.Add(lvl);
+                    next++;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            AssetDatabase.SaveAssets();
+            LoadLevels(keepSelection: false);
+            SyncGameManagerLevels();
+            if (createdList.Count > 0) SelectAndShow(createdList[0]);
+
+            if (m_GenStatusBox != null && m_GenStatusText != null && m_GenLinksRow != null)
+            {
+                int produced = Mathf.Max(1, createdList.Count);
+                m_GenStatusText.text =
+                    $"Üretildi: {createdList.Count} çözülebilir level · {inBand}/{produced} hedef zorlukta" +
+                    (skipped > 0 ? $" · {skipped} atlandı (çözülemedi)" : "") + "\n" +
+                    $"🔒 {keysCount}/{produced} · ❄ {iceCount}/{produced}";
+                m_GenLinksRow.Clear();
+                foreach (var created in createdList)
+                {
+                    var captured = created;
+                    var linkBtn = new Button(() => SelectAndShow(captured)) { text = $"L{captured.levelNumber}" };
+                    linkBtn.AddToClassList("smart-gen__link");
+                    m_GenLinksRow.Add(linkBtn);
+                }
+                m_GenStatusBox.style.display = createdList.Count > 0 || skipped > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+
+            ShowNotification(new GUIContent($"{createdList.Count} level üretildi" + (skipped > 0 ? $", {skipped} atlandı" : "")));
+        }
+
+        private void GenerateBatchLevels(int count)
+        {
+            if (PuzzleLevelSolver.UseSlotModel)
+            {
+                GenerateSlotBatchLevels(count);
+                return;
+            }
+            if (!Directory.Exists(LevelsFolder)) Directory.CreateDirectory(LevelsFolder);
+            count = Mathf.Clamp(count, 1, 15);
             int next = NextLevelNumber();
             var createdList = new List<PuzzleGlassLevelData>(count);
             var batchPlan = FullMechanicsLevelGenerator.PlanBatch(m_GenOptions, count, Random.Range(1, int.MaxValue));
@@ -942,6 +1221,7 @@ namespace PuzzleGlass.Editor.Studio
 
                     var lvl = CreateInstance<PuzzleGlassLevelData>();
                     lvl.levelNumber = next;
+                    lvl.levelName = $"Level {next}";
                     var diff = m_GenProgressive ? PuzzleLevelGenerator.GetProgressiveDifficulty(next) : m_GenDifficulty;
                     var solve = FullMechanicsLevelGenerator.Generate(lvl, diff, batchPlan[i], seed: next * 7919 + Random.Range(1, 9999));
                     if (solve != null && solve.status == SolveStatus.Solved) solvedCount++;
@@ -1244,7 +1524,8 @@ namespace PuzzleGlass.Editor.Studio
 
             Vector2Int NextFreeTrayCell()
             {
-                for (int y = gridRows - 1; y >= 0; y--)
+                // Alttan başla: en üst satır en son dolsun (önce oynanacak/otomatik toplayacak bloklar oraya kendiliğinden gelmesin)
+                for (int y = 0; y < gridRows; y++)
                 {
                     for (int x = 0; x < gridCols; x++)
                     {
@@ -1295,7 +1576,7 @@ namespace PuzzleGlass.Editor.Studio
         private void AddBlock(PuzzleColor color, CarrierBlockShape shape, Vector2Int anchor)
         {
             Record("Blok ekle");
-            int count = Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, LevelMonsterEntry.MaxBallsPerEntry);
+            int count = DefaultBlockCount(m_Level, shape);
             var entry = new LevelMonsterEntry(color, count, shape, anchor) { hasGridAnchor = true };
             if (m_BrushMechanic == MechanicBrush.Key) entry.hasKey = true;
             else if (m_BrushMechanic == MechanicBrush.Lock) entry.lockKeyCount = Mathf.Max(1, m_BrushLockCount);
@@ -1333,6 +1614,24 @@ namespace PuzzleGlass.Editor.Studio
             }
             m_SelectedBlock = m_Level.monsters.Count - 1;
             OnEdited(syncScene: true);
+        }
+
+        /// <summary>
+        /// Yeni bloğun top sayısı. Slot sisteminde levelin diğer bloklarının ortalaması (yoksa toplam ~240 top / hücre sayısı);
+        /// eski tepsi sisteminde hücre başına 2.
+        /// </summary>
+        private static int DefaultBlockCount(PuzzleGlassLevelData lvl, CarrierBlockShape shape)
+        {
+            if (!PuzzleLevelSolver.UseSlotModel)
+                return Mathf.Clamp(CarrierBlockShapeUtility.GetCellCount(shape) * 2, 1, LevelMonsterEntry.MaxBallsPerEntry);
+            int sum = 0, n = 0;
+            if (lvl?.monsters != null)
+                foreach (var m in lvl.monsters)
+                    if (m != null) { sum += Mathf.Max(1, m.count); n++; }
+            int avg = n > 0
+                ? Mathf.RoundToInt((float)sum / n)
+                : Mathf.RoundToInt(240f / Mathf.Max(1, (lvl?.stagingGridCols ?? 4) * (lvl?.stagingGridRows ?? 3)));
+            return Mathf.Clamp(avg, 1, LevelMonsterEntry.MaxBallsPerEntry);
         }
 
         private void SetBlockHasKey(int i, bool hasKey)
@@ -1702,6 +2001,14 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     m_Solve = m_SolveRun.Result;
                     m_SolveRun = null;
+                    // Slot sisteminde zorluk ölçüsü: rastgele oynanınca kilitlenme oranı (üreticiyle aynı deneme sayısı)
+                    var shown = Shown;
+                    if (PuzzleLevelSolver.UseSlotModel && shown != null && m_Solve != null && m_Solve.status == SolveStatus.Solved)
+                    {
+                        var dims = GetGlassDims(shown);
+                        m_Solve.randomFailRate = PuzzleLevelSolver.EstimateRandomFailRate(shown, dims, 300, 12345);
+                        m_Solve.smartFailRate = PuzzleLevelSolver.EstimateSmartFailRate(shown, dims, 300, 12345);
+                    }
                     RefreshAll();
                 }
             }
@@ -3818,6 +4125,13 @@ namespace PuzzleGlass.Editor.Studio
             {
                 switch (m_Solve.status)
                 {
+                    case SolveStatus.Solved when PuzzleLevelSolver.UseSlotModel:
+                        title = "✓ Çözülebilir";
+                        detail = $"En az {m_Solve.SlotSends} blok slota gönderilerek çözülüyor.";
+                        if (m_Solve.HasDifficultyRates)
+                            detail += $" {char.ToUpper(PuzzleLevelSolver.DifficultyRatesText(m_Solve)[0])}{PuzzleLevelSolver.DifficultyRatesText(m_Solve).Substring(1)} → ölçülen zorluk: {DifficultyName(PuzzleLevelSolver.DifficultyFromRates(m_Solve.randomFailRate, m_Solve.smartFailRate))}.";
+                        m_SolveCard.AddToClassList("solve--good");
+                        break;
                     case SolveStatus.Solved:
                         title = "✓ Çözülebilir";
                         detail = m_Solve.minSlides == 0
@@ -3939,7 +4253,7 @@ namespace PuzzleGlass.Editor.Studio
             count.AddToClassList("inspector__count");
             row.Add(count);
             row.Add(new Button(() => SetBlockCount(i, m.count + 1)) { text = "+" });
-            int defaultCount = CarrierBlockShapeUtility.GetCellCount(m.blockShape) * 2;
+            int defaultCount = DefaultBlockCount(m_Level, m.blockShape);
             int filledCap = 0;
             if (m.isFilledBox)
             {
@@ -3953,7 +4267,9 @@ namespace PuzzleGlass.Editor.Studio
             })
             {
                 text = "↺",
-                tooltip = "Şekle göre varsayılan: hücre başına 2 yuva (büyük bloğa çok, küçüğe az)."
+                tooltip = PuzzleLevelSolver.UseSlotModel
+                    ? "Varsayılan: bu leveldeki blokların ortalama top sayısı."
+                    : "Şekle göre varsayılan: hücre başına 2 yuva (büyük bloğa çok, küçüğe az)."
             });
             if (m.isFilledBox && filledCap > 0 && m.count != filledCap)
             {
@@ -4107,7 +4423,9 @@ namespace PuzzleGlass.Editor.Studio
             del.AddToClassList("inspector__danger");
             m_Inspector.Add(del);
 
-            var hint = new Label("Sürükle: taşı. Vurgulanan cam sütunları bu bloğun deliğinin üstü; sadece oradaki en alt top iner.");
+            var hint = new Label(PuzzleLevelSolver.UseSlotModel
+                ? "Sürükle: taşı. Oyunda her sütun bir kuyruk: en üstteki blok tıklanınca slota gider, arkasındakiler öne kayar."
+                : "Sürükle: taşı. Vurgulanan cam sütunları bu bloğun deliğinin üstü; sadece oradaki en alt top iner.");
             hint.AddToClassList("inspector__hint");
             m_Inspector.Add(hint);
         }
@@ -4129,8 +4447,18 @@ namespace PuzzleGlass.Editor.Studio
             var number = new IntegerField("Numara") { value = lvl.levelNumber, isDelayed = true };
             number.RegisterValueChangedCallback(e =>
             {
+                int wanted = Mathf.Max(1, e.newValue);
+                foreach (var other in m_All)
+                {
+                    if (other != null && other != lvl && other.levelNumber == wanted)
+                    {
+                        ShowNotification(new GUIContent($"Level {wanted} zaten var ({other.name}). Önce onun numarasını değiştir."));
+                        number.SetValueWithoutNotify(lvl.levelNumber);
+                        return;
+                    }
+                }
                 Record("Level numarası");
-                lvl.levelNumber = Mathf.Max(1, e.newValue);
+                lvl.levelNumber = wanted;
                 OnEdited(syncScene: false);
                 LoadLevels(keepSelection: true);
                 SyncGameManagerLevels();
@@ -4143,7 +4471,10 @@ namespace PuzzleGlass.Editor.Studio
 
             var trayPresets = new VisualElement();
             trayPresets.AddToClassList("chip-grid");
-            foreach (var (tc, tr) in new[] { (5, 4), (6, 5), (6, 7), (7, 8) })
+            var trayPresetSizes = PuzzleLevelSolver.UseSlotModel
+                ? new[] { (4, 2), (4, 3), (5, 3), (5, 4) }
+                : new[] { (5, 4), (6, 5), (6, 7), (7, 8) };
+            foreach (var (tc, tr) in trayPresetSizes)
             {
                 int cc = tc, rr = tr;
                 var chip = Chip(() =>
@@ -4276,11 +4607,18 @@ namespace PuzzleGlass.Editor.Studio
             {
                 Record("Öğretici ipucu");
                 lvl.tutorialHint = e.newValue;
-                if (e.newValue && lvl.tutorialBlockIndex < 0) TakeTutorialFromSolution(lvl, silent: true);
+                if (e.newValue && lvl.tutorialBlockIndex < 0 && !PuzzleLevelSolver.UseSlotModel) TakeTutorialFromSolution(lvl, silent: true);
                 OnEdited(syncScene: false);
             });
             m_Inspector.Add(tutToggle);
-            if (lvl.tutorialHint)
+            if (lvl.tutorialHint && PuzzleLevelSolver.UseSlotModel)
+            {
+                // Oyun slot sisteminde ipucu bloğunu kendisi seçer (TutorialOverlay.PickSlotHintBlock): "Tap to send it up"
+                var tutDesc = new Label("Oyunda slota gönderilebilecek ilk blok bir el ile gösterilir (oyun otomatik seçer).");
+                tutDesc.AddToClassList("inspector__sub");
+                m_Inspector.Add(tutDesc);
+            }
+            else if (lvl.tutorialHint)
             {
                 string desc = lvl.tutorialBlockIndex >= 0
                     ? $"Blok #{lvl.tutorialBlockIndex + 1}: ({lvl.tutorialFromAnchor.x + 1},{lvl.tutorialFromAnchor.y + 1}) → ({lvl.tutorialTargetAnchor.x + 1},{lvl.tutorialTargetAnchor.y + 1})"
@@ -4504,6 +4842,10 @@ namespace PuzzleGlass.Editor.Studio
         {
             switch (s.status)
             {
+                case SolveStatus.Solved when PuzzleLevelSolver.UseSlotModel:
+                    return s.HasDifficultyRates
+                        ? $"çözülebilir, {PuzzleLevelSolver.DifficultyRatesText(s)} ({DifficultyName(PuzzleLevelSolver.DifficultyFromRates(s.randomFailRate, s.smartFailRate))})"
+                        : "çözülebilir";
                 case SolveStatus.Solved: return $"çözülebilir, en az {s.Drags} sürükleme";
                 case SolveStatus.Unsolvable: return "ÇÖZÜLEMİYOR";
                 case SolveStatus.LimitReached: return "çözüm belirsiz";

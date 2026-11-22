@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 4
   levelName: Level 4 - Orta
-  difficulty: 1
+  difficulty: 0
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -105,6 +105,8 @@ MonoBehaviour:
   iceMeltMode: 0
   useManualBallLayout: 0
   manualLaneWidth: 0
+  manualTrackCapacity: 0
+  trackLayerLock: 0
   manualBalls: []
   bottomToTopTriplets: 0100000005000000020000000100000005000000020000000100000003000000050000000300000002000000010000000300000001000000030000000100000005000000030000000200000003000000020000000500000002000000
   bottomToTopGroups:

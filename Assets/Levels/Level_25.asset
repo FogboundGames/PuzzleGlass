@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 25
   levelName: Level 25
-  difficulty: 0
+  difficulty: 1
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -67,6 +67,7 @@ MonoBehaviour:
   trackAutoFitToBalls: 1
   trackScale: 1
   trackWallThickness: 0.082
+  trackHiddenRatio: 0
   trackBranches: []
   compartmentPreset: 7
   dividers: []
@@ -104,6 +105,8 @@ MonoBehaviour:
   iceMeltMode: 0
   useManualBallLayout: 0
   manualLaneWidth: 0
+  manualTrackCapacity: 0
+  trackLayerLock: 0
   manualBalls: []
   bottomToTopTriplets: 04000000020000000400000002000000060000000200000006000000000000000400000002000000060000000200000006000000000000000400000002000000060000000200000006000000000000000400000002000000060000000200000006000000000000000400000000000000040000000000000004000000000000000400000002000000040000000600000002000000060000000000000004000000
   bottomToTopGroups:
@@ -516,6 +519,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 0
     count: 24
     blockShape: 0
@@ -524,6 +529,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 6
     count: 27
     blockShape: 0
@@ -532,6 +539,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 4
     count: 36
     blockShape: 0
@@ -540,6 +549,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 30
     blockShape: 0
@@ -548,6 +559,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 4
     count: 30
     blockShape: 0
@@ -556,6 +569,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 0
     count: 24
     blockShape: 0
@@ -564,6 +579,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 2
     count: 36
     blockShape: 0
@@ -572,3 +589,5 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0

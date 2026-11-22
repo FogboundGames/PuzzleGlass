@@ -105,74 +105,120 @@ MonoBehaviour:
   iceMeltMode: 0
   useManualBallLayout: 0
   manualLaneWidth: 3
+  manualTrackCapacity: 0
+  trackLayerLock: 0
   manualBalls:
   - color: 0
     column: 4
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 5
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 3
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 6
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 2
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 4
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 3
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 5
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 2
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 6
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 1
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 7
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 0
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 4
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 5
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 3
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 6
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 0
     row: 3
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 1
     row: 3
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 2
     row: 3
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 3
     row: 3
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 4
     row: 3
-  bottomToTopTriplets: 02000000020000000100000000000000
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
+  bottomToTopTriplets: 0200000002000000010000000000000000000000
   bottomToTopGroups:
   - color: 2
     count: 24
@@ -195,6 +241,16 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 1
+    count: 24
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
     count: 24
     blockShape: 0
     gridAnchor: {x: 0, y: 0}

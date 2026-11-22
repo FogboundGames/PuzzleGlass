@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 38
   levelName: Level 38
-  difficulty: 2
+  difficulty: 0
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -1612,7 +1612,7 @@ MonoBehaviour:
     filledBallColor: 0
   monsters:
   - color: 0
-    count: 17
+    count: 25
     blockShape: 0
     gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
@@ -1622,7 +1622,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 2
-    count: 17
+    count: 23
     blockShape: 0
     gridAnchor: {x: 1, y: 2}
     hasGridAnchor: 1
@@ -1632,7 +1632,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 2
-    count: 16
+    count: 21
     blockShape: 0
     gridAnchor: {x: 2, y: 2}
     hasGridAnchor: 1
@@ -1649,8 +1649,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
+    isFilledBox: 1
+    filledBallColor: 2
   - color: 5
     count: 16
     blockShape: 0
@@ -1662,7 +1662,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 2
-    count: 16
+    count: 21
     blockShape: 0
     gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
@@ -1672,7 +1672,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 16
+    count: 24
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -1682,7 +1682,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 17
+    count: 24
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -1699,7 +1699,7 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 0
+    isFilledBox: 1
     filledBallColor: 0
   - color: 1
     count: 22

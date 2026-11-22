@@ -43,6 +43,14 @@ namespace PuzzleGlass
         public bool useBallPourTransition = true;
         public PuzzleGlassLevelData currentLevel;
 
+        [Header("İlerleme Kaydı")]
+        [Tooltip("Açıkken Editor'de Play'e basınca da kayıtlı levelden devam edilir. Kapalıyken Editor 'currentLevel' ile başlar " +
+                 "(build'de her zaman kayıtlı levelden devam edilir).")]
+        public bool resumeSavedProgressInEditor = false;
+
+        /// <summary>Oyuncunun devam edeceği level numarası (PlayerPrefs). Level yüklenince ve bitince güncellenir.</summary>
+        public const string SavedLevelPrefKey = "PG_SavedLevelNumber";
+
         [Header("Active Monsters & Gameplay State")]
         public List<MonsterCharacter> activeMonsters = new List<MonsterCharacter>();
         public bool isLevelCompleted = false;
@@ -151,6 +159,9 @@ namespace PuzzleGlass
             {
                 // Level geçişinin ağır hazırlığını oyun başında karelere yayarak yap (level sonunda donmasın)
                 if (useBallPourTransition) LevelTransitionController.GetOrCreate().BeginWarmUp();
+
+                if ((!Application.isEditor || resumeSavedProgressInEditor) && TryLoadSavedProgress())
+                    return;
 
                 if (currentLevel != null)
                 {
@@ -768,6 +779,7 @@ namespace PuzzleGlass
 
             int foundIdx = levels != null ? levels.IndexOf(levelData) : -1;
             if (foundIdx >= 0) currentLevelIndex = foundIdx;
+            if (Application.isPlaying) SaveProgress(levelData.levelNumber);
 
             EnsureGameplayControllers();
             ClearMonsters();
@@ -1319,6 +1331,47 @@ namespace PuzzleGlass
             LoadLevel(runtimeLvl);
         }
 
+        private static void SaveProgress(int levelNumber)
+        {
+            if (levelNumber < 1) return;
+            if (PlayerPrefs.GetInt(SavedLevelPrefKey, 0) == levelNumber) return;
+            PlayerPrefs.SetInt(SavedLevelPrefKey, levelNumber);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// Kayıtlı level numarasını yükler: listede o numaralı level varsa onu, liste bittiyse aynı numaralı
+        /// prosedürel leveli. Kayıt yoksa false döner.
+        /// </summary>
+        private bool TryLoadSavedProgress()
+        {
+            int saved = PlayerPrefs.GetInt(SavedLevelPrefKey, 0);
+            if (saved < 1) return false;
+
+            int maxListed = 0;
+            if (levels != null)
+            {
+                for (int i = 0; i < levels.Count; i++)
+                {
+                    var lvl = levels[i];
+                    if (lvl == null) continue;
+                    if (lvl.levelNumber == saved)
+                    {
+                        LoadLevelByIndex(i);
+                        return true;
+                    }
+                    maxListed = Mathf.Max(maxListed, lvl.levelNumber);
+                }
+            }
+
+            if (saved > maxListed)
+            {
+                GenerateAndLoadProceduralLevel(saved, PuzzleLevelGenerator.GetProgressiveDifficulty(saved));
+                return true;
+            }
+            return false;
+        }
+
         public void LoadLevelByIndex(int index)
         {
             if (levels == null || levels.Count == 0)
@@ -1752,6 +1805,9 @@ namespace PuzzleGlass
 
             if (Application.isPlaying)
             {
+                // Geçiş sırasında oyun kapanırsa bir sonraki levelden devam edilsin
+                if (currentLevel != null) SaveProgress(currentLevel.levelNumber + 1);
+
                 // Top dökülmeli geçiş: ekran toplarla kapanınca sonraki level yüklenir.
                 if (useBallPourTransition)
                 {

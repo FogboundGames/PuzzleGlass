@@ -35,6 +35,9 @@ namespace PuzzleGlass.Editor.Studio
         public int slotCapacity;
         /// <summary>Slot modelinde rastgele oynayan oyuncunun kilitlenme oranı (0-1). Zorluk ölçüsü; -1 = hesaplanmadı.</summary>
         public float randomFailRate = -1f;
+        /// <summary>Slot modelinde öndeki toplara uyan bloğu seçen (akıllı) oyuncunun kilitlenme oranı (0-1); -1 = hesaplanmadı.</summary>
+        public float smartFailRate = -1f;
+        public bool HasDifficultyRates => randomFailRate >= 0f && smartFailRate >= 0f;
         /// <summary>Slot modelinde çözümdeki slota gönderme sayısı.</summary>
         public int SlotSends
         {
@@ -280,7 +283,8 @@ namespace PuzzleGlass.Editor.Studio
             // Tepside boş hücre
             int occupied = 0;
             for (int x = 0; x < cols; x++) for (int y = 0; y < rows; y++) if (owner[x, y] >= 0 || wallGrid[x, y]) occupied++;
-            if (occupied >= cols * rows)
+            // Slot sisteminde tepsi tamamen dolu sütun kuyruklarıdır; boş hücre gerekmez
+            if (!UseSlotModel && occupied >= cols * rows)
                 list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = "Tepside boş hücre yok: hiçbir blok kaydırılamaz.", why = "Oyuncu sadece en üst sıradaki bloklarla başlayabilir." });
 
             // Anahtar / kilit / buz tutarlılığı
@@ -336,10 +340,31 @@ namespace PuzzleGlass.Editor.Studio
                 switch (solve.status)
                 {
                     case SolveStatus.Unsolvable:
-                        list.Add(new LevelFinding { severity = FindingSeverity.Critical, text = "Level çözülemiyor: hangi sırayla oynanırsa oynansın bloklar dolmuyor.", why = "Cam sırasını değiştir (gerekli renkler alta), blokları farklı sütunlara koy ya da tepsiye boşluk aç." });
+                        list.Add(new LevelFinding
+                        {
+                            severity = FindingSeverity.Critical,
+                            text = "Level çözülemiyor: hangi sırayla oynanırsa oynansın bloklar dolmuyor.",
+                            why = UseSlotModel
+                                ? "Slotlar dolup kimse top alamıyor. Cam sırasını değiştir (öndeki blokların renkleri öne), blok sırasını değiştir ya da 'Otomatik üret' ile yeniden üret."
+                                : "Cam sırasını değiştir (gerekli renkler alta), blokları farklı sütunlara koy ya da tepsiye boşluk aç."
+                        });
                         break;
                     case SolveStatus.LimitReached:
                         list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = $"Çözüm aranırken sınıra ulaşıldı ({solve.exploredStates} durum); çözülebilirliği kesin değil.", why = "Çok büyük tepsi/çok blok aramayı uzatır. Oynayarak doğrula." });
+                        break;
+                    case SolveStatus.Solved when UseSlotModel:
+                        // Slot sisteminde zorluk: rastgele oynayan oyuncunun kilitlenme oranı
+                        if (solve.HasDifficultyRates)
+                        {
+                            var measured = DifficultyFromRates(solve.randomFailRate, solve.smartFailRate);
+                            if (measured != lvl.difficulty)
+                                list.Add(new LevelFinding
+                                {
+                                    severity = FindingSeverity.Warning,
+                                    text = $"{DifficultyName(lvl.difficulty)} seçili ama ölçülen zorluk {DifficultyName(measured)}: {DifficultyRatesText(solve)} ({DifficultyBandText(lvl.difficulty)}).",
+                                    why = "Level ayarlarından zorluğu ölçülene çek ya da 'Otomatik üret' ile bu zorlukta yeniden üret."
+                                });
+                        }
                         break;
                     case SolveStatus.Solved:
                         if (solve.openingCollectors == 0)
@@ -371,6 +396,17 @@ namespace PuzzleGlass.Editor.Studio
         /// kaç denemede kilitlendiği (slotlar dolu, kimse top alamıyor). 0 = her sıra çözer (kolay), 0.9 = neredeyse her rastgele sıra kilitlenir.
         /// </summary>
         public static float EstimateRandomFailRate(PuzzleGlassLevelData lvl, GlassDims dims, int trials = 200, int seed = 12345)
+            => EstimateFailRate(lvl, dims, trials, seed, smart: false);
+
+        /// <summary>
+        /// Gerçek oyuncuya daha yakın zorluk ölçüsü: oyuncu çıkışı açık bloklardan, rengi raydaki şeritlerin en önündeki
+        /// topla eşleşenleri tercih eder (birden çoksa rastgele); eşleşen yoksa rastgele birini gönderir.
+        /// Tamamen rastgele oyuncu neredeyse her levelde kilitlendiği için zorluk bantları bununla ölçülür.
+        /// </summary>
+        public static float EstimateSmartFailRate(PuzzleGlassLevelData lvl, GlassDims dims, int trials = 200, int seed = 12345)
+            => EstimateFailRate(lvl, dims, trials, seed, smart: true);
+
+        private static float EstimateFailRate(PuzzleGlassLevelData lvl, GlassDims dims, int trials, int seed, bool smart)
         {
             if (!BuildRuntimeModel(lvl, dims, out var blocks, out var anchors0, out var walls, out var w1, out var w2, out var gcol, out bool hasW2, out int bc))
                 return -1f;
@@ -390,7 +426,22 @@ namespace PuzzleGlass.Editor.Studio
                         for (int i = 0; i < n; i++)
                             if (InGrid(s, i) && !IsBlockBlocked(i, s, blocks, lvl.iceMeltMode) && IsExitClear(i, s, blocks, walls, cols, rows)) cand.Add(i);
                     if (cand.Count == 0) break;
-                    ApplyMove(s, cand[rng.Next(cand.Count)], SolveResult.SlotMove, blocks, walls, cols, rows, cap, lvl.iceMeltMode);
+                    int pick = cand[rng.Next(cand.Count)];
+                    if (smart)
+                    {
+                        // Şeritlerin en öndeki top renkleri (dolu kutu stoğu da toplanabilir sayılır)
+                        var stacks = s.wave == 0 ? w1 : w2;
+                        var front = new HashSet<PuzzleColor>();
+                        for (int c = 0; c < stacks.Length; c++)
+                            if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
+                        if (s.supplied != null)
+                            for (int c = 0; c < s.supplied.Length; c++)
+                                if (s.supplied[c] > 0) front.Add((PuzzleColor)c);
+                        var match = new List<int>();
+                        foreach (int i in cand) if (blocks[i].isFilledBox || front.Contains(blocks[i].color)) match.Add(i);
+                        if (match.Count > 0) pick = match[rng.Next(match.Count)];
+                    }
+                    ApplyMove(s, pick, SolveResult.SlotMove, blocks, walls, cols, rows, cap, lvl.iceMeltMode);
                     CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, lvl.iceMeltMode, isTrack);
                 }
                 if (!AllRemoved(s)) fails++;
@@ -1010,6 +1061,42 @@ namespace PuzzleGlass.Editor.Studio
         /// Zorluk eğrisi hedefi: en kısa çözümdeki sürükleme sayısının bu zorlukta olması gereken aralık.
         /// Kolay 1-3, Orta 3-6, Zor 5-9, Boss 8+.
         /// </summary>
+        // Slot sistemi zorluk bantları (2026-11-22, mevcut 40 level ölçülerek ayarlandı).
+        // Akıllı oyuncu (öndeki topa uyan bloğu seçen) kilitleniyorsa level gerçekten zordur; akıllı oyuncu hiç kilitlenmiyorsa
+        // rastgele oyuncunun kilitlenme oranı ne kadar affedici olduğunu ayırır.
+        public const float EasyMaxSmart = 0.05f, EasyMaxRandom = 0.60f;
+        public const float MediumMaxSmart = 0.12f;
+        public const float HardMaxSmart = 0.50f;
+
+        /// <summary>İki kilitlenme oranına göre ölçülen zorluk.</summary>
+        public static LevelDifficulty DifficultyFromRates(float randomFailRate, float smartFailRate)
+        {
+            if (smartFailRate <= EasyMaxSmart && randomFailRate <= EasyMaxRandom) return LevelDifficulty.Easy;
+            if (smartFailRate <= MediumMaxSmart) return LevelDifficulty.Medium;
+            if (smartFailRate <= HardMaxSmart) return LevelDifficulty.Hard;
+            return LevelDifficulty.Boss;
+        }
+
+        /// <summary>Zorluk sırası (Kolay 0 … Boss 3): üretici hedefe uzaklığı bununla ölçer.</summary>
+        public static int DifficultyRank(LevelDifficulty d) =>
+            d == LevelDifficulty.Easy ? 0 : d == LevelDifficulty.Medium ? 1 : d == LevelDifficulty.Hard ? 2 : 3;
+
+        public static string DifficultyRatesText(SolveResult s) =>
+            $"akıllı oyuncu %{Mathf.RoundToInt(s.smartFailRate * 100f)}, rastgele oyuncu %{Mathf.RoundToInt(s.randomFailRate * 100f)} kilitleniyor";
+
+        public static string DifficultyBandText(LevelDifficulty d)
+        {
+            int e = Mathf.RoundToInt(EasyMaxSmart * 100f), er = Mathf.RoundToInt(EasyMaxRandom * 100f);
+            int m = Mathf.RoundToInt(MediumMaxSmart * 100f), h = Mathf.RoundToInt(HardMaxSmart * 100f);
+            switch (d)
+            {
+                case LevelDifficulty.Easy: return $"Kolay: akıllı ≤%{e} ve rastgele ≤%{er}";
+                case LevelDifficulty.Medium: return $"Orta: akıllı ≤%{m}";
+                case LevelDifficulty.Hard: return $"Zor: akıllı %{m}-%{h}";
+                default: return $"Boss: akıllı >%{h}";
+            }
+        }
+
         public static void GetTargetDrags(LevelDifficulty d, out int lo, out int hi)
         {
             switch (d)

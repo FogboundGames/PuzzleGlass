@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 36
   levelName: Level 36
-  difficulty: 3
+  difficulty: 0
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -121,64 +121,104 @@ MonoBehaviour:
   iceMeltMode: 0
   useManualBallLayout: 1
   manualLaneWidth: 3
+  manualTrackCapacity: 0
+  trackLayerLock: 0
   manualBalls:
   - color: 4
     column: 1
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 9
     column: 2
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 0
     column: 3
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 2
     column: 0
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 2
     column: 1
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 2
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 2
     column: 4
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 9
     column: 3
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 3
     column: 0
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 3
     column: 4
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 3
     column: 5
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 4
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 5
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 1
     column: 5
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 1
     column: 3
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 4
     column: 2
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 9
     column: 6
     row: 0
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 9
     column: 6
     row: 1
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   - color: 9
     column: 1
     row: 2
+    hasTrackPos: 0
+    trackPos: {x: 0, y: 0}
   bottomToTopTriplets: 000000000200000003000000010000000900000004000000
   bottomToTopGroups:
   - color: 0

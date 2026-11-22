@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 40
   levelName: Level 40
-  difficulty: 3
+  difficulty: 0
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -1629,8 +1629,8 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
+    isFilledBox: 1
+    filledBallColor: 3
   - color: 1
     count: 23
     blockShape: 0
@@ -1649,7 +1649,7 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 0
+    isFilledBox: 1
     filledBallColor: 0
   - color: 4
     count: 19
@@ -1682,7 +1682,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 3
-    count: 13
+    count: 24
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -1692,7 +1692,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 13
+    count: 22
     blockShape: 0
     gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
@@ -1712,7 +1712,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 3
-    count: 14
+    count: 25
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
@@ -1742,7 +1742,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 14
+    count: 23
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
     hasGridAnchor: 1

@@ -60,16 +60,9 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
             GUI.backgroundColor = new Color(0.28f, 0.88f, 0.55f);
-            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım & Üretim Aracı)", GUILayout.Height(36)))
+            if (GUILayout.Button("🎮 Level Stüdyosu'nu Aç (Tasarım, Toplu Üretim & Doğrulama)", GUILayout.Height(36)))
             {
-                LevelDesignerWindow.OpenWindow();
-            }
-
-            GUI.backgroundColor = new Color(0.98f, 0.78f, 0.25f);
-            if (GUILayout.Button("🎲 10 Levellık İlerlemeli Paket Üret (Kolay -> Zor -> Boss)", GUILayout.Height(32)))
-            {
-                var win = EditorWindow.GetWindow<LevelDesignerWindow>("Level Design Studio");
-                win.GenerateProgressiveLevelPack(10);
+                Studio.GlassLevelStudioWindow.Open();
             }
 
             EditorGUILayout.Space(4);
@@ -263,9 +256,9 @@ namespace PuzzleGlass.Editor
             }
 
             GUI.backgroundColor = new Color(0.28f, 0.88f, 0.55f);
-            if (GUILayout.Button("🎮 Level Design Studio'yu Aç (Bölüm Tasarım Aracı)", GUILayout.Height(32)))
+            if (GUILayout.Button("🎮 Level Stüdyosu'nu Aç", GUILayout.Height(32)))
             {
-                LevelDesignerWindow.OpenWindow();
+                Studio.GlassLevelStudioWindow.Open();
             }
 
             GUI.backgroundColor = _enableSceneHandles ? new Color(0.35f, 0.90f, 0.55f) : new Color(0.75f, 0.75f, 0.75f);

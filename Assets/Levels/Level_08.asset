@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 8
   levelName: Level 8 - Zor
-  difficulty: 2
+  difficulty: 0
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
@@ -105,6 +105,8 @@ MonoBehaviour:
   iceMeltMode: 0
   useManualBallLayout: 0
   manualLaneWidth: 0
+  manualTrackCapacity: 0
+  trackLayerLock: 0
   manualBalls: []
   bottomToTopTriplets: 00000000060000000000000001000000060000000200000000000000030000000100000006000000020000000000000003000000010000000600000002000000000000000300000001000000060000000200000000000000030000000600000000000000
   bottomToTopGroups:
