@@ -362,7 +362,7 @@ MonoBehaviour:
     filledBallColor: 0
   monsters:
   - color: 6
-    count: 24
+    count: 32
     blockShape: 0
     gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
@@ -409,10 +409,10 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
+    isFilledBox: 1
+    filledBallColor: 6
   - color: 6
-    count: 18
+    count: 26
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -462,7 +462,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 6
-    count: 18
+    count: 26
     blockShape: 0
     gridAnchor: {x: 2, y: 0}
     hasGridAnchor: 1

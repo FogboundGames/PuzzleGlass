@@ -54,6 +54,10 @@ namespace PuzzleGlass
         [Tooltip("Deliğin hemen yanındaki ölü bölge (top çapı cinsinden); topların delik üzerinde titremesini engeller.")]
         public float poolDrainDeadZoneInDiameters = 0.35f;
 
+        [Tooltip("Slot sisteminde kare/dikdörtgen kutu camlar: yalnızca alt çıkış kapağının (yakanın) üstündeki toplar toplanabilir. " +
+                 "Kapalıysa alt sıradaki eşleşen her top toplanır. Açıkken huni tüm tabanı kapağa doğru çeker.")]
+        public bool poolHatchOnly = true;
+
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
         private float _lastGlobalCollectionTime = -10f;
@@ -564,12 +568,28 @@ namespace PuzzleGlass
         private readonly float[] _cachedTrackExitDist = new float[512];
         private readonly Vector2[] _cachedTrackFlowDir = new Vector2[512];
 
+        /// <summary>Kapak kuralı geçerli mi: slot sistemi + düz tabanlı kutu cam.</summary>
+        private bool UsesPoolHatch(ShapedGlassContainer container) =>
+            poolHatchOnly && container != null && container.IsFlatBottomBox && SlotSystem.IsActive;
+
+        /// <summary>Top, alt çıkış kapağının (yakanın) tam üstünde mi? (merkezi yaka genişliğinin içinde)</summary>
+        private static bool IsAtPoolHatch(ShapedGlassContainer container, BallPhysicsController ball)
+        {
+            Vector3 ballLocal = container.transform.InverseTransformPoint(ball.transform.position);
+            Vector3 exitLocal = container.transform.InverseTransformPoint(container.GetBottomExitWorldPosition());
+            float ballDiam = container.particleSize > 0.08f ? container.particleSize : 0.114f;
+            float halfW = container.GetBottomExitCollarWidthLocal() * 0.5f - ballDiam * 0.25f;
+            return Mathf.Abs(ballLocal.x - exitLocal.x) <= Mathf.Max(ballDiam * 0.75f, halfW);
+        }
+
         private bool IsBallInMonsterCollectionZone(MonsterCharacter monster, BallPhysicsController ball)
         {
             if (monster == null || ball == null) return false;
             ShapedGlassContainer zoneContainer = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
+            // Kutu camda (slot sistemi) yalnızca kapağın üstündeki top çıkabilir; diğerleri kapağa akmayı bekler
+            if (UsesPoolHatch(zoneContainer) && !IsAtPoolHatch(zoneContainer, ball)) return false;
             if (zoneContainer != null && zoneContainer.HasPerSlotExitChannels)
             {
                 return monster.assignedSlot != null && zoneContainer.GetChannelIndexForMonster(monster) >= 0;
@@ -960,13 +980,16 @@ namespace PuzzleGlass
         private void ApplyPoolDrainFunnel()
         {
             if (!enablePoolDrainFunnel) return;
-            if (_attractingBalls.Count == 0 && Time.time - _lastDrainTargetTime > 0.40f) return;
             if (BallObjectPool.Instance == null) return;
 
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
             if (container == null || !container.IsFlatBottomBox) return;
+            // Kapak kuralında huni, slotta top bekleyen blok varken hep çalışır ve tüm tabanı kapsar:
+            // kapaktan uzaktaki toplar da zamanla kapağa akar (köşede top kalmaz)
+            bool hatch = UsesPoolHatch(container);
+            if (hatch ? _activeStreams.Count == 0 : (_attractingBalls.Count == 0 && Time.time - _lastDrainTargetTime > 0.40f)) return;
 
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
             if (activeBalls == null || activeBalls.Count == 0) return;
@@ -978,9 +1001,11 @@ namespace PuzzleGlass
             float ballDiamWorld = ballDiamLocal * Mathf.Abs(container.transform.lossyScale.x);
             if (ballDiamWorld <= 0.001f) ballDiamWorld = ballDiamLocal;
 
-            float maxBottomLocalY = floorLocalY + ballDiamLocal * Mathf.Max(1.0f, poolDrainRowToleranceInDiameters);
+            // Kapak kuralında alttaki ~3 sıra çekilir: köşe çıkıntılarına takılan tek toplar da kapağa kayar
+            float rowTol = hatch ? Mathf.Max(3.2f, poolDrainRowToleranceInDiameters) : Mathf.Max(1.0f, poolDrainRowToleranceInDiameters);
+            float maxBottomLocalY = floorLocalY + ballDiamLocal * rowTol;
             float deadZone = ballDiamWorld * Mathf.Max(0f, poolDrainDeadZoneInDiameters);
-            float funnelRadius = ballDiamWorld * Mathf.Max(1.0f, poolDrainRadiusInDiameters);
+            float funnelRadius = hatch ? float.MaxValue : ballDiamWorld * Mathf.Max(1.0f, poolDrainRadiusInDiameters);
 
             for (int i = 0; i < activeBalls.Count; i++)
             {

@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace PuzzleGlass
 {
@@ -9,7 +12,10 @@ namespace PuzzleGlass
     /// Öğretici katman (Violet Theme UI assetleri + pastel lavanta teması):
     ///  1. El ipucu: levelde tutorialHint açıksa Violet el ikonu ve dokunma halkası ile bloğu işaret eder.
     ///  2. Mekanik tanıtımı: buz, kilit & anahtar ve içi dolu kutu bir levelde İLK kez görüldüğünde
-    ///     Violet panel ve ikon rozetli kısa bir tanıtım kartı çıkar.
+    ///     kısa bir tanıtım kartı çıkar; el ve halka o mekaniğin olduğu bloğu gösterir. Kart dokununca kapanır
+    ///     (o sırada bloklara dokunulamaz) ve ancak kapanınca "görüldü" sayılır.
+    ///  3. İlk levellerde oyuncu bir süre ilerleyemezse el, camdaki toplara uyan bir bloğu yeniden gösterir.
+    ///  4. Slotlar ilk kez dolmak üzereyken (1 boş slot kaldı) bir kez uyarı balonu çıkar.
     /// Kendi canvas'ı vardır (HUD'un üstünde, level geçişinin altında).
     /// </summary>
     public class TutorialOverlay : MonoBehaviour
@@ -19,8 +25,14 @@ namespace PuzzleGlass
         public const string PrefIce = "PG_Intro_Ice";
         public const string PrefLock = "PG_Intro_Lock";
         public const string PrefFilledBox = "PG_Intro_FilledBox";
+        public const string PrefSlotWarning = "PG_Intro_SlotWarning";
         private const float CycleSeconds = 2.2f;
-        private const float CardSeconds = 7.5f;
+        /// <summary>Kart açıldıktan sonra bu süre dolmadan dokunuş kartı kapatmaz (yanlışlıkla geçmeyi önler).</summary>
+        private const float CardMinSeconds = 0.6f;
+        /// <summary>Takılınca ipucu bu level numarasına kadar (dahil) verilir.</summary>
+        private const int IdleHintMaxLevel = 5;
+        private const float IdleHintSeconds = 6f;
+        private const float ToastSeconds = 4.2f;
 
         private enum IntroMechanic
         {
@@ -48,9 +60,26 @@ namespace PuzzleGlass
         private Text _hintLabel;
         private float _hintTime;
 
-        private readonly Queue<(IntroMechanic kind, string title, string body)> _cards = new Queue<(IntroMechanic, string, string)>();
+        private struct IntroCard
+        {
+            public IntroMechanic kind;
+            public string title, body, prefKey;
+            public MonsterCharacter target;
+        }
+
+        private readonly Queue<IntroCard> _cards = new Queue<IntroCard>();
         private GameObject _cardObj;
         private float _cardTime;
+        private IntroCard _currentCard;
+
+        private PuzzleGlassLevelData _level;
+        private List<MonsterCharacter> _blocks;
+        private float _idleTime;
+        private int _lastProgress = -1;
+
+        private RectTransform _toast;
+        private CanvasGroup _toastGroup;
+        private float _toastTime = -1f;
 
         private static readonly Color ColIndigoDeep = new Color(0.240f, 0.255f, 0.580f, 1.00f);
         private static readonly Color ColCardBody   = new Color(0.270f, 0.285f, 0.540f, 1.00f);
@@ -80,6 +109,11 @@ namespace PuzzleGlass
         {
             StopHint();
             ClearCards();
+            HideToast();
+            _level = lvl;
+            _blocks = blocks;
+            _idleTime = 0f;
+            _lastProgress = -1;
             if (lvl == null) return;
 
             // 1) El ipucu
@@ -130,24 +164,53 @@ namespace PuzzleGlass
                     if (m.isFilledBox) hasFilled = true;
                 }
             }
+            // "Görüldü" kaydı kart kapanınca yapılır (CloseCard): okunmadan level yeniden başlarsa kart tekrar çıkar
             if (hasIce && PlayerPrefs.GetInt(PrefIce, 0) == 0)
             {
                 string how = lvl.iceMeltMode == IceMeltMode.PerBallCollected ? "a ball is collected" : "a box is filled";
-                _cards.Enqueue((IntroMechanic.Ice, "FROZEN BLOCK", $"A frozen block can't move or collect balls. Its counter drops each time {how}. At zero, the ice melts."));
-                PlayerPrefs.SetInt(PrefIce, 1);
+                _cards.Enqueue(new IntroCard
+                {
+                    kind = IntroMechanic.Ice, prefKey = PrefIce, title = "FROZEN BLOCK",
+                    body = $"A frozen block can't be sent up yet. Its counter drops each time {how}. At zero, the ice melts.",
+                    target = FindMechanicBlock(blocks, b => b.iceCount > 0)
+                });
             }
             if ((hasLock || hasKey) && PlayerPrefs.GetInt(PrefLock, 0) == 0)
             {
-                _cards.Enqueue((IntroMechanic.Lock, "LOCK & KEY", "A locked block stays shut until boxes carrying keys are filled and bring their keys. Fill key boxes first!"));
-                PlayerPrefs.SetInt(PrefLock, 1);
+                _cards.Enqueue(new IntroCard
+                {
+                    kind = IntroMechanic.Lock, prefKey = PrefLock, title = "LOCK & KEY",
+                    body = "A locked block stays shut until boxes carrying keys are filled and bring their keys. Fill key boxes first!",
+                    target = FindMechanicBlock(blocks, b => b.lockKeyCount > 0) ?? FindMechanicBlock(blocks, b => b.hasKey)
+                });
             }
             if (hasFilled && PlayerPrefs.GetInt(PrefFilledBox, 0) == 0)
             {
-                _cards.Enqueue((IntroMechanic.FilledBox, "FILLED BOX", "A filled box starts full! Send it up to pour its balls into the glass, then it stays to collect matching balls."));
-                PlayerPrefs.SetInt(PrefFilledBox, 1);
+                _cards.Enqueue(new IntroCard
+                {
+                    kind = IntroMechanic.FilledBox, prefKey = PrefFilledBox, title = "FILLED BOX",
+                    body = "This box starts full! Send it up to pour its balls into the glass, then it stays to collect its own color.",
+                    target = FindMechanicBlock(blocks, b => b.isFilledBox)
+                });
             }
-            if (_cards.Count > 0) PlayerPrefs.Save();
             ShowNextCard();
+        }
+
+        private static MonsterCharacter FindMechanicBlock(List<MonsterCharacter> blocks, System.Func<MonsterCharacter, bool> match)
+        {
+            if (blocks == null) return null;
+            foreach (var b in blocks)
+                if (b != null && !b.IsCompleted && b.gameObject.activeInHierarchy && match(b)) return b;
+            return null;
+        }
+
+        /// <summary>Slota gönderilebilir (tamamlanmamış, kilitsiz/buzsuz, çıkışı açık, tepside) blok mu?</summary>
+        private static bool IsSendable(MonsterCharacter b, List<MonsterCharacter> blocks)
+        {
+            var grid = StagingGridBoard.Instance;
+            return b != null && !b.IsCompleted && b.assignedSlot == null && !b.IsMovementOrCollectionBlocked
+                   && b.gameObject.activeInHierarchy
+                   && (grid == null || grid.IsBlockExitClearToSlots(b, blocks));
         }
 
         private static MonsterCharacter PickSlotHintBlock(PuzzleGlassLevelData lvl, List<MonsterCharacter> blocks)
@@ -183,11 +246,202 @@ namespace PuzzleGlass
 
         private void Update()
         {
-            UpdateHint();
-            UpdateCard();
+            if (_cardObj != null)
+            {
+                // Kart açıkken el ipucu bekler; el/halka kartın anlattığı bloğu gösterir
+                UpdateCard();
+                UpdateCardPointer();
+            }
+            else
+            {
+                if (_bubble != null && !_bubble.gameObject.activeSelf) _bubble.gameObject.SetActive(true);
+                UpdateIdleHint();
+                UpdateHint();
+            }
+            UpdateSlotWarning();
         }
 
         // ==================== El ipucu ====================
+
+        private void StartSlotHint(MonsterCharacter block)
+        {
+            _hintBlock = block;
+            _hintFrom = block.gridAnchor;
+            _hintToSlot = true;
+            _hintActive = true;
+            _hintTime = -0.4f;
+            if (_hintLabel != null) _hintLabel.text = "Tap to send it up";
+        }
+
+        /// <summary>
+        /// İlk levellerde oyuncu IdleHintSeconds boyunca ilerleme kaydetmezse (hiçbir blok top toplamadı, dokunmadı)
+        /// camdaki toplara en çok uyan gönderilebilir bloğu el ile gösterir.
+        /// </summary>
+        private void UpdateIdleHint()
+        {
+            var gm = PuzzleGlassGameManager.Instance;
+            if (_hintActive || _level == null || _level.levelNumber > IdleHintMaxLevel || _blocks == null || !SlotSystem.IsActive
+                || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)) || LevelTransitionController.IsTransitioning
+                || PointerPressedThisFrame())
+            {
+                _idleTime = 0f;
+                return;
+            }
+
+            int progress = 0;
+            foreach (var b in _blocks) if (b != null) progress += Mathf.Max(0, b.remainingCount);
+            if (progress != _lastProgress)
+            {
+                _lastProgress = progress;
+                _idleTime = 0f;
+                return;
+            }
+
+            _idleTime += Time.unscaledDeltaTime;
+            if (_idleTime < IdleHintSeconds) return;
+            _idleTime = 0f;
+            if (SlotSystem.Instance.GetFirstEmptySlot() == null) return;
+            var pick = PickIdleHintBlock();
+            if (pick != null) StartSlotHint(pick);
+        }
+
+        /// <summary>Camdaki toplarla en çok eşleşen (slottaki aynı renk blokların ihtiyacı düşülmüş) gönderilebilir blok.</summary>
+        private MonsterCharacter PickIdleHintBlock()
+        {
+            var pool = BallObjectPool.Instance;
+            if (pool == null || pool.ActiveBalls == null) return null;
+            var score = new Dictionary<PuzzleColor, int>();
+            foreach (var ball in pool.ActiveBalls)
+            {
+                if (ball == null || !ball.gameObject.activeInHierarchy) continue;
+                score.TryGetValue(ball.colorType, out int v);
+                score[ball.colorType] = v + 1;
+            }
+            foreach (var b in _blocks)
+            {
+                if (b == null || b.IsCompleted || b.assignedSlot == null || b.isFilledBox) continue;
+                if (score.TryGetValue(b.colorType, out int v)) score[b.colorType] = v - Mathf.Max(0, b.remainingCount);
+            }
+
+            MonsterCharacter best = null;
+            int bestScore = 0;
+            foreach (var b in _blocks)
+            {
+                if (!IsSendable(b, _blocks)) continue;
+                // Dolu kutu her zaman işe yarar (toplarını cama döker); renk eşleşmesi yoksa ona yönlendir
+                int s = b.isFilledBox ? 1 : (score.TryGetValue(b.colorType, out int v) ? v : 0);
+                if (s > bestScore) { bestScore = s; best = b; }
+            }
+            return best;
+        }
+
+        private static bool PointerPressedThisFrame()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Pointer.current != null && Pointer.current.press.wasPressedThisFrame) return true;
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame) return true;
+            return false;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetMouseButtonDown(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began);
+#else
+            return false;
+#endif
+        }
+
+        /// <summary>Kart açıkken: el ve nabız gibi atan halka kartın anlattığı bloğun üstünde durur.</summary>
+        private void UpdateCardPointer()
+        {
+            var target = _currentCard.target;
+            var cam = Camera.main;
+            if (target == null || cam == null || !target.gameObject.activeInHierarchy)
+            {
+                if (_handGroup != null) _handGroup.alpha = 0f;
+                return;
+            }
+            if (_bubble != null && _bubble.gameObject.activeSelf) _bubble.gameObject.SetActive(false);
+
+            float t = Mathf.Max(0f, _cardTime - 0.25f);
+            float press = 0.5f + 0.5f * Mathf.Sin(t * 5.2f);
+            _handGroup.alpha = Mathf.Clamp01(t / 0.3f);
+            Vector2 pos = WorldToCanvas(cam, target.transform.position);
+
+            bool hasHandSprite = _theme != null && _theme.iconHandClick != null;
+            Vector2 fingerPos = pos + new Vector2(26f, -34f);
+            _finger.anchoredPosition = hasHandSprite ? fingerPos : (fingerPos + new Vector2(18f, -26f));
+            _finger.localScale = Vector3.one * Mathf.Lerp(1.06f, 0.94f, press);
+            _finger.localRotation = hasHandSprite ? Quaternion.Euler(0f, 0f, -14f) : Quaternion.identity;
+
+            _ring.anchoredPosition = pos;
+            _ring.localScale = Vector3.one * Mathf.Lerp(1.05f, 1.45f, press);
+            _ringImg.color = new Color(1f, 0.92f, 0.45f, Mathf.Lerp(0.95f, 0.55f, press));
+        }
+
+        // ==================== Slot uyarısı ====================
+
+        /// <summary>Oyunda ilk kez yalnızca 1 boş slot kaldığında bir kez uyarı balonu gösterir.</summary>
+        private void UpdateSlotWarning()
+        {
+            if (_toast == null) return;
+            if (_toastTime >= 0f)
+            {
+                _toastTime += Time.unscaledDeltaTime;
+                float a = _toastTime < 0.25f ? _toastTime / 0.25f
+                        : _toastTime > ToastSeconds - 0.4f ? Mathf.Clamp01((ToastSeconds - _toastTime) / 0.4f) : 1f;
+                _toastGroup.alpha = a;
+                PositionToast();
+                if (_toastTime >= ToastSeconds) HideToast();
+                return;
+            }
+
+            var gm = PuzzleGlassGameManager.Instance;
+            if (_level == null || _cardObj != null || !SlotSystem.IsActive || PlayerPrefs.GetInt(PrefSlotWarning, 0) != 0
+                || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)) || LevelTransitionController.IsTransitioning)
+                return;
+
+            int open = 0, empty = 0;
+            foreach (var sl in SlotSystem.Instance.slots)
+            {
+                if (sl == null || sl.isLocked) continue;
+                open++;
+                if (!sl.isOccupied && sl.currentMonster == null) empty++;
+            }
+            if (open < 3 || empty != 1) return;
+
+            PlayerPrefs.SetInt(PrefSlotWarning, 1);
+            PlayerPrefs.Save();
+            _toastTime = 0f;
+            _toast.gameObject.SetActive(true);
+            _toast.localScale = Vector3.one * 0.9f;
+            _toast.DOKill();
+            _toast.DOScale(1f, 0.25f).SetEase(Ease.OutBack).SetUpdate(true);
+            PositionToast();
+        }
+
+        private void PositionToast()
+        {
+            var cam = Camera.main;
+            if (cam == null || !SlotSystem.IsActive) return;
+            Vector3 sum = Vector3.zero;
+            int n = 0;
+            foreach (var sl in SlotSystem.Instance.slots)
+            {
+                if (sl == null || sl.isLocked) continue;
+                sum += sl.transform.position;
+                n++;
+            }
+            if (n == 0) return;
+            Vector2 p = WorldToCanvas(cam, sum / n);
+            _toast.anchoredPosition = new Vector2(0f, p.y + 150f);
+        }
+
+        private void HideToast()
+        {
+            _toastTime = -1f;
+            if (_toast == null) return;
+            _toast.DOKill();
+            _toastGroup.alpha = 0f;
+            _toast.gameObject.SetActive(false);
+        }
 
         private void UpdateHint()
         {
@@ -272,11 +526,29 @@ namespace PuzzleGlass
         private void ShowNextCard()
         {
             if (_cardObj != null || _cards.Count == 0) return;
-            var (kind, title, body) = _cards.Dequeue();
+            _currentCard = _cards.Dequeue();
+            var kind = _currentCard.kind;
+            string title = _currentCard.title, body = _currentCard.body;
 
-            _cardObj = new GameObject("IntroCard", typeof(RectTransform), typeof(Image), typeof(Button));
-            var rt = (RectTransform)_cardObj.transform;
-            rt.SetParent(_root, false);
+            // Tam ekran hafif karartma: kart açıkken bloklara dokunulmaz (MonsterDragController UI üstündeki dokunuşu yok sayar),
+            // ekranın herhangi bir yerine dokunmak kartı kapatır
+            _cardObj = new GameObject("IntroCardLayer", typeof(RectTransform), typeof(Image), typeof(Button));
+            var layerRt = (RectTransform)_cardObj.transform;
+            layerRt.SetParent(_root, false);
+            layerRt.anchorMin = Vector2.zero; layerRt.anchorMax = Vector2.one;
+            layerRt.offsetMin = layerRt.offsetMax = Vector2.zero;
+            var dimImg = _cardObj.GetComponent<Image>();
+            dimImg.color = new Color(0.08f, 0.05f, 0.22f, 0f);
+            dimImg.DOFade(0.32f, 0.25f).SetUpdate(true);
+            var layerBtn = _cardObj.GetComponent<Button>();
+            layerBtn.transition = Selectable.Transition.None;
+            layerBtn.onClick.AddListener(CloseCard);
+            // El/halka karartmanın üstünde kalsın (gösterilen blok görünür olsun)
+            if (_handGroup != null) _handGroup.transform.SetAsLastSibling();
+
+            var cardGo = new GameObject("IntroCard", typeof(RectTransform), typeof(Image), typeof(Button));
+            var rt = (RectTransform)cardGo.transform;
+            rt.SetParent(layerRt, false);
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
             rt.anchoredPosition = new Vector2(0f, -214f);
@@ -304,7 +576,7 @@ namespace PuzzleGlass
             faceRt.anchorMin = Vector2.zero; faceRt.anchorMax = Vector2.one;
             faceRt.offsetMin = faceRt.offsetMax = Vector2.zero;
 
-            var rootImg = _cardObj.GetComponent<Image>();
+            var rootImg = cardGo.GetComponent<Image>();
             rootImg.color = new Color(1f, 1f, 1f, 0f); // tıklama alanı şeffaf, görsel child'da
 
             var faceImg = faceGo.GetComponent<Image>();
@@ -323,7 +595,7 @@ namespace PuzzleGlass
             }
             faceImg.raycastTarget = false;
 
-            _cardObj.GetComponent<Button>().onClick.AddListener(CloseCard);
+            cardGo.GetComponent<Button>().onClick.AddListener(CloseCard);
 
             // Başlık (mor üst şeridin içinde)
             Text titleTxt = AddText(
@@ -432,29 +704,39 @@ namespace PuzzleGlass
         {
             if (_cardObj == null) return;
             _cardTime += Time.unscaledDeltaTime;
-            if (_cardTime >= CardSeconds) CloseCard();
+            // Kendiliğinden kapanmaz: oyuncu okuyup dokununca kapanır
         }
 
         private void CloseCard()
         {
-            if (_cardObj != null)
+            if (_cardObj == null || _cardTime < CardMinSeconds) return;
+            if (!string.IsNullOrEmpty(_currentCard.prefKey))
             {
-                _cardObj.transform.DOKill(true);
-                Destroy(_cardObj);
+                PlayerPrefs.SetInt(_currentCard.prefKey, 1);
+                PlayerPrefs.Save();
             }
-            _cardObj = null;
+            DestroyCardObject();
             ShowNextCard();
         }
 
         private void ClearCards()
         {
             _cards.Clear();
+            DestroyCardObject();
+        }
+
+        private void DestroyCardObject()
+        {
             if (_cardObj != null)
             {
-                _cardObj.transform.DOKill(true);
+                foreach (var t in _cardObj.GetComponentsInChildren<Transform>(true)) t.DOKill(true);
+                var img = _cardObj.GetComponent<Image>();
+                if (img != null) img.DOKill();
                 Destroy(_cardObj);
             }
             _cardObj = null;
+            _currentCard = default;
+            if (_handGroup != null && !_hintActive) _handGroup.alpha = 0f;
         }
 
         // ==================== Kurulum ====================
@@ -554,6 +836,46 @@ namespace PuzzleGlass
             var lShadow = _hintLabel.gameObject.AddComponent<Shadow>();
             lShadow.effectColor = new Color(0.14f, 0.08f, 0.38f, 0.52f);
             lShadow.effectDistance = new Vector2(0f, -2f);
+
+            BuildToast(bubbleSpr);
+        }
+
+        /// <summary>Slot uyarı balonu (dokunmaları engellemez).</summary>
+        private void BuildToast(Sprite bubbleSpr)
+        {
+            var go = new GameObject("SlotWarning", typeof(RectTransform), typeof(CanvasGroup), typeof(Image));
+            go.transform.SetParent(_root, false);
+            _toast = (RectTransform)go.transform;
+            _toast.anchorMin = _toast.anchorMax = new Vector2(0.5f, 0.5f);
+            _toast.pivot = new Vector2(0.5f, 0.5f);
+            _toast.sizeDelta = new Vector2(820f, 132f);
+            _toastGroup = go.GetComponent<CanvasGroup>();
+            _toastGroup.blocksRaycasts = false;
+            _toastGroup.interactable = false;
+            _toastGroup.alpha = 0f;
+
+            var img = go.GetComponent<Image>();
+            img.sprite = bubbleSpr;
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = bubbleSpr != _circle ? 1.15f : 1f;
+            img.color = bubbleSpr != _circle ? new Color(1f, 0.80f, 0.80f, 1f) : new Color(0.86f, 0.30f, 0.42f, 0.96f);
+            img.raycastTarget = false;
+            var sh = go.AddComponent<Shadow>();
+            sh.effectColor = new Color(0.14f, 0.10f, 0.36f, 0.34f);
+            sh.effectDistance = new Vector2(0f, -6f);
+
+            var txt = AddText(_toast, "Only 1 slot left!\nIf all slots fill up, you're stuck.", 32, FontStyle.Bold, Color.white,
+                Vector2.zero, new Vector2(760f, 112f), TextAnchor.MiddleCenter);
+            var tRt = (RectTransform)txt.transform;
+            tRt.anchorMin = tRt.anchorMax = new Vector2(0.5f, 0.5f);
+            tRt.pivot = new Vector2(0.5f, 0.5f);
+            tRt.anchoredPosition = new Vector2(0f, 4f);
+            txt.lineSpacing = 1.05f;
+            var tSh = txt.gameObject.AddComponent<Shadow>();
+            tSh.effectColor = new Color(0.30f, 0.06f, 0.20f, 0.55f);
+            tSh.effectDistance = new Vector2(0f, -2f);
+
+            go.SetActive(false);
         }
 
         private RectTransform MakeImage(RectTransform parent, string name, float size, Color color, Sprite sprite, out Image img)

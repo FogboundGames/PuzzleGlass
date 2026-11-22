@@ -220,7 +220,17 @@ MonoBehaviour:
     trackPos: {x: 0, y: 0}
   bottomToTopTriplets: 0200000002000000010000000000000000000000
   bottomToTopGroups:
-  - color: 2
+  - color: 0
+    count: 24
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
     count: 24
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
@@ -260,7 +270,7 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 0
+  - color: 2
     count: 24
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
@@ -279,7 +289,7 @@ MonoBehaviour:
     hasKey: 0
     lockKeyCount: 0
     iceCount: 0
-    isFilledBox: 1
+    isFilledBox: 0
     filledBallColor: 1
   - color: 1
     count: 24

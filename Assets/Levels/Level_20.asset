@@ -14,14 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
   levelNumber: 20
   levelName: Level 20
-  difficulty: 2
+  difficulty: 1
   useCustomSlotSettings: 0
   slotCount: 5
   slotSpacing: 0.59
   useCustomGlassShape: 1
   glassIsBottle: 0
   glassPreset: 15
-  colorTheme: 2
+  colorTheme: 1
   layerPattern: 0
   symmetricMode: 1
   curveSubdivisions: 12
@@ -62,7 +62,7 @@ MonoBehaviour:
   emptyCellColor: 0
   lockedSectionRatio: 0.3
   contourPoints: []
-  trackPreset: 5
+  trackPreset: 2
   trackLanesAcross: 0
   trackAutoFitToBalls: 1
   trackScale: 1
@@ -72,7 +72,7 @@ MonoBehaviour:
   compartmentPreset: 7
   dividers: []
   compartmentZones: []
-  stagingGridCols: 5
+  stagingGridCols: 4
   stagingGridRows: 3
   gridWalls: []
   useCustomTraySettings: 0
@@ -108,210 +108,10 @@ MonoBehaviour:
   manualTrackCapacity: 0
   trackLayerLock: 0
   manualBalls: []
-  bottomToTopTriplets: 0500000001000000040000000500000004000000050000000200000001000000020000000300000002000000030000000500000001000000020000000100000000000000050000000400000000000000030000000100000004000000010000000400000001000000000000000400000000000000
+  bottomToTopTriplets: 040000000100000004000000010000000400000005000000040000000100000004000000050000000400000001000000000000000400000006000000000000000600000000000000060000000500000000000000060000000000000006000000000000000400000000000000010000000500000001000000050000000100000005000000000000000500000000000000060000000000000001000000060000000000000006000000000000000500000006000000010000000000000001000000060000000000000006000000
   bottomToTopGroups:
-  - color: 5
-    count: 15
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 1
-    count: 21
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 4
-    count: 9
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 5
-    count: 12
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
   - color: 4
     count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 5
-    count: 9
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 2
-    count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 1
-    count: 12
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 2
-    count: 15
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 3
-    count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 2
-    count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 3
-    count: 12
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 5
-    count: 15
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 1
-    count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 2
-    count: 9
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 1
-    count: 3
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 0
-    count: 15
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 5
-    count: 6
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 4
-    count: 18
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 0
-    count: 3
-    blockShape: 0
-    gridAnchor: {x: 0, y: 0}
-    hasGridAnchor: 0
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 3
-    count: 18
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -331,7 +131,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 4
-    count: 3
+    count: 6
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -341,7 +141,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 1
-    count: 9
+    count: 6
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -351,7 +151,67 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 4
-    count: 15
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 6
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -371,7 +231,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 18
+    count: 6
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -390,8 +250,368 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
   - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 4
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
     count: 3
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 5
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 6
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 5
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 0
@@ -401,8 +621,8 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   monsters:
-  - color: 5
-    count: 21
+  - color: 1
+    count: 24
     blockShape: 0
     gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
@@ -412,19 +632,9 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 1
-    count: 21
+    count: 27
     blockShape: 0
     gridAnchor: {x: 1, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 5
-    count: 15
-    blockShape: 0
-    gridAnchor: {x: 2, y: 2}
     hasGridAnchor: 1
     hasKey: 1
     lockKeyCount: 0
@@ -434,6 +644,16 @@ MonoBehaviour:
   - color: 5
     count: 21
     blockShape: 0
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 27
+    blockShape: 0
     gridAnchor: {x: 3, y: 2}
     hasGridAnchor: 1
     hasKey: 0
@@ -441,17 +661,7 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 0
-    count: 18
-    blockShape: 0
-    gridAnchor: {x: 4, y: 2}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 1
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 3
+  - color: 6
     count: 18
     blockShape: 0
     gridAnchor: {x: 0, y: 1}
@@ -461,8 +671,8 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 4
-    count: 15
+  - color: 6
+    count: 18
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -471,8 +681,8 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 2
-    count: 15
+  - color: 5
+    count: 21
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -481,8 +691,8 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 1
-    count: 21
+  - color: 4
+    count: 18
     blockShape: 0
     gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1
@@ -491,28 +701,18 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 1
-    count: 21
-    blockShape: 0
-    gridAnchor: {x: 4, y: 1}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
   - color: 0
-    count: 21
+    count: 27
     blockShape: 0
     gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
     hasKey: 0
-    lockKeyCount: 0
+    lockKeyCount: 1
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 4
-    count: 21
+  - color: 6
+    count: 24
     blockShape: 0
     gridAnchor: {x: 1, y: 0}
     hasGridAnchor: 1
@@ -521,8 +721,8 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 3
-    count: 18
+  - color: 0
+    count: 27
     blockShape: 0
     gridAnchor: {x: 2, y: 0}
     hasGridAnchor: 1
@@ -531,20 +731,10 @@ MonoBehaviour:
     iceCount: 0
     isFilledBox: 0
     filledBallColor: 0
-  - color: 2
-    count: 21
+  - color: 0
+    count: 24
     blockShape: 0
     gridAnchor: {x: 3, y: 0}
-    hasGridAnchor: 1
-    hasKey: 0
-    lockKeyCount: 0
-    iceCount: 0
-    isFilledBox: 0
-    filledBallColor: 0
-  - color: 4
-    count: 21
-    blockShape: 0
-    gridAnchor: {x: 4, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

@@ -15,8 +15,9 @@ namespace PuzzleGlass.Editor
             PlayerPrefs.DeleteKey(TutorialOverlay.PrefIce);
             PlayerPrefs.DeleteKey(TutorialOverlay.PrefLock);
             PlayerPrefs.DeleteKey(TutorialOverlay.PrefFilledBox);
+            PlayerPrefs.DeleteKey(TutorialOverlay.PrefSlotWarning);
             PlayerPrefs.Save();
-            Debug.Log("PuzzleGlass: tutorial kartları sıfırlandı (buz, kilit & anahtar, içi dolu kutu). Levele tekrar girince yeniden gösterilir.");
+            Debug.Log("PuzzleGlass: tutorial kayıtları sıfırlandı (buz, kilit & anahtar, içi dolu kutu, slot uyarısı). Levele tekrar girince yeniden gösterilir.");
         }
 
         [MenuItem("Tools/PuzzleGlass/🔄 Level İlerlemesini Sıfırla", false, 41)]

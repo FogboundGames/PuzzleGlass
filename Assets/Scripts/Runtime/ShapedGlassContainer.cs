@@ -2956,22 +2956,29 @@ namespace PuzzleGlass
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
-        private void BuildBottomExitCollar(float bottomEdgeY)
+        /// <summary>Alt çıkış yakasının (kapağın) görünen genişliği, cam yerel uzayında.</summary>
+        public float GetBottomExitCollarWidthLocal()
         {
-            if (_glassWallsObj == null) return;
-
+            EnsureContourInitialized();
             float bottomW = (IsTrackShape && compiledTrack != null)
                 ? compiledTrack.innerHalfWidth * 3.2f
                 : ((contourPoints != null && contourPoints.Count > 0)
                     ? contourPoints[0].halfWidth * 2f * widthScale
                     : 2.2f);
+            return Mathf.Clamp(bottomW * 0.46f, 0.70f, 1.18f);
+        }
+
+        private void BuildBottomExitCollar(float bottomEdgeY)
+        {
+            if (_glassWallsObj == null) return;
+
             float collarX = (IsTrackShape && compiledTrack != null)
                 ? compiledTrack.exitPoint.x
                 : ((contourPoints != null && contourPoints.Count > 0 && !symmetricMode)
                     ? contourPoints[0].centerX * widthScale
                     : 0f);
 
-            float visibleCollarW = Mathf.Clamp(bottomW * 0.46f, 0.70f, 1.18f);
+            float visibleCollarW = GetBottomExitCollarWidthLocal();
             float visibleCollarH = 0.23f;
             float quadW = visibleCollarW / 0.76f;
             float quadH = visibleCollarH / 0.48f;
