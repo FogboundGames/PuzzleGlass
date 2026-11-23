@@ -24,6 +24,19 @@ MonoBehaviour:
   darkPanelViolet: {fileID: 6548843039894869275, guid: 2423bc8beede9344d98c41e18af1a299, type: 3}
   iconSoundOn: {fileID: 8837445301905419745, guid: e66426b52acd2a948999e48ec901d97b, type: 3}
   iconSoundOff: {fileID: 2443078639938028321, guid: 623df017cd9375c49946605e46d06755, type: 3}
+  iconVibration: {fileID: -3967915252510988763, guid: 14313135a6a46094cbdcab0e01c6e628, type: 3}
+  iconSoundOnParts:
+  - {fileID: 8837445301905419745, guid: e66426b52acd2a948999e48ec901d97b, type: 3}
+  - {fileID: -4997613021011504602, guid: e66426b52acd2a948999e48ec901d97b, type: 3}
+  - {fileID: 7285264308947298027, guid: e66426b52acd2a948999e48ec901d97b, type: 3}
+  iconSoundOffParts:
+  - {fileID: 2443078639938028321, guid: 623df017cd9375c49946605e46d06755, type: 3}
+  - {fileID: -1869064991925749768, guid: 623df017cd9375c49946605e46d06755, type: 3}
+  - {fileID: 508940996694358721, guid: 623df017cd9375c49946605e46d06755, type: 3}
+  iconVibrationParts:
+  - {fileID: -3967915252510988763, guid: 14313135a6a46094cbdcab0e01c6e628, type: 3}
+  - {fileID: 4031670114455337603, guid: 14313135a6a46094cbdcab0e01c6e628, type: 3}
+  - {fileID: 4238899715628050911, guid: 14313135a6a46094cbdcab0e01c6e628, type: 3}
   iconRestart: {fileID: -1819701690166057918, guid: c1cc38a044718ba4ba4bfa2e1538b4d8, type: 3}
   iconLeft: {fileID: -1162935304264728111, guid: bdd455275ad5e0d4ca4bdae7242a35c5, type: 3}
   iconRight: {fileID: -6219010595072361576, guid: aa74ae4519ce50f408e46eb517d1ce34, type: 3}

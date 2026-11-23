@@ -26,6 +26,10 @@ namespace PuzzleGlass.Editor
             if (existing != null
                 && existing.HasCoreHudSprites
                 && existing.iconHandClick != null
+                && existing.iconVibration != null
+                && existing.iconSoundOnParts != null && existing.iconSoundOnParts.Length == 3
+                && existing.iconSoundOffParts != null && existing.iconSoundOffParts.Length == 3
+                && existing.iconVibrationParts != null && existing.iconVibrationParts.Length == 3
                 && existing.whitePanelViolet != null
                 && IsWhiteBorderSprite(existing.buttonViolet)
                 && IsWhiteBorderSprite(existing.smallSquareViolet))
@@ -79,6 +83,10 @@ namespace PuzzleGlass.Editor
 
             dirty |= Assign(ref theme.iconSoundOn,        Root + "White Icons/White Sound On.png");
             dirty |= Assign(ref theme.iconSoundOff,       Root + "White Icons/White Sound Off 2.png");
+            dirty |= Assign(ref theme.iconVibration,      Root + "White Icons/White Device Vibration.png");
+            dirty |= AssignAllSprites(ref theme.iconSoundOnParts,   Root + "White Icons/White Sound On.png");
+            dirty |= AssignAllSprites(ref theme.iconSoundOffParts,  Root + "White Icons/White Sound Off 2.png");
+            dirty |= AssignAllSprites(ref theme.iconVibrationParts, Root + "White Icons/White Device Vibration.png");
             dirty |= Assign(ref theme.iconRestart,        Root + "White Icons/White Return 2.png");
             dirty |= Assign(ref theme.iconLeft,           Root + "White Icons/White Left.png");
             dirty |= Assign(ref theme.iconRight,          Root + "White Icons/White Right.png");
@@ -128,6 +136,18 @@ namespace PuzzleGlass.Editor
                 return true;
             }
             return false;
+        }
+
+        private static bool AssignAllSprites(ref Sprite[] target, string assetPath)
+        {
+            Sprite[] loaded = AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<Sprite>()
+                .OrderBy(s => s.rect.xMin)
+                .ThenBy(s => s.rect.yMin)
+                .ToArray();
+            if (loaded.Length == 0) return false;
+            if (target != null && target.Length == loaded.Length && target.SequenceEqual(loaded)) return false;
+            target = loaded;
+            return true;
         }
     }
 }

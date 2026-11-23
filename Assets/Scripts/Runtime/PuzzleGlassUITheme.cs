@@ -26,6 +26,10 @@ namespace PuzzleGlass
         [Header("White Icons")]
         public Sprite iconSoundOn;
         public Sprite iconSoundOff;
+        public Sprite iconVibration;
+        public Sprite[] iconSoundOnParts;
+        public Sprite[] iconSoundOffParts;
+        public Sprite[] iconVibrationParts;
         public Sprite iconRestart;
         public Sprite iconLeft;
         public Sprite iconRight;

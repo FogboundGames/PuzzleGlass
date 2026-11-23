@@ -34,6 +34,16 @@ namespace PuzzleGlass
             GlassColorTheme.CrystalClear
         };
 
+        private static readonly GlassTrackPreset[] TrackPresetsByCycle = new GlassTrackPreset[]
+        {
+            GlassTrackPreset.ArchLoop,
+            GlassTrackPreset.HeartLoop,
+            GlassTrackPreset.UChannel,
+            GlassTrackPreset.ORing,
+            GlassTrackPreset.SCurve,
+            GlassTrackPreset.DoubleArch
+        };
+
         /// <summary>
         /// Returns the recommended difficulty for a given 1-based level number so difficulty naturally progresses.
         /// </summary>
@@ -143,6 +153,13 @@ namespace PuzzleGlass
                 ? new System.Random(randomSeed.Value)
                 : new System.Random(Guid.NewGuid().GetHashCode());
 
+            // Tek tip 1x1 kutulu sütun kuyruğu modu (runtime prosedürel leveller ve varsayılan üretim)
+            if (!customTotalBoxes.HasValue && !customGridCols.HasValue && !customGridRows.HasValue)
+            {
+                GenerateSingleBoxColumnQueueLevel(levelData, rng);
+                return;
+            }
+
             // 1. Pick distinct colors for this level
             List<PuzzleColor> palette = new List<PuzzleColor>(FullColorPalette);
             int shift = Mathf.Abs(levelData.levelNumber - 1) % palette.Count;
@@ -221,7 +238,165 @@ namespace PuzzleGlass
             levelData.levelName = $"Level {levelData.levelNumber} - {diffTag} ({gridCols}x{gridRows} Izgara, {blockCount} Küp, {totalBalls} Top)";
         }
 
-        // ==================== POLYOMINO GRID PUZZLE GENERATOR ====================
+        /// <summary>
+        /// Tek tip 1x1 kutu + sütun kuyruğu + cam pist mekaniği ile %100 çözülebilir prosedürel level üretir.
+        /// </summary>
+        private static void GenerateSingleBoxColumnQueueLevel(PuzzleGlassLevelData levelData, System.Random rng)
+        {
+            int levelNum = Mathf.Max(1, levelData.levelNumber);
+            LevelDifficulty diff = levelData.difficulty;
+
+            int gridCols, gridRows, colorCount;
+            switch (diff)
+            {
+                case LevelDifficulty.Easy:
+                    gridCols = 4; gridRows = 2; colorCount = 4; break;
+                case LevelDifficulty.Medium:
+                    gridCols = 4; gridRows = 3; colorCount = 4; break;
+                case LevelDifficulty.Hard:
+                    gridCols = 5; gridRows = 3; colorCount = 5; break;
+                case LevelDifficulty.Boss:
+                default:
+                    gridCols = 5; gridRows = 4; colorCount = 6; break;
+            }
+
+            int n = gridCols * gridRows;
+            colorCount = Mathf.Clamp(colorCount, 2, FullColorPalette.Length);
+
+            List<PuzzleColor> palette = new List<PuzzleColor>(FullColorPalette);
+            int shift = (levelNum - 1) % palette.Count;
+            List<PuzzleColor> activeColors = new List<PuzzleColor>(colorCount);
+            for (int i = 0; i < colorCount; i++)
+            {
+                activeColors.Add(palette[(shift + i) % palette.Count]);
+            }
+
+            List<PuzzleColor> boxColors = new List<PuzzleColor>(n);
+            for (int i = 0; i < n; i++) boxColors.Add(activeColors[i % colorCount]);
+            for (int i = n - 1; i > 0; i--)
+            {
+                int j = rng.Next(0, i + 1);
+                PuzzleColor tmp = boxColors[i];
+                boxColors[i] = boxColors[j];
+                boxColors[j] = tmp;
+            }
+
+            float avg = 240f / n;
+            int minCnt = Mathf.Max(6, Mathf.RoundToInt(avg * 0.8f));
+            int maxCnt = Mathf.Max(minCnt + 1, Mathf.RoundToInt(avg * 1.2f));
+
+            List<LevelMonsterEntry> blocks = new List<LevelMonsterEntry>(n);
+            int k = 0;
+            for (int r = gridRows - 1; r >= 0; r--)
+            {
+                for (int c = 0; c < gridCols; c++)
+                {
+                    int cnt = rng.Next(minCnt, maxCnt + 1);
+                    blocks.Add(new LevelMonsterEntry(boxColors[k++], cnt, CarrierBlockShape.Rect1x1, new Vector2Int(c, r)));
+                }
+            }
+
+            // Sütun başlarından çözülebilir bir çıkış sırası oluştur
+            List<int>[] colQueues = new List<int>[gridCols];
+            for (int c = 0; c < gridCols; c++)
+            {
+                colQueues[c] = new List<int>(gridRows);
+                for (int r = gridRows - 1; r >= 0; r--)
+                {
+                    colQueues[c].Add((gridRows - 1 - r) * gridCols + c);
+                }
+            }
+
+            List<int> order = new List<int>(n);
+            List<int> heads = new List<int>(gridCols);
+            while (order.Count < n)
+            {
+                heads.Clear();
+                for (int c = 0; c < gridCols; c++)
+                {
+                    if (colQueues[c].Count > 0) heads.Add(c);
+                }
+                int pickCol = heads[rng.Next(0, heads.Count)];
+                order.Add(colQueues[pickCol][0]);
+                colQueues[pickCol].RemoveAt(0);
+            }
+
+            int overlap = diff == LevelDifficulty.Easy ? 1 : (diff == LevelDifficulty.Medium ? 2 : 3);
+            int[] remaining = new int[n];
+            for (int i = 0; i < n; i++) remaining[i] = blocks[i].count;
+
+            List<int> active = new List<int>(overlap);
+            List<LevelMonsterEntry> groups = new List<LevelMonsterEntry>();
+            int nextIdx = 0;
+            while (nextIdx < n || active.Count > 0)
+            {
+                while (active.Count < overlap && nextIdx < n)
+                {
+                    active.Add(order[nextIdx++]);
+                }
+                int pickActive = active[rng.Next(0, active.Count)];
+                int chunk = overlap == 1 ? remaining[pickActive] : Mathf.Min(remaining[pickActive], rng.Next(3, 8));
+                remaining[pickActive] -= chunk;
+                PuzzleColor col = blocks[pickActive].color;
+                if (groups.Count > 0 && groups[groups.Count - 1].color == col)
+                {
+                    groups[groups.Count - 1].count += chunk;
+                }
+                else
+                {
+                    groups.Add(new LevelMonsterEntry(col, chunk));
+                }
+                if (remaining[pickActive] <= 0) active.Remove(pickActive);
+            }
+
+            List<PuzzleColor> triplets = new List<PuzzleColor>(groups.Count);
+            for (int i = 0; i < groups.Count; i++) triplets.Add(groups[i].color);
+
+            levelData.useCustomSlotSettings = false;
+            levelData.slotCount = 5;
+            levelData.slotSpacing = 0.59f;
+            levelData.ballsPerBox = 3;
+            levelData.carrierBoxFormatVersion = 4;
+            levelData.stagingGridCols = gridCols;
+            levelData.stagingGridRows = gridRows;
+            levelData.stagingColumns = gridCols;
+            levelData.useStagingColumnQueue = true;
+            levelData.useCustomTraySettings = false;
+            levelData.puzzleLayerStyle = PuzzleLayerStyle.InterleavedTriplets;
+            levelData.particleMode = ParticleArrangementMode.PhysicsBalls;
+            levelData.particleSize = 0.114f;
+            levelData.particlesPerMonsterCount = 1;
+
+            levelData.useCustomGlassShape = true;
+            levelData.glassIsBottle = false;
+            levelData.glassPreset = GlassShapePreset.TrackChannel;
+            levelData.trackPreset = TrackPresetsByCycle[(levelNum - 1) % TrackPresetsByCycle.Length];
+            levelData.trackLanesAcross = 0;
+            levelData.trackAutoFitToBalls = true;
+            levelData.trackScale = 1.0f;
+            levelData.trackWallThickness = 0.082f;
+            levelData.trackHiddenRatio = 0f;
+            levelData.trackBranches = GlassTrackLayout.BuildPresetBranches(levelData.trackPreset);
+
+            levelData.compartmentPreset = GlassCompartmentPreset.Custom;
+            if (levelData.dividers == null) levelData.dividers = new List<GlassDividerData>();
+            levelData.dividers.Clear();
+            if (levelData.compartmentZones != null) levelData.compartmentZones.Clear();
+
+            GlassColorTheme theme = ThemesByCycle[(levelNum - 1) % ThemesByCycle.Length];
+            ApplyColorTheme(levelData, theme);
+
+            levelData.bottomToTopTriplets = triplets;
+            levelData.bottomToTopGroups = groups;
+            levelData.monsters = blocks;
+
+            int totalBalls = 0;
+            for (int i = 0; i < blocks.Count; i++) totalBalls += blocks[i].count;
+            string diffTag = GetDifficultyTurkishLabel(diff);
+            levelData.levelName = $"Level {levelData.levelNumber} - {diffTag} ({gridCols}x{gridRows} Izgara, {n} Küp, {totalBalls} Top)";
+        }
+
+        // ==================== SINGLE-BOX GRID PUZZLE GENERATOR ====================
 
         private class GridPackedBlock
         {
@@ -233,39 +408,16 @@ namespace PuzzleGlass
 
         private static readonly CarrierBlockShape[] EasyGridShapes = new CarrierBlockShape[]
         {
-            CarrierBlockShape.Bar2x1,
-            CarrierBlockShape.Bar1x2,
-            CarrierBlockShape.LShape3,
-            CarrierBlockShape.JShape3,
-            CarrierBlockShape.LTopRight3,
             CarrierBlockShape.Rect1x1
         };
 
         private static readonly CarrierBlockShape[] MediumGridShapes = new CarrierBlockShape[]
         {
-            CarrierBlockShape.LShape3,
-            CarrierBlockShape.JShape3,
-            CarrierBlockShape.LTopRight3,
-            CarrierBlockShape.JTopLeft3,
-            CarrierBlockShape.Bar2x1,
-            CarrierBlockShape.Bar1x2,
-            CarrierBlockShape.TShape4,
-            CarrierBlockShape.Square2x2,
             CarrierBlockShape.Rect1x1
         };
 
         private static readonly CarrierBlockShape[] HardGridShapes = new CarrierBlockShape[]
         {
-            CarrierBlockShape.TShape4,
-            CarrierBlockShape.TShapeUp4,
-            CarrierBlockShape.LShape3,
-            CarrierBlockShape.JShape3,
-            CarrierBlockShape.LTopRight3,
-            CarrierBlockShape.JTopLeft3,
-            CarrierBlockShape.Square2x2,
-            CarrierBlockShape.Bar3x1,
-            CarrierBlockShape.Bar2x1,
-            CarrierBlockShape.Bar1x2,
             CarrierBlockShape.Rect1x1
         };
 
@@ -360,25 +512,13 @@ namespace PuzzleGlass
                 while (blocks.Count < targetBlocks && freeCells > minFreeCells && safetyPlacementTries < 80)
                 {
                     safetyPlacementTries++;
-                    CarrierBlockShape candidateShape;
-                    if (blocks.Count < Mathf.Max(2, targetBlocks / 2))
-                    {
-                        candidateShape = pool[rng.Next(0, pool.Length)];
-                    }
-                    else
-                    {
-                        // Bias toward compact shapes once board fills up so target count is reached cleanly
-                        CarrierBlockShape[] compact = { CarrierBlockShape.Bar2x1, CarrierBlockShape.Bar1x2, CarrierBlockShape.Rect1x1, CarrierBlockShape.LShape3, CarrierBlockShape.JShape3 };
-                        candidateShape = compact[rng.Next(0, compact.Length)];
-                    }
+                    CarrierBlockShape candidateShape = pool[rng.Next(0, pool.Length)];
 
                     int shapeArea = CarrierBlockShapeUtility.GetCellCount(candidateShape);
                     if (freeCells - shapeArea < minFreeCells)
                     {
-                        candidateShape = (freeCells - 2 >= minFreeCells)
-                            ? (rng.Next(0, 2) == 0 ? CarrierBlockShape.Bar2x1 : CarrierBlockShape.Bar1x2)
-                            : CarrierBlockShape.Rect1x1;
-                        shapeArea = CarrierBlockShapeUtility.GetCellCount(candidateShape);
+                        candidateShape = CarrierBlockShape.Rect1x1;
+                        shapeArea = 1;
                         if (freeCells - shapeArea < minFreeCells) break;
                     }
 
@@ -415,10 +555,6 @@ namespace PuzzleGlass
             int fbFree = gridCols * gridRows;
             CarrierBlockShape[] fbShapes =
             {
-                CarrierBlockShape.LShape3,
-                CarrierBlockShape.JShape3,
-                CarrierBlockShape.Bar2x1,
-                CarrierBlockShape.Bar1x2,
                 CarrierBlockShape.Rect1x1
             };
 
