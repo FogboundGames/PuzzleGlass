@@ -1415,7 +1415,15 @@ namespace PuzzleGlass
         private System.Collections.IEnumerator BeginTutorialNextFrame(PuzzleGlassLevelData lvl)
         {
             yield return null;
-            if (currentLevel == lvl) TutorialOverlay.GetOrCreate().Begin(lvl, activeMonsters);
+            if (currentLevel != lvl) yield break;
+            if (lvl != null && lvl.levelNumber == 1)
+            {
+                TutorialOverlay.GetOrCreate().Begin(lvl, activeMonsters);
+            }
+            else if (TutorialOverlay.Instance != null)
+            {
+                TutorialOverlay.Instance.Begin(lvl, activeMonsters);
+            }
         }
 
         /// <summary>

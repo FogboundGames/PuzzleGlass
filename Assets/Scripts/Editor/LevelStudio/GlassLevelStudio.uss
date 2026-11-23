@@ -14,24 +14,29 @@
     color: var(--text);
 }
 
-.studio__body { flex-direction: row; flex-grow: 1; min-height: 0; }
-.studio__center { flex-grow: 1; flex-shrink: 1; min-width: 0; }
+.studio__body { flex-direction: row; flex-grow: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.studio__center { flex-grow: 1; flex-shrink: 1; min-width: 0; overflow: hidden; }
 
 /* Araç çubuğu */
-.toolbar { flex-direction: row; align-items: center; height: 36px; padding: 0 10px; background-color: var(--panel); border-bottom-width: 1px; border-color: var(--line); flex-shrink: 0; }
-.toolbar__title { -unity-font-style: bold; font-size: 13px; }
-.toolbar__state { margin-left: 12px; min-width: 100px; color: var(--muted); }
+.toolbar { flex-direction: row; align-items: center; height: 36px; padding: 0 8px; background-color: var(--panel); border-bottom-width: 1px; border-color: var(--line); flex-shrink: 0; overflow: hidden; }
+.toolbar__title { -unity-font-style: bold; font-size: 13px; flex-shrink: 0; }
+.toolbar__state { margin-left: 10px; min-width: 80px; color: var(--muted); flex-shrink: 0; }
 .toolbar__state--dirty { color: var(--warning); }
-.toolbar__summary { margin-right: 12px; color: var(--muted); }
+.toolbar__mode { margin-left: 8px; padding: 2px 8px; border-radius: 10px; background-color: var(--panel-2); border-width: 1px; border-color: var(--line); font-size: 11px; color: var(--muted); flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+.toolbar__mode--brush { background-color: #223549; border-color: var(--accent); color: #d8ecff; }
+.toolbar__mode--erase { background-color: #452321; border-color: var(--critical); color: #ffd4d1; }
+.toolbar__summary { margin-right: 8px; color: var(--muted); flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 .toolbar__summary--bad { color: var(--critical); -unity-font-style: bold; }
 .toolbar__summary--good { color: var(--good); }
-.toolbar Button { height: 24px; margin: 0 0 0 6px; padding: 0 10px; }
-.toolbar .unity-toggle { margin: 0 6px 0 6px; }
+.toolbar Button { height: 24px; margin: 0 0 0 4px; padding: 0 8px; flex-shrink: 0; }
+.toolbar__iconbtn { padding: 0 7px; font-size: 11px; color: var(--muted); background-color: var(--panel-2); border-width: 1px; border-color: var(--line); border-radius: 4px; }
+.toolbar__iconbtn--active { color: var(--text); border-color: var(--accent); }
+.toolbar .unity-toggle { margin: 0 4px 0 6px; flex-shrink: 0; }
 .toolbar .unity-toggle .unity-base-field__label { min-width: 0; width: auto; margin-right: 4px; color: var(--muted); }
 .toolbar__primary { background-color: var(--accent); color: #101216; -unity-font-style: bold; }
 
 /* Sol: level listesi ve akıllı üretici */
-.levels { width: 278px; flex-shrink: 0; background-color: var(--panel); border-right-width: 1px; border-color: var(--line); padding: 0; }
+.levels { width: 232px; min-width: 210px; flex-shrink: 0; background-color: var(--panel); border-right-width: 1px; border-color: var(--line); padding: 0; }
 .left-tabs { flex-direction: row; padding: 6px 6px 4px 6px; border-bottom-width: 1px; border-color: var(--line); flex-shrink: 0; background-color: var(--panel); }
 .left-tabs__btn { flex-grow: 1; flex-basis: 0; height: 26px; margin: 0 2px; border-radius: 4px; background-color: var(--panel-2); border-width: 1px; border-color: var(--line); color: var(--muted); font-size: 11px; }
 .left-tabs__btn--active { background-color: var(--accent); border-color: var(--accent); color: #101216; -unity-font-style: bold; }
@@ -160,33 +165,41 @@
 .order__index { color: var(--muted); font-size: 10px; margin-right: 4px; }
 
 /* Sağ panel */
-.studio__side { width: 270px; flex-shrink: 0; background-color: var(--panel); border-left-width: 1px; border-color: var(--line); }
-.solve { margin: 10px; padding: 10px; border-radius: 6px; background-color: var(--panel-2); flex-shrink: 0; }
+.studio__side { width: 274px; min-width: 248px; flex-shrink: 0; background-color: var(--panel); border-left-width: 1px; border-color: var(--line); overflow: hidden; }
+.solve { margin: 8px; padding: 9px; border-radius: 6px; background-color: var(--panel-2); flex-shrink: 0; }
 .solve--good { background-color: #1f3a2a; }
 .solve--bad { background-color: #452321; }
 .solve--unknown { background-color: #40331a; }
-.solve__title { font-size: 15px; -unity-font-style: bold; }
-.solve__detail { color: var(--muted); white-space: normal; margin-top: 2px; }
-.stats { flex-direction: row; margin: 0 10px 6px 10px; flex-shrink: 0; }
-.stat { flex-grow: 1; flex-basis: 0; margin-right: 6px; padding: 6px; background-color: var(--panel-2); border-radius: 5px; }
-.stat__value { font-size: 16px; -unity-font-style: bold; -unity-text-align: middle-center; }
+.solve__title { font-size: 14px; -unity-font-style: bold; }
+.solve__detail { color: var(--muted); white-space: normal; margin-top: 2px; font-size: 11px; }
+.solve__action { margin-top: 6px; height: 22px; background-color: var(--accent); color: #101216; -unity-font-style: bold; font-size: 11px; }
+.stats { flex-direction: row; margin: 0 8px 6px 8px; flex-shrink: 0; }
+.stat { flex-grow: 1; flex-basis: 0; margin-right: 5px; padding: 5px; background-color: var(--panel-2); border-radius: 5px; }
+.stat__value { font-size: 15px; -unity-font-style: bold; -unity-text-align: middle-center; }
 .stat__label { font-size: 10px; color: var(--muted); -unity-text-align: middle-center; }
 
-.inspector { flex-grow: 1; padding: 6px 10px 10px 10px; }
-.inspector__title { font-size: 14px; -unity-font-style: bold; margin-top: 4px; }
-.inspector__sub { color: var(--muted); margin-bottom: 8px; white-space: normal; }
-.inspector__hint { color: var(--muted); white-space: normal; margin-top: 10px; font-size: 11px; }
+.inspector { flex-grow: 1; padding: 4px 10px 10px 8px; min-width: 0; }
+.inspector__title { font-size: 13px; -unity-font-style: bold; margin-top: 6px; }
+.inspector__sub { color: var(--muted); margin-bottom: 6px; white-space: normal; font-size: 11px; }
+.inspector__hint { color: var(--muted); white-space: normal; margin-top: 4px; font-size: 11px; }
+.inspector__foldout { margin-top: 8px; }
+.inspector__foldout > Toggle { margin-left: 0; }
 .inspector__row { flex-direction: row; align-items: center; margin: 3px 0; }
-.inspector__row-label { width: 86px; flex-shrink: 0; }
+.inspector__row-label { width: 78px; flex-shrink: 0; font-size: 11px; }
 .inspector__row Button { width: 26px; height: 22px; margin: 0 2px; }
 .inspector__count { width: 34px; -unity-text-align: middle-center; font-size: 14px; -unity-font-style: bold; }
-.inspector__action { margin: 6px 0 0 0; height: 26px; }
+.inspector__action { margin: 6px 0 0 0; height: 25px; }
 .inspector__danger { color: #ff8f88; }
-.inspector .unity-base-field { margin: 3px 0; }
-.inspector .unity-base-field__label { min-width: 86px; width: 86px; }
+.inspector .unity-base-field { margin: 2px 0; min-width: 0; }
+.inspector .unity-base-field__label { min-width: 78px; width: 78px; font-size: 11px; }
+.inspector .unity-base-field__input { min-width: 0; flex-shrink: 1; }
 
 /* Bulgular */
-.issues { height: 110px; flex-shrink: 0; padding: 4px 8px; background-color: var(--panel); border-top-width: 1px; border-color: var(--line); }
+.issues-wrap { flex-shrink: 0; background-color: var(--panel); border-top-width: 1px; border-color: var(--line); }
+.issues-header { flex-direction: row; align-items: center; height: 24px; padding: 0 8px; background-color: #212329; border-bottom-width: 1px; border-color: var(--line); }
+.issues-header__title { font-size: 11px; -unity-font-style: bold; color: var(--muted); flex-grow: 1; }
+.issues-header__toggle { height: 18px; padding: 0 8px; font-size: 10px; }
+.issues { height: 78px; flex-shrink: 0; padding: 4px 8px; background-color: var(--panel); }
 .issue { flex-direction: row; align-items: flex-start; padding: 2px 0; }
 .issue:hover { background-color: var(--panel-2); }
 .issue__tag { width: 52px; flex-shrink: 0; font-size: 10px; -unity-font-style: bold; }
@@ -209,4 +222,4 @@
 .glass-warning { margin-top: 8px; padding: 6px 8px; background-color: #40331a; border-radius: 4px; white-space: normal; font-size: 11px; }
 .inspector .unity-slider .unity-base-field__label { min-width: 70px; width: 70px; }
 .inspector .unity-slider .unity-base-slider__input { min-width: 40px; }
-.inspector .unity-slider .unity-float-field { width: 50px; }
+.inspector .unity-slider .unity-float-field { width: 44px; }

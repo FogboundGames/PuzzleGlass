@@ -6,18 +6,18 @@ Shader "PuzzleGlass/SoftBackdrop"
         _TintColor   ("Texture Tint", Color)            = (1.0, 1.0, 1.0, 1.0)
         _UseTexture  ("Use Texture Backdrop", Float)    = 0.0
         _TexAspect   ("Texture Aspect", Float)          = 1.3333
-        _TopColor    ("Top Studio Wall", Color)         = (0.875, 0.878, 0.945, 1.0)
-        _MidColor    ("Mid Studio Wall", Color)         = (0.928, 0.930, 0.970, 1.0)
-        _BotColor    ("Tabletop Acrylic Stone", Color)  = (0.832, 0.838, 0.912, 1.0)
-        _GlowColor   ("Center Studio Glow", Color)      = (0.980, 0.982, 0.998, 1.0)
-        _DotColor    ("Subtle Pattern Tint", Color)     = (0.840, 0.845, 0.925, 1.0)
+        _TopColor    ("Top Studio Wall", Color)         = (0.505, 0.508, 0.625, 1.0)
+        _MidColor    ("Mid Studio Wall", Color)         = (0.550, 0.550, 0.660, 1.0)
+        _BotColor    ("Tabletop Acrylic Stone", Color)  = (0.875, 0.878, 0.945, 1.0)
+        _GlowColor   ("Center Studio Glow", Color)      = (0.610, 0.612, 0.735, 1.0)
+        _DotColor    ("Subtle Pattern Tint", Color)     = (0.520, 0.525, 0.640, 1.0)
         _DotDensity  ("Pattern Density", Float)         = 14.0
         _DotStrength ("Pattern Strength", Range(0, 0.25)) = 0.0
         _FloatingStrength ("Floating Cubes Strength", Range(0, 1.0)) = 0.0
         _Aspect      ("Viewport Aspect", Float)         = 0.5625
-        _LowerTopColor    ("Lower Ground Top", Color)         = (0.550, 0.550, 0.660, 1.0)
-        _LowerBotColor    ("Lower Ground Bottom", Color)      = (0.505, 0.508, 0.625, 1.0)
-        _LowerRimColor    ("Lower Contour Rim", Color)        = (0.765, 0.765, 0.865, 1.0)
+        _LowerTopColor    ("Lower Ground Top", Color)         = (0.928, 0.930, 0.970, 1.0)
+        _LowerBotColor    ("Lower Ground Bottom", Color)      = (0.875, 0.878, 0.945, 1.0)
+        _LowerRimColor    ("Lower Contour Rim", Color)        = (0.990, 0.992, 1.000, 1.0)
         _BackdropWorldRect ("Backdrop World (cx,cy,w,h)", Vector) = (0.0, 0.3, 5.0, 9.0)
         _SplitDockParams  ("Split Dock (cx,topY,wingY,halfW)", Vector) = (0.0, 0.2, -1.0, 1.7)
         _SplitEnabled     ("Use Stepped Split Ground", Float) = 0.0
@@ -194,26 +194,27 @@ Shader "PuzzleGlass/SoftBackdrop"
                     float wallShadow = saturate(wallDrop + wallContact * 0.65) * step(0.0, dSplit);
                     wallCol = lerp(wallCol, wallCol * float3(0.56, 0.57, 0.74), wallShadow);
 
-                    // Lower slate-grey ground (matches slot dock tone, covers slot bay + lower board area)
+                    // Lower pastel white-lavender ground (covers slot bay + lower board area)
                     float lowerDepthT = saturate((bayTopY - wPos.y) / max(1.0, _BackdropWorldRect.w * 0.72));
                     float3 lowerCol = lerp(_LowerTopColor.rgb, _LowerBotColor.rgb, smoothstep(0.08, 0.95, lowerDepthT));
                     float2 lowerCenter = float2((wPos.x - cx) * 0.45, (wPos.y - (wingY - 1.4)) * 0.38);
                     float lowerGlow = exp(-dot(lowerCenter, lowerCenter) * 1.15);
-                    lowerCol = lerp(lowerCol, lowerCol * 1.10 + float3(0.012, 0.012, 0.018), lowerGlow * 0.55);
+                    float3 lowerGlowTarget = min(lowerCol * 1.10 + float3(0.012, 0.012, 0.018), float3(0.985, 0.987, 1.000));
+                    lowerCol = lerp(lowerCol, lowerGlowTarget, lowerGlow * 0.55);
 
                     // Clean bevelled border rim along the entire ___/‾‾‾\___ contour
                     lowerZoneMask = 1.0 - smoothstep(-aa, aa, dSplit);
                     const float rimW = 0.032;
                     float rimMask = (1.0 - smoothstep(rimW - aa, rimW + aa, -dSplit)) * lowerZoneMask;
                     float rimT = saturate(1.0 - max(0.0, -dSplit) / rimW);
-                    float3 rimCol = lerp(_LowerRimColor.rgb * 0.76, _LowerRimColor.rgb, rimT);
+                    float3 rimCol = lerp(_LowerRimColor.rgb * float3(0.75, 0.76, 0.86), _LowerRimColor.rgb, rimT);
                     lowerCol = lerp(lowerCol, rimCol, rimMask);
 
                     // Subtle crisp inner seam groove & soft inner drop shadow below the rim & rounded corners
                     float innerGroove = exp(-pow((-dSplit - rimW) / 0.009, 2.0)) * lowerZoneMask;
-                    lowerCol = lerp(lowerCol, lowerCol * 0.52, innerGroove * 0.65);
+                    lowerCol = lerp(lowerCol, lowerCol * 0.62, innerGroove * 0.55);
                     float innerAO = (1.0 - smoothstep(rimW, rimW + 0.145, -dSplit)) * (1.0 - rimMask) * lowerZoneMask;
-                    lowerCol = lerp(lowerCol, lowerCol * 0.76, innerAO * 0.85);
+                    lowerCol = lerp(lowerCol, lowerCol * 0.78, innerAO * 0.82);
 
                     col = lerp(wallCol, lowerCol, lowerZoneMask);
                 }

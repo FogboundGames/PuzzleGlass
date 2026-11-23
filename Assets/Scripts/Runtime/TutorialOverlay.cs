@@ -29,8 +29,8 @@ namespace PuzzleGlass
         private const float TapCycleSeconds = 1.25f;
         /// <summary>Kart açıldıktan sonra bu süre dolmadan dokunuş kartı kapatmaz (yanlışlıkla geçmeyi önler).</summary>
         private const float CardMinSeconds = 0.6f;
-        /// <summary>Takılınca ipucu bu level numarasına kadar (dahil) verilir.</summary>
-        private const int IdleHintMaxLevel = 5;
+        /// <summary>Takılınca ipucu yalnızca ilk levelde (levelNumber == 1) verilir.</summary>
+        private const int IdleHintMaxLevel = 1;
         private const float IdleHintSeconds = 6f;
 
         private enum IntroMechanic
@@ -133,7 +133,8 @@ namespace PuzzleGlass
             _blocks = blocks;
             _idleTime = 0f;
             _lastProgress = -1;
-            if (lvl == null) return;
+            // Tutorial yalnızca ilk level (levelNumber == 1) için geçerlidir; diğer levellerde çalışmaz
+            if (lvl == null || lvl.levelNumber != 1) return;
 
             // 1) Level 1 Spotlight Tutorial veya el ipucu
             if (lvl.levelNumber == 1 && blocks != null && SlotSystem.IsActive)

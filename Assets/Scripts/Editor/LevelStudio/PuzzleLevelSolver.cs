@@ -415,38 +415,119 @@ namespace PuzzleGlass.Editor.Studio
             bool isTrack = GlassShapeData.IsTrack(lvl);
             int fails = 0;
             var cand = new List<int>();
+            var match = new List<int>();
+            var front = new HashSet<PuzzleColor>();
             for (int t = 0; t < trials; t++)
             {
-                var s = new State { anchors = (Vector2Int[])anchors0.Clone(), removed = new bool[n], fill = new int[n], taken = new int[bc], inSlot = new bool[n], wave = 0 };
-                CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, lvl.iceMeltMode, isTrack);
-                for (int guard = 0; guard < n * 4 && !AllRemoved(s); guard++)
-                {
-                    cand.Clear();
-                    if (SlotsUsed(s) < cap)
-                        for (int i = 0; i < n; i++)
-                            if (InGrid(s, i) && !IsBlockBlocked(i, s, blocks, lvl.iceMeltMode) && IsExitClear(i, s, blocks, walls, cols, rows)) cand.Add(i);
-                    if (cand.Count == 0) break;
-                    int pick = cand[rng.Next(cand.Count)];
-                    if (smart)
-                    {
-                        // Şeritlerin en öndeki top renkleri (dolu kutu stoğu da toplanabilir sayılır)
-                        var stacks = s.wave == 0 ? w1 : w2;
-                        var front = new HashSet<PuzzleColor>();
-                        for (int c = 0; c < stacks.Length; c++)
-                            if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
-                        if (s.supplied != null)
-                            for (int c = 0; c < s.supplied.Length; c++)
-                                if (s.supplied[c] > 0) front.Add((PuzzleColor)c);
-                        var match = new List<int>();
-                        foreach (int i in cand) if (blocks[i].isFilledBox || front.Contains(blocks[i].color)) match.Add(i);
-                        if (match.Count > 0) pick = match[rng.Next(match.Count)];
-                    }
-                    ApplyMove(s, pick, SolveResult.SlotMove, blocks, walls, cols, rows, cap, lvl.iceMeltMode);
-                    CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, lvl.iceMeltMode, isTrack);
-                }
-                if (!AllRemoved(s)) fails++;
+                if (!RunSingleFailTrial(blocks, anchors0, walls, w1, w2, gcol, hasW2, bc, cols, rows, cap, n, lvl.iceMeltMode, isTrack, smart, rng, cand, match, front))
+                    fails++;
             }
             return trials > 0 ? (float)fails / trials : -1f;
+        }
+
+        private static bool RunSingleFailTrial(
+            Block[] blocks, Vector2Int[] anchors0, bool[,] walls,
+            List<PuzzleColor>[] w1, List<PuzzleColor>[] w2, int[] gcol, bool hasW2, int bc,
+            int cols, int rows, int cap, int n, IceMeltMode iceMeltMode, bool isTrack,
+            bool smart, System.Random rng, List<int> cand, List<int> match, HashSet<PuzzleColor> front)
+        {
+            var s = new State { anchors = (Vector2Int[])anchors0.Clone(), removed = new bool[n], fill = new int[n], taken = new int[bc], inSlot = new bool[n], wave = 0 };
+            CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, iceMeltMode, isTrack);
+            for (int guard = 0; guard < n * 4 && !AllRemoved(s); guard++)
+            {
+                cand.Clear();
+                if (SlotsUsed(s) < cap)
+                    for (int i = 0; i < n; i++)
+                        if (InGrid(s, i) && !IsBlockBlocked(i, s, blocks, iceMeltMode) && IsExitClear(i, s, blocks, walls, cols, rows)) cand.Add(i);
+                if (cand.Count == 0) break;
+                int pick = cand[rng.Next(cand.Count)];
+                if (smart)
+                {
+                    var stacks = s.wave == 0 ? w1 : w2;
+                    front.Clear();
+                    for (int c = 0; c < stacks.Length; c++)
+                        if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
+                    if (s.supplied != null)
+                        for (int c = 0; c < s.supplied.Length; c++)
+                            if (s.supplied[c] > 0) front.Add((PuzzleColor)c);
+                    match.Clear();
+                    foreach (int i in cand) if (blocks[i].isFilledBox || front.Contains(blocks[i].color)) match.Add(i);
+                    if (match.Count > 0) pick = match[rng.Next(match.Count)];
+                }
+                ApplyMove(s, pick, SolveResult.SlotMove, blocks, walls, cols, rows, cap, iceMeltMode);
+                CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, iceMeltMode, isTrack);
+            }
+            return AllRemoved(s);
+        }
+
+        /// <summary>
+        /// Zorluk ölçümünü tek karede yapmak yerine budgetMs dilimleriyle karelere böler; arayüzün donmasını önler.
+        /// </summary>
+        public sealed class DifficultyRun
+        {
+            public bool Done { get; private set; }
+            public float RandomFailRate { get; private set; } = -1f;
+            public float SmartFailRate { get; private set; } = -1f;
+
+            private readonly bool m_Valid;
+            private readonly Block[] m_Blocks;
+            private readonly Vector2Int[] m_Anchors0;
+            private readonly bool[,] m_Walls;
+            private readonly List<PuzzleColor>[] m_W1;
+            private readonly List<PuzzleColor>[] m_W2;
+            private readonly int[] m_Gcol;
+            private readonly bool m_HasW2, m_IsTrack;
+            private readonly int m_Bc, m_Cols, m_Rows, m_Cap, m_N, m_Trials;
+            private readonly IceMeltMode m_IceMeltMode;
+            private readonly System.Random m_RngRandom;
+            private readonly System.Random m_RngSmart;
+            private readonly List<int> m_Cand = new List<int>();
+            private readonly List<int> m_Match = new List<int>();
+            private readonly HashSet<PuzzleColor> m_Front = new HashSet<PuzzleColor>();
+            private int m_RandomDone, m_RandomFails, m_SmartDone, m_SmartFails;
+
+            public DifficultyRun(PuzzleGlassLevelData lvl, GlassDims dims, int trialsPerMode = 150, int seed = 12345)
+            {
+                m_Trials = Mathf.Max(1, trialsPerMode);
+                m_RngRandom = new System.Random(seed);
+                m_RngSmart = new System.Random(seed);
+                m_Valid = BuildRuntimeModel(lvl, dims, out m_Blocks, out m_Anchors0, out m_Walls, out m_W1, out m_W2, out m_Gcol, out m_HasW2, out m_Bc);
+                if (!m_Valid)
+                {
+                    Done = true;
+                    return;
+                }
+                m_Cols = lvl.stagingGridCols;
+                m_Rows = lvl.stagingGridRows;
+                m_Cap = GetSlotCapacity(lvl);
+                m_N = m_Blocks.Length;
+                m_IceMeltMode = lvl.iceMeltMode;
+                m_IsTrack = GlassShapeData.IsTrack(lvl);
+            }
+
+            public bool Step(double budgetMs)
+            {
+                if (Done) return true;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (m_RandomDone < m_Trials)
+                {
+                    if (!RunSingleFailTrial(m_Blocks, m_Anchors0, m_Walls, m_W1, m_W2, m_Gcol, m_HasW2, m_Bc, m_Cols, m_Rows, m_Cap, m_N, m_IceMeltMode, m_IsTrack, false, m_RngRandom, m_Cand, m_Match, m_Front))
+                        m_RandomFails++;
+                    m_RandomDone++;
+                    if (sw.Elapsed.TotalMilliseconds >= budgetMs) return false;
+                }
+                while (m_SmartDone < m_Trials)
+                {
+                    if (!RunSingleFailTrial(m_Blocks, m_Anchors0, m_Walls, m_W1, m_W2, m_Gcol, m_HasW2, m_Bc, m_Cols, m_Rows, m_Cap, m_N, m_IceMeltMode, m_IsTrack, true, m_RngSmart, m_Cand, m_Match, m_Front))
+                        m_SmartFails++;
+                    m_SmartDone++;
+                    if (sw.Elapsed.TotalMilliseconds >= budgetMs) return false;
+                }
+                RandomFailRate = (float)m_RandomFails / m_Trials;
+                SmartFailRate = (float)m_SmartFails / m_Trials;
+                Done = true;
+                return true;
+            }
         }
 
         public struct PlaythroughAnalysis

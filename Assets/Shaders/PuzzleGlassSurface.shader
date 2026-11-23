@@ -1071,30 +1071,34 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float3 H1    = normalize(L1 + V);
                 float3 H2    = normalize(L2 + V);
                 float  diff  = saturate(dot(N, L1));
-                float  spec1 = pow(saturate(dot(N, H1)), 90.0);
-                float  spec1Soft = pow(saturate(dot(N, H1)), 18.0);
-                float  spec2 = pow(saturate(dot(N, H2)), 45.0);
+                float  spec1 = pow(saturate(dot(N, H1)), 85.0);
+                float  spec2 = pow(saturate(dot(N, H2)), 40.0);
                 float  fres  = pow(1.0 - nz, 2.0);                     // kenara doğru artan cam kalınlığı
                 float  facing = dot(grad, normalize(L1.xy));            // +1: ışığa bakan kenar, -1: gölgedeki kenar
-                float  sheenMul = max(0.6, _SheenIntensity);
+                float  sheenMul = max(0.65, _SheenIntensity);
 
-                // Cidar profili çizgileri
-                float innerRefract = exp(-pow((u - uIn) / 0.016, 2.0));          // iç cidar kırılma çizgisi (koyu)
-                float innerBevel   = exp(-pow((u - (uIn - 0.035)) / 0.022, 2.0)); // iç cidarın parlak kenarı
-                float outerRim     = exp(-pow((u - 0.955) / 0.024, 2.0));        // dış kenar parıltısı
-                float wallZone     = smoothstep(uIn - 0.012, uIn + 0.012, u);     // 1: kalın cam cidar
+                // Alt ince çıkış kanallarıyla aynı ince ve yumuşak cam cidar profili çizgileri
+                float wRefr = max(0.022, 0.0028 / max(tubeR, 0.03));
+                float wBev  = max(0.024, 0.0035 / max(tubeR, 0.03));
+                float oBev  = max(0.030, 0.0046 / max(tubeR, 0.03));
+                float wRim  = max(0.022, 0.0032 / max(tubeR, 0.03));
+                float wZone = max(0.024, 0.0032 / max(tubeR, 0.03));
+                float innerRefract = exp(-pow((u - uIn) / wRefr, 2.0));
+                float innerBevel   = exp(-pow((u - (uIn - oBev)) / wBev, 2.0));
+                float outerRim     = exp(-pow((u - 0.962) / wRim, 2.0));
+                float wallZone     = smoothstep(uIn - wZone, uIn + wZone, u);
 
-                // Cam renkleri (doğrusal uzay): soğuk mavi-beyaz ton
+                // Alt kanallarla birebir aynı cam renk paleti
                 float3 pureWhite  = float3(1.00, 1.00, 1.00);
-                float3 glassLight = lerp(float3(0.64, 0.74, 0.97), _EdgeColor.rgb, 0.15);
-                float3 glassMid   = float3(0.38, 0.47, 0.82);
-                float3 glassDeep  = lerp(float3(0.13, 0.17, 0.42), _InnerGrooveColor.rgb, 0.25);
+                float3 glassLight = lerp(float3(0.70, 0.78, 0.98), _EdgeColor.rgb, 0.12);
+                float3 glassMid   = float3(0.45, 0.52, 0.84);
+                float3 glassDeep  = lerp(float3(0.18, 0.21, 0.48), _InnerGrooveColor.rgb, 0.25);
 
                 // Yan yüz ve gölge için (eski palet adları)
                 float3 icyCrystal      = glassLight;
                 float3 glassRefractRim = glassMid;
                 float3 innerDeepRim    = glassDeep;
-                float3 bedShadowCol    = float3(0.015, 0.020, 0.055);
+                float3 bedShadowCol    = glassDeep * 0.72;
 
                 // Boyun ağzı: ağız çizgisinin altında boyun bandındaki cam kesilir; ağızda kalın, yuvarlak bir cam dudak durur
                 float lipOver = wallThick * 0.35;
@@ -1106,7 +1110,7 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float lipMask = hasNeck ? 1.0 - smoothstep(-aa, aa, dLip) : 0.0;
                 float lipV = saturate((p.y - mouthY) / (2.0 * lipHH));                         // 0: dudak altı, 1: dudak üstü
                 float lipOverHole = 1.0 - smoothstep(neckHW - aa * 2.0, neckHW + aa * 2.0, neckDx); // 1: açıklığın önü
-                // Boyun içi (kanal tabanının altı): ağza yaklaştıkça derinleşen koyu iç yüzey
+                // Boyun içi (kanal tabanının altı): ağza yaklaştıkça derinleşen iç yüzey
                 float inNeck = neckBand * (1.0 - smoothstep(_TrackExitPos.y - 0.01, _TrackExitPos.y + 0.04, p.y));
                 float neckDepth = saturate((p.y - mouthY) / max(_TrackExitPos.y - mouthY, 0.01)); // 0: ağız, 1: kanal tabanı
 
@@ -1116,41 +1120,35 @@ Shader "PuzzleGlass/GlassChamberLit"
 
                 if (_IsFrontLens > 0.5)
                 {
-                    // ÖN CAM (topların önünde): sadece ince ışık olayları; merkez neredeyse tamamen şeffaf
-                    // Çıkış boynu ile kanalın birleştiği boğaz iç boşluğunda dNeck tavanından doğan hayalet yansımayı bastır;
-                    // yan duvar ve bevel parıltıları throatWallKeep üzerinden korunur.
+                    // ÖN CAM (alt ince kanallarla birebir aynı şeffaf cam + uzunlamasına parlak bant + kenar parıltıları)
                     float throatWallKeep = smoothstep(uIn - 0.06, uIn - 0.01, u);
                     float throatXMask = hasNeck ? (1.0 - smoothstep(neckHW * 0.85, neckHW, neckDx)) : 0.0;
                     float throatYMask = hasNeck ? (1.0 - smoothstep(neckTopY - halfW * 0.35, neckTopY + 0.01, p.y)) : 0.0;
                     float throatSpecMask = 1.0 - throatXMask * throatYMask * (1.0 - throatWallKeep);
-                    float bandMain = spec1 * 0.95 * sheenMul * throatSpecMask;
-                    float bandSoft = spec1Soft * 0.10 * throatSpecMask;
-                    float bandFill = spec2 * 0.38 * throatSpecMask;
-                    float edgeGlass = fres * wallZone * 0.22;                       // kalın cidarın ön yüzü
-                    float rimGlint  = outerRim * (0.30 + 0.45 * saturate(facing));   // ışığa bakan dış kenar daha parlak
-                    float bevelGlint = innerBevel * (0.25 + 0.35 * saturate(facing));
-                    // Referans tüplerdeki gibi: ışığa bakan kenarın hemen içinde belirgin parlak bant,
-                    // karşı kenarda daha sönük ikinci bant (silindirik yüzeyin yansımaları)
-                    float litBand    = exp(-pow((u - 0.84) / 0.050, 2.0)) * saturate(facing) * 0.70 * sheenMul;
-                    float shadowBand = exp(-pow((u - 0.88) / 0.035, 2.0)) * saturate(-facing) * 0.22;
-                    float frontA = saturate(0.03 + bandMain + bandSoft + bandFill + edgeGlass + rimGlint + bevelGlint + litBand + shadowBand);
+
+                    float bandMain   = spec1 * 0.88 * sheenMul * throatSpecMask;
+                    float bandFill   = spec2 * 0.34 * throatSpecMask;
+                    float edgeGlass  = fres * wallZone * 0.22;
+                    float rimGlint   = outerRim * (0.42 + 0.48 * saturate(facing));
+                    float bevelGlint = innerBevel * (0.24 + 0.34 * saturate(facing));
+                    float litBand    = exp(-pow((u - 0.89) / 0.042, 2.0)) * saturate(facing) * 0.72 * sheenMul;
+                    float tubeGloss  = exp(-pow((u - 0.36) / 0.19, 2.0)) * saturate(facing + 0.45) * (1.0 - wallZone) * 0.36 * sheenMul * throatSpecMask;
+                    float frontA     = saturate(0.02 + bandMain + bandFill + edgeGlass + rimGlint + bevelGlint + litBand + tubeGloss);
                     frontA *= outerMask * quadEdgeFade;
                     frontA *= 1.0 - inNeck * 0.75; // boyun içinde bulanık parlama olmasın (net görünüm)
 
-                    float whiteness = saturate(bandMain * 1.3 + bandFill + rimGlint * 1.2 + bevelGlint * 1.2 + litBand * 1.4 + shadowBand);
+                    float whiteness = saturate(bandMain * 1.3 + bandFill + rimGlint * 1.2 + bevelGlint * 1.2 + litBand * 1.4 + tubeGloss * 1.4);
                     float3 frontRgb = lerp(glassLight, pureWhite, whiteness);
 
                     if (hasNeck)
                     {
-                        // Dudağın ön yarısı: açıklığın önünde yarı saydam cam halka (toplar arkasından geçer),
-                        // üstte parlak ışık yakalama çizgisi, altta koyu kesik kenar; yanlarda (cidar üstünde) daha yoğun cam
                         float lpx = aa / max(2.0 * lipHH, 0.001) * 1.5;
                         float lipTopHi  = smoothstep(0.55 - lpx, 0.55 + lpx, lipV) * (1.0 - smoothstep(0.85 - lpx, 0.85 + lpx, lipV));
                         float lipBotLn  = 1.0 - smoothstep(0.22 - lpx, 0.22 + lpx, lipV);
                         float lipLitSide = saturate(0.55 - (p.x - neckX) / max(neckOuterHW + lipOver, 0.01) * 0.45);
-                        float lipA = lipMask * saturate(0.16 + (1.0 - lipOverHole) * 0.40 + lipTopHi * (0.40 + 0.30 * lipLitSide) + lipBotLn * 0.28) * quadEdgeFade;
-                        float3 lipRgb = lerp(glassLight, pureWhite, saturate(lipTopHi * (0.65 + 0.35 * lipLitSide)));
-                        lipRgb = lerp(lipRgb, glassDeep * 0.7, lipBotLn * 0.55);
+                        float lipA = lipMask * saturate(0.12 + (1.0 - lipOverHole) * 0.30 + lipTopHi * (0.36 + 0.24 * lipLitSide) + lipBotLn * 0.28) * quadEdgeFade;
+                        float3 lipRgb = lerp(glassMid * 1.15, pureWhite, saturate(lipTopHi * (0.60 + 0.32 * lipLitSide)));
+                        lipRgb = lerp(lipRgb, glassDeep * 0.72, lipBotLn * 0.62);
                         float outA = lipA + frontA * (1.0 - lipA);
                         frontRgb = (lipRgb * lipA + frontRgb * frontA * (1.0 - lipA)) / max(outA, 0.004);
                         frontA = outA;
@@ -1160,83 +1158,61 @@ Shader "PuzzleGlass/GlassChamberLit"
                 }
                 else
                 {
-                    // ARKA CAM (topların arkasında)
-                    // Gölge: tüp zeminden hafif yüksekte; sağ-aşağı yumuşak çok katmanlı derinlik gölgesi
-                    float dNearRaw  = TrackSDF(p - float2(0.024, -0.052));
+                    // ARKA CAM (yarı saydam cam + tüm kenarları saran temas gölgesi ve yumuşak 3B düşen gölge)
+                    float dNearRaw  = TrackSDF(p - float2(0.028, -0.060));
                     float dShadNear = dNearRaw - wallThick;
-                    float dShadFar  = TrackSDF(p - float2(0.062, -0.145)) - wallThick;
+                    float dShadFar  = TrackSDF(p - float2(0.072, -0.155)) - wallThick;
+                    float dRimAO    = dOuter;
                     if (hasNeck)
                     {
-                        // Boyun + dudak da zemine gölge düşürür
                         float2 neckC = float2(neckX, (neckTopY + mouthY) * 0.5);
                         float2 neckH = float2(neckOuterHW + lipOver, (neckTopY - mouthY) * 0.5);
-                        dShadNear = min(dShadNear, sdRoundBox2D(p - float2(0.024, -0.052) - neckC, neckH, lipHH));
-                        dShadFar  = min(dShadFar,  sdRoundBox2D(p - float2(0.062, -0.145) - neckC, neckH, lipHH));
+                        dShadNear = min(dShadNear, sdRoundBox2D(p - float2(0.028, -0.060) - neckC, neckH, lipHH));
+                        dShadFar  = min(dShadFar,  sdRoundBox2D(p - float2(0.072, -0.155) - neckC, neckH, lipHH));
+                        dRimAO    = min(dRimAO, dLip);
                     }
-                    float contactShad = pow(1.0 - smoothstep(-0.015, 0.135, dShadNear), 1.40);
-                    float dropShad    = pow(1.0 - smoothstep(-0.025, 0.340, dShadFar), 1.55);
-                    float shadowAlpha = saturate(contactShad * 0.54 + dropShad * 0.50) * 0.54 * (1.0 - exitCut * 0.65) * quadEdgeFade;
-                    float3 shadowRGB = float3(0.18, 0.20, 0.40);
+                    float rimContact  = pow(1.0 - smoothstep(-0.010, 0.085, dRimAO), 1.65);
+                    float contactShad = pow(1.0 - smoothstep(-0.015, 0.150, dShadNear), 1.40);
+                    float dropShad    = pow(1.0 - smoothstep(-0.025, 0.360, dShadFar), 1.55);
+                    float rawShadow   = saturate(rimContact * 0.44 + contactShad * 0.56 + dropShad * 0.46) * (1.0 - exitCut * 0.65) * quadEdgeFade;
+                    float shadowAlpha = rawShadow * lerp(0.58, 0.26, outerMask);
+                    float3 shadowRGB  = float3(0.10, 0.11, 0.25);
 
-                    // İç boşluk: borunun arka yarısı. Şeffaf, soğuk tonlu; gölgedeki yana doğru koyulaşır,
-                    // cidara yaklaştıkça (daha çok cam) yoğunlaşır.
-                    // Koyu lacivert kanal zemini (topların kontrastı için opak), cidara yakın AO + ince kostik
-                    float3 bedTopCol = float3(0.050, 0.062, 0.140);
-                    float3 bedBotCol = float3(0.026, 0.034, 0.090);
+                    float3 bedTopCol = float3(0.30, 0.33, 0.52);
+                    float3 bedBotCol = float3(0.23, 0.26, 0.44);
                     float depthFromWall = max(0.0, -dInner);
-                    float innerWallAO = exp(-depthFromWall / max(_TrackHalfWidth * 0.22, 0.022));
-                    float innerCaustic = exp(-pow((depthFromWall - max(_TrackHalfWidth * 0.14, 0.018)) / 0.016, 2.0));
+                    float innerWallAO = exp(-depthFromWall / max(halfW * 0.26, 0.010));
                     float shadowSide = saturate(-facing) * u;
                     float3 interiorRgb = lerp(bedBotCol, bedTopCol, saturate(IN.uv.y));
-                    interiorRgb = lerp(interiorRgb, bedShadowCol, saturate(innerWallAO * 0.72 + shadowSide * 0.25));
-                    interiorRgb = lerp(interiorRgb, float3(0.44, 0.62, 0.94), innerCaustic * 0.22 * (0.5 + 0.5 * saturate(facing)));
-                    // Boyun içi ağza doğru derinleşir (açıklık hissi)
-                    interiorRgb = lerp(interiorRgb, bedShadowCol * 0.8, inNeck * (1.0 - neckDepth) * 0.75);
-                    float interiorA = 0.94;
+                    interiorRgb = lerp(interiorRgb, glassDeep * 0.72, saturate(innerWallAO * 0.45 + shadowSide * 0.22));
+                    interiorRgb = lerp(interiorRgb, glassDeep * 0.65, inNeck * (1.0 - neckDepth) * 0.45);
+                    float interiorA = 0.36;
 
-                    // Kalın cidar: daha yoğun cam; ışığa bakan kenar açık, gölgedeki kenar koyu (silindir hissi)
                     float lit = saturate(0.5 + 0.5 * facing);
-                    float3 wallRgb = lerp(glassDeep, glassLight, saturate(0.25 + 0.75 * lit * (0.55 + 0.45 * diff)));
-                    wallRgb = lerp(wallRgb, glassDeep * 0.65, saturate(-facing) * fres * 0.55); // koyu alt kontur
-                    wallRgb = lerp(wallRgb, pureWhite, outerRim * lit * 0.35);
-                    float wallA = 0.62 + 0.30 * fres;
-                    // En dışta ince koyu cam konturu (camın kesilmiş kenarı)
-                    float edgeLine = smoothstep(0.93, 1.0, u);
-                    wallRgb = lerp(wallRgb, glassDeep * 0.5, edgeLine * 0.65);
-                    wallA = saturate(wallA + edgeLine * 0.2);
+                    float3 wallRgb = lerp(glassMid * 0.96, glassLight * 1.06, saturate(0.38 + 0.62 * lit * (0.55 + 0.45 * diff)));
+                    wallRgb = lerp(wallRgb, glassDeep * 0.85, saturate(-facing) * fres * 0.34);
+                    wallRgb = lerp(wallRgb, pureWhite, outerRim * lit * 0.45);
+                    float wallA = 0.36 + 0.32 * fres;
+                    float edgeLine = smoothstep(0.945, 1.0, u);
+                    wallRgb = lerp(wallRgb, glassDeep * 0.68, edgeLine * 0.42);
+                    wallA = saturate(wallA + edgeLine * 0.16);
 
                     float3 backRgb = lerp(interiorRgb, wallRgb, wallZone);
                     float backA = lerp(interiorA, wallA, wallZone);
-                    // İç cidar kırılma çizgisi (camın kalınlığını belli eder)
-                    backRgb = lerp(backRgb, glassDeep * 0.55, innerRefract * 0.55);
-                    backA = saturate(backA + innerRefract * 0.25);
+                    backRgb = lerp(backRgb, glassDeep * 0.68, innerRefract * 0.22);
+                    backA = saturate(backA + innerRefract * 0.12);
 
                     float glassAlpha = backA * outerMask * quadEdgeFade;
                     float3 glassRgb = backRgb;
 
-                    // 3D yan yüz: borunun zemine oturduğu alt kalınlığı (güneye bakan kenarlarda)
-                    const float sideDepth = 0.040;
-                    float wallAbove = (1.0 - smoothstep(-aa, aa, dNearRaw - wallThick)) * smoothstep(-aa, aa, dNearRaw);
-                    float sideMask = wallAbove * (1.0 - wallBandMask) * (1.0 - innerMask) * (1.0 - exitCut) * mouthClip * (1.0 - lipMask);
-                    float distBelowWall = max(dOuter, 0.0);
-                    float sideT = saturate(distBelowWall / sideDepth);
-                    float3 sideRgb = lerp(glassMid, glassDeep * 0.6, pow(sideT, 0.8));
-                    sideRgb = lerp(sideRgb, pureWhite, exp(-pow(sideT / 0.12, 2.0)) * 0.35);
-                    float sideAlpha = sideMask * 0.75 * quadEdgeFade;
-                    glassRgb = lerp(glassRgb, sideRgb, sideMask);
-                    glassAlpha = max(glassAlpha, sideAlpha);
-
                     if (hasNeck)
                     {
-                        // Dudağın arka gövdesi: cidar üstünde kalın, ışığa bakan yanı açık cam boncuk;
-                        // açıklığın önünde koyu iç zemin görünür kalır, üst kenarda ince koyu iç kenar çizgisi
                         float lipLit = saturate(0.5 - (p.x - neckX) / max(neckOuterHW + lipOver, 0.01) * 0.5);
-                        float3 lipBackRgb = lerp(glassMid, glassLight, saturate(0.35 + lipV * 0.45 + lipLit * 0.25));
-                        lipBackRgb = lerp(lipBackRgb, glassDeep * 0.6, smoothstep(0.30, 0.0, lipV) * 0.55);
-                        float lipBackA = lipMask * (1.0 - lipOverHole) * 0.88 * quadEdgeFade;
-                        float innerEdge = lipOverHole * lipMask * exp(-pow((lipV - 0.97) / 0.10, 2.0));
+                        float lipBackRgb_v = saturate(0.30 + lipV * 0.45 + lipLit * 0.25);
+                        float3 lipBackRgb = lerp(glassMid * 0.92, glassLight, lipBackRgb_v);
+                        lipBackRgb = lerp(lipBackRgb, glassDeep * 0.65, smoothstep(0.30, 0.0, lipV) * 0.50);
+                        float lipBackA = lipMask * (1.0 - lipOverHole) * 0.66 * quadEdgeFade;
                         glassRgb = lerp(glassRgb, lipBackRgb, lipBackA);
-                        glassRgb = lerp(glassRgb, bedShadowCol * 0.5, innerEdge * 0.6);
                         glassAlpha = max(glassAlpha, lipBackA);
                     }
 
@@ -1386,9 +1362,9 @@ Shader "PuzzleGlass/GlassChamberLit"
                         float lipTopHi  = smoothstep(0.55 - lpx, 0.55 + lpx, lipV) * (1.0 - smoothstep(0.85 - lpx, 0.85 + lpx, lipV));
                         float lipBotLn  = 1.0 - smoothstep(0.22 - lpx, 0.22 + lpx, lipV);
                         float lipLitSide = saturate(0.55 - lipLitDx / max(tubeR + cLipOver, 0.01) * 0.45);
-                        float lipA = lipMask * saturate(0.14 + (1.0 - lipOverHole) * 0.38 + lipTopHi * (0.42 + 0.28 * lipLitSide) + lipBotLn * 0.25) * quadEdgeFade;
-                        float3 lipRgb = lerp(glassLight, pureWhite, saturate(lipTopHi * (0.65 + 0.35 * lipLitSide)));
-                        lipRgb = lerp(lipRgb, glassDeep * 0.75, lipBotLn * 0.50);
+                        float lipA = lipMask * saturate(0.12 + (1.0 - lipOverHole) * 0.30 + lipTopHi * (0.36 + 0.24 * lipLitSide) + lipBotLn * 0.28) * quadEdgeFade;
+                        float3 lipRgb = lerp(glassMid * 1.15, pureWhite, saturate(lipTopHi * (0.60 + 0.32 * lipLitSide)));
+                        lipRgb = lerp(lipRgb, glassDeep * 0.72, lipBotLn * 0.62);
                         float outA = lipA + frontA * (1.0 - lipA);
                         frontRgb = (lipRgb * lipA + frontRgb * frontA * (1.0 - lipA)) / max(outA, 0.004);
                         frontA = outA;
@@ -1401,10 +1377,12 @@ Shader "PuzzleGlass/GlassChamberLit"
                     float dNearRaw  = ExitChanSDF(p - float2(0.018, -0.046));
                     float dShadNear = dNearRaw - wallThick;
                     float dShadFar  = ExitChanSDF(p - float2(0.036, -0.098)) - wallThick;
-                    float contactShad = pow(1.0 - smoothstep(-0.010, 0.080, dShadNear), 1.45);
-                    float dropShad    = pow(1.0 - smoothstep(-0.018, 0.190, dShadFar), 1.55);
-                    float shadowAlpha = saturate(contactShad * 0.54 + dropShad * 0.48) * 0.34 * clipMask * quadEdgeFade;
-                    float3 shadowRGB = float3(0.18, 0.20, 0.40);
+                    float rimContact  = pow(1.0 - smoothstep(-0.008, 0.055, dOuter), 1.65);
+                    float contactShad = pow(1.0 - smoothstep(-0.010, 0.085, dShadNear), 1.45);
+                    float dropShad    = pow(1.0 - smoothstep(-0.018, 0.195, dShadFar), 1.55);
+                    float rawShadow   = saturate(rimContact * 0.38 + contactShad * 0.56 + dropShad * 0.46) * clipMask * quadEdgeFade;
+                    float shadowAlpha = rawShadow * lerp(0.50, 0.24, outerMask);
+                    float3 shadowRGB  = float3(0.11, 0.12, 0.26);
 
                     float3 bedTopCol = float3(0.30, 0.33, 0.52);
                     float3 bedBotCol = float3(0.23, 0.26, 0.44);
@@ -1435,9 +1413,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                     if (lipMask > 0.001)
                     {
                         float lipLit = saturate(0.5 - lipLitDx / max(tubeR + cLipOver, 0.01) * 0.5);
-                        float3 lipBackRgb = lerp(glassMid, glassLight, saturate(0.35 + lipV * 0.45 + lipLit * 0.25));
-                        lipBackRgb = lerp(lipBackRgb, glassDeep * 0.65, smoothstep(0.30, 0.0, lipV) * 0.45);
-                        float lipBackA = lipMask * (1.0 - lipOverHole) * 0.78 * quadEdgeFade;
+                        float lipBackRgb_v = saturate(0.30 + lipV * 0.45 + lipLit * 0.25);
+                        float3 lipBackRgb = lerp(glassMid * 0.92, glassLight, lipBackRgb_v);
+                        lipBackRgb = lerp(lipBackRgb, glassDeep * 0.65, smoothstep(0.30, 0.0, lipV) * 0.50);
+                        float lipBackA = lipMask * (1.0 - lipOverHole) * 0.66 * quadEdgeFade;
                         glassRgb = lerp(glassRgb, lipBackRgb, lipBackA);
                         glassAlpha = max(glassAlpha, lipBackA);
                     }

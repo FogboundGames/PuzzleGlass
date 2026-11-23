@@ -98,17 +98,22 @@ namespace PuzzleGlass.Editor.Studio
         // Çözüm
         private SolveResult m_Solve;
         private List<LevelFinding> m_Findings = new List<LevelFinding>();
-        private PuzzleLevelSolver.Run m_SolveRun;   // arka planda (her karede birkaç ms) ilerleyen çözüm
+        private PuzzleLevelSolver.Run m_SolveRun;       // arka planda (her karede birkaç ms) ilerleyen çözüm
+        private PuzzleLevelSolver.DifficultyRun m_DiffRun; // zorluk simülasyonunu da karelere böler (UI donmaz)
         private bool m_LiveSync;
-        private double m_SceneSyncDue = -1;        // sahne güncellemesi: son değişiklikten kısa süre sonra tek sefer
-        private const double SceneSyncDelay = 1.0;
-        private Vector2Int? m_HoverCell;            // fırçayla gezinirken hayalet önizleme
+        private double m_SceneSyncDue = -1;             // sahne güncellemesi: son değişiklikten kısa süre sonra tek sefer
+        private const double SceneSyncDelay = 1.5;
+        private Vector2Int? m_HoverCell;                // fırçayla gezinirken hayalet önizleme
+        private int m_LastKnownAssetCount = -1;
 
         // UI
         private ListView m_List;
-        private Label m_Title, m_State, m_Summary;
+        private Label m_Title, m_State, m_Summary, m_ModeBadge, m_IssuesHeaderTitle;
         private Button m_SaveButton, m_ManualBallsBtn, m_GenToggleBtn;
         private Button m_TabLevelsBtn, m_TabSmartGenBtn;
+        private Button m_LeftToggleBtn, m_SideToggleBtn, m_IssuesToggleBtn;
+        private VisualElement m_LeftPanel, m_SidePanel;
+        private bool m_ShowLeftPanel = true, m_ShowSidePanel = true, m_ShowIssues = true;
         private VisualElement m_LevelsSubPanel, m_SmartGenSubPanel, m_SmartGenForm, m_GenStatusBox, m_GenLinksRow;
         private Label m_GenStatusText;
         private VisualElement m_Palette, m_PreviewBar, m_BoardContent, m_GlassHeader, m_BallToolbar, m_TubeCanvas, m_Glass, m_Tray, m_OrderHolder;
@@ -123,14 +128,14 @@ namespace PuzzleGlass.Editor.Studio
         public static void Open()
         {
             var w = GetWindow<GlassLevelStudioWindow>("Level Stüdyosu");
-            w.minSize = new Vector2(1040, 640);
+            w.minSize = new Vector2(880, 560);
         }
 
         private void OnEnable()
         {
             Undo.undoRedoPerformed += OnUndoRedo;
             EditorApplication.update += OnEditorUpdate;
-            m_LiveSync = EditorPrefs.GetBool(LiveKey, true);
+            m_LiveSync = EditorPrefs.GetBool(LiveKey, false);
         }
 
         private void OnDisable()
@@ -138,13 +143,28 @@ namespace PuzzleGlass.Editor.Studio
             Undo.undoRedoPerformed -= OnUndoRedo;
             EditorApplication.update -= OnEditorUpdate;
             m_SolveRun = null;
+            m_DiffRun = null;
             DiscardPending();
         }
 
         private void OnFocus()
         {
             if (m_List == null) return;
-            LoadLevels(keepSelection: true);
+            // Sadece dışarıdan level eklendiyse/silindiyse ya da referans kaybolduysa tüm assetleri tekrar yükle
+            int currentCount = AssetDatabase.FindAssets("t:PuzzleGlassLevelData", new[] { LevelsFolder }).Length;
+            bool anyMissing = false;
+            for (int i = 0; i < m_All.Count; i++)
+            {
+                if (m_All[i] == null) { anyMissing = true; break; }
+            }
+            if (anyMissing || currentCount != m_LastKnownAssetCount)
+            {
+                LoadLevels(keepSelection: true);
+            }
+            else
+            {
+                RefreshState();
+            }
         }
 
         private void OnUndoRedo()
@@ -172,7 +192,8 @@ namespace PuzzleGlass.Editor.Studio
             var body = new VisualElement();
             body.AddToClassList("studio__body");
             root.Add(body);
-            body.Add(BuildLevelList());
+            m_LeftPanel = BuildLevelList();
+            body.Add(m_LeftPanel);
 
             var center = new VisualElement();
             center.AddToClassList("studio__center");
@@ -190,8 +211,10 @@ namespace PuzzleGlass.Editor.Studio
             center.Add(board);
             body.Add(center);
 
-            var side = new ScrollView();
+            var side = new ScrollView(ScrollViewMode.Vertical);
+            side.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             side.AddToClassList("studio__side");
+            m_SidePanel = side;
             m_SolveCard = new VisualElement();
             m_SolveCard.AddToClassList("solve");
             side.Add(m_SolveCard);
@@ -203,10 +226,24 @@ namespace PuzzleGlass.Editor.Studio
             side.Add(m_Inspector);
             body.Add(side);
 
+            var issuesWrap = new VisualElement();
+            issuesWrap.AddToClassList("issues-wrap");
+            var issuesHeader = new VisualElement();
+            issuesHeader.AddToClassList("issues-header");
+            m_IssuesHeaderTitle = new Label("Kontrol");
+            m_IssuesHeaderTitle.AddToClassList("issues-header__title");
+            issuesHeader.Add(m_IssuesHeaderTitle);
+            m_IssuesToggleBtn = new Button(ToggleIssuesPanel) { text = "▾ Gizle" };
+            m_IssuesToggleBtn.AddToClassList("issues-header__toggle");
+            issuesHeader.Add(m_IssuesToggleBtn);
+            issuesWrap.Add(issuesHeader);
+
             m_Issues = new ScrollView();
             m_Issues.AddToClassList("issues");
-            root.Add(m_Issues);
+            issuesWrap.Add(m_Issues);
+            root.Add(issuesWrap);
 
+            ApplyPanelVisibility();
             LoadLevels(keepSelection: true);
         }
 
@@ -214,12 +251,28 @@ namespace PuzzleGlass.Editor.Studio
         {
             var bar = new VisualElement();
             bar.AddToClassList("toolbar");
+
+            m_LeftToggleBtn = new Button(() => { m_ShowLeftPanel = !m_ShowLeftPanel; ApplyPanelVisibility(); })
+            {
+                text = "◧ Liste",
+                tooltip = "Sol level listesini gizle/göster"
+            };
+            m_LeftToggleBtn.AddToClassList("toolbar__iconbtn");
+            m_LeftToggleBtn.style.marginLeft = 0;
+            bar.Add(m_LeftToggleBtn);
+
             m_Title = new Label();
             m_Title.AddToClassList("toolbar__title");
+            m_Title.style.marginLeft = 8;
             bar.Add(m_Title);
             m_State = new Label();
             m_State.AddToClassList("toolbar__state");
             bar.Add(m_State);
+
+            m_ModeBadge = new Label();
+            m_ModeBadge.AddToClassList("toolbar__mode");
+            bar.Add(m_ModeBadge);
+
             var spacer = new VisualElement();
             spacer.style.flexGrow = 1;
             bar.Add(spacer);
@@ -227,7 +280,7 @@ namespace PuzzleGlass.Editor.Studio
             m_Summary.AddToClassList("toolbar__summary");
             bar.Add(m_Summary);
 
-            var live = new Toggle("Sahnede canlı") { value = m_LiveSync, tooltip = "Açıkken her değişiklik sahnedeki levele de uygulanır." };
+            var live = new Toggle("Sahnede canlı") { value = m_LiveSync, tooltip = "Açıkken değişiklikler otomatik sahneye yüklenir (kapalıyken daha akıcıdır)." };
             live.RegisterValueChangedCallback(e =>
             {
                 m_LiveSync = e.newValue;
@@ -239,7 +292,31 @@ namespace PuzzleGlass.Editor.Studio
             m_SaveButton = new Button(Save) { text = "Kaydet" };
             m_SaveButton.AddToClassList("toolbar__primary");
             bar.Add(m_SaveButton);
+
+            m_SideToggleBtn = new Button(() => { m_ShowSidePanel = !m_ShowSidePanel; ApplyPanelVisibility(); })
+            {
+                text = "Panel ◨",
+                tooltip = "Sağ ayar panelini gizle/göster"
+            };
+            m_SideToggleBtn.AddToClassList("toolbar__iconbtn");
+            bar.Add(m_SideToggleBtn);
             return bar;
+        }
+
+        private void ToggleIssuesPanel()
+        {
+            m_ShowIssues = !m_ShowIssues;
+            ApplyPanelVisibility();
+        }
+
+        private void ApplyPanelVisibility()
+        {
+            if (m_LeftPanel != null) m_LeftPanel.style.display = m_ShowLeftPanel ? DisplayStyle.Flex : DisplayStyle.None;
+            if (m_SidePanel != null) m_SidePanel.style.display = m_ShowSidePanel ? DisplayStyle.Flex : DisplayStyle.None;
+            if (m_Issues != null) m_Issues.style.display = m_ShowIssues ? DisplayStyle.Flex : DisplayStyle.None;
+            if (m_LeftToggleBtn != null) m_LeftToggleBtn.EnableInClassList("toolbar__iconbtn--active", m_ShowLeftPanel);
+            if (m_SideToggleBtn != null) m_SideToggleBtn.EnableInClassList("toolbar__iconbtn--active", m_ShowSidePanel);
+            if (m_IssuesToggleBtn != null) m_IssuesToggleBtn.text = m_ShowIssues ? "▾ Gizle" : "▸ Göster";
         }
 
         private VisualElement BuildLevelList()
@@ -760,7 +837,9 @@ namespace PuzzleGlass.Editor.Studio
                 Directory.CreateDirectory(LevelsFolder);
                 AssetDatabase.Refresh();
             }
-            foreach (string guid in AssetDatabase.FindAssets("t:PuzzleGlassLevelData", new[] { LevelsFolder }))
+            var guids = AssetDatabase.FindAssets("t:PuzzleGlassLevelData", new[] { LevelsFolder });
+            m_LastKnownAssetCount = guids.Length;
+            foreach (string guid in guids)
             {
                 var asset = AssetDatabase.LoadAssetAtPath<PuzzleGlassLevelData>(AssetDatabase.GUIDToAssetPath(guid));
                 if (asset != null) m_All.Add(asset);
@@ -1989,7 +2068,7 @@ namespace PuzzleGlass.Editor.Studio
             m_SceneSyncDue = EditorApplication.timeSinceStartup + SceneSyncDelay;
         }
 
-        /// <summary>Her editör karesi: çözümü birkaç ms ilerlet, zamanı gelen sahne güncellemesini yap.</summary>
+        /// <summary>Her editör karesi: çözümü ve zorluk ölçümünü birkaç ms ilerlet, zamanı gelen sahne güncellemesini yap.</summary>
         private void OnEditorUpdate()
         {
             // Fırça boyama veya sürükleme sırasında arka plan çözücü/sahne senkronizasyonu arayüzü dondurmasın
@@ -1997,21 +2076,32 @@ namespace PuzzleGlass.Editor.Studio
 
             if (m_SolveRun != null)
             {
-                if (m_SolveRun.Step(3.0))
+                if (m_SolveRun.Step(2.0))
                 {
                     m_Solve = m_SolveRun.Result;
                     m_SolveRun = null;
-                    // Slot sisteminde zorluk ölçüsü: rastgele oynanınca kilitlenme oranı (üreticiyle aynı deneme sayısı)
                     var shown = Shown;
                     if (PuzzleLevelSolver.UseSlotModel && shown != null && m_Solve != null && m_Solve.status == SolveStatus.Solved)
                     {
-                        var dims = GetGlassDims(shown);
-                        m_Solve.randomFailRate = PuzzleLevelSolver.EstimateRandomFailRate(shown, dims, 300, 12345);
-                        m_Solve.smartFailRate = PuzzleLevelSolver.EstimateSmartFailRate(shown, dims, 300, 12345);
+                        m_DiffRun = new PuzzleLevelSolver.DifficultyRun(shown, GetGlassDims(shown), 150, 12345);
                     }
-                    RefreshAll();
+                    RefreshSolveDependentUI();
                 }
             }
+            else if (m_DiffRun != null)
+            {
+                if (m_DiffRun.Step(2.0))
+                {
+                    if (m_Solve != null)
+                    {
+                        m_Solve.randomFailRate = m_DiffRun.RandomFailRate;
+                        m_Solve.smartFailRate = m_DiffRun.SmartFailRate;
+                    }
+                    m_DiffRun = null;
+                    RefreshSolveDependentUI();
+                }
+            }
+
             if (m_SceneSyncDue > 0 && EditorApplication.timeSinceStartup >= m_SceneSyncDue && m_DragBlock < 0)
             {
                 m_SceneSyncDue = -1;
@@ -2058,6 +2148,7 @@ namespace PuzzleGlass.Editor.Studio
         {
             var lvl = Shown;
             m_Solve = null;
+            m_DiffRun = null;
             m_SolveRun = lvl != null ? new PuzzleLevelSolver.Run(lvl, GetGlassDims(lvl)) : null;
         }
 
@@ -2082,9 +2173,80 @@ namespace PuzzleGlass.Editor.Studio
             RefreshState();
         }
 
+        /// <summary>Yalnızca fırça değiştiğinde çağrılır; camı veya çözücüyü yeniden kurmadan palet ve hayalet önizlemeyi günceller.</summary>
+        private void RefreshBrushUI()
+        {
+            if (m_BoardContent == null) return;
+            RefreshPalette();
+            RedrawTray();
+            RefreshModeBadge();
+        }
+
+        /// <summary>Yalnızca blok/grup seçimi değiştiğinde çağrılır; palet veya kontrol listesini baştan kurmaz.</summary>
+        private void RefreshSelectionUI()
+        {
+            if (m_BoardContent == null) return;
+            RefreshBoard();
+            RefreshSide();
+            RefreshModeBadge();
+        }
+
+        /// <summary>Arka plan çözücü veya zorluk ölçümü bitince yalnızca çözüm/bulgu panellerini günceller.</summary>
+        private void RefreshSolveDependentUI()
+        {
+            if (m_BoardContent == null) return;
+            var lvl = Shown;
+            m_Findings = lvl != null ? PuzzleLevelSolver.Check(lvl, m_Solve) : new List<LevelFinding>();
+            RefreshPreviewBar();
+            RefreshSide();
+            RefreshIssues();
+            RefreshState();
+        }
+
+        private void RefreshModeBadge()
+        {
+            if (m_ModeBadge == null) return;
+            m_ModeBadge.RemoveFromClassList("toolbar__mode--brush");
+            m_ModeBadge.RemoveFromClassList("toolbar__mode--erase");
+            if (m_Level == null)
+            {
+                m_ModeBadge.style.display = DisplayStyle.None;
+                return;
+            }
+            m_ModeBadge.style.display = DisplayStyle.Flex;
+            if (m_Eraser)
+            {
+                m_ModeBadge.text = "Mod: Silgi";
+                m_ModeBadge.AddToClassList("toolbar__mode--erase");
+                return;
+            }
+            if (m_BrushColor.HasValue || m_BrushShape.HasValue || m_BrushMechanic != MechanicBrush.None)
+            {
+                var parts = new List<string>();
+                if (m_BrushColor.HasValue) parts.Add(PuzzleLevelSolver.ColorName(m_BrushColor.Value));
+                if (m_BrushShape.HasValue) parts.Add(CarrierBlockShapeUtility.GetTurkishLabel(m_BrushShape.Value));
+                if (m_BrushMechanic != MechanicBrush.None)
+                {
+                    switch (m_BrushMechanic)
+                    {
+                        case MechanicBrush.Key: parts.Add("🔑 Anahtar"); break;
+                        case MechanicBrush.Lock: parts.Add($"🔒 Kilit({m_BrushLockCount})"); break;
+                        case MechanicBrush.Ice: parts.Add($"❄ Buz({m_BrushIceCount})"); break;
+                        case MechanicBrush.Filled: parts.Add("●↑ Dolu"); break;
+                        case MechanicBrush.Wall: parts.Add("🧱 Bölme"); break;
+                    }
+                }
+                m_ModeBadge.text = "Fırça: " + string.Join(" · ", parts);
+                m_ModeBadge.AddToClassList("toolbar__mode--brush");
+                return;
+            }
+            m_ModeBadge.text = "Mod: Seç & Taşı";
+        }
+
         private void RefreshState()
         {
             if (m_Title == null) return;
+            RefreshModeBadge();
             if (m_Level == null)
             {
                 m_Title.text = "Level yok";
@@ -2135,6 +2297,13 @@ namespace PuzzleGlass.Editor.Studio
             bool editable = m_Level != null && m_Pending == null;
             m_Palette.SetEnabled(editable);
 
+            bool hasBrush = m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None || m_Eraser;
+            var selectChip = Chip(() => { ClearBrush(); RefreshBrushUI(); }, !hasBrush);
+            selectChip.Add(new Label("✋ Seç/Taşı"));
+            selectChip.tooltip = "Fırçayı bırakır; bloğa tıklayarak seçebilir veya sürükleyerek taşıyabilirsin (Esc).";
+            m_Palette.Add(selectChip);
+            AddSep();
+
             var colorLabel = new Label("Renk");
             colorLabel.AddToClassList("palette__label");
             m_Palette.Add(colorLabel);
@@ -2145,7 +2314,7 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     m_Eraser = false;
                     m_BrushColor = m_BrushColor == color ? (PuzzleColor?)null : color;
-                    RefreshAll();
+                    RefreshBrushUI();
                 }, m_BrushColor == color && !m_Eraser);
                 var sw = new VisualElement();
                 sw.AddToClassList("swatch");
@@ -2167,7 +2336,7 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     m_Eraser = false;
                     m_BrushShape = m_BrushShape == shape ? (CarrierBlockShape?)null : shape;
-                    RefreshAll();
+                    RefreshBrushUI();
                 }, m_BrushShape == shape && !m_Eraser);
                 chip.Add(ShapeIcon(shape));
                 chip.tooltip = $"{CarrierBlockShapeUtility.GetTurkishLabel(shape)}: boş hücreye tıkla = ekle, bloğa tıkla = şeklini değiştir.";
@@ -2189,7 +2358,7 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (int lk in new[] { 1, 2, 3 })
                 {
                     int v = lk;
-                    var sub = Chip(() => { m_BrushLockCount = v; RefreshPalette(); }, m_BrushLockCount == v);
+                    var sub = Chip(() => { m_BrushLockCount = v; RefreshBrushUI(); }, m_BrushLockCount == v);
                     sub.Add(new Label($"{v}🔑"));
                     sub.tooltip = $"Kilit fırçası: {v} anahtar";
                     m_Palette.Add(sub);
@@ -2200,7 +2369,7 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (int ic in new[] { 5, 10, 15 })
                 {
                     int v = ic;
-                    var sub = Chip(() => { m_BrushIceCount = v; RefreshPalette(); }, m_BrushIceCount == v);
+                    var sub = Chip(() => { m_BrushIceCount = v; RefreshBrushUI(); }, m_BrushIceCount == v);
                     sub.Add(new Label($"{v}❄"));
                     sub.tooltip = $"Buz fırçası: {v} sayaç";
                     m_Palette.Add(sub);
@@ -2208,7 +2377,7 @@ namespace PuzzleGlass.Editor.Studio
             }
             else if (m_BrushMechanic == MechanicBrush.Filled)
             {
-                var sameChip = Chip(() => { m_BrushFilledColor = null; RefreshPalette(); }, !m_BrushFilledColor.HasValue);
+                var sameChip = Chip(() => { m_BrushFilledColor = null; RefreshBrushUI(); }, !m_BrushFilledColor.HasValue);
                 sameChip.Add(new Label("Aynı"));
                 sameChip.tooltip = "Dolu kutunun içindeki top rengi kutu çerçevesiyle aynı olsun.";
                 m_Palette.Add(sameChip);
@@ -2216,7 +2385,7 @@ namespace PuzzleGlass.Editor.Studio
                 foreach (var fc in BrushColors)
                 {
                     var fcol = fc;
-                    var fchip = Chip(() => { m_BrushFilledColor = fcol; RefreshPalette(); }, m_BrushFilledColor == fcol);
+                    var fchip = Chip(() => { m_BrushFilledColor = fcol; RefreshBrushUI(); }, m_BrushFilledColor == fcol);
                     var sw = new VisualElement();
                     sw.AddToClassList("swatch");
                     sw.style.backgroundColor = PuzzleColorPalette.GetBodyColor(fcol);
@@ -2230,18 +2399,11 @@ namespace PuzzleGlass.Editor.Studio
             var eraser = Chip(() =>
             {
                 m_Eraser = !m_Eraser;
-                RefreshAll();
+                RefreshBrushUI();
             }, m_Eraser);
             eraser.Add(new Label("Silgi"));
             eraser.tooltip = "Tıklanan blok silinir (Ctrl+Z geri alır).";
             m_Palette.Add(eraser);
-
-            if (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None || m_Eraser)
-            {
-                var clear = Chip(() => { ClearBrush(); RefreshAll(); }, false);
-                clear.Add(new Label("Fırçayı bırak (Esc)"));
-                m_Palette.Add(clear);
-            }
         }
 
         private void AddMechanicChip(string text, MechanicBrush brush, string tooltip)
@@ -2250,7 +2412,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 m_BrushMechanic = m_BrushMechanic == brush ? MechanicBrush.None : brush;
                 m_Eraser = false;
-                RefreshAll();
+                RefreshBrushUI();
             }, m_BrushMechanic == brush);
             chip.Add(new Label(text));
             chip.tooltip = tooltip;
@@ -3868,7 +4030,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_DragMoved = false;
                 m_Tray.CapturePointer(e.pointerId);
             }
-            RefreshAll();
+            RefreshSelectionUI();
             e.StopPropagation();
         }
 
@@ -4041,9 +4203,16 @@ namespace PuzzleGlass.Editor.Studio
             {
                 var m = m_Level.monsters[i];
                 if (Fits(m_Level, m.blockShape, m_DragAnchor, i)) MoveBlock(i, m_DragAnchor);
-                else ShowNotification(new GUIContent("Oraya sığmıyor: blok yerinde kaldı"));
+                else
+                {
+                    ShowNotification(new GUIContent("Oraya sığmıyor: blok yerinde kaldı"));
+                    RedrawTray();
+                }
             }
-            RefreshAll();
+            else
+            {
+                RefreshSelectionUI();
+            }
         }
 
         private VisualElement BuildOrder(PuzzleGlassLevelData lvl)
@@ -4091,13 +4260,13 @@ namespace PuzzleGlass.Editor.Studio
             {
                 m_SelectedGroup = index;
                 m_SelectedBlock = -1;
-                RefreshAll();
+                RefreshSelectionUI();
                 return;
             }
             if (m_SelectedGroup == index)
             {
                 m_SelectedGroup = -1;
-                RefreshAll();
+                RefreshSelectionUI();
                 return;
             }
             int from = m_SelectedGroup;
@@ -4120,7 +4289,7 @@ namespace PuzzleGlass.Editor.Studio
             m_SolveCard.RemoveFromClassList("solve--bad");
             m_SolveCard.RemoveFromClassList("solve--unknown");
             string title, detail;
-            if (m_Solve == null) { title = "Çözüm aranıyor…"; detail = ""; }
+            if (m_Solve == null) { title = "⏳ Çözüm aranıyor…"; detail = "Arka planda karelere bölünerek hesaplanıyor."; }
             else
             {
                 switch (m_Solve.status)
@@ -4130,6 +4299,8 @@ namespace PuzzleGlass.Editor.Studio
                         detail = $"En az {m_Solve.SlotSends} blok slota gönderilerek çözülüyor.";
                         if (m_Solve.HasDifficultyRates)
                             detail += $" {char.ToUpper(PuzzleLevelSolver.DifficultyRatesText(m_Solve)[0])}{PuzzleLevelSolver.DifficultyRatesText(m_Solve).Substring(1)} → ölçülen zorluk: {DifficultyName(PuzzleLevelSolver.DifficultyFromRates(m_Solve.randomFailRate, m_Solve.smartFailRate))}.";
+                        else if (m_DiffRun != null)
+                            detail += " Zorluk ölçülüyor…";
                         m_SolveCard.AddToClassList("solve--good");
                         break;
                     case SolveStatus.Solved:
@@ -4152,7 +4323,9 @@ namespace PuzzleGlass.Editor.Studio
                         break;
                     default:
                         title = "— Kontrol edilemedi";
-                        detail = "Önce boş/çakışan blokları düzelt.";
+                        detail = lvl.useManualBallLayout && (lvl.manualBalls == null || lvl.manualBalls.Count == 0)
+                            ? "Camdaki top sayısı ile kutular eşleşmiyor."
+                            : "Önce alttaki kritik bulguları (renk dengesi/çakışma) düzelt.";
                         m_SolveCard.AddToClassList("solve--bad");
                         break;
                 }
@@ -4163,6 +4336,22 @@ namespace PuzzleGlass.Editor.Studio
             var dl = new Label(detail);
             dl.AddToClassList("solve__detail");
             m_SolveCard.Add(dl);
+
+            if (m_Pending == null && m_Solve != null && m_Solve.status == SolveStatus.Invalid && lvl.monsters != null && lvl.monsters.Count > 0)
+            {
+                if (lvl.useManualBallLayout)
+                {
+                    var fixBtn = new Button(ResetManualBallsFromAuto) { text = "↺ Sıradan camı doldur" };
+                    fixBtn.AddToClassList("solve__action");
+                    m_SolveCard.Add(fixBtn);
+                }
+                else
+                {
+                    var fixBtn = new Button(RebuildOrderFromBlocks) { text = "⚡ Cam sırasını kutulardan kur" };
+                    fixBtn.AddToClassList("solve__action");
+                    m_SolveCard.Add(fixBtn);
+                }
+            }
 
             // İstatistik
             var colors = new HashSet<PuzzleColor>();
@@ -4724,17 +4913,19 @@ namespace PuzzleGlass.Editor.Studio
             glassBtn.AddToClassList("inspector__action");
             m_Inspector.Add(glassBtn);
 
+            var helpFoldout = new Foldout { text = "❓ Kısayollar ve İpuçları", value = false };
+            helpFoldout.AddToClassList("inspector__foldout");
             var hint = new Label(
-                "Nasıl kullanılır:\n" +
-                "• Üstten renk, şekil ve/veya mekanik fırçası seç, tepside boş hücreye tıkla: blok eklenir.\n" +
+                "• Üstten renk, şekil veya mekanik fırçası seç, tepside boş hücreye tıkla: blok eklenir.\n" +
                 "• Fırça seçiliyken bloğa tıkla: rengi/şekli/mekaniği değişir. Silgi: blok silinir.\n" +
-                "• Mekanik sayaçlarını (kilit anahtar sayısı / buz sayacı) bloğu seçip buradan ayarla.\n" +
-                "• Fırça yokken bloğu sürükle: taşınır.\n" +
+                "• Mekanik sayaçlarını (kilit / buz) bloğu seçip buradan ayarla.\n" +
+                "• '✋ Seç/Taşı' modunda bloğu sürükle: taşınır.\n" +
                 "• Cam sırasında iki çipe sırayla tıkla: yerleri değişir.\n" +
-                "• '✋ Elle top diz' açıkken camdaki slotlara tıklayıp/sürükleyerek topları kendin koyabilir veya yerini değiştirebilirsin.\n" +
+                "• '✋ Elle top diz' açıkken camdaki slotlara tıklayıp/sürükleyerek topları koy veya taşı.\n" +
                 "• Esc fırçayı bırakır, Delete seçili bloğu/topu siler, Ctrl+Z geri alır.");
             hint.AddToClassList("inspector__hint");
-            m_Inspector.Add(hint);
+            helpFoldout.Add(hint);
+            m_Inspector.Add(helpFoldout);
         }
 
         /// <summary>Çözümün ilk sürüklemesini öğretici ipucu olarak kaydeder.</summary>
@@ -4764,7 +4955,23 @@ namespace PuzzleGlass.Editor.Studio
         private void RefreshIssues()
         {
             m_Issues.Clear();
-            if (Shown == null) return;
+            if (Shown == null)
+            {
+                if (m_IssuesHeaderTitle != null) m_IssuesHeaderTitle.text = "Kontrol";
+                return;
+            }
+            int crit = 0, warn = 0;
+            foreach (var f in m_Findings)
+            {
+                if (f.severity == FindingSeverity.Critical) crit++;
+                else if (f.severity == FindingSeverity.Warning) warn++;
+            }
+            if (m_IssuesHeaderTitle != null)
+            {
+                m_IssuesHeaderTitle.text = m_Findings.Count == 0
+                    ? (m_Solve == null ? "Kontrol · Denetleniyor…" : "Kontrol · Sorun yok ✓")
+                    : $"Kontrol · {crit} kritik · {warn} uyarı";
+            }
             if (m_Findings.Count == 0)
             {
                 m_Issues.Add(new Label(m_Solve == null ? "Kontrol ediliyor…" : "Bu level için bulgu yok."));
@@ -4789,7 +4996,7 @@ namespace PuzzleGlass.Editor.Studio
                         if (m_Pending != null) return;
                         m_SelectedBlock = b;
                         m_SelectedGroup = -1;
-                        RefreshAll();
+                        RefreshSelectionUI();
                     });
                 }
                 m_Issues.Add(row);
@@ -4808,7 +5015,8 @@ namespace PuzzleGlass.Editor.Studio
                 m_SelectedBallSlot = null;
                 m_SelectedGroup = -1;
                 m_SelectedBlock = -1;
-                RefreshAll();
+                RefreshPalette();
+                RefreshSelectionUI();
                 e.StopPropagation();
             }
             else if ((e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace) && m_Pending == null)

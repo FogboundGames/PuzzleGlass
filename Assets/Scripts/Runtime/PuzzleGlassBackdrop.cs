@@ -19,11 +19,11 @@ namespace PuzzleGlass
         public Color backdropTint = Color.white;
 
         [Header("Pastel Lavender Studio Palette")]
-        public Color topColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
-        public Color midColor  = new Color(0.928f, 0.930f, 0.970f, 1f);
-        public Color botColor  = new Color(0.832f, 0.838f, 0.912f, 1f);
-        public Color glowColor = new Color(0.980f, 0.982f, 0.998f, 1f);
-        public Color dotColor  = new Color(0.840f, 0.845f, 0.925f, 1f);
+        public Color topColor  = new Color(0.505f, 0.508f, 0.625f, 1f);
+        public Color midColor  = new Color(0.550f, 0.550f, 0.660f, 1f);
+        public Color botColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
+        public Color glowColor = new Color(0.610f, 0.612f, 0.735f, 1f);
+        public Color dotColor  = new Color(0.520f, 0.525f, 0.640f, 1f);
         [Range(0f, 0.20f)]
         public float dotStrength = 0.0f;
         [Range(0f, 1.0f)]
@@ -31,9 +31,9 @@ namespace PuzzleGlass
 
         [Header("Stepped Lower Ground")]
         public bool enableSteppedSplitGround = true;
-        public Color lowerTopColor = new Color(0.550f, 0.550f, 0.660f, 1f);
-        public Color lowerBotColor = new Color(0.505f, 0.508f, 0.625f, 1f);
-        public Color lowerRimColor = new Color(0.765f, 0.765f, 0.865f, 1f);
+        public Color lowerTopColor = new Color(0.928f, 0.930f, 0.970f, 1f);
+        public Color lowerBotColor = new Color(0.875f, 0.878f, 0.945f, 1f);
+        public Color lowerRimColor = new Color(0.990f, 0.992f, 1.000f, 1f);
 
         [SerializeField, HideInInspector] private int visualThemeVersion = 0;
 
@@ -96,27 +96,33 @@ namespace PuzzleGlass
 
         private void MigrateThemeIfNeeded()
         {
-            // v7: Pastel Lila Üst Duvar + Slotları Saran Kademeli (___/‾‾‾\___) Gri-Lavanta Alt Zemin
-            if (visualThemeVersion >= 7) return;
-            visualThemeVersion = 7;
+            // v8: Gri-Lavanta Üst Duvar + Slotları Saran Kademeli (___/‾‾‾\___) Pastel Beyaz-Lila Alt Zemin
+            if (visualThemeVersion >= 8) return;
+            visualThemeVersion = 8;
             ApplyPastelLavenderStudioPreset();
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+#endif
         }
 
         public void ApplyPastelLavenderStudioPreset()
         {
             useTextureBackdrop = false;
             backdropTint = Color.white;
-            topColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
-            midColor  = new Color(0.928f, 0.930f, 0.970f, 1f);
-            botColor  = new Color(0.832f, 0.838f, 0.912f, 1f);
-            glowColor = new Color(0.980f, 0.982f, 0.998f, 1f);
-            dotColor  = new Color(0.840f, 0.845f, 0.925f, 1f);
+            topColor  = new Color(0.505f, 0.508f, 0.625f, 1f);
+            midColor  = new Color(0.550f, 0.550f, 0.660f, 1f);
+            botColor  = new Color(0.875f, 0.878f, 0.945f, 1f);
+            glowColor = new Color(0.610f, 0.612f, 0.735f, 1f);
+            dotColor  = new Color(0.520f, 0.525f, 0.640f, 1f);
             dotStrength = 0.0f;
             floatingStrength = 0.0f;
             enableSteppedSplitGround = true;
-            lowerTopColor = new Color(0.550f, 0.550f, 0.660f, 1f);
-            lowerBotColor = new Color(0.505f, 0.508f, 0.625f, 1f);
-            lowerRimColor = new Color(0.765f, 0.765f, 0.865f, 1f);
+            lowerTopColor = new Color(0.928f, 0.930f, 0.970f, 1f);
+            lowerBotColor = new Color(0.875f, 0.878f, 0.945f, 1f);
+            lowerRimColor = new Color(0.990f, 0.992f, 1.000f, 1f);
         }
 
         private void LateUpdate()
