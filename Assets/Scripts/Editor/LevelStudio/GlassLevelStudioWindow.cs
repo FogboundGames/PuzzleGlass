@@ -1905,6 +1905,37 @@ namespace PuzzleGlass.Editor.Studio
             OnEdited(syncScene: true);
         }
 
+        /// <summary>
+        /// Blok başka bir bloğun üstüne bırakıldıysa ikisinin yerini değiştirir (bırakılan hücredeki blok, taşınan bloğun
+        /// eski yerine geçer). İki blok da yeni yerlerine sığmıyorsa hiçbir şey yapmaz ve false döner.
+        /// </summary>
+        private bool TrySwapBlocks(int i, Vector2Int dropAnchor)
+        {
+            if (!ValidBlock(i)) return false;
+            int j = BlockAt(m_Level, dropAnchor, i);
+            if (j < 0 || j == i || !ValidBlock(j)) return false;
+            var mi = m_Level.monsters[i];
+            var mj = m_Level.monsters[j];
+            Vector2Int ai = mi.gridAnchor, aj = mj.gridAnchor;
+
+            // Önce dene: ikisi de yeni yerine sığıyor mu?
+            mi.gridAnchor = aj;
+            mj.gridAnchor = ai;
+            bool ok = Fits(m_Level, mi.blockShape, aj, i) && Fits(m_Level, mj.blockShape, ai, j);
+            mi.gridAnchor = ai;
+            mj.gridAnchor = aj;
+            if (!ok) return false;
+
+            Record("Blokların yerini değiştir");
+            mi.gridAnchor = aj;
+            mj.gridAnchor = ai;
+            mi.hasGridAnchor = true;
+            mj.hasGridAnchor = true;
+            m_SelectedBlock = i;
+            OnEdited(syncScene: true);
+            return true;
+        }
+
         private void SwapGroups(int a, int b)
         {
             var groups = m_Level.bottomToTopGroups;
@@ -4203,6 +4234,7 @@ namespace PuzzleGlass.Editor.Studio
             {
                 var m = m_Level.monsters[i];
                 if (Fits(m_Level, m.blockShape, m_DragAnchor, i)) MoveBlock(i, m_DragAnchor);
+                else if (TrySwapBlocks(i, m_DragAnchor)) { }
                 else
                 {
                     ShowNotification(new GUIContent("Oraya sığmıyor: blok yerinde kaldı"));

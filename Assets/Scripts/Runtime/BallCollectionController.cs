@@ -58,6 +58,19 @@ namespace PuzzleGlass
                  "Kapalıysa alt sıradaki eşleşen her top toplanır. Açıkken huni tüm tabanı kapağa doğru çeker.")]
         public bool poolHatchOnly = true;
 
+        [Tooltip("Kutu cam: kapaktan çekilen topa değen aynı renk toplar da art arda çekilir (renk öbeği zincirleme akar).")]
+        public bool poolChainPull = true;
+
+        [Tooltip("Zincir noktasının geçerli kaldığı süre (sn): bu sürede komşu aynı renk top çekilmezse zincir kopar.")]
+        public float poolChainWindow = 0.45f;
+
+        [Tooltip("Kutu cam (kapak kuralı): huninin tabandaki topları kapağa itme ivmesinin çarpanı.")]
+        public float poolHatchDrainAccelMultiplier = 3.2f;
+
+        [Tooltip("Kutu cam (kapak kuralı): ardışık top çekme aralığı (sn).")]
+        [Range(0.02f, 0.20f)]
+        public float poolHatchCollectionInterval = 0.045f;
+
         [Header("State (Read Only)")]
         [SerializeField] private int _totalCollectedThisLevel = 0;
         private float _lastGlobalCollectionTime = -10f;
@@ -507,6 +520,12 @@ namespace PuzzleGlass
                 effectiveInterval = Mathf.Min(effectiveInterval, isFastForward ? 0.018f : 0.035f);
                 effectiveMaxInSpout = Mathf.Max(effectiveMaxInSpout, isFastForward ? 20 : 14);
             }
+            // Kutu cam (kapak kuralı): kapaktaki ve zincirdeki toplar beklemeden art arda çekilsin
+            if (UsesPoolHatch(beltContainer))
+            {
+                effectiveInterval = Mathf.Min(effectiveInterval, isFastForward ? 0.025f : poolHatchCollectionInterval);
+                effectiveMaxInSpout = Mathf.Max(effectiveMaxInSpout, isFastForward ? 18 : 12);
+            }
 
             float now = Time.time;
             if (now - _lastGlobalCollectionTime < effectiveInterval) return;
@@ -517,6 +536,7 @@ namespace PuzzleGlass
             if (bestBall != null && targetStream != null)
             {
                 _lastDrainTargetTime = now;
+                RecordChainAnchor(beltContainer, bestBall);
                 StartBallAttraction(bestBall, targetStream.monster, targetStream);
                 _lastGlobalCollectionTime = now;
                 targetStream.lastCollectionTime = now;
@@ -572,14 +592,46 @@ namespace PuzzleGlass
         private bool UsesPoolHatch(ShapedGlassContainer container) =>
             poolHatchOnly && container != null && container.IsFlatBottomBox && SlotSystem.IsActive;
 
-        /// <summary>Top, alt çıkış kapağının (yakanın) tam üstünde mi? (merkezi yaka genişliğinin içinde)</summary>
+        /// <summary>Top, alt çıkış kapağının (yakanın) üstünde mi? (yaka genişliği + yarım top payı)</summary>
         private static bool IsAtPoolHatch(ShapedGlassContainer container, BallPhysicsController ball)
         {
             Vector3 ballLocal = container.transform.InverseTransformPoint(ball.transform.position);
             Vector3 exitLocal = container.transform.InverseTransformPoint(container.GetBottomExitWorldPosition());
             float ballDiam = container.particleSize > 0.08f ? container.particleSize : 0.114f;
-            float halfW = container.GetBottomExitCollarWidthLocal() * 0.5f - ballDiam * 0.25f;
+            float halfW = container.GetBottomExitCollarWidthLocal() * 0.5f + ballDiam * 0.35f;
             return Mathf.Abs(ballLocal.x - exitLocal.x) <= Mathf.Max(ballDiam * 0.75f, halfW);
+        }
+
+        // ---------- Kutu cam: aynı renk zincirleme çekme ----------
+        // Kapaktan çekilen her topun konumu kısa süre "zincir noktası" olur; ona değen aynı renk top kapağın dışında da
+        // olsa çekilebilir. Böylece eşleşen renk öbeği tek tek beklemeden art arda akar.
+        private struct ChainAnchor { public Vector2 local; public PuzzleColor color; public float time; }
+        private readonly List<ChainAnchor> _chainAnchors = new List<ChainAnchor>();
+
+        private void RecordChainAnchor(ShapedGlassContainer container, BallPhysicsController ball)
+        {
+            if (!poolChainPull || !UsesPoolHatch(container) || ball == null) return;
+            Vector3 lp = container.transform.InverseTransformPoint(ball.transform.position);
+            float now = Time.time;
+            _chainAnchors.RemoveAll(a => now - a.time > poolChainWindow);
+            _chainAnchors.Add(new ChainAnchor { local = new Vector2(lp.x, lp.y), color = ball.colorType, time = now });
+        }
+
+        private bool IsChainedToRecentPull(ShapedGlassContainer container, BallPhysicsController ball)
+        {
+            if (!poolChainPull || _chainAnchors.Count == 0) return false;
+            float now = Time.time;
+            float ballDiam = container.particleSize > 0.08f ? container.particleSize : 0.114f;
+            float reachSq = (ballDiam * 1.3f) * (ballDiam * 1.3f);
+            Vector3 lp = container.transform.InverseTransformPoint(ball.transform.position);
+            Vector2 p = new Vector2(lp.x, lp.y);
+            for (int i = 0; i < _chainAnchors.Count; i++)
+            {
+                var a = _chainAnchors[i];
+                if (a.color != ball.colorType || now - a.time > poolChainWindow) continue;
+                if ((a.local - p).sqrMagnitude <= reachSq) return true;
+            }
+            return false;
         }
 
         private bool IsBallInMonsterCollectionZone(MonsterCharacter monster, BallPhysicsController ball)
@@ -588,8 +640,8 @@ namespace PuzzleGlass
             ShapedGlassContainer zoneContainer = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
-            // Kutu camda (slot sistemi) yalnızca kapağın üstündeki top çıkabilir; diğerleri kapağa akmayı bekler
-            if (UsesPoolHatch(zoneContainer) && !IsAtPoolHatch(zoneContainer, ball)) return false;
+            // Kutu camda (slot sistemi) yalnızca kapağın üstündeki top ya da az önce çekilen aynı renk topa değen top çıkabilir
+            if (UsesPoolHatch(zoneContainer) && !IsAtPoolHatch(zoneContainer, ball) && !IsChainedToRecentPull(zoneContainer, ball)) return false;
             if (zoneContainer != null && zoneContainer.HasPerSlotExitChannels)
             {
                 return monster.assignedSlot != null && zoneContainer.GetChannelIndexForMonster(monster) >= 0;
@@ -1022,7 +1074,8 @@ namespace PuzzleGlass
                 if (absDx <= deadZone || absDx > funnelRadius) continue;
 
                 float dir = Mathf.Sign(worldDx);
-                b.rb.AddForce(new Vector3(dir * poolDrainAccel, 0f, 0f), ForceMode.Acceleration);
+                float accel = hatch ? poolDrainAccel * Mathf.Max(1f, poolHatchDrainAccelMultiplier) : poolDrainAccel;
+                b.rb.AddForce(new Vector3(dir * accel, 0f, 0f), ForceMode.Acceleration);
                 b.rb.WakeUp();
             }
         }
