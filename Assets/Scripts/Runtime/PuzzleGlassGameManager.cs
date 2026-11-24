@@ -463,13 +463,32 @@ namespace PuzzleGlass
         private readonly List<MonsterCharacter> _endgameGridBuffer = new List<MonsterCharacter>();
         private readonly List<MonsterCharacter> _simRemainBuffer = new List<MonsterCharacter>();
 
+        /// <summary>Oyun sonu hızlanmasında kullanılan timeScale (PerfProbe testleri için değiştirilebilir).</summary>
+        public static float EndgameTimeScale = 2.0f;
+
+        // Hızlanma öncesi Time.maximumDeltaTime (Project Settings > Time > Maximum Allowed Timestep)
+        private float _baseMaximumDeltaTime = -1f;
+
         private void SetEndgameFastForward(bool enabled)
         {
             if (_isEndgameFastForward == enabled) return;
             _isEndgameFastForward = enabled;
             if (Application.isPlaying)
             {
-                Time.timeScale = enabled ? 2.0f : 1.0f;
+                if (enabled)
+                {
+                    _baseMaximumDeltaTime = Time.maximumDeltaTime;
+                    Time.timeScale = EndgameTimeScale;
+                    // maximumDeltaTime oyun zamanı cinsinden: 2x hızda aynı tavan, gerçek zamanda yarıya iner ve
+                    // 40 FPS altındaki her kare kırpılır (telefonda karelerin %13-40'ı). Tavanı hızla orantılı büyüt.
+                    Time.maximumDeltaTime = _baseMaximumDeltaTime * Mathf.Max(1f, EndgameTimeScale);
+                }
+                else
+                {
+                    Time.timeScale = 1.0f;
+                    if (_baseMaximumDeltaTime > 0f) Time.maximumDeltaTime = _baseMaximumDeltaTime;
+                    _baseMaximumDeltaTime = -1f;
+                }
             }
         }
 

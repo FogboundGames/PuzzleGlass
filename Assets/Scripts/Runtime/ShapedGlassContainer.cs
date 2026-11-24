@@ -867,10 +867,18 @@ namespace PuzzleGlass
 
             if (_activeSettleTimer > 0f)
             {
-                float dt = Mathf.Min(Time.deltaTime, 0.030f);
-                _activeSettleTimer -= dt;
+                // Kare süresini kırpmak yerine ≤0.030 sn alt adımlara böl: 2x hızlanmada ve düşük FPS'te camdaki
+                // toplar oyunun geri kalanıyla aynı hızda akar (eskiden %60-70 hızda geride kalıyordu).
+                float total = Mathf.Min(Time.deltaTime, 0.09f);
+                int steps = Mathf.Clamp(Mathf.CeilToInt(total / 0.030f), 1, 3);
+                float dt = total / steps;
+                _activeSettleTimer -= total;
 
-                bool anyMoving = StepGranularPhysics(dt, false);
+                bool anyMoving = false;
+                for (int s = 0; s < steps; s++)
+                {
+                    anyMoving |= StepGranularPhysics(dt, false);
+                }
                 SyncCubeTransforms();
 
                 if (anyMoving && _activeSettleTimer < 0.35f)

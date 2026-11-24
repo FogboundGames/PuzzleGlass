@@ -1557,7 +1557,15 @@ namespace PuzzleGlass
 
             if (_pitAnyActive)
             {
-                StepHollowPitPhysics(dt);
+                // Kare süresi kırpılırsa (oyun sonu 2x hızlanma ya da düşük FPS) kutudaki toplar oyunun gerisinde
+                // kalıp "inmiyor" gibi görünüyordu. Süreyi kırpmak yerine kararlı (≤0.035 sn) alt adımlara böl.
+                float total = Mathf.Min(Time.deltaTime, 0.105f);
+                int steps = Mathf.Clamp(Mathf.CeilToInt(total / 0.035f), 1, 3);
+                float stepDt = total / steps;
+                for (int s = 0; s < steps && _pitAnyActive; s++)
+                {
+                    StepHollowPitPhysics(stepDt);
+                }
             }
         }
 
