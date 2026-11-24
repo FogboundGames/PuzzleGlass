@@ -72,7 +72,7 @@ namespace PuzzleGlass
             var grad = new Gradient();
             grad.SetKeys(
                 new[] { new GradientColorKey(c, 0f), new GradientColorKey(Color.Lerp(c, Color.white, 0.35f), 1f) },
-                new[] { new GradientAlphaKey(0.46f, 0f), new GradientAlphaKey(0.16f, 0.55f), new GradientAlphaKey(0f, 1f) });
+                new[] { new GradientAlphaKey(0.68f, 0f), new GradientAlphaKey(0.26f, 0.55f), new GradientAlphaKey(0f, 1f) });
             s_CachedTrailGradients[color] = grad;
             return grad;
         }
@@ -229,7 +229,8 @@ namespace PuzzleGlass
             }
             float headW = Mathf.Max(0.05f, ballRadius * 1.18f);
             _flightTrail.widthMultiplier = headW;
-            _flightTrail.time = (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive) ? 0.10f : 0.135f;
+            // Tüpteki hız izi daha belirgin: biraz daha uzun ve parlak (testçi: "fiziği göster")
+            _flightTrail.time = (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive) ? 0.14f : 0.21f;
 
             _flightTrail.colorGradient = GetCachedTrailGradient(colorType);
             _flightTrail.Clear();

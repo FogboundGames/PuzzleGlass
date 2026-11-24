@@ -128,7 +128,30 @@ namespace PuzzleGlass
         {
             if (!Application.isPlaying) return;
             EnsureResources();
-            PlaySocketSeatRing(worldPos, Color.Lerp(color, Color.white, 0.42f), Mathf.Max(0.08f, size), alpha: 0.62f);
+            if (s_CrispRing == null) return;
+            EnsureConfettiRunner();
+
+            // Emme: dışa büyüyen halka "patlama" gibi okunuyordu; ağza doğru DARALAN halka + içe çekilen kıvılcımlar
+            float r = Mathf.Max(0.08f, size);
+            Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.14f);
+            Color c = Color.Lerp(color, Color.white, 0.35f);
+            s_ConfettiRunner.SpawnSpriteFx(s_CrispRing, pos, c, 0.70f, r * 2.7f, r * 0.55f, 0.20f, sortingOrder: 492);
+
+            if (s_Burst == null) s_Burst = CreateBurstSystem();
+            var emit = new ParticleSystem.EmitParams { applyShapeToPosition = false };
+            const float life = 0.16f;
+            for (int i = 0; i < 3; i++)
+            {
+                float ang = Random.Range(0f, Mathf.PI * 2f);
+                Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+                float dist = r * Random.Range(1.6f, 2.3f);
+                emit.position = pos + (Vector3)(dir * dist);
+                emit.velocity = -(Vector3)(dir * (dist / life)); // ömrü bitince tam ağza varır
+                emit.startColor = i == 0 ? Color.white : Color.Lerp(color, Color.white, 0.5f);
+                emit.startSize = Mathf.Max(0.02f, r * Random.Range(0.18f, 0.28f));
+                emit.startLifetime = life;
+                s_Burst.Emit(emit, 1);
+            }
         }
 
         /// <summary>

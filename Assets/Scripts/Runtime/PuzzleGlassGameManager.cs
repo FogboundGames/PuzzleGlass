@@ -131,6 +131,10 @@ namespace PuzzleGlass
         private readonly List<GameObject> _activeMechanicVfx = new List<GameObject>();
         private bool _hasBaseGlassLocalPos;
         private Vector3 _baseGlassLocalPos;
+        private Vector3 _baseGlassLocalScale;
+
+        /// <summary>Pist camının ekranın sol/sağ kenarında bırakacağı en az boşluk (dünya birimi).</summary>
+        public static float GlassScreenSideMargin = 0.14f;
 
         private void Awake()
         {
@@ -468,6 +472,26 @@ namespace PuzzleGlass
 
         // Hızlanma öncesi Time.maximumDeltaTime (Project Settings > Time > Maximum Allowed Timestep)
         private float _baseMaximumDeltaTime = -1f;
+
+        /// <summary>
+        /// Pist camı sahnede sabit ölçekle (≈1.23x) duruyordu; dar ekranlarda (ör. 1080x2340) sol ve sağdan taşıyordu.
+        /// Ekran genişliğine göre en-boy oranını koruyarak küçültür; geniş ekranlarda sahnedeki ölçekten büyütmez.
+        /// Toplar ve çarpıştırıcılar camın altında yerel uzayda olduğu için ölçekle birlikte küçülür.
+        /// </summary>
+        private void FitGlassWidthToScreen(Camera cam)
+        {
+            Transform t = glassContainer.transform;
+            t.localScale = _baseGlassLocalScale;
+            if (cam == null || !cam.orthographic || !glassContainer.IsTrackShape) return;
+
+            float parentScaleX = t.parent != null ? Mathf.Abs(t.parent.lossyScale.x) : 1f;
+            float glassWorldW = GlassTrackLayout.FixedOuterWidth * Mathf.Abs(_baseGlassLocalScale.x) * parentScaleX;
+            float availableW = cam.orthographicSize * cam.aspect * 2f - GlassScreenSideMargin * 2f;
+            if (glassWorldW <= 0.01f || glassWorldW <= availableW) return;
+
+            float fit = Mathf.Max(0.6f, availableW / glassWorldW);
+            t.localScale = new Vector3(_baseGlassLocalScale.x * fit, _baseGlassLocalScale.y * fit, _baseGlassLocalScale.z);
+        }
 
         private void SetEndgameFastForward(bool enabled)
         {
@@ -988,9 +1012,11 @@ namespace PuzzleGlass
                     {
                         _hasBaseGlassLocalPos = true;
                         _baseGlassLocalPos = glassContainer.transform.localPosition;
+                        _baseGlassLocalScale = glassContainer.transform.localScale;
                     }
 
                     Camera cam = mainCamera != null ? mainCamera : Camera.main;
+                    FitGlassWidthToScreen(cam);
                     float camTop = (cam != null && cam.orthographic) ? (cam.transform.position.y + cam.orthographicSize) : 4.50f;
                     float topReserve = levelData.useBallFeedTubes ? 1.24f : 0.80f;
                     float maxAllowedTopY = camTop - topReserve;
