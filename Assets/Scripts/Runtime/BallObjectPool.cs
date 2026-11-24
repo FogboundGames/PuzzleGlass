@@ -56,6 +56,7 @@ namespace PuzzleGlass
         private static readonly int WobbleAmountPropId = Shader.PropertyToID("_WobbleAmount");
         private static readonly int SquashAmountPropId = Shader.PropertyToID("_SquashAmount");
         private static readonly int SquashAxisPropId = Shader.PropertyToID("_SquashAxis");
+        private static readonly int ReadyGlowPropId = Shader.PropertyToID("_ReadyGlow");
 
         private Material _sharedInstancedBallMaterial;
         private PhysicsMaterial _sharedPhysMaterial;
@@ -259,7 +260,8 @@ namespace PuzzleGlass
             float wobblePhase,
             float wobbleAmount,
             float squashAmount,
-            Vector3 squashAxis)
+            Vector3 squashAxis,
+            float readyGlow = 0f)
         {
             if (renderer == null) return;
             if (s_BallPropertyBlock == null) s_BallPropertyBlock = new MaterialPropertyBlock();
@@ -276,6 +278,7 @@ namespace PuzzleGlass
             s_BallPropertyBlock.SetFloat(WobbleAmountPropId, wobbleAmount);
             s_BallPropertyBlock.SetFloat(SquashAmountPropId, squashAmount);
             s_BallPropertyBlock.SetVector(SquashAxisPropId, new Vector4(squashAxis.x, squashAxis.y, squashAxis.z, 0f));
+            s_BallPropertyBlock.SetFloat(ReadyGlowPropId, readyGlow);
             renderer.SetPropertyBlock(s_BallPropertyBlock);
         }
 
@@ -325,6 +328,7 @@ namespace PuzzleGlass
             if (mat.HasProperty(RimSeparationPropId)) mat.SetFloat(RimSeparationPropId, 0.46f);
             if (mat.HasProperty(WobbleAmountPropId)) mat.SetFloat(WobbleAmountPropId, 0f);
             if (mat.HasProperty(SquashAmountPropId)) mat.SetFloat(SquashAmountPropId, 0f);
+            if (mat.HasProperty(ReadyGlowPropId)) mat.SetFloat(ReadyGlowPropId, 0f);
             s_SharedVariantMaterials[key] = mat;
             return mat;
         }

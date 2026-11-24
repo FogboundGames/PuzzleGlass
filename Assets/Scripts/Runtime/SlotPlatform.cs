@@ -334,8 +334,8 @@ namespace PuzzleGlass
 
             transform.DOKill(false);
             Sequence s = DOTween.Sequence();
-            s.Append(transform.DOScale(new Vector3(1.06f, 0.94f, 1.06f), 0.07f).SetEase(Ease.OutSine));
-            s.Append(transform.DOScale(Vector3.one, 0.14f).SetEase(Ease.OutCubic));
+            s.Append(transform.DOScale(new Vector3(1.09f, 0.91f, 1.04f), 0.065f).SetEase(Ease.OutQuad));
+            s.Append(transform.DOScale(Vector3.one, 0.16f).SetEase(Ease.OutBack));
         }
 
         private void OnDisable()

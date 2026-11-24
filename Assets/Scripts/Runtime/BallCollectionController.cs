@@ -91,6 +91,8 @@ namespace PuzzleGlass
 
         // Pillar 1 & 3: Centralized GPU squash list + Dirty-flagged spatial bottom-candidate cache (0 GC, O(N) instead of O(N^2))
         private readonly List<BallPhysicsController> _squashingBalls = new List<BallPhysicsController>(64);
+        private readonly List<BallPhysicsController> _glowTransitionBalls = new List<BallPhysicsController>(64);
+        private readonly HashSet<BallPhysicsController> _collectableGlowSet = new HashSet<BallPhysicsController>(64);
         private readonly List<BallPhysicsController> _bottomCandidatesCache = new List<BallPhysicsController>(32);
         private readonly List<string> _keysToRemoveCache = new List<string>(8);
         private readonly List<MonsterCharacter> _idleGridToPauseCache = new List<MonsterCharacter>(8);
@@ -102,6 +104,7 @@ namespace PuzzleGlass
         private Vector3[] _cachedLocalPos = new Vector3[256];
         private bool _ballFieldDirty = true;
         private float _lastBallFieldRebuildTime = -10f;
+        private float _nextGlowRefreshTime = -10f;
 
         public void MarkBallFieldDirty()
         {
@@ -133,7 +136,9 @@ namespace PuzzleGlass
 
         private void Update()
         {
-            StepSquashingBalls(Time.deltaTime);
+            float dt = Time.deltaTime;
+            StepSquashingBalls(dt);
+            UpdateCollectableBallGlow(dt);
 
             if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
             {
@@ -289,6 +294,81 @@ namespace PuzzleGlass
                     int last = _squashingBalls.Count - 1;
                     if (i != last) _squashingBalls[i] = _squashingBalls[last];
                     _squashingBalls.RemoveAt(last);
+                }
+            }
+        }
+
+        private void RegisterGlowTransitionBall(BallPhysicsController ball)
+        {
+            if (ball == null) return;
+            if (!_glowTransitionBalls.Contains(ball))
+            {
+                _glowTransitionBalls.Add(ball);
+            }
+        }
+
+        private void UpdateCollectableBallGlow(float dt)
+        {
+            if (BallObjectPool.Instance == null) return;
+            var activeBalls = BallObjectPool.Instance.ActiveBalls;
+
+            if (_ballFieldDirty || Time.time >= _nextGlowRefreshTime)
+            {
+                _nextGlowRefreshTime = Time.time + 0.08f;
+                _collectableGlowSet.Clear();
+
+                if (activeBalls != null && activeBalls.Count > 0 &&
+                    !(BallFeedTubeController.Instance != null && BallFeedTubeController.Instance.IsPouringOrSettling))
+                {
+                    ShapedGlassContainer container = BallContainerManager.Instance != null
+                        ? BallContainerManager.Instance.glassContainer
+                        : null;
+                    bool isBelt = container != null && container.IsTrackShape && TrackCrowdQueue.HasLoop(container);
+                    bool usesHatch = UsesPoolHatch(container);
+
+                    List<BallPhysicsController> candidates = CollectBottomCandidates();
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        var cand = candidates[i];
+                        if (cand == null || cand.state != BallState.InContainer || !cand.gameObject.activeInHierarchy) continue;
+                        if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
+                        if (usesHatch && !IsAtPoolHatch(container, cand) && !IsChainedToRecentPull(container, cand)) continue;
+                        _collectableGlowSet.Add(cand);
+                    }
+                }
+
+                if (activeBalls != null)
+                {
+                    for (int i = 0; i < activeBalls.Count; i++)
+                    {
+                        var b = activeBalls[i];
+                        if (b == null || !b.gameObject.activeInHierarchy) continue;
+                        float target = (b.state == BallState.InContainer && _collectableGlowSet.Contains(b)) ? 1f : 0f;
+                        if (b.SetReadyGlowTarget(target))
+                        {
+                            RegisterGlowTransitionBall(b);
+                        }
+                    }
+                }
+            }
+
+            for (int i = _glowTransitionBalls.Count - 1; i >= 0; i--)
+            {
+                var ball = _glowTransitionBalls[i];
+                if (ball == null || !ball.gameObject.activeInHierarchy || ball.state == BallState.Pooled)
+                {
+                    int last = _glowTransitionBalls.Count - 1;
+                    if (i != last) _glowTransitionBalls[i] = _glowTransitionBalls[last];
+                    _glowTransitionBalls.RemoveAt(last);
+                    continue;
+                }
+
+                ball.StepReadyGlow(dt);
+                if (!ball.IsReadyGlowTransitioning)
+                {
+                    int last = _glowTransitionBalls.Count - 1;
+                    if (i != last) _glowTransitionBalls[i] = _glowTransitionBalls[last];
+                    _glowTransitionBalls.RemoveAt(last);
                 }
             }
         }

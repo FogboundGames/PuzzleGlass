@@ -13,6 +13,7 @@ Shader "PuzzleGlass/CandyCubeLit"
         _WobbleAmount ("Wobble Amount", Range(0.0, 1.0)) = 0.0
         _SquashAmount ("Squash Amount", Range(-0.5, 0.5)) = 0.0
         _SquashAxis ("Squash Axis (Local)", Vector) = (0.0, 1.0, 0.0, 0.0)
+        _ReadyGlow ("Collectable Ready Glow", Range(0.0, 1.0)) = 0.0
     }
 
     SubShader
@@ -52,6 +53,7 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float _WobbleAmount;
                 float _SquashAmount;
                 float4 _SquashAxis;
+                float _ReadyGlow;
             CBUFFER_END
 
             #if defined(UNITY_INSTANCING_ENABLED) || defined(UNITY_PROCEDURAL_INSTANCING_ENABLED) || defined(UNITY_STEREO_INSTANCING_ENABLED)
@@ -67,6 +69,7 @@ Shader "PuzzleGlass/CandyCubeLit"
                     UNITY_DEFINE_INSTANCED_PROP(float, _WobbleAmount)
                     UNITY_DEFINE_INSTANCED_PROP(float, _SquashAmount)
                     UNITY_DEFINE_INSTANCED_PROP(float4, _SquashAxis)
+                    UNITY_DEFINE_INSTANCED_PROP(float, _ReadyGlow)
                 UNITY_INSTANCING_BUFFER_END(Props)
                 #define GET_CANDY_PROP(prop) UNITY_ACCESS_INSTANCED_PROP(Props, prop)
             #else
@@ -175,6 +178,8 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float smoothness  = GET_CANDY_PROP(_Smoothness);
                 float bevelHigh   = GET_CANDY_PROP(_BevelHighlight);
                 float rimSep      = GET_CANDY_PROP(_RimSeparation);
+                float readyGlow   = saturate(GET_CANDY_PROP(_ReadyGlow));
+                float rg          = readyGlow * (0.86 + 0.14 * sin(_Time.y * 4.4));
 
                 float3 col = lerp(shadowTone, baseAlbedo, smoothDiff);
 
@@ -221,8 +226,17 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float grazing = 1.0 - ndv;
                 float rimBorder = smoothstep(0.32, 0.92, grazing);
                 float lowerBias = saturate(-N.y * 0.55 + 0.45);
-                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * rimSep;
+                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * rimSep * (1.0 - rg * 0.65);
                 col = lerp(col, shadowTone * 0.66, borderShade);
+
+                // 6. Subtle brightness & rim glow for balls currently open to the exit
+                if (rg > 0.001)
+                {
+                    col = lerp(col, max(col * 1.13, lerp(col, highTone, 0.26)), rg * 0.58);
+                    float readyRim = smoothstep(0.38, 0.90, grazing) * rg;
+                    float3 readyRimCol = lerp(highTone, float3(1.0, 0.99, 0.94), 0.38);
+                    col += readyRimCol * (readyRim * 0.26 + rg * 0.045);
+                }
 
                 return half4(saturate(col), 1.0);
             }

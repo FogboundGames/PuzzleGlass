@@ -46,7 +46,6 @@ namespace PuzzleGlass
         private MonsterCharacter _targetMonster;
         private Action<BallPhysicsController> _onEatenCallback;
         private static float s_LastSuctionPulseTime = -10f;
-        private static float s_LastBallImpactVfxTime = -10f;
         private static readonly AnimationCurve s_SharedTrailWidthCurve = new AnimationCurve(
             new Keyframe(0f, 1f),
             new Keyframe(0.55f, 0.42f),
@@ -59,7 +58,6 @@ namespace PuzzleGlass
         {
             s_CachedTrailGradients.Clear();
             s_LastSuctionPulseTime = -10f;
-            s_LastBallImpactVfxTime = -10f;
         }
 
         private static Gradient GetCachedTrailGradient(PuzzleColor color)
@@ -97,6 +95,9 @@ namespace PuzzleGlass
         private float _squashTimer = 0f;
         private float _squashDuration = 0f;
         private float _squashAmp = 0f;
+        private float _currentSquashAmount = 0f;
+        private float _readyGlow = 0f;
+        private float _targetReadyGlow = 0f;
         private Vector3 _squashAxisLocal = Vector3.up;
         private bool _isGpuSquashing = false;
         private bool _isTrackMode = false;
@@ -113,6 +114,7 @@ namespace PuzzleGlass
         /// <summary>Pist fiziği: topun cam yerel düzlemdeki hızı (yay takibi + çarpışmalar).</summary>
         [System.NonSerialized] public Vector2 trackVel;
         public bool IsGpuSquashing => _isGpuSquashing;
+        public bool IsReadyGlowTransitioning => Mathf.Abs(_readyGlow - _targetReadyGlow) > 0.002f;
         public bool IsTrackMode => _isTrackMode;
 
         public float AttractionTime => (_attractionStartTime > 0f) ? (Time.time - _attractionStartTime) : 0f;
@@ -379,11 +381,26 @@ namespace PuzzleGlass
             FlushPropertyBlock(amount);
         }
 
-        private void FlushPropertyBlock(float squashAmount)
+        public bool SetReadyGlowTarget(float target)
+        {
+            float clamped = Mathf.Clamp01(target);
+            _targetReadyGlow = clamped;
+            return IsReadyGlowTransitioning;
+        }
+
+        public void StepReadyGlow(float dt)
         {
             if (meshRenderer == null) return;
+            _readyGlow = Mathf.MoveTowards(_readyGlow, _targetReadyGlow, dt * 6.5f);
+            FlushPropertyBlock(_currentSquashAmount);
+        }
+
+        private void FlushPropertyBlock(float squashAmount)
+        {
+            _currentSquashAmount = squashAmount;
+            if (meshRenderer == null) return;
             // Clear MPB when idle/resting so URP SRP Batcher batches all balls into shared-material batches
-            if (Application.isPlaying && Mathf.Abs(squashAmount) <= 0.0001f && _wobbleAmount <= 0.0001f)
+            if (Application.isPlaying && Mathf.Abs(squashAmount) <= 0.0001f && _wobbleAmount <= 0.0001f && _readyGlow <= 0.0001f)
             {
                 meshRenderer.SetPropertyBlock(null);
                 return;
@@ -397,7 +414,8 @@ namespace PuzzleGlass
                 _wobblePhase,
                 _wobbleAmount,
                 squashAmount,
-                _squashAxisLocal);
+                _squashAxisLocal,
+                _readyGlow);
         }
 
         /// <summary>
@@ -444,6 +462,9 @@ namespace PuzzleGlass
                 out _mpbSmoothness);
             _wobblePhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             _wobbleAmount = 0f;
+            _readyGlow = 0f;
+            _targetReadyGlow = 0f;
+            _currentSquashAmount = 0f;
 
             float diameter = ballRadius * 2.0f;
             _originalScale = new Vector3(diameter, diameter, diameter);
@@ -819,13 +840,30 @@ namespace PuzzleGlass
                 duration *= 0.60f;
             }
 
-            // Tactile pop-scale + parabolic jump arc directly into the gray circular socket (without shrinking to zero!)
+            // Tactile pop-scale + parabolic jump arc directly into the socket or deep hollow pit!
+            bool isHollowPit = targetMonster != null && targetMonster.IsHollowPitBox;
+            Vector3 dropTarget = isHollowPit ? targetMonster.GetPitPlungeWorldTarget(socketPos) : socketPos;
+            Vector3 finalDropScale = isHollowPit ? (settledScale * 0.76f) : settledScale;
+
             SetFlightTrailActive(true);
             Sequence flightSeq = DOTween.Sequence();
-            flightSeq.Join(transform.DOJump(socketPos, jumpPower: 0.32f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
+            if (isHollowPit)
+            {
+                float boxScale = (targetMonster.bodyPivot != null) ? targetMonster.bodyPivot.lossyScale.x : targetMonster.transform.lossyScale.x;
+                float boxWorldZ = (targetMonster.bodyPivot != null) ? targetMonster.bodyPivot.position.z : targetMonster.transform.position.z;
+                Vector3 apexPos = new Vector3(
+                    Mathf.Lerp(startPos.x, dropTarget.x, 0.55f),
+                    Mathf.Max(startPos.y, dropTarget.y) + 0.34f,
+                    Mathf.Min(startPos.z, boxWorldZ - 0.28f * Mathf.Max(0.25f, boxScale)) - 0.05f);
+                flightSeq.Join(transform.DOPath(new[] { apexPos, dropTarget }, duration, PathType.CatmullRom).SetEase(Ease.InOutQuad));
+            }
+            else
+            {
+                flightSeq.Join(transform.DOJump(dropTarget, jumpPower: 0.34f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
+            }
             flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
             flightSeq.Insert(0f, transform.DOScale(_originalScale * 1.10f, duration * 0.35f).SetEase(Ease.OutQuad));
-            flightSeq.Insert(duration * 0.35f, transform.DOScale(settledScale, duration * 0.65f).SetEase(Ease.InOutQuad));
+            flightSeq.Insert(duration * 0.35f, transform.DOScale(finalDropScale, duration * 0.65f).SetEase(Ease.InQuad));
 
             flightSeq.OnComplete(() =>
             {
@@ -902,7 +940,8 @@ namespace PuzzleGlass
             bool fast = PuzzleGlassGameManager.Instance != null &&
                         (PuzzleGlassGameManager.Instance.IsFeverActive || PuzzleGlassGameManager.Instance.IsEndgameFastForward);
             float channelDur = Mathf.Clamp(pathLen * 0.21f, 0.18f, 0.34f);
-            float dropDur = Mathf.Clamp(Vector3.Distance(mouthPos, socketPos) * 0.24f, 0.12f, 0.22f);
+            float mouthToSocketDist = Vector3.Distance(mouthPos, socketPos);
+            float dropDur = Mathf.Clamp(mouthToSocketDist * 0.28f, 0.16f, 0.28f);
             if (fast)
             {
                 channelDur *= 0.60f;
@@ -924,10 +963,34 @@ namespace PuzzleGlass
             flightSeq.Join(transform.DORotate(new Vector3(260f, 0f, 45f), channelDur, RotateMode.FastBeyond360));
             flightSeq.Join(transform.DOScale(_originalScale * 1.02f, channelDur).SetEase(Ease.OutQuad));
 
-            Vector3 dropTarget = new Vector3(socketPos.x, socketPos.y, -0.22f);
-            flightSeq.Append(transform.DOJump(dropTarget, jumpPower: 0.06f, numJumps: 1, duration: dropDur).SetEase(Ease.OutQuad));
+            // Kanal ucundan çıkınca kısa bir tepe yükselişi (mini yay) + anlık %12 büyüme pop'u, sonra derin çukurun içine dalış
+            bool isHollowPit = targetMonster != null && targetMonster.IsHollowPitBox;
+            Vector3 dropTarget = isHollowPit
+                ? targetMonster.GetPitPlungeWorldTarget(socketPos)
+                : new Vector3(socketPos.x, socketPos.y, -0.22f);
+            Vector3 finalDropScale = isHollowPit ? (settledScale * 0.76f) : settledScale;
+
+            float apexJump = Mathf.Clamp(mouthToSocketDist * 0.34f, 0.14f, 0.24f);
+            Sequence dropScaleSeq = DOTween.Sequence();
+            dropScaleSeq.Append(transform.DOScale(_originalScale * 1.12f, dropDur * 0.38f).SetEase(Ease.OutQuad));
+            dropScaleSeq.Append(transform.DOScale(finalDropScale, dropDur * 0.62f).SetEase(Ease.InQuad));
+
+            if (isHollowPit)
+            {
+                float boxScale = (targetMonster.bodyPivot != null) ? targetMonster.bodyPivot.lossyScale.x : targetMonster.transform.lossyScale.x;
+                float boxWorldZ = (targetMonster.bodyPivot != null) ? targetMonster.bodyPivot.position.z : targetMonster.transform.position.z;
+                Vector3 apexPos = new Vector3(
+                    Mathf.Lerp(mouthPos.x, dropTarget.x, 0.42f),
+                    Mathf.Max(mouthPos.y, dropTarget.y) + apexJump,
+                    Mathf.Min(mouthPos.z, boxWorldZ - 0.28f * Mathf.Max(0.25f, boxScale)) - 0.05f);
+                flightSeq.Append(transform.DOPath(new[] { apexPos, dropTarget }, dropDur, PathType.CatmullRom).SetEase(Ease.InQuad));
+            }
+            else
+            {
+                flightSeq.Append(transform.DOJump(dropTarget, jumpPower: apexJump, numJumps: 1, duration: dropDur).SetEase(Ease.OutQuad));
+            }
             flightSeq.Join(transform.DORotate(new Vector3(120f, 0f, 45f), dropDur, RotateMode.FastBeyond360));
-            flightSeq.Join(transform.DOScale(settledScale, dropDur).SetEase(Ease.InOutQuad));
+            flightSeq.Join(dropScaleSeq);
 
             flightSeq.OnComplete(() =>
             {
@@ -1066,7 +1129,6 @@ namespace PuzzleGlass
 
             float relSpeed = collision.relativeVelocity.magnitude;
             Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
-            Vector3 contactPt = (collision.contactCount > 0) ? collision.GetContact(0).point : transform.position;
 
             // Arrival squash & stretch on first settling impact inside the glass container
             if (!_hasPlayedArrivalSquash && relSpeed >= 0.65f)
@@ -1076,11 +1138,6 @@ namespace PuzzleGlass
                 float arrivalAmp = Mathf.Clamp(0.068f + relSpeed * 0.018f, 0.078f, 0.155f);
                 PlayVisualSquashStretch(arrivalAmp, normal, isArrival: true);
                 PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.50f) / 3.8f));
-                if (relSpeed >= 0.95f && Time.unscaledTime - s_LastBallImpactVfxTime >= 0.06f)
-                {
-                    s_LastBallImpactVfxTime = Time.unscaledTime;
-                    BlockClearCelebration.PlayCavityTapEffect(contactPt, PuzzleColorPalette.GetPrimaryColor(colorType), ballRadius * 2f);
-                }
                 return;
             }
 
@@ -1089,12 +1146,6 @@ namespace PuzzleGlass
 
             float amp = Mathf.Clamp(0.036f + (relSpeed - 0.52f) * 0.018f, 0.036f, 0.105f);
             PlayVisualSquashStretch(amp, normal, isArrival: false);
-
-            if (relSpeed >= 0.85f && Time.unscaledTime - s_LastBallImpactVfxTime >= 0.065f)
-            {
-                s_LastBallImpactVfxTime = Time.unscaledTime;
-                BlockClearCelebration.PlayCavityTapEffect(contactPt, PuzzleColorPalette.GetPrimaryColor(colorType), ballRadius * 2f);
-            }
 
             PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.45f) / 3.9f));
         }
@@ -1147,7 +1198,14 @@ namespace PuzzleGlass
         public void RecycleSelf()
         {
             SetFlightTrailActive(false);
+            _readyGlow = 0f;
+            _targetReadyGlow = 0f;
+            _currentSquashAmount = 0f;
             KillAllTweens();
+            if (meshRenderer != null && Application.isPlaying)
+            {
+                meshRenderer.SetPropertyBlock(null);
+            }
             state = BallState.Pooled;
             StopAndMakeKinematic();
             if (sphereCollider != null)

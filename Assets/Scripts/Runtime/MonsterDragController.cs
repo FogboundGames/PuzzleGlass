@@ -441,6 +441,18 @@ namespace PuzzleGlass
             if (placedMonster == null || targetSlot == null) return;
 
             Vector3 slotPlacePos = targetSlot.GetPlacementPosition();
+            Vector3 startPos = placedMonster.transform.position;
+            Vector3 startScale = placedMonster.transform.localScale;
+            Vector3 peakScale = new Vector3(
+                Mathf.Max(startScale.x, baseScale.x),
+                Mathf.Max(startScale.y, baseScale.y),
+                Mathf.Max(startScale.z, baseScale.z)) * 1.14f;
+
+            float dx = slotPlacePos.x - startPos.x;
+            float bankTilt = Mathf.Abs(dx) > 0.08f ? Mathf.Clamp(-dx * 11f, -14f, 14f) : 5f;
+            Color boxColor = PuzzleColorPalette.GetPrimaryColor(placedMonster.colorType);
+            float fxScale = Mathf.Max(0.45f, Mathf.Max(startScale.x, baseScale.x));
+
             placedMonster.SetMovingToSlot(true);
             targetSlot.ReserveSlot(placedMonster);
             PuzzleSoundManager.Instance?.PlayBlockSnap();
@@ -451,15 +463,76 @@ namespace PuzzleGlass
             }
 
             placedMonster.transform.DOKill();
+            Transform bodyPivot = placedMonster.bodyPivot;
+            Vector3 origBodyScale = placedMonster.OriginalBodyScale;
+            if (origBodyScale.sqrMagnitude <= 0.001f) origBodyScale = Vector3.one;
+            if (bodyPivot != null)
+            {
+                bodyPivot.DOKill(false);
+                bodyPivot.localPosition = Vector3.zero;
+                bodyPivot.localRotation = Quaternion.identity;
+                bodyPivot.localScale = origBodyScale;
+            }
+
+            const float anticDur = 0.055f;
+            const float flyDur = 0.27f;
+
             Sequence snapSeq = DOTween.Sequence();
-            snapSeq.Append(placedMonster.transform.DOScale(placedMonster.transform.localScale * 1.08f, 0.055f).SetEase(Ease.OutSine));
-            snapSeq.Append(placedMonster.transform.DOJump(slotPlacePos, jumpPower: 0.34f, numJumps: 1, duration: 0.24f).SetEase(Ease.OutCubic));
-            snapSeq.Join(placedMonster.transform.DOScale(baseScale, 0.24f).SetEase(Ease.OutBack));
+            if (bodyPivot != null)
+            {
+                snapSeq.Append(bodyPivot.DOScale(new Vector3(origBodyScale.x * 1.10f, origBodyScale.y * 0.85f, origBodyScale.z * 1.04f), anticDur).SetEase(Ease.OutSine));
+                snapSeq.Join(bodyPivot.DOLocalMoveY(-0.022f, anticDur).SetEase(Ease.OutSine));
+            }
+            else
+            {
+                snapSeq.Append(placedMonster.transform.DOScale(startScale * 0.94f, anticDur).SetEase(Ease.OutSine));
+            }
+
+            snapSeq.AppendCallback(() =>
+            {
+                if (placedMonster == null) return;
+                placedMonster.SetSlotFlightGlow(0.65f);
+                Transform trailTarget = bodyPivot != null ? bodyPivot : placedMonster.transform;
+                BlockClearCelebration.PlaySlotFlightTrailFx(trailTarget, boxColor, fxScale, flyDur);
+            });
+
+            // Parabolic leap into slot + peak pop scale
+            snapSeq.Append(placedMonster.transform.DOJump(slotPlacePos, jumpPower: 0.44f, numJumps: 1, duration: flyDur).SetEase(Ease.InOutQuad));
+
+            Sequence scaleSeq = DOTween.Sequence();
+            scaleSeq.Append(placedMonster.transform.DOScale(peakScale, flyDur * 0.42f).SetEase(Ease.OutQuad));
+            scaleSeq.Append(placedMonster.transform.DOScale(baseScale, flyDur * 0.58f).SetEase(Ease.InOutQuad));
+            snapSeq.Join(scaleSeq);
+
+            if (bodyPivot != null)
+            {
+                Sequence bodyAirSeq = DOTween.Sequence();
+                bodyAirSeq.Append(bodyPivot.DOScale(new Vector3(origBodyScale.x * 0.92f, origBodyScale.y * 1.11f, origBodyScale.z), flyDur * 0.40f).SetEase(Ease.OutQuad));
+                bodyAirSeq.Join(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, bankTilt), flyDur * 0.40f).SetEase(Ease.OutQuad));
+                bodyAirSeq.Join(bodyPivot.DOLocalMoveY(0f, flyDur * 0.25f).SetEase(Ease.OutQuad));
+                bodyAirSeq.Append(bodyPivot.DOScale(origBodyScale, flyDur * 0.42f).SetEase(Ease.InOutSine));
+                bodyAirSeq.Join(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -bankTilt * 0.22f), flyDur * 0.42f).SetEase(Ease.InOutSine));
+                bodyAirSeq.Append(bodyPivot.DOLocalRotate(Vector3.zero, flyDur * 0.18f).SetEase(Ease.OutSine));
+                snapSeq.Join(bodyAirSeq);
+
+                Sequence zArcSeq = DOTween.Sequence();
+                zArcSeq.Append(bodyPivot.DOLocalMoveZ(-0.22f, flyDur * 0.45f).SetEase(Ease.OutQuad));
+                zArcSeq.Append(bodyPivot.DOLocalMoveZ(0f, flyDur * 0.55f).SetEase(Ease.InQuad));
+                snapSeq.Join(zArcSeq);
+            }
+
+            snapSeq.SetLink(placedMonster.gameObject, LinkBehaviour.KillOnDisable);
             snapSeq.OnComplete(() =>
             {
                 if (placedMonster == null) return;
+                placedMonster.SetSlotFlightGlow(0f);
                 placedMonster.SetMovingToSlot(false);
                 targetSlot.AttachMonster(placedMonster);
+                placedMonster.PlaySlotLandingSquash();
+                BlockClearCelebration.PlaySlotLandingBackFx(slotPlacePos, boxColor, fxScale);
+                PuzzleSoundManager.Instance?.PlayBallTap(0.45f);
+                BlockClearCelebration.VibrateTick();
+
                 TutorialOverlay.Instance?.NotifySpotlightBlockPlaced(placedMonster);
                 OnMonsterPlaced?.Invoke(placedMonster, targetSlot);
 

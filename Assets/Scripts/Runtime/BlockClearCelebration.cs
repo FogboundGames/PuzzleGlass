@@ -21,10 +21,14 @@ namespace PuzzleGlass
         /// <summary>Sprite'ların varsayılan malzemesi (iz/parçacık için; build'de her zaman bulunur).</summary>
         public static Material SpriteMaterial { get { EnsureResources(); return s_SpriteMat; } }
 
+        /// <summary>Kutuların arkasında (renderQueue 2992, slot karesinin 2990 önünde ama kutunun 2995 arkasında) çizilen efekt malzemesi.</summary>
+        public static Material BackSpriteMaterial { get { EnsureResources(); return s_BackSpriteMat != null ? s_BackSpriteMat : s_SpriteMat; } }
+
         private static Sprite s_SoftDot;
         private static Sprite s_CrispRing;
         private static Sprite s_ConfettiStrip;
         private static Material s_SpriteMat;
+        private static Material s_BackSpriteMat;
         private static ParticleSystem s_Burst;
         private static Mesh s_ConfettiSphereMesh;
         private static Material s_ConfettiBallMat;
@@ -197,6 +201,146 @@ namespace PuzzleGlass
             s_ConfettiRunner.SpawnSpriteFx(s_CrispRing, pos, c, Mathf.Clamp01(alpha), startScale, endScale, 0.17f, sortingOrder: 492);
         }
 
+        /// <summary>
+        /// Kutu slota uçarken arkasında renkli parlak şerit izi ve yumuşak ışıltı parçacıkları bırakır.
+        /// renderQueue = 2992 ile kutunun (2995) arkasında, slot zemininin (2990) önünde çizilir.
+        /// </summary>
+        public static void PlaySlotFlightTrailFx(Transform followTarget, Color color, float worldScale = 0.65f, float duration = 0.27f)
+        {
+            if (!Application.isPlaying || followTarget == null) return;
+            EnsureResources();
+            EnsureConfettiRunner();
+            if (s_ConfettiRunner == null) return;
+
+            s_ConfettiRunner.StartSlotFlightTrail(followTarget, color, Mathf.Max(0.35f, worldScale), Mathf.Max(0.08f, duration));
+        }
+
+        /// <summary>
+        /// Kutu slota oturduğunda arkasından yayılan parlak hare, ince halka ve yıldız ışıltıları.
+        /// </summary>
+        public static void PlaySlotLandingBackFx(Vector3 slotWorldPos, Color color, float worldScale = 0.65f)
+        {
+            if (!Application.isPlaying) return;
+            EnsureResources();
+            EnsureConfettiRunner();
+            if (s_ConfettiRunner == null) return;
+
+            float s = Mathf.Max(0.40f, worldScale);
+            Material backMat = BackSpriteMaterial;
+            Vector3 backPos = new Vector3(slotWorldPos.x, slotWorldPos.y, Mathf.Min(-0.03f, slotWorldPos.z + 0.11f));
+
+            Color glowCol = Color.Lerp(color, Color.white, 0.42f);
+            Color ringCol = Color.Lerp(color, Color.white, 0.58f);
+
+            if (s_SoftDot != null)
+            {
+                s_ConfettiRunner.SpawnSpriteFx(
+                    s_SoftDot,
+                    backPos,
+                    glowCol,
+                    startAlpha: 0.78f,
+                    startScale: 0.55f * s,
+                    endScale: 1.85f * s,
+                    duration: 0.24f,
+                    sortingOrder: 2,
+                    overrideMat: backMat);
+            }
+
+            if (s_CrispRing != null)
+            {
+                s_ConfettiRunner.SpawnSpriteFx(
+                    s_CrispRing,
+                    backPos,
+                    ringCol,
+                    startAlpha: 0.88f,
+                    startScale: 0.62f * s,
+                    endScale: 1.65f * s,
+                    duration: 0.22f,
+                    sortingOrder: 3,
+                    overrideMat: backMat);
+
+                s_ConfettiRunner.SpawnSpriteFx(
+                    s_CrispRing,
+                    backPos,
+                    Color.white,
+                    startAlpha: 0.72f,
+                    startScale: 0.48f * s,
+                    endScale: 1.32f * s,
+                    duration: 0.17f,
+                    sortingOrder: 3,
+                    overrideMat: backMat);
+            }
+
+            if (s_SoftDot != null)
+            {
+                const int puffCount = 6;
+                for (int i = 0; i < puffCount; i++)
+                {
+                    float ang = (i / (float)puffCount) * Mathf.PI * 2f + Random.Range(-0.25f, 0.25f);
+                    Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+                    Vector3 spawnPos = backPos + (Vector3)(dir * (0.20f * s));
+                    Vector3 vel = (Vector3)(dir * (Random.Range(1.05f, 1.75f) * s));
+                    Color puffCol = (i % 2 == 0) ? Color.white : Color.Lerp(color, Color.white, 0.48f);
+                    s_ConfettiRunner.SpawnSpriteFx(
+                        s_SoftDot,
+                        spawnPos,
+                        puffCol,
+                        startAlpha: 0.90f,
+                        startScale: Random.Range(0.14f, 0.22f) * s,
+                        endScale: 0.02f * s,
+                        duration: Random.Range(0.20f, 0.28f),
+                        sortingOrder: 4,
+                        velocity: vel,
+                        drag: 6.5f,
+                        overrideMat: backMat);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Top kutu yuvasına girdiğinde giriş noktasında hafif parlama ve yukarı süzülen renkli ışıltılar çıkarır.
+        /// </summary>
+        public static void PlayBoxBallLandingPop(Vector3 worldPos, Color color, float worldScale = 0.65f)
+        {
+            if (!Application.isPlaying) return;
+            EnsureResources();
+            EnsureConfettiRunner();
+            if (s_ConfettiRunner == null || s_SoftDot == null) return;
+
+            float s = Mathf.Max(0.35f, worldScale);
+            Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.10f);
+            Color glowCol = Color.Lerp(color, Color.white, 0.45f);
+
+            s_ConfettiRunner.SpawnSpriteFx(
+                s_SoftDot,
+                pos,
+                glowCol,
+                startAlpha: 0.62f,
+                startScale: 0.14f * s,
+                endScale: 0.44f * s,
+                duration: 0.15f,
+                sortingOrder: 503);
+
+            const int glintCount = 3;
+            for (int i = 0; i < glintCount; i++)
+            {
+                Vector3 offset = new Vector3(Random.Range(-0.10f, 0.10f) * s, Random.Range(0f, 0.06f) * s, -0.02f);
+                Vector3 vel = new Vector3(Random.Range(-0.35f, 0.35f) * s, Random.Range(0.85f, 1.45f) * s, 0f);
+                Color glintCol = (i == 0) ? Color.white : Color.Lerp(color, Color.white, 0.42f);
+                s_ConfettiRunner.SpawnSpriteFx(
+                    s_SoftDot,
+                    pos + offset,
+                    glintCol,
+                    startAlpha: 0.88f,
+                    startScale: Random.Range(0.08f, 0.13f) * s,
+                    endScale: 0.015f * s,
+                    duration: Random.Range(0.22f, 0.30f),
+                    sortingOrder: 504,
+                    velocity: vel,
+                    drag: 4.2f);
+            }
+        }
+
         // ---------- Parlama ----------
 
         private static void PlayFlash(Vector3 pos, Color color, float size)
@@ -359,6 +503,14 @@ namespace PuzzleGlass
                 else
                     Object.DestroyImmediate(tmp);
             }
+            if (s_BackSpriteMat == null && s_SpriteMat != null)
+            {
+                s_BackSpriteMat = new Material(s_SpriteMat)
+                {
+                    name = "Mat_BackSpriteFx",
+                    renderQueue = 2992
+                };
+            }
         }
 
         // ---------- Top Konfeti Havuzu ----------
@@ -427,11 +579,30 @@ namespace PuzzleGlass
                 public Transform tr;
                 public SpriteRenderer sr;
                 public Color baseColor;
+                public Vector3 vel;
+                public float drag;
                 public float startAlpha;
                 public float startScale;
                 public float endScale;
                 public float age;
                 public float duration;
+                public bool active;
+            }
+
+            private struct SlotFlightTrailItem
+            {
+                public GameObject go;
+                public Transform tr;
+                public TrailRenderer trail;
+                public Transform followTarget;
+                public Color color;
+                public float worldScale;
+                public float followAge;
+                public float followDuration;
+                public float lingerAge;
+                public float emitTimer;
+                public Vector3 lastTargetPos;
+                public bool emittingStopped;
                 public bool active;
             }
 
@@ -456,6 +627,11 @@ namespace PuzzleGlass
             private readonly List<ConfettiBall> _pool = new List<ConfettiBall>(64);
             private readonly List<SpriteFxItem> _spritePool = new List<SpriteFxItem>(64);
             private readonly List<RibbonItem> _ribbonPool = new List<RibbonItem>(64);
+            private readonly List<SlotFlightTrailItem> _slotTrailPool = new List<SlotFlightTrailItem>(12);
+            private static readonly AnimationCurve s_TrailWidthCurve = new AnimationCurve(
+                new Keyframe(0f, 1f),
+                new Keyframe(0.45f, 0.52f),
+                new Keyframe(1f, 0f));
 
             public void SpawnRibbonBurst(Vector3 center, PuzzleColor mainColor, float size, int count)
             {
@@ -519,6 +695,78 @@ namespace PuzzleGlass
                 return _ribbonPool.Count - 1;
             }
 
+            public void StartSlotFlightTrail(Transform followTarget, Color color, float worldScale, float duration)
+            {
+                int idx = AcquireSlotTrailIndex();
+                SlotFlightTrailItem item = _slotTrailPool[idx];
+
+                Vector3 startPos = followTarget.position;
+                Vector3 trailPos = new Vector3(startPos.x, startPos.y, Mathf.Min(-0.03f, startPos.z + 0.08f));
+                item.tr.position = trailPos;
+
+                if (item.trail != null)
+                {
+                    item.trail.sharedMaterial = BackSpriteMaterial;
+                    item.trail.widthMultiplier = Mathf.Clamp(0.42f * worldScale, 0.16f, 0.44f);
+                    item.trail.time = 0.20f;
+
+                    Color headCol = Color.Lerp(color, Color.white, 0.35f);
+                    Color tailCol = Color.Lerp(color, Color.white, 0.65f);
+                    var grad = new Gradient();
+                    grad.SetKeys(
+                        new[] { new GradientColorKey(headCol, 0f), new GradientColorKey(tailCol, 1f) },
+                        new[] { new GradientAlphaKey(0.68f, 0f), new GradientAlphaKey(0.28f, 0.55f), new GradientAlphaKey(0f, 1f) });
+                    item.trail.colorGradient = grad;
+                    item.trail.Clear();
+                    item.trail.emitting = true;
+                }
+
+                item.followTarget = followTarget;
+                item.color = color;
+                item.worldScale = worldScale;
+                item.followAge = 0f;
+                item.followDuration = duration;
+                item.lingerAge = 0f;
+                item.emitTimer = 0f;
+                item.lastTargetPos = startPos;
+                item.emittingStopped = false;
+                item.active = true;
+                item.go.SetActive(true);
+                _slotTrailPool[idx] = item;
+            }
+
+            private int AcquireSlotTrailIndex()
+            {
+                for (int i = 0; i < _slotTrailPool.Count; i++)
+                {
+                    if (!_slotTrailPool[i].active) return i;
+                }
+
+                var go = new GameObject($"SlotFlightTrail_{_slotTrailPool.Count}");
+                go.transform.SetParent(transform, false);
+                var tr = go.AddComponent<TrailRenderer>();
+                tr.minVertexDistance = 0.02f;
+                tr.numCapVertices = 4;
+                tr.numCornerVertices = 3;
+                tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                tr.receiveShadows = false;
+                tr.alignment = LineAlignment.TransformZ;
+                tr.sortingOrder = 2;
+                tr.widthCurve = s_TrailWidthCurve;
+                tr.sharedMaterial = BackSpriteMaterial;
+                tr.emitting = false;
+                go.SetActive(false);
+
+                _slotTrailPool.Add(new SlotFlightTrailItem
+                {
+                    go = go,
+                    tr = go.transform,
+                    trail = tr,
+                    active = false
+                });
+                return _slotTrailPool.Count - 1;
+            }
+
             public void SpawnSpriteFx(
                 Sprite sprite,
                 Vector3 pos,
@@ -527,7 +775,10 @@ namespace PuzzleGlass
                 float startScale,
                 float endScale,
                 float duration,
-                int sortingOrder)
+                int sortingOrder,
+                Vector3 velocity = default,
+                float drag = 0f,
+                Material overrideMat = null)
             {
                 int idx = AcquireSpriteFxIndex();
                 SpriteFxItem fx = _spritePool[idx];
@@ -535,9 +786,12 @@ namespace PuzzleGlass
                 fx.tr.localScale = Vector3.one * startScale;
                 fx.sr.sprite = sprite;
                 fx.sr.sortingOrder = sortingOrder;
+                fx.sr.sharedMaterial = overrideMat != null ? overrideMat : s_SpriteMat;
                 color.a = startAlpha;
                 fx.sr.color = color;
                 fx.baseColor = new Color(color.r, color.g, color.b, 1f);
+                fx.vel = velocity;
+                fx.drag = drag;
                 fx.startAlpha = startAlpha;
                 fx.startScale = startScale;
                 fx.endScale = endScale;
@@ -692,6 +946,12 @@ namespace PuzzleGlass
                         continue;
                     }
 
+                    if (fx.vel.sqrMagnitude > 1e-6f)
+                    {
+                        if (fx.drag > 0f) fx.vel *= Mathf.Exp(-fx.drag * dt);
+                        fx.tr.position += fx.vel * dt;
+                    }
+
                     float inv = 1f - t;
                     float easeOut = 1f - inv * inv * inv;
                     float fade = 1f - t * t;
@@ -700,6 +960,70 @@ namespace PuzzleGlass
                     c.a = fx.startAlpha * fade;
                     fx.sr.color = c;
                     _spritePool[i] = fx;
+                }
+
+                for (int i = 0; i < _slotTrailPool.Count; i++)
+                {
+                    SlotFlightTrailItem item = _slotTrailPool[i];
+                    if (!item.active || item.go == null) continue;
+
+                    if (!item.emittingStopped)
+                    {
+                        item.followAge += dt;
+                        bool targetAlive = item.followTarget != null && item.followTarget.gameObject.activeInHierarchy;
+                        if (targetAlive && item.followAge < item.followDuration)
+                        {
+                            Vector3 targetPos = item.followTarget.position;
+                            Vector3 trailPos = new Vector3(targetPos.x, targetPos.y, Mathf.Min(-0.03f, targetPos.z + 0.08f));
+                            item.tr.position = trailPos;
+
+                            item.emitTimer += dt;
+                            if (item.emitTimer >= 0.028f && s_SoftDot != null)
+                            {
+                                item.emitTimer = 0f;
+                                Vector3 moveDir = targetPos - item.lastTargetPos;
+                                moveDir.z = 0f;
+                                Vector2 backDir = moveDir.sqrMagnitude > 1e-5f ? -((Vector2)moveDir).normalized : Vector2.down;
+                                Vector2 perp = new Vector2(-backDir.y, backDir.x);
+                                float s = item.worldScale;
+                                Vector3 puffPos = trailPos + (Vector3)(perp * Random.Range(-0.14f, 0.14f) * s);
+                                Vector3 puffVel = (Vector3)(backDir * (Random.Range(0.25f, 0.65f) * s) + perp * (Random.Range(-0.28f, 0.28f) * s));
+                                Color sparkCol = Random.value < 0.35f ? Color.white : Color.Lerp(item.color, Color.white, 0.45f);
+                                SpawnSpriteFx(
+                                    s_SoftDot,
+                                    puffPos,
+                                    sparkCol,
+                                    startAlpha: 0.78f,
+                                    startScale: Random.Range(0.11f, 0.18f) * s,
+                                    endScale: 0.015f * s,
+                                    duration: 0.20f,
+                                    sortingOrder: 3,
+                                    velocity: puffVel,
+                                    drag: 5.5f,
+                                    overrideMat: BackSpriteMaterial);
+                            }
+                            item.lastTargetPos = targetPos;
+                        }
+                        else
+                        {
+                            item.emittingStopped = true;
+                            if (item.trail != null) item.trail.emitting = false;
+                        }
+                    }
+                    else
+                    {
+                        item.lingerAge += dt;
+                        float waitDur = item.trail != null ? item.trail.time + 0.04f : 0.24f;
+                        if (item.lingerAge >= waitDur)
+                        {
+                            item.active = false;
+                            item.followTarget = null;
+                            if (item.trail != null) item.trail.Clear();
+                            item.go.SetActive(false);
+                        }
+                    }
+
+                    _slotTrailPool[i] = item;
                 }
 
                 for (int i = 0; i < _ribbonPool.Count; i++)

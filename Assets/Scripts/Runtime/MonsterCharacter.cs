@@ -98,6 +98,7 @@ namespace PuzzleGlass
         };
 
         private static Material s_SharedCarrierBoxMaterial;
+        private static Material s_SharedCarrierBoxFrontRimMaterial;
         private static Material s_SharedSocketBallMaterial;
         private static Material s_SharedBadgeMaterial;
         private static Material s_SharedShadowMatGrid;
@@ -113,6 +114,7 @@ namespace PuzzleGlass
         private static void ResetSharedMaterialCaches()
         {
             s_SharedCarrierBoxMaterial = null;
+            s_SharedCarrierBoxFrontRimMaterial = null;
             s_SharedSocketBallMaterial = null;
             s_SharedBadgeMaterial = null;
             s_SharedShadowMatGrid = null;
@@ -124,6 +126,7 @@ namespace PuzzleGlass
         }
 
         private MeshRenderer _boxRenderer;
+        private MeshRenderer _frontRimRenderer;
         private MeshRenderer _shadowRenderer;
         private int _builtSocketCount = -1;
         private Color _mpbBodyColor = Color.white;
@@ -154,6 +157,18 @@ namespace PuzzleGlass
         public Vector4 LockCenterValue => _mpbLockCenter;
         public float LockOpenValue => _mpbLockOpen;
         public float LockAmountValue => _mpbLockAmount;
+        public bool IsHollowPitBox => IsHollowPitStyle;
+
+        public Vector3 GetPitPlungeWorldTarget(Vector3 baseSocketPos)
+        {
+            Transform t = bodyPivot != null ? bodyPivot : transform;
+            float boxWorldZ = t.position.z;
+            float boxScale = Mathf.Max(0.25f, t.lossyScale.x);
+            return new Vector3(
+                baseSocketPos.x,
+                baseSocketPos.y - 0.045f * boxScale,
+                boxWorldZ - 0.065f * boxScale);
+        }
 
         public void SetLockWiggle(float v) { _mpbLockWiggle = v; ApplyBoxPropertyBlock(); }
         public void SetLockOpen(float v) { _mpbLockOpen = v; ApplyBoxPropertyBlock(); }
@@ -340,6 +355,36 @@ namespace PuzzleGlass
 
         public bool IsMovingToSlot => _isMovingToSlot;
 
+        public Vector3 OriginalBodyScale => _originalBodyScale;
+
+        public void SetSlotFlightGlow(float amount)
+        {
+            float clamped = Mathf.Clamp(amount, 0f, 2f);
+            if (!Mathf.Approximately(_mpbDragHighlight, clamped))
+            {
+                _mpbDragHighlight = clamped;
+                ApplyBoxPropertyBlock();
+            }
+        }
+
+        public void PlaySlotLandingSquash()
+        {
+            if (bodyPivot == null || !Application.isPlaying) return;
+            bodyPivot.DOKill(false);
+            bodyPivot.localPosition = Vector3.zero;
+            bodyPivot.localRotation = Quaternion.identity;
+            Vector3 baseS = _originalBodyScale.sqrMagnitude > 0.001f ? _originalBodyScale : Vector3.one;
+
+            Sequence s = DOTween.Sequence();
+            s.Append(bodyPivot.DOScale(new Vector3(baseS.x * 1.13f, baseS.y * 0.85f, baseS.z * 1.04f), 0.055f).SetEase(Ease.OutQuad));
+            s.Join(bodyPivot.DOLocalMoveY(-0.020f, 0.055f).SetEase(Ease.OutQuad));
+            s.Append(bodyPivot.DOScale(new Vector3(baseS.x * 0.96f, baseS.y * 1.06f, baseS.z), 0.075f).SetEase(Ease.OutSine));
+            s.Join(bodyPivot.DOLocalMoveY(0.010f, 0.075f).SetEase(Ease.OutSine));
+            s.Append(bodyPivot.DOScale(baseS, 0.085f).SetEase(Ease.OutCubic));
+            s.Join(bodyPivot.DOLocalMoveY(0f, 0.085f).SetEase(Ease.OutCubic));
+            s.SetLink(gameObject, LinkBehaviour.KillOnDisable);
+        }
+
         public void SetMovingToSlot(bool moving)
         {
             _isMovingToSlot = moving;
@@ -348,9 +393,18 @@ namespace PuzzleGlass
                 SetExitClearHighlight(true);
                 _hasPitMotionHistory = false;
             }
-            else if (IsHollowPitStyle && ShowsCavityBalls)
+            else
             {
-                JostlePitBalls(new Vector2(UnityEngine.Random.Range(-0.24f, 0.24f), 0.78f), wakeAll: true);
+                if (_mpbDragHighlight > 0.001f &&
+                    (MonsterDragController.Instance == null || !MonsterDragController.Instance.IsBlockCurrentlyDragged(this)))
+                {
+                    _mpbDragHighlight = 0f;
+                    ApplyBoxPropertyBlock();
+                }
+                if (IsHollowPitStyle && ShowsCavityBalls)
+                {
+                    JostlePitBalls(new Vector2(UnityEngine.Random.Range(-0.24f, 0.24f), 0.78f), wakeAll: true);
+                }
             }
             StagingGridBoard.Instance?.MarkGridDirty();
         }
@@ -418,6 +472,7 @@ namespace PuzzleGlass
         /// <summary>Kutuda bu kadar (veya daha az) top kalınca her topta "neredeyse doldu" nabzı atar.</summary>
         public static int NearCompleteThreshold = 3;
         private Tweener _fillWaveTween;
+        private Tweener _gulpGlowTween;
         private bool _isCompleted = false;
         public bool IsCompleted => _isCompleted;
         private bool _isMovingToSlot = false;
@@ -425,6 +480,7 @@ namespace PuzzleGlass
         private int _nextIncomingSocketCounter = 0;
         private int _settledSocketCount = 0;
         private float _lastGulpTime = -10f;
+        private float _lastLandingPopVfxTime = -10f;
 
         private GameObject _keyOverlayRoot;
         private GameObject _lockOverlayRoot;
@@ -709,8 +765,10 @@ namespace PuzzleGlass
             if (_blinkSeq != null && _blinkSeq.IsActive()) _blinkSeq.Kill();
             if (_fillAmountTween != null && _fillAmountTween.IsActive()) _fillAmountTween.Kill();
             if (_fillWaveTween != null && _fillWaveTween.IsActive()) _fillWaveTween.Kill();
+            if (_gulpGlowTween != null && _gulpGlowTween.IsActive()) _gulpGlowTween.Kill();
             _fillAmountTween = null;
             _fillWaveTween = null;
+            _gulpGlowTween = null;
         }
 
         public void Initialize(PuzzleColor color, int count, string id = null, CarrierBlockShape shape = CarrierBlockShape.Rect1x1)
@@ -829,6 +887,22 @@ namespace PuzzleGlass
             return s_SharedCarrierBoxMaterial;
         }
 
+        private static Material GetSharedCarrierBoxFrontRimMaterial()
+        {
+            if (s_SharedCarrierBoxFrontRimMaterial != null) return s_SharedCarrierBoxFrontRimMaterial;
+
+            Material baseMat = GetSharedCarrierBoxMaterial();
+            s_SharedCarrierBoxFrontRimMaterial = new Material(baseMat)
+            {
+                name = "Mat_CarrierBoxFrontRim_Instanced",
+                enableInstancing = true,
+                renderQueue = 2996
+            };
+            if (s_SharedCarrierBoxFrontRimMaterial.HasProperty("_FrontRimOnly"))
+                s_SharedCarrierBoxFrontRimMaterial.SetFloat("_FrontRimOnly", 1.0f);
+            return s_SharedCarrierBoxFrontRimMaterial;
+        }
+
         private static Material GetSharedSocketBallMaterial()
         {
             if (BallObjectPool.Instance != null)
@@ -920,6 +994,17 @@ namespace PuzzleGlass
             s_BoxPropertyBlock.SetFloat(FillWavePropId, _mpbFillWave);
 
             _boxRenderer.SetPropertyBlock(s_BoxPropertyBlock);
+
+            if (_frontRimRenderer == null && bodyPivot != null)
+            {
+                Transform rimVis = bodyPivot.Find("CarrierBoxFrontLip");
+                if (rimVis != null) _frontRimRenderer = rimVis.GetComponent<MeshRenderer>();
+            }
+            if (_frontRimRenderer != null)
+            {
+                _frontRimRenderer.SetPropertyBlock(s_BoxPropertyBlock);
+            }
+
             ApplyShadowPropertyBlock();
         }
 
@@ -997,6 +1082,23 @@ namespace PuzzleGlass
             boxMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             boxMr.receiveShadows = false;
             _boxRenderer = boxMr;
+            _frontRimRenderer = null;
+
+            if (IsHollowPitStyle)
+            {
+                GameObject rimQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                rimQuad.name = "CarrierBoxFrontLip";
+                rimQuad.transform.SetParent(bodyPivot, false);
+                rimQuad.transform.localPosition = new Vector3(0f, 0f, -0.14f);
+                rimQuad.transform.localScale = new Vector3(quadW, quadH, 1.0f);
+                DestroyCollider(rimQuad);
+
+                var rimMr = rimQuad.GetComponent<MeshRenderer>();
+                rimMr.sharedMaterial = GetSharedCarrierBoxFrontRimMaterial();
+                rimMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                rimMr.receiveShadows = false;
+                _frontRimRenderer = rimMr;
+            }
 
             // 3. Gray Socket Landing Points & Settled 3D Balls (1..16)
             int expectedSockets = GetVisibleSocketCount();
@@ -1023,17 +1125,21 @@ namespace PuzzleGlass
 
             for (int i = 0; i < expectedSockets; i++)
             {
+                float depth01 = (expectedSockets > 1) ? (i / (float)(expectedSockets - 1)) : 1f;
+                float itemLocalZ = IsHollowPitStyle ? Mathf.Lerp(-0.032f, -0.078f, depth01) : socketLocalZ;
+                float itemDepthScale = IsHollowPitStyle ? Mathf.Lerp(0.88f, 1.00f, depth01) : 1f;
+
                 Vector2 sockPt = socketPositions[i];
                 GameObject sockObj = new GameObject($"Socket_{i}");
                 sockObj.transform.SetParent(socketsRoot.transform, false);
-                sockObj.transform.localPosition = new Vector3(sockPt.x, sockPt.y, socketLocalZ);
+                sockObj.transform.localPosition = new Vector3(sockPt.x, sockPt.y, itemLocalZ);
                 socketTransforms[i] = sockObj.transform;
 
                 GameObject ballObj = new GameObject($"SettledBall_{i}");
                 ballObj.transform.SetParent(sockObj.transform, false);
                 ballObj.transform.localPosition = Vector3.zero;
                 ballObj.transform.localRotation = Quaternion.Euler(18f, -24f, 0f);
-                ballObj.transform.localScale = Vector3.one * _socketBallLocalDiameter;
+                ballObj.transform.localScale = Vector3.one * (_socketBallLocalDiameter * itemDepthScale);
 
                 var mf = ballObj.AddComponent<MeshFilter>();
                 mf.sharedMesh = sphereMesh;
@@ -1043,7 +1149,17 @@ namespace PuzzleGlass
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.receiveShadows = false;
                 PuzzleColor ballCol = isFilledBox ? filledBallColor : colorType;
-                BallObjectPool.ApplyBallPropertyBlock(mr, ballCol, variantIndex: 1, wobblePhase: i * 0.65f);
+                if (IsHollowPitStyle)
+                {
+                    BallObjectPool.ComputeBallVariantVisuals(ballCol, 1, out Color bCol, out Color sCol, out Color hCol, out float sm);
+                    float dim = Mathf.Lerp(0.24f, 0f, depth01);
+                    bCol = Color.Lerp(bCol, sCol, dim);
+                    BallObjectPool.ApplyBallPropertyBlock(mr, bCol, sCol, hCol, sm, i * 0.65f, 0f, 0f, Vector3.up);
+                }
+                else
+                {
+                    BallObjectPool.ApplyBallPropertyBlock(mr, ballCol, variantIndex: 1, wobblePhase: i * 0.65f);
+                }
 
                 ballObj.SetActive(false);
                 socketBalls[i] = ballObj;
@@ -1470,7 +1586,7 @@ namespace PuzzleGlass
 
                 float frac = (((idx + _settledSocketCount) * 0.618034f) % 1f) - 0.5f;
                 float vx = Application.isPlaying ? (frac * 0.85f + (Mathf.Abs(frac) < 0.08f ? 0.18f : 0f)) : 0f;
-                float vy = Application.isPlaying ? -2.35f : 0f;
+                float vy = Application.isPlaying ? -3.15f : 0f;
 
                 _pitSim[idx] = new PitBallSim
                 {
@@ -1486,15 +1602,19 @@ namespace PuzzleGlass
                 };
                 _pitAnyActive = Application.isPlaying;
 
+                float depth01 = (_pitSim.Length > 1) ? (idx / (float)(_pitSim.Length - 1)) : 1f;
+                float depthZ = Mathf.Lerp(-0.032f, -0.078f, depth01);
+                float depthScale = Mathf.Lerp(0.88f, 1.00f, depth01);
+
                 if (socketTransforms != null && idx < socketTransforms.Length && socketTransforms[idx] != null)
                 {
                     Vector2 initialPos = Application.isPlaying ? entry : target;
-                    socketTransforms[idx].localPosition = new Vector3(initialPos.x, initialPos.y, -0.055f);
+                    socketTransforms[idx].localPosition = new Vector3(initialPos.x, initialPos.y, depthZ);
                 }
 
                 tr.localPosition = Vector3.zero;
                 tr.localRotation = Quaternion.Euler(18f, -24f, _pitSim[idx].angle * Mathf.Rad2Deg);
-                tr.localScale = targetLocalScale;
+                tr.localScale = targetLocalScale * depthScale;
             }
             else
             {
@@ -1890,9 +2010,13 @@ namespace PuzzleGlass
                     }
                 }
 
+                float depth01 = (_pitSim.Length > 1) ? (i / (float)(_pitSim.Length - 1)) : 1f;
+                float depthZ = Mathf.Lerp(-0.032f, -0.078f, depth01);
+                float depthScale = Mathf.Lerp(0.88f, 1.00f, depth01);
+
                 if (socketTransforms != null && i < socketTransforms.Length && socketTransforms[i] != null)
                 {
-                    socketTransforms[i].localPosition = new Vector3(sim.pos.x, sim.pos.y, -0.055f);
+                    socketTransforms[i].localPosition = new Vector3(sim.pos.x, sim.pos.y, depthZ);
                 }
                 if (socketBalls != null && i < socketBalls.Length && socketBalls[i] != null)
                 {
@@ -1901,9 +2025,9 @@ namespace PuzzleGlass
                     float sq = sim.impactSquash;
                     float fallStretch = sim.settled ? 0f : Mathf.Clamp((sim.vel.magnitude - 0.95f) * 0.042f, 0f, 0.13f);
                     bTr.localScale = new Vector3(
-                        baseBallScale.x * (1f + sq - fallStretch * 0.55f),
-                        baseBallScale.y * (1f - sq * 0.68f + fallStretch),
-                        baseBallScale.z * (1f + sq * 0.35f - fallStretch * 0.25f));
+                        baseBallScale.x * depthScale * (1f + sq - fallStretch * 0.55f),
+                        baseBallScale.y * depthScale * (1f - sq * 0.68f + fallStretch),
+                        baseBallScale.z * depthScale * (1f + sq * 0.35f - fallStretch * 0.25f));
                 }
             }
 
@@ -2040,7 +2164,24 @@ namespace PuzzleGlass
             else
             {
                 ActivateAndPulseSocketBall(socketIndex);
+                if (counterText != null && Application.isPlaying && !useCrateVisuals)
+                {
+                    counterText.transform.DOKill(true);
+                    counterText.transform.localScale = Vector3.one;
+                    counterText.transform.DOPunchScale(Vector3.one * 0.24f, 0.14f, 5, 0.5f);
+                }
             }
+
+            if (Application.isPlaying && Time.unscaledTime - _lastLandingPopVfxTime >= 0.045f)
+            {
+                _lastLandingPopVfxTime = Time.unscaledTime;
+                Vector3 popPos = (ball != null)
+                    ? ball.transform.position
+                    : GetSocketWorldPosition(socketIndex);
+                float boxScale = (bodyPivot != null) ? bodyPivot.lossyScale.x : transform.lossyScale.x;
+                BlockClearCelebration.PlayBoxBallLandingPop(popPos, PuzzleColorPalette.GetPrimaryColor(colorType), boxScale);
+            }
+
             PlaySmoothGulpWave();
             DecrementCounterAndCheckComplete();
         }
@@ -2050,13 +2191,34 @@ namespace PuzzleGlass
             if (bodyPivot != null)
             {
                 bodyPivot.DOKill(false);
+                bodyPivot.localPosition = Vector3.zero;
+                bodyPivot.localRotation = Quaternion.identity;
+                bodyPivot.localScale = _originalBodyScale;
+
                 Sequence gulpSeq = DOTween.Sequence();
                 gulpSeq.Append(bodyPivot.DOScale(
-                    new Vector3(_originalBodyScale.x * 1.05f, _originalBodyScale.y * 0.94f, _originalBodyScale.z),
-                    0.055f).SetEase(Ease.OutSine));
-                gulpSeq.Join(bodyPivot.DOLocalMoveY(-0.018f, 0.055f).SetEase(Ease.OutSine));
-                gulpSeq.Append(bodyPivot.DOScale(_originalBodyScale, 0.14f).SetEase(Ease.OutBack));
-                gulpSeq.Join(bodyPivot.DOLocalMoveY(0f, 0.14f).SetEase(Ease.OutBounce));
+                    new Vector3(_originalBodyScale.x * 1.07f, _originalBodyScale.y * 0.92f, _originalBodyScale.z),
+                    0.05f).SetEase(Ease.OutSine));
+                gulpSeq.Join(bodyPivot.DOLocalMoveY(-0.020f, 0.05f).SetEase(Ease.OutSine));
+                gulpSeq.Append(bodyPivot.DOScale(
+                    new Vector3(_originalBodyScale.x * 0.98f, _originalBodyScale.y * 1.03f, _originalBodyScale.z),
+                    0.06f).SetEase(Ease.OutSine));
+                gulpSeq.Join(bodyPivot.DOLocalMoveY(0.008f, 0.06f).SetEase(Ease.OutSine));
+                gulpSeq.Append(bodyPivot.DOScale(_originalBodyScale, 0.08f).SetEase(Ease.OutCubic));
+                gulpSeq.Join(bodyPivot.DOLocalMoveY(0f, 0.08f).SetEase(Ease.OutCubic));
+                gulpSeq.SetLink(gameObject, LinkBehaviour.KillOnDisable);
+            }
+
+            if (Application.isPlaying && remainingCount > 1)
+            {
+                if (_gulpGlowTween != null && _gulpGlowTween.IsActive()) _gulpGlowTween.Kill();
+                _mpbDragHighlight = Mathf.Max(_mpbDragHighlight, 0.48f);
+                ApplyBoxPropertyBlock();
+                _gulpGlowTween = DOTween.To(
+                    () => _mpbDragHighlight,
+                    v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); },
+                    0f,
+                    0.16f).SetEase(Ease.OutQuad).SetTarget(this).SetLink(gameObject, LinkBehaviour.KillOnDisable);
             }
         }
 
@@ -2429,6 +2591,8 @@ namespace PuzzleGlass
         private IEnumerator CelebrateAndCompleteRoutine()
         {
             StopIdleAndBlink();
+            if (_gulpGlowTween != null && _gulpGlowTween.IsActive()) _gulpGlowTween.Kill();
+            _gulpGlowTween = null;
 
             // 1. Let the final poured ball(s) drop, bounce, and settle inside the pit
             if (IsHollowPitStyle && _pitAnyActive)

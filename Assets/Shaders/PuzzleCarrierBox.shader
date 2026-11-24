@@ -45,6 +45,7 @@ Shader "PuzzleGlass/CarrierBox"
         _SquashAmount ("GPU Squash & Stretch", Range(-0.5, 0.5)) = 0.0
         _FillAmount ("Collection Fill Progress (0..1)", Range(0, 1)) = 0.0
         _FillWave ("Collection Splash Wave (0..1)", Range(0, 1)) = 0.0
+        _FrontRimOnly ("Front Rim Occlusion Pass", Float) = 0.0
     }
 
     SubShader
@@ -116,6 +117,7 @@ Shader "PuzzleGlass/CarrierBox"
                 float _SquashAmount;
                 float _FillAmount;
                 float _FillWave;
+                float _FrontRimOnly;
             CBUFFER_END
 
             #if defined(UNITY_INSTANCING_ENABLED) || defined(UNITY_PROCEDURAL_INSTANCING_ENABLED) || defined(UNITY_STEREO_INSTANCING_ENABLED)
@@ -402,37 +404,71 @@ Shader "PuzzleGlass/CarrierBox"
                     float plateOuterRim = (1.0 - smoothstep(0.0, 0.016, dPlate)) * (1.0 - plateMask) * frontOuterMask;
                     col = lerp(col, highlightColor, plateOuterRim * (0.26 + activeGlow * 0.24));
 
-                    // 3D inner top & side walls descending into the hollow cavity (same 3D depth family as the lower lip)
-                    float hollowWallDepth = _LipOffset * 1.12;
-                    float dDeepVoid = sdPolyomino(q + float2(0.0, hollowWallDepth), hollowInset + 0.012, max(0.016, hollowInnerRad - 0.008), rectCount, rect0, rect1);
+                    // Ön çerçeve + iç kenar gölge katmanı (_FrontRimOnly = 1): çukurdaki topların önünde çizilerek derinlik verir
+                    if (_FrontRimOnly > 0.5)
+                    {
+                        if (lockAmount > 0.001 || iceAmount > 0.001) discard;
+
+                        float frameAlpha = frontOuterMask * (1.0 - plateMask);
+                        float topExtentY = (rectCount > 1.5) ? max(rect0.y + rect0.w, rect1.y + rect1.w) : (rect0.y + rect0.w);
+                        float topBand = saturate(1.0 - (topExtentY - hollowInset - q.y) * 2.4);
+                        float topCast = topBand * (1.0 - smoothstep(-0.155, -0.004, dPlate));
+                        float rimVignette = 1.0 - smoothstep(-0.072, 0.0, dPlate);
+                        float pitShadowAlpha = saturate(max(topCast * 0.65, rimVignette * 0.36)) * plateMask;
+                        float outAlpha = saturate(max(frameAlpha, pitShadowAlpha));
+                        if (outAlpha < 0.003) discard;
+
+                        float3 frameCol = col;
+                        float unplayableRim = (1.0 - saturate(exitHighlight)) * (1.0 - saturate(iceAmount));
+                        if (unplayableRim > 0.001)
+                        {
+                            float lumR = dot(frameCol, float3(0.299, 0.587, 0.114));
+                            float3 grayR = lerp(float3(lumR, lumR, lumR) * 0.82 + float3(0.05, 0.05, 0.07), frameCol, 0.58);
+                            frameCol = lerp(frameCol, grayR, unplayableRim);
+                        }
+                        float completeRimFlash = saturate((dragHighlight - 1.0) * 0.88);
+                        if (completeRimFlash > 0.001)
+                        {
+                            float3 warmRimFlash = lerp(highlightColor, float3(1.0, 0.99, 0.94), 0.74);
+                            frameCol = lerp(frameCol, warmRimFlash * 1.16, completeRimFlash);
+                        }
+
+                        float3 innerCastCol = lerp(bodyDarkColor * 0.12, float3(0.03, 0.04, 0.11), 0.52);
+                        float3 finalRimCol = lerp(frameCol, innerCastCol, saturate(pitShadowAlpha / max(0.003, outAlpha)));
+                        return half4(finalRimCol * IN.color.rgb, outAlpha * IN.color.a);
+                    }
+
+                    // 3D inner top & side walls descending deeply into the hollow cavity
+                    float hollowWallDepth = _LipOffset * 1.72;
+                    float dDeepVoid = sdPolyomino(q + float2(0.0, hollowWallDepth), hollowInset + 0.016, max(0.016, hollowInnerRad - 0.008), rectCount, rect0, rect1);
                     float voidMask = (1.0 - smoothstep(-aa, aa, dDeepVoid)) * plateMask;
 
                     float innerWallT = saturate(dDeepVoid / max(0.02, hollowWallDepth));
-                    float3 innerWallTop = lerp(bodyDarkColor, bodyColor, 0.14);
-                    float3 innerWallBot = bodyDarkColor * 0.62;
+                    float3 innerWallTop = lerp(bodyDarkColor * 0.92, bodyColor, 0.12);
+                    float3 innerWallBot = bodyDarkColor * 0.28;
                     float3 innerWallCol = lerp(innerWallBot, innerWallTop, innerWallT);
-                    float topInnerCrease = (1.0 - smoothstep(-0.014, 0.0, dPlate)) * saturate((q.y - rect0.y) * 4.0);
-                    innerWallCol = lerp(innerWallCol, bodyDarkColor * 0.48, topInnerCrease * 0.60);
+                    float topInnerCrease = (1.0 - smoothstep(-0.022, 0.0, dPlate)) * saturate((q.y - rect0.y) * 3.6);
+                    innerWallCol = lerp(innerWallCol, bodyDarkColor * 0.20, topInnerCrease * 0.72);
 
                     // Deep recessed hollow void floor in a rich dark shade of the block's color
-                    float3 deepVoidBase = lerp(bodyDarkColor * 0.38, bodyColor * 0.26, 0.35);
-                    float3 deepVoidShadow = lerp(bodyDarkColor * 0.25, bodyColor * 0.16, 0.35);
-                    float overhangShadow = 1.0 - smoothstep(-0.042, 0.0, dDeepVoid);
-                    float voidEdgeAO = 1.0 - smoothstep(0.0, 0.080, -dDeepVoid);
-                    plateShadowMask = saturate(max(overhangShadow * 0.78, voidEdgeAO * 0.48));
+                    float3 deepVoidBase = lerp(bodyDarkColor * 0.24, bodyColor * 0.16, 0.32);
+                    float3 deepVoidShadow = lerp(bodyDarkColor * 0.11, bodyColor * 0.08, 0.32);
+                    float overhangShadow = 1.0 - smoothstep(-0.085, 0.0, dDeepVoid);
+                    float voidEdgeAO = 1.0 - smoothstep(0.0, 0.110, -dDeepVoid);
+                    plateShadowMask = saturate(max(overhangShadow * 0.86, voidEdgeAO * 0.58));
                     float3 hollowVoidRGB = lerp(deepVoidBase, deepVoidShadow, plateShadowMask);
 
                     // Crisp bottom inner lip bevel where the bottom front wall meets the hollow pit
-                    float botInnerLip = (1.0 - smoothstep(-0.018, 0.0, dPlate)) * saturate(-(q.y - rect0.y) * 3.0);
-                    hollowVoidRGB = lerp(hollowVoidRGB, lerp(bodyDarkColor, bodyColor, 0.10), botInnerLip * 0.85);
+                    float botInnerLip = (1.0 - smoothstep(-0.020, 0.0, dPlate)) * saturate(-(q.y - rect0.y) * 3.0);
+                    hollowVoidRGB = lerp(hollowVoidRGB, lerp(bodyDarkColor, bodyColor, 0.12), botInnerLip * 0.88);
 
                     float3 cavityRGB = lerp(innerWallCol, hollowVoidRGB, voidMask);
 
-                    // Subtle recessed floor highlight as 3D balls fill the cavity (no water surface)
+                    // Subtle recessed floor bounce highlight as 3D balls fill the cavity
                     if (fillAmount > 0.001 || fillWave > 0.001)
                     {
-                        float pitGlow = saturate(fillAmount * 0.24 + fillWave * 0.18) * voidMask;
-                        cavityRGB = lerp(cavityRGB, lerp(bodyDarkColor, bodyColor, 0.34), pitGlow);
+                        float pitGlow = saturate(fillAmount * 0.28 + fillWave * 0.20) * voidMask;
+                        cavityRGB = lerp(cavityRGB, lerp(bodyDarkColor, bodyColor, 0.36), pitGlow);
                     }
 
                     col = lerp(col, cavityRGB, plateMask);
