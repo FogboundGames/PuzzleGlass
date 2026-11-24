@@ -1132,7 +1132,10 @@ Shader "PuzzleGlass/GlassChamberLit"
                     float rimGlint   = outerRim * (0.42 + 0.48 * saturate(facing));
                     float bevelGlint = innerBevel * (0.24 + 0.34 * saturate(facing));
                     float litBand    = exp(-pow((u - 0.89) / 0.042, 2.0)) * saturate(facing) * 0.72 * sheenMul;
-                    float tubeGloss  = exp(-pow((u - 0.36) / 0.19, 2.0)) * saturate(facing + 0.45) * (1.0 - wallZone) * 0.36 * sheenMul * throatSpecMask;
+                    // Halkada geniş tubeGloss bandı topların üstünden beyaz şerit olarak geçiyordu (a726568 ile eklendi);
+                    // 23 Kasım öncesi temiz görünüm için halkada kapalı. İnce çıkış kanallarındaki tubeGloss duruyor.
+                    const float trackTubeGlossMul = 0.0;
+                    float tubeGloss  = exp(-pow((u - 0.36) / 0.19, 2.0)) * saturate(facing + 0.45) * (1.0 - wallZone) * 0.36 * sheenMul * throatSpecMask * trackTubeGlossMul;
                     float frontA     = saturate(0.02 + bandMain + bandFill + edgeGlass + rimGlint + bevelGlint + litBand + tubeGloss);
                     frontA *= outerMask * quadEdgeFade;
                     frontA *= 1.0 - inNeck * 0.75; // boyun içinde bulanık parlama olmasın (net görünüm)
