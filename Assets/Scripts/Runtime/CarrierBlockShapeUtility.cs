@@ -401,6 +401,26 @@ namespace PuzzleGlass
             return rows;
         }
 
+        public static float SampleHollowPitSdfAndNormal(
+            Vector2 p,
+            Vector4 rect0,
+            Vector4 rect1,
+            int rectCount,
+            float ballRadius,
+            out Vector2 outwardNormal)
+        {
+            float d = EvalHollowPitPackSdf(p, rect0, rect1, rectCount, ballRadius);
+            const float eps = 0.0025f;
+            float gx = EvalHollowPitPackSdf(new Vector2(p.x + eps, p.y), rect0, rect1, rectCount, ballRadius)
+                     - EvalHollowPitPackSdf(new Vector2(p.x - eps, p.y), rect0, rect1, rectCount, ballRadius);
+            float gy = EvalHollowPitPackSdf(new Vector2(p.x, p.y + eps), rect0, rect1, rectCount, ballRadius)
+                     - EvalHollowPitPackSdf(new Vector2(p.x, p.y - eps), rect0, rect1, rectCount, ballRadius);
+            Vector2 grad = new Vector2(gx, gy);
+            float mag = grad.magnitude;
+            outwardNormal = (mag > 1e-6f) ? (grad / mag) : Vector2.down;
+            return d;
+        }
+
         private static float EvalHollowPitPackSdf(Vector2 p, Vector4 rect0, Vector4 rect1, int rectCount, float rad)
         {
             float d = EvalSingleHollowPitSdf(p, rect0, rad);

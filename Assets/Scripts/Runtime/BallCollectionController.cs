@@ -135,6 +135,11 @@ namespace PuzzleGlass
         {
             StepSquashingBalls(Time.deltaTime);
 
+            if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
+            {
+                return;
+            }
+
             // If SandSimulation is actively running with sand grains (and no physical balls), yield to sand engine
             if (SandSimulationEngine.Instance != null && SandSimulationEngine.Instance.enabled && SandSimulationEngine.Instance.sandAmount > 0)
             {
@@ -324,6 +329,10 @@ namespace PuzzleGlass
 
         private void FixedUpdate()
         {
+            if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
+            {
+                return;
+            }
             StepAllBallPhysics();
             UpdateAttractionPhysics();
             ApplyPoolDrainFunnel();

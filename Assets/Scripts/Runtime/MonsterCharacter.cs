@@ -135,7 +135,7 @@ namespace PuzzleGlass
         private float _mpbRectCount = 1f;
         private Vector4 _mpbRect0 = new Vector4(0f, 0.024f, 0.445f, 0.425f);
         private Vector4 _mpbRect1 = Vector4.zero;
-        private float _mpbExitHighlight = 0f;
+        private float _mpbExitHighlight = 1f;
         private float _mpbDragHighlight = 0f;
         private float _mpbIceAmount = 0f;
         private float _mpbLockAmount = 0f;
@@ -176,11 +176,15 @@ namespace PuzzleGlass
 
         private void ComputeActiveBallLayout(int count, out Vector2[] positions, out float socketRadius, out float ballDiameter)
         {
-            CarrierBlockShapeUtility.ComputeSocketLayoutForShape(blockShape, count, out positions, out socketRadius, out ballDiameter);
             if (IsHollowPitStyle)
             {
                 CarrierBlockShapeUtility.ComputeHollowPitBallLayout(blockShape, count, out positions, out ballDiameter);
+                if (count >= 14) ballDiameter *= 0.90f;
+                else if (count >= 6) ballDiameter *= 0.94f;
+                socketRadius = ballDiameter * 0.5f;
+                return;
             }
+            CarrierBlockShapeUtility.ComputeSocketLayoutForShape(blockShape, count, out positions, out socketRadius, out ballDiameter);
         }
 
         private int GetSocketModCount()
@@ -339,7 +343,15 @@ namespace PuzzleGlass
         public void SetMovingToSlot(bool moving)
         {
             _isMovingToSlot = moving;
-            if (moving) SetExitClearHighlight(false);
+            if (moving)
+            {
+                SetExitClearHighlight(true);
+                _hasPitMotionHistory = false;
+            }
+            else if (IsHollowPitStyle && ShowsCavityBalls)
+            {
+                JostlePitBalls(new Vector2(UnityEngine.Random.Range(-0.24f, 0.24f), 0.78f), wakeAll: true);
+            }
             StagingGridBoard.Instance?.MarkGridDirty();
         }
 
@@ -354,12 +366,22 @@ namespace PuzzleGlass
         public Transform[] socketTransforms = new Transform[3];
         public GameObject[] socketBalls = new GameObject[3];
         public Transform transparentLidTransform;
+        private Transform _lidGlareTransform;
+        private Transform _lidGlareSubTransform;
+        private Transform _lidLatchTransform;
+        private Vector3 _lidClosedLocalPos = new Vector3(0f, 0f, -0.26f);
+        private Vector3 _lidGlareRestLocalPos;
+        private Vector3 _lidGlareSubRestLocalPos;
 
         private struct PitBallSim
         {
             public Vector2 pos;
             public Vector2 vel;
             public Vector2 target;
+            public float angle;
+            public float angularVel;
+            public float impactSquash;
+            public float sleepTimer;
             public bool settled;
             public bool active;
         }
@@ -369,6 +391,12 @@ namespace PuzzleGlass
         private Vector4 _pitRect1;
         private int _pitRectCount = 1;
         private bool _pitAnyActive = false;
+        private Vector2 _lastPitWorldPos;
+        private Vector2 _lastPitWorldVel;
+        private bool _hasPitMotionHistory = false;
+        private float _pitNextSpawnHintX = 0f;
+        private bool _hasPitSpawnHint = false;
+        private float _lastPitImpactVfxTime = -10f;
 
         [Header("Materials (Auto-Assigned)")]
         public Material bodyMaterial;
@@ -550,7 +578,7 @@ namespace PuzzleGlass
 
         public void SetExitClearHighlight(bool exitClear)
         {
-            bool effectiveClear = (exitClear || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
+            bool effectiveClear = (exitClear || isCollectingInGrid || assignedSlot != null || _isMovingToSlot) && !IsMovementOrCollectionBlocked;
             isExitClearInGrid = effectiveClear;
             isUnlockedInStaging = effectiveClear;
             float target = effectiveClear ? 1.0f : 0.0f;
@@ -558,6 +586,26 @@ namespace PuzzleGlass
             {
                 _mpbExitHighlight = target;
                 ApplyBoxPropertyBlock();
+            }
+            UpdateCounterTextPlayableTint(effectiveClear);
+        }
+
+        private void UpdateCounterTextPlayableTint(bool playable)
+        {
+            if (counterText == null) return;
+            if (useCrateVisuals)
+            {
+                counterText.color = playable ? Color.white : new Color(0.86f, 0.87f, 0.90f, 0.92f);
+            }
+            else
+            {
+                Color baseTxt = PuzzleColorPalette.GetTextColor(colorType);
+                if (!playable)
+                {
+                    float lum = baseTxt.r * 0.299f + baseTxt.g * 0.587f + baseTxt.b * 0.114f;
+                    baseTxt = Color.Lerp(new Color(lum, lum, lum, 0.92f), baseTxt, 0.58f);
+                }
+                counterText.color = baseTxt;
             }
         }
 
@@ -619,8 +667,28 @@ namespace PuzzleGlass
 
         public void KillAllTweens()
         {
+            DOTween.Kill(this);
             transform.DOKill();
-            if (bodyPivot != null) bodyPivot.DOKill();
+            _mpbDragHighlight = 0f;
+            if (_shadowRenderer != null) _shadowRenderer.enabled = true;
+            if (bodyPivot != null)
+            {
+                bodyPivot.DOKill();
+                bodyPivot.localPosition = Vector3.zero;
+                bodyPivot.localRotation = Quaternion.identity;
+                bodyPivot.localScale = _originalBodyScale;
+            }
+            if (transparentLidTransform != null)
+            {
+                transparentLidTransform.DOKill();
+                transparentLidTransform.localPosition = _lidClosedLocalPos;
+                transparentLidTransform.localRotation = Quaternion.identity;
+                transparentLidTransform.localScale = Vector3.one;
+                transparentLidTransform.gameObject.SetActive(false);
+            }
+            if (_lidGlareTransform != null) _lidGlareTransform.DOKill();
+            if (_lidGlareSubTransform != null) _lidGlareSubTransform.DOKill();
+            if (_lidLatchTransform != null) _lidLatchTransform.DOKill();
             if (badgeTransform != null) badgeTransform.DOKill();
             if (counterText != null) counterText.transform.DOKill();
             if (_keyOverlayRoot != null) _keyOverlayRoot.transform.DOKill();
@@ -1003,75 +1071,116 @@ namespace PuzzleGlass
         {
             Shader spriteShader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/Unlit");
 
+            CarrierBlockShapeUtility.GetRectParts(blockShape, out Vector4 r0, out Vector4 r1, out int rectCount, out _, out _);
+            float maxTopY = r0.y + r0.w;
+            if (rectCount > 1) maxTopY = Mathf.Max(maxTopY, r1.y + r1.w);
+            float hingeY = maxTopY - CarrierBlockShapeUtility.WallInset * 0.9f;
+
+            // Pivot at top inner rim so the lid swings shut downward from the top hinge
             GameObject lidRoot = new GameObject("BoxTransparentLid");
             lidRoot.transform.SetParent(parent, false);
-            lidRoot.transform.localPosition = new Vector3(0f, 0f, -0.26f);
+            _lidClosedLocalPos = new Vector3(0f, hingeY, -0.26f);
+            lidRoot.transform.localPosition = _lidClosedLocalPos;
             transparentLidTransform = lidRoot.transform;
 
-            // Translucent crystal-tinted acrylic window covering the shape's white cavity (cached per color)
+            // Translucent crystal-tinted acrylic window covering the shape's cavity (cached per color)
             if (!s_SharedLidWindowMats.TryGetValue(colorType, out Material windowMat) || windowMat == null)
             {
-                Color tint = Color.Lerp(GetCarrierFrameColor(colorType), new Color(0.88f, 0.96f, 1.00f, 1f), 0.72f);
+                Color tint = Color.Lerp(GetCarrierFrameColor(colorType), new Color(0.92f, 0.98f, 1.00f, 1f), 0.74f);
                 tint.a = 0.36f;
-                windowMat = new Material(spriteShader) { name = $"Mat_BoxTransparentLid_{colorType}", color = tint, enableInstancing = true };
+                windowMat = new Material(spriteShader) { name = $"Mat_BoxTransparentLid_{colorType}", color = tint, enableInstancing = true, renderQueue = 3018 };
                 if (windowMat.HasProperty("_BaseColor")) windowMat.SetColor("_BaseColor", tint);
                 s_SharedLidWindowMats[colorType] = windowMat;
             }
 
-            CarrierBlockShapeUtility.GetRectParts(blockShape, out Vector4 r0, out Vector4 r1, out int rectCount, out _, out _);
-            for (int i = 0; i < rectCount; i++)
-            {
-                Vector4 r = (i == 0) ? r0 : r1;
-                float lw = Mathf.Max(0.20f, (r.z - CarrierBlockShapeUtility.WallInset * 0.9f) * 2f);
-                float lh = Mathf.Max(0.20f, (r.w - CarrierBlockShapeUtility.WallInset * 0.9f) * 2f);
-                GameObject pane = new GameObject($"LidPane_{i}");
-                pane.transform.SetParent(lidRoot.transform, false);
-                pane.transform.localPosition = new Vector3(r.x, r.y, 0f);
-                pane.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(lw, lh, 0.03f, Mathf.Min(0.14f, Mathf.Min(lw, lh) * 0.38f));
-                var lidMr = pane.AddComponent<MeshRenderer>();
-                lidMr.sharedMaterial = windowMat;
-                lidMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                lidMr.receiveShadows = false;
-            }
-
-            // Diagonal white specular reflection glare across the sealed lid (shared across all boxes)
+            // Diagonal white specular reflection glare & crisp rim trim (shared across all boxes)
             if (s_SharedLidGlareMat == null)
             {
                 s_SharedLidGlareMat = new Material(spriteShader)
                 {
                     name = "Mat_LidSpecularGlare_Shared",
-                    color = new Color(1f, 1f, 1f, 0.54f),
-                    enableInstancing = true
+                    color = new Color(1f, 1f, 1f, 0.68f),
+                    enableInstancing = true,
+                    renderQueue = 3020
                 };
                 if (s_SharedLidGlareMat.HasProperty("_BaseColor"))
-                    s_SharedLidGlareMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.54f));
+                    s_SharedLidGlareMat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.68f));
+            }
+
+            for (int i = 0; i < rectCount; i++)
+            {
+                Vector4 r = (i == 0) ? r0 : r1;
+                float lw = Mathf.Max(0.20f, (r.z - CarrierBlockShapeUtility.WallInset * 0.9f) * 2f);
+                float lh = Mathf.Max(0.20f, (r.w - CarrierBlockShapeUtility.WallInset * 0.9f) * 2f);
+                float localCenterY = r.y - hingeY;
+
+                GameObject pane = new GameObject($"LidPane_{i}");
+                pane.transform.SetParent(lidRoot.transform, false);
+                pane.transform.localPosition = new Vector3(r.x, localCenterY, 0f);
+                pane.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(lw, lh, 0.03f, Mathf.Min(0.14f, Mathf.Min(lw, lh) * 0.38f));
+                var lidMr = pane.AddComponent<MeshRenderer>();
+                lidMr.sharedMaterial = windowMat;
+                lidMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                lidMr.receiveShadows = false;
+
+                // Crisp pearlescent top & bottom lid edge rails so the swinging flap silhouette reads clearly in 3D
+                const float railThick = 0.022f;
+                float railLen = Mathf.Max(0.14f, lw - 0.06f);
+                Mesh hRailMesh = ProceduralMeshUtils.CreatePillBadge(railLen, railThick, 0.01f, railThick * 0.45f);
+                for (int edge = 0; edge < 2; edge++)
+                {
+                    float ey = localCenterY + (edge == 0 ? (lh * 0.5f - railThick * 0.5f) : (-lh * 0.5f + railThick * 0.5f));
+                    GameObject rail = new GameObject($"LidRailH_{i}_{edge}");
+                    rail.transform.SetParent(lidRoot.transform, false);
+                    rail.transform.localPosition = new Vector3(r.x, ey, -0.012f);
+                    rail.AddComponent<MeshFilter>().sharedMesh = hRailMesh;
+                    var rMr = rail.AddComponent<MeshRenderer>();
+                    rMr.sharedMaterial = s_SharedLidGlareMat;
+                    rMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    rMr.receiveShadows = false;
+                }
             }
 
             GameObject glare1 = new GameObject("LidGlareMain");
             glare1.transform.SetParent(lidRoot.transform, false);
-            glare1.transform.localPosition = new Vector3(r0.x - 0.06f, r0.y + 0.04f, -0.02f);
+            glare1.transform.localPosition = new Vector3(r0.x - 0.06f, (r0.y + 0.04f) - hingeY, -0.02f);
             glare1.transform.localRotation = Quaternion.Euler(0f, 0f, -32f);
-            glare1.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.46f, 0.065f, 0.02f, 0.030f);
+            glare1.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.46f, 0.068f, 0.02f, 0.032f);
             var g1Mr = glare1.AddComponent<MeshRenderer>();
             g1Mr.sharedMaterial = s_SharedLidGlareMat;
             g1Mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _lidGlareTransform = glare1.transform;
+            _lidGlareRestLocalPos = glare1.transform.localPosition;
 
-            // Top snap-latch clip ("TIK!" lock clasp, cached per color)
+            GameObject glare2 = new GameObject("LidGlareSub");
+            glare2.transform.SetParent(lidRoot.transform, false);
+            glare2.transform.localPosition = new Vector3(r0.x + 0.06f, (r0.y - 0.07f) - hingeY, -0.02f);
+            glare2.transform.localRotation = Quaternion.Euler(0f, 0f, -32f);
+            glare2.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.32f, 0.034f, 0.015f, 0.016f);
+            var g2Mr = glare2.AddComponent<MeshRenderer>();
+            g2Mr.sharedMaterial = s_SharedLidGlareMat;
+            g2Mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _lidGlareSubTransform = glare2.transform;
+            _lidGlareSubRestLocalPos = glare2.transform.localPosition;
+
+            // Bottom snap-latch clasp ("TIK!" lock clip opposite top hinge, cached per color)
             if (!s_SharedLidLatchMats.TryGetValue(colorType, out Material latchMat) || latchMat == null)
             {
-                Color latchCol = GetCarrierFrameColor(colorType);
-                latchMat = new Material(spriteShader) { name = $"Mat_LidLatch_{colorType}", color = latchCol, enableInstancing = true };
+                Color latchCol = Color.Lerp(GetCarrierFrameColor(colorType), Color.white, 0.22f);
+                latchMat = new Material(spriteShader) { name = $"Mat_LidLatch_{colorType}", color = latchCol, enableInstancing = true, renderQueue = 3022 };
                 if (latchMat.HasProperty("_BaseColor")) latchMat.SetColor("_BaseColor", latchCol);
                 s_SharedLidLatchMats[colorType] = latchMat;
             }
 
+            float bottomRimY = (r0.y - r0.w + CarrierBlockShapeUtility.WallInset * 0.9f + 0.02f) - hingeY;
             GameObject latchObj = new GameObject("LidSnapLatch");
             latchObj.transform.SetParent(lidRoot.transform, false);
-            latchObj.transform.localPosition = new Vector3(r0.x, r0.y + r0.w - 0.06f, -0.03f);
-            latchObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.22f, 0.06f, 0.03f, 0.025f);
+            latchObj.transform.localPosition = new Vector3(r0.x, bottomRimY, -0.03f);
+            latchObj.AddComponent<MeshFilter>().sharedMesh = ProceduralMeshUtils.CreatePillBadge(0.24f, 0.068f, 0.03f, 0.028f);
             var latchMr = latchObj.AddComponent<MeshRenderer>();
             latchMr.sharedMaterial = latchMat;
             latchMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _lidLatchTransform = latchObj.transform;
 
             lidRoot.SetActive(false);
         }
@@ -1175,7 +1284,7 @@ namespace PuzzleGlass
             if (counterText != null)
             {
                 counterText.text = Mathf.Max(0, remainingCount).ToString();
-                counterText.color = useCrateVisuals ? Color.white : PuzzleColorPalette.GetTextColor(colorType);
+                UpdateCounterTextPlayableTint(isExitClearInGrid || assignedSlot != null || _isMovingToSlot);
                 if (visualStyle == BlockVisualStyle.PuzzleWithNumber)
                 {
                     counterText.fontSize = (remainingCount >= 100) ? 3.1f : 3.8f;
@@ -1279,9 +1388,10 @@ namespace PuzzleGlass
             if (IsHollowPitStyle)
             {
                 Transform t = bodyPivot != null ? bodyPivot : transform;
-                Vector2 target = GetPitTargetLocal(socketIndex);
-                float liftY = _socketBallLocalDiameter * 0.42f;
-                return t.TransformPoint(new Vector3(target.x, target.y + liftY, -0.070f));
+                ComputeActiveBallLayout(GetVisibleSocketCount(), out _, out _, out _socketBallLocalDiameter);
+                float r = Mathf.Max(0.025f, _socketBallLocalDiameter * 0.5f);
+                Vector2 topEntry = GetPitDropEntryLocal(socketIndex, GetPitTargetLocal(socketIndex), r);
+                return t.TransformPoint(new Vector3(topEntry.x, topEntry.y, -0.085f));
             }
             if (ShowsCavityBalls && socketTransforms != null && socketTransforms.Length > 0)
             {
@@ -1345,15 +1455,28 @@ namespace PuzzleGlass
             if (IsHollowPitStyle)
             {
                 EnsurePitLayoutCached();
-                float r = Mathf.Max(0.03f, _socketBallLocalDiameter * 0.5f);
+                float r = Mathf.Max(0.025f, _socketBallLocalDiameter * 0.5f);
                 Vector2 target = GetPitTargetLocal(idx);
                 Vector2 entry = GetPitDropEntryLocal(idx, target, r);
+                if (_hasPitSpawnHint)
+                {
+                    entry.x = ClampXInsidePitTopRect(entry.y, _pitNextSpawnHintX, r);
+                    _hasPitSpawnHint = false;
+                }
+
+                float frac = (((idx + _settledSocketCount) * 0.618034f) % 1f) - 0.5f;
+                float vx = Application.isPlaying ? (frac * 0.85f + (Mathf.Abs(frac) < 0.08f ? 0.18f : 0f)) : 0f;
+                float vy = Application.isPlaying ? -2.35f : 0f;
 
                 _pitSim[idx] = new PitBallSim
                 {
                     pos = Application.isPlaying ? entry : target,
-                    vel = Application.isPlaying ? new Vector2(0f, -1.6f) : Vector2.zero,
+                    vel = new Vector2(vx, vy),
                     target = target,
+                    angle = (idx * 0.75f),
+                    angularVel = Application.isPlaying ? (-vx / r) : 0f,
+                    impactSquash = Application.isPlaying ? 0.08f : 0f,
+                    sleepTimer = 0f,
                     settled = !Application.isPlaying,
                     active = true
                 };
@@ -1366,8 +1489,8 @@ namespace PuzzleGlass
                 }
 
                 tr.localPosition = Vector3.zero;
-                tr.localScale = targetLocalScale * 1.10f;
-                tr.DOScale(targetLocalScale, 0.14f).SetEase(Ease.OutBack).SetLink(sBall);
+                tr.localRotation = Quaternion.Euler(18f, -24f, _pitSim[idx].angle * Mathf.Rad2Deg);
+                tr.localScale = targetLocalScale;
             }
             else
             {
@@ -1396,8 +1519,46 @@ namespace PuzzleGlass
 
         private void LateUpdate()
         {
-            if (!Application.isPlaying || !IsHollowPitStyle || !_pitAnyActive || _pitSim == null) return;
-            StepHollowPitPhysics(Mathf.Min(Time.deltaTime, 0.035f));
+            if (!Application.isPlaying || !IsHollowPitStyle || _pitSim == null) return;
+
+            float dt = Mathf.Min(Time.deltaTime, 0.035f);
+            if (dt <= 0.0001f) return;
+
+            Transform motionT = bodyPivot != null ? bodyPivot : transform;
+            Vector2 worldPos = motionT.position;
+            if (_hasPitMotionHistory)
+            {
+                Vector2 disp = worldPos - _lastPitWorldPos;
+                if (disp.sqrMagnitude > 1.2f)
+                {
+                    _lastPitWorldVel = Vector2.zero;
+                }
+                else
+                {
+                    Vector2 curVel = disp / dt;
+                    Vector2 accel = (curVel - _lastPitWorldVel) / dt;
+                    _lastPitWorldVel = curVel;
+
+                    float invScale = 1f / Mathf.Max(0.15f, motionT.lossyScale.x);
+                    Vector2 localAccel = accel * invScale;
+                    if (!_isCompleted && localAccel.sqrMagnitude > 6.5f)
+                    {
+                        Vector2 inertiaKick = Vector2.ClampMagnitude(-localAccel * (dt * 0.24f), 1.45f);
+                        JostlePitBalls(inertiaKick, wakeAll: true);
+                    }
+                }
+            }
+            else
+            {
+                _lastPitWorldVel = Vector2.zero;
+                _hasPitMotionHistory = true;
+            }
+            _lastPitWorldPos = worldPos;
+
+            if (_pitAnyActive)
+            {
+                StepHollowPitPhysics(dt);
+            }
         }
 
         private void EnsurePitLayoutCached()
@@ -1410,7 +1571,7 @@ namespace PuzzleGlass
             if (_pitTargets == null || _pitTargets.Length != count)
             {
                 CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
-                CarrierBlockShapeUtility.ComputeHollowPitBallLayout(blockShape, count, out _pitTargets, out _socketBallLocalDiameter);
+                ComputeActiveBallLayout(count, out _pitTargets, out _, out _socketBallLocalDiameter);
             }
             else if (_pitRect0 == Vector4.zero)
             {
@@ -1429,61 +1590,308 @@ namespace PuzzleGlass
             return new Vector2(_pitRect0.x, _pitRect0.y - 0.03f);
         }
 
-        private Vector2 GetPitDropEntryLocal(int ballIdx, Vector2 target, float radius)
+        private Vector4 SelectPitRectForPoint(Vector2 pt)
         {
             if (_pitRect0 == Vector4.zero)
             {
                 CarrierBlockShapeUtility.GetRectParts(blockShape, out _pitRect0, out _pitRect1, out _pitRectCount, out _, out _);
             }
-            float pitTopY = _pitRect0.y + _pitRect0.w - (0.118f + 0.068f + radius);
-            if (_pitRectCount > 1 && Mathf.Abs(target.x - _pitRect1.x) <= _pitRect1.z && Mathf.Abs(target.y - _pitRect1.y) <= _pitRect1.w)
+            if (_pitRectCount > 1 && Mathf.Abs(pt.x - _pitRect1.x) <= _pitRect1.z && Mathf.Abs(pt.y - _pitRect1.y) <= _pitRect1.w)
             {
-                pitTopY = _pitRect1.y + _pitRect1.w - (0.118f + 0.068f + radius);
+                return _pitRect1;
             }
-            float dropDist = Mathf.Clamp(_socketBallLocalDiameter * 1.95f, 0.14f, 0.34f);
-            float startY = Mathf.Max(target.y + _socketBallLocalDiameter * 0.90f, Mathf.Min(pitTopY + 0.02f, target.y + dropDist));
-            return new Vector2(target.x, startY);
+            return _pitRect0;
+        }
+
+        private float ClampXInsidePitTopRect(float entryY, float desiredX, float radius)
+        {
+            Vector4 rect = SelectPitRectForPoint(new Vector2(desiredX, entryY));
+            const float pitInset = 0.118f;
+            float usableHalfW = Mathf.Max(0.02f, rect.z - pitInset - radius - 0.012f);
+            return Mathf.Clamp(desiredX, rect.x - usableHalfW, rect.x + usableHalfW);
+        }
+
+        private Vector2 GetPitDropEntryLocal(int ballIdx, Vector2 target, float radius)
+        {
+            Vector4 rect = SelectPitRectForPoint(target);
+            const float pitInset = 0.118f;
+            const float topOverhang = 0.068f;
+            const float wallPad = 0.002f;
+
+            float pitTopY = rect.y + rect.w - (pitInset + topOverhang + radius + wallPad + 0.006f);
+            float usableHalfW = Mathf.Max(0.02f, (rect.z - pitInset - radius - wallPad) * 0.62f);
+            float frac = (((ballIdx + _settledSocketCount) * 0.618034f) % 1f) - 0.5f;
+            float entryX = rect.x + frac * 2f * usableHalfW;
+            Vector2 candidate = new Vector2(entryX, pitTopY);
+
+            float d = CarrierBlockShapeUtility.SampleHollowPitSdfAndNormal(candidate, _pitRect0, _pitRect1, _pitRectCount, radius, out Vector2 n);
+            if (d > -0.002f)
+            {
+                candidate -= n * (d + 0.003f);
+            }
+            return candidate;
+        }
+
+        public void JostlePitBalls(Vector2 impulse, bool wakeAll)
+        {
+            if (_pitSim == null || !IsHollowPitStyle) return;
+            for (int i = 0; i < _pitSim.Length; i++)
+            {
+                if (!_pitSim[i].active) continue;
+                if (!wakeAll && _pitSim[i].settled) continue;
+
+                ref PitBallSim sim = ref _pitSim[i];
+                float jitterX = ((i % 2 == 0) ? 1f : -1f) * 0.08f;
+                sim.vel += new Vector2(impulse.x + jitterX, impulse.y);
+                sim.settled = false;
+                sim.sleepTimer = 0f;
+                _pitAnyActive = true;
+            }
+        }
+
+        private void ApplyPitImpactAtLocal(Vector2 localPos, float radius, float downwardImpulse)
+        {
+            if (_pitSim == null || !IsHollowPitStyle) return;
+            float affectRadius = Mathf.Max(0.18f, radius * 2.4f);
+            float affectRadiusSq = affectRadius * affectRadius;
+            for (int i = 0; i < _pitSim.Length; i++)
+            {
+                if (!_pitSim[i].active) continue;
+                ref PitBallSim sim = ref _pitSim[i];
+                Vector2 diff = sim.pos - localPos;
+                float distSq = diff.sqrMagnitude;
+                if (distSq <= affectRadiusSq || sim.pos.y >= _pitRect0.y)
+                {
+                    float pushX = (Mathf.Abs(diff.x) < 0.01f) ? ((i % 2 == 0) ? 0.25f : -0.25f) : Mathf.Sign(diff.x) * 0.35f;
+                    sim.vel += new Vector2(pushX, downwardImpulse * 0.55f);
+                    sim.impactSquash = Mathf.Max(sim.impactSquash, 0.14f);
+                    sim.settled = false;
+                    sim.sleepTimer = 0f;
+                    _pitAnyActive = true;
+                }
+            }
         }
 
         private void StepHollowPitPhysics(float dt)
         {
             if (dt <= 0.0001f || _pitSim == null) return;
-            const float gravity = 16.5f;
-            const float bounceRestitution = 0.14f;
-            bool anyMoving = false;
 
+            const int subSteps = 4;
+            const float gravity = 19.0f;
+            const float wallRestitution = 0.34f;
+            const float ballRestitution = 0.30f;
+
+            float subDt = dt / subSteps;
+            float ballRadius = Mathf.Max(0.025f, _socketBallLocalDiameter * 0.5f);
+            float minDist = ballRadius * 2.0f;
+            float minDistSq = minDist * minDist;
+            Vector3 baseBallScale = Vector3.one * _socketBallLocalDiameter;
+
+            for (int step = 0; step < subSteps; step++)
+            {
+                for (int i = 0; i < _pitSim.Length; i++)
+                {
+                    if (!_pitSim[i].active || _pitSim[i].settled) continue;
+                    ref PitBallSim sim = ref _pitSim[i];
+                    sim.vel.y -= gravity * subDt;
+                    sim.vel *= 0.996f;
+                    sim.angularVel *= 0.985f;
+                    sim.pos += sim.vel * subDt;
+                    sim.angle += sim.angularVel * subDt;
+                }
+
+                // Ball-to-ball elastic & rolling collisions
+                for (int i = 0; i < _pitSim.Length; i++)
+                {
+                    if (!_pitSim[i].active) continue;
+                    for (int j = i + 1; j < _pitSim.Length; j++)
+                    {
+                        if (!_pitSim[j].active) continue;
+                        if (_pitSim[i].settled && _pitSim[j].settled) continue;
+
+                        ref PitBallSim a = ref _pitSim[i];
+                        ref PitBallSim b = ref _pitSim[j];
+
+                        Vector2 delta = b.pos - a.pos;
+                        float distSq = delta.sqrMagnitude;
+                        if (distSq >= minDistSq) continue;
+
+                        Vector2 normal;
+                        float dist;
+                        if (distSq < 1e-8f)
+                        {
+                            float dir = ((i + j) % 2 == 0) ? 0.12f : -0.12f;
+                            normal = new Vector2(dir, 1f).normalized;
+                            dist = 0.001f;
+                        }
+                        else
+                        {
+                            dist = Mathf.Sqrt(distSq);
+                            normal = delta / dist;
+                            // Break pure vertical stacking symmetry so balls roll naturally into side crevices
+                            if (Mathf.Abs(normal.x) < 0.015f && (a.vel.sqrMagnitude > 0.04f || b.vel.sqrMagnitude > 0.04f))
+                            {
+                                float side = ((i + j) % 2 == 0) ? 0.03f : -0.03f;
+                                normal = new Vector2(side, normal.y).normalized;
+                            }
+                        }
+
+                        float overlap = minDist - dist;
+                        Vector2 relVel = b.vel - a.vel;
+                        float vn = Vector2.Dot(relVel, normal);
+
+                        // Wake resting balls when struck briskly or pushed firmly
+                        if (a.settled && (-vn > 0.22f || overlap > 0.006f))
+                        {
+                            a.settled = false;
+                            a.sleepTimer = 0f;
+                        }
+                        if (b.settled && (-vn > 0.22f || overlap > 0.006f))
+                        {
+                            b.settled = false;
+                            b.sleepTimer = 0f;
+                        }
+
+                        if (!a.settled && !b.settled)
+                        {
+                            Vector2 corr = normal * (overlap * 0.5f);
+                            a.pos -= corr;
+                            b.pos += corr;
+                        }
+                        else if (!a.settled)
+                        {
+                            a.pos -= normal * (overlap * 0.92f);
+                        }
+                        else if (!b.settled)
+                        {
+                            b.pos += normal * (overlap * 0.92f);
+                        }
+
+                        if (vn < 0f)
+                        {
+                            float e = (-vn > 0.50f) ? ballRestitution : 0f;
+                            float jNormal = -(1f + e) * vn * 0.5f;
+                            Vector2 impulse = normal * jNormal;
+
+                            Vector2 tangent = new Vector2(-normal.y, normal.x);
+                            float vt = Vector2.Dot(relVel, tangent);
+                            Vector2 tImpulse = tangent * (-vt * 0.14f);
+
+                            if (!a.settled)
+                            {
+                                a.vel -= impulse + tImpulse;
+                                a.angularVel += vt / (ballRadius * 2.5f);
+                                if (-vn > 1.35f) a.impactSquash = Mathf.Max(a.impactSquash, Mathf.Min(0.18f, -vn * 0.055f));
+                            }
+                            if (!b.settled)
+                            {
+                                b.vel += impulse + tImpulse;
+                                b.angularVel -= vt / (ballRadius * 2.5f);
+                                if (-vn > 1.35f) b.impactSquash = Mathf.Max(b.impactSquash, Mathf.Min(0.18f, -vn * 0.055f));
+                            }
+                            if (-vn > 1.30f && Time.unscaledTime - _lastPitImpactVfxTime >= 0.055f && bodyPivot != null)
+                            {
+                                _lastPitImpactVfxTime = Time.unscaledTime;
+                                Vector2 hitLocal = 0.5f * (a.pos + b.pos);
+                                Vector3 hitWorld = bodyPivot.TransformPoint(new Vector3(hitLocal.x, hitLocal.y, -0.08f));
+                                float worldDiam = _socketBallLocalDiameter * bodyPivot.lossyScale.x;
+                                BlockClearCelebration.PlayCavityTapEffect(hitWorld, PuzzleColorPalette.GetPrimaryColor(colorType), worldDiam);
+                            }
+                        }
+                    }
+                }
+
+                // Pit floor, walls, ceiling & curved corner SDF collision
+                for (int i = 0; i < _pitSim.Length; i++)
+                {
+                    if (!_pitSim[i].active || _pitSim[i].settled) continue;
+                    ref PitBallSim sim = ref _pitSim[i];
+
+                    float d = CarrierBlockShapeUtility.SampleHollowPitSdfAndNormal(
+                        sim.pos, _pitRect0, _pitRect1, _pitRectCount, ballRadius, out Vector2 wallOutNormal);
+
+                    if (d > 0f)
+                    {
+                        sim.pos -= wallOutNormal * d;
+                        float vn = Vector2.Dot(sim.vel, wallOutNormal);
+                        if (vn > 0f)
+                        {
+                            float e = (vn > 0.48f) ? wallRestitution : 0f;
+                            sim.vel -= wallOutNormal * ((1f + e) * vn);
+
+                            Vector2 tangent = new Vector2(-wallOutNormal.y, wallOutNormal.x);
+                            float vt = Vector2.Dot(sim.vel, tangent);
+                            sim.angularVel = -vt / ballRadius;
+                            sim.vel -= tangent * (vt * 0.045f);
+
+                            if (vn > 1.25f)
+                            {
+                                sim.impactSquash = Mathf.Max(sim.impactSquash, Mathf.Min(0.22f, vn * 0.065f));
+                                if (Time.unscaledTime - _lastPitImpactVfxTime >= 0.055f && bodyPivot != null)
+                                {
+                                    _lastPitImpactVfxTime = Time.unscaledTime;
+                                    Vector2 hitLocal = sim.pos + wallOutNormal * (ballRadius * 0.8f);
+                                    Vector3 hitWorld = bodyPivot.TransformPoint(new Vector3(hitLocal.x, hitLocal.y, -0.08f));
+                                    float worldDiam = _socketBallLocalDiameter * bodyPivot.lossyScale.x;
+                                    BlockClearCelebration.PlayCavityTapEffect(hitWorld, PuzzleColorPalette.GetPrimaryColor(colorType), worldDiam);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            bool anyMoving = false;
+            Vector3 rollSpinAxis = new Vector3(0.22f, 0.35f, 0.91f).normalized;
+            Quaternion baseTilt = Quaternion.Euler(18f, -24f, 0f);
             for (int i = 0; i < _pitSim.Length; i++)
             {
-                if (!_pitSim[i].active || _pitSim[i].settled) continue;
-
+                if (!_pitSim[i].active) continue;
                 ref PitBallSim sim = ref _pitSim[i];
-                sim.vel.y -= gravity * dt;
-                sim.pos += sim.vel * dt;
-                sim.pos.x = Mathf.Lerp(sim.pos.x, sim.target.x, Mathf.Clamp01(dt * 18f));
 
-                if (sim.pos.y <= sim.target.y)
+                if (sim.impactSquash > 0.001f)
                 {
-                    sim.pos.y = sim.target.y;
-                    if (sim.vel.y < -0.45f)
+                    sim.impactSquash = Mathf.MoveTowards(sim.impactSquash, 0f, dt * 1.45f);
+                    anyMoving = true;
+                }
+
+                if (!sim.settled)
+                {
+                    if (sim.vel.sqrMagnitude < 0.014f && Mathf.Abs(sim.angularVel) < 0.95f)
                     {
-                        sim.vel.y = -sim.vel.y * bounceRestitution;
-                        anyMoving = true;
+                        sim.sleepTimer += dt;
+                        if (sim.sleepTimer >= 0.20f)
+                        {
+                            sim.vel = Vector2.zero;
+                            sim.angularVel = 0f;
+                            sim.settled = true;
+                        }
+                        else
+                        {
+                            anyMoving = true;
+                        }
                     }
                     else
                     {
-                        sim.pos = sim.target;
-                        sim.vel = Vector2.zero;
-                        sim.settled = true;
+                        sim.sleepTimer = 0f;
+                        anyMoving = true;
                     }
-                }
-                else
-                {
-                    anyMoving = true;
                 }
 
                 if (socketTransforms != null && i < socketTransforms.Length && socketTransforms[i] != null)
                 {
                     socketTransforms[i].localPosition = new Vector3(sim.pos.x, sim.pos.y, -0.055f);
+                }
+                if (socketBalls != null && i < socketBalls.Length && socketBalls[i] != null)
+                {
+                    Transform bTr = socketBalls[i].transform;
+                    bTr.localRotation = baseTilt * Quaternion.AngleAxis(sim.angle * Mathf.Rad2Deg, rollSpinAxis);
+                    float sq = sim.impactSquash;
+                    float fallStretch = sim.settled ? 0f : Mathf.Clamp((sim.vel.magnitude - 0.95f) * 0.042f, 0f, 0.13f);
+                    bTr.localScale = new Vector3(
+                        baseBallScale.x * (1f + sq - fallStretch * 0.55f),
+                        baseBallScale.y * (1f - sq * 0.68f + fallStretch),
+                        baseBallScale.z * (1f + sq * 0.35f - fallStretch * 0.25f));
                 }
             }
 
@@ -1577,6 +1985,16 @@ namespace PuzzleGlass
             _settledSocketCount++;
             if (IsHollowPitStyle && socketBalls != null && socketBalls.Length > 0)
             {
+                _hasPitSpawnHint = false;
+                Vector2 incomingLocal = Vector2.zero;
+                if (ball != null && bodyPivot != null)
+                {
+                    Vector3 loc = bodyPivot.InverseTransformPoint(ball.transform.position);
+                    incomingLocal = new Vector2(loc.x, loc.y);
+                    _pitNextSpawnHintX = loc.x;
+                    _hasPitSpawnHint = true;
+                }
+
                 int total = Mathf.Max(1, initialCount);
                 int targetActive = Mathf.Clamp(
                     Mathf.RoundToInt((_settledSocketCount / (float)total) * socketBalls.Length),
@@ -1592,11 +2010,20 @@ namespace PuzzleGlass
                         activatedAny = true;
                     }
                 }
-                if (!activatedAny && counterText != null && Application.isPlaying)
+                if (!activatedAny)
                 {
-                    counterText.transform.DOKill(true);
-                    counterText.transform.DOPunchScale(Vector3.one * 0.24f, 0.14f, 5, 0.5f);
+                    if (_hasPitSpawnHint)
+                    {
+                        ApplyPitImpactAtLocal(incomingLocal, Mathf.Max(0.05f, _socketBallLocalDiameter), -1.05f);
+                        _hasPitSpawnHint = false;
+                    }
+                    if (counterText != null && Application.isPlaying)
+                    {
+                        counterText.transform.DOKill(true);
+                        counterText.transform.DOPunchScale(Vector3.one * 0.24f, 0.14f, 5, 0.5f);
+                    }
                 }
+                _hasPitSpawnHint = false;
             }
             else
             {
@@ -1749,6 +2176,11 @@ namespace PuzzleGlass
                 if (activeCount <= 0)
                 {
                     _pitAnyActive = false;
+                }
+                else if (IsHollowPitStyle)
+                {
+                    // Removing upper balls lets the remaining pile collapse and settle naturally
+                    JostlePitBalls(new Vector2(0f, -0.18f), wakeAll: true);
                 }
             }
 
@@ -1919,25 +2351,66 @@ namespace PuzzleGlass
         {
             StopIdleAndBlink();
 
-            // 1. Brief beat for final ball drop + physics bounce before shimmer wave
-            yield return new WaitForSeconds(useCrateVisuals ? 0.16f : 0.05f);
-            yield return PlaySocketCompletionWaveRoutine();
-
-            // 2. Short anticipation swell in place ("kabarma"), then elastic implosion inward (~0.18s)
-            Vector3 startScale = transform.localScale;
-            if (bodyPivot != null)
+            // 1. Let the final poured ball(s) drop, bounce, and settle inside the pit
+            if (IsHollowPitStyle && _pitAnyActive)
             {
-                bodyPivot.DOKill(false);
-                yield return bodyPivot.DOScale(_originalBodyScale * 1.07f, 0.065f).SetEase(Ease.OutQuad).WaitForCompletion();
+                float settleElapsed = 0f;
+                while (_pitAnyActive && settleElapsed < 0.24f)
+                {
+                    settleElapsed += Time.deltaTime;
+                    yield return null;
+                }
+                if (settleElapsed < 0.08f)
+                {
+                    yield return new WaitForSeconds(0.08f - settleElapsed);
+                }
             }
             else
             {
-                yield return transform.DOScale(startScale * 1.07f, 0.065f).SetEase(Ease.OutQuad).WaitForCompletion();
+                yield return new WaitForSeconds(useCrateVisuals ? 0.12f : 0.05f);
             }
 
+            if (transparentLidTransform != null && transparentLidTransform.gameObject.activeSelf)
+            {
+                transparentLidTransform.gameObject.SetActive(false);
+            }
+
+            // 2. Smooth luminous white-gold charge + gentle cushion & buoyant tilted hop (inspired by reference)
+            DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, 1.95f, 0.24f)
+                .SetEase(Ease.InOutSine)
+                .SetTarget(this);
+
+            if (IsHollowPitStyle && ShowsCavityBalls)
+            {
+                JostlePitBalls(new Vector2(0f, 0.48f), wakeAll: true);
+            }
+            else
+            {
+                StartCoroutine(PlaySocketCompletionWaveRoutine());
+            }
+
+            if (bodyPivot != null)
+            {
+                bodyPivot.DOKill(false);
+                Sequence liftSeq = DOTween.Sequence();
+                // Smooth soft cushion down, then buoyant upward hop + graceful tilt while glowing bright
+                liftSeq.Append(bodyPivot.DOScale(new Vector3(_originalBodyScale.x * 1.07f, _originalBodyScale.y * 0.92f, _originalBodyScale.z), 0.075f).SetEase(Ease.InOutSine));
+                liftSeq.Join(bodyPivot.DOLocalMoveY(-0.016f, 0.075f).SetEase(Ease.InOutSine));
+                liftSeq.Append(bodyPivot.DOScale(_originalBodyScale * 1.18f, 0.20f).SetEase(Ease.OutCubic));
+                liftSeq.Join(bodyPivot.DOLocalMoveY(0.18f, 0.20f).SetEase(Ease.OutCubic));
+                liftSeq.Join(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -15f), 0.20f).SetEase(Ease.OutSine));
+                yield return liftSeq.WaitForCompletion();
+            }
+            else
+            {
+                Vector3 baseS = transform.localScale;
+                yield return transform.DOScale(baseS * 1.18f, 0.22f).SetEase(Ease.OutCubic).WaitForCompletion();
+            }
+
+            // 3. Crisp smooth balloon POP into fluffy white cloud puff + glossy balls & confetti shower
             PuzzleSoundManager.Instance?.PlayBoxComplete();
 
-            // Notify listeners & game manager right as the block pops
+            // Notify listeners & detach slot right as the luminous box pops in mid-hop
             if (PuzzleGlassGameManager.Instance != null)
             {
                 PuzzleGlassGameManager.Instance.OnCarrierBoxCompleted(this);
@@ -1949,18 +2422,41 @@ namespace PuzzleGlass
             }
             OnTargetReached?.Invoke(this);
 
-            Vector3 popCenter = (bodyPivot != null) ? bodyPivot.position : transform.position;
-            BlockClearCelebration.PlayImplosionPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), 0.92f);
+            if (_shadowRenderer != null) _shadowRenderer.enabled = false;
 
-            // Elastic inward implosion directly at current position (never drifts up over the glass bowl)
-            transform.DOKill(false);
-            Sequence implodeSeq = DOTween.Sequence();
+            // Brief balloon over-stretch right as the puff & confetti burst out
             if (bodyPivot != null)
             {
-                implodeSeq.Join(bodyPivot.DOScale(_originalBodyScale * 0.96f, 0.04f).SetEase(Ease.OutQuad));
+                yield return bodyPivot.DOScale(_originalBodyScale * 1.26f, 0.04f).SetEase(Ease.OutQuad).WaitForCompletion();
             }
-            implodeSeq.Join(transform.DOScale(Vector3.zero, 0.18f).SetEase(Ease.InBack, 1.15f));
-            yield return implodeSeq.WaitForCompletion();
+            else
+            {
+                yield return transform.DOScale(transform.localScale * 1.06f, 0.04f).SetEase(Ease.OutQuad).WaitForCompletion();
+            }
+
+            _pitAnyActive = false;
+            Vector3 popCenter = (bodyPivot != null) ? bodyPivot.position : transform.position;
+            BlockClearCelebration.PlayBalloonPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), colorType, 1.12f);
+
+            transform.DOKill(false);
+            yield return transform.DOScale(Vector3.zero, 0.06f).SetEase(Ease.InQuad).WaitForCompletion();
+
+            _mpbDragHighlight = 0f;
+            ApplyBoxPropertyBlock();
+            if (_shadowRenderer != null) _shadowRenderer.enabled = true;
+            if (transparentLidTransform != null)
+            {
+                transparentLidTransform.localPosition = _lidClosedLocalPos;
+                transparentLidTransform.localRotation = Quaternion.identity;
+                transparentLidTransform.localScale = Vector3.one;
+                transparentLidTransform.gameObject.SetActive(false);
+            }
+            if (bodyPivot != null)
+            {
+                bodyPivot.localPosition = Vector3.zero;
+                bodyPivot.localRotation = Quaternion.identity;
+                bodyPivot.localScale = _originalBodyScale;
+            }
 
             isCollectingInGrid = false;
             gameObject.SetActive(false);

@@ -13,7 +13,7 @@ namespace PuzzleGlass
     public static class OrderedPoolLayout
     {
         public const float RowFactor = 0.866f;
-        public const float MaxDiameter = 0.114f;
+        public const float MaxDiameter = GlassTrackLayout.FixedBallDiameter;
         public const float MinDiameter = 0.068f;
 
         public struct PoolBall
@@ -47,7 +47,7 @@ namespace PuzzleGlass
             laneWidth = 3;
             float best = -1f;
             float bestDiam = MinDiameter;
-            for (int lw = 3; lw <= 8; lw++)
+            for (int lw = 3; lw <= 10; lw++)
             {
                 int cols = lw * 3;
                 int laneRows = Mathf.CeilToInt(maxBallsInLane / (float)lw);
@@ -173,7 +173,7 @@ namespace PuzzleGlass
 
             Result best = default;
             bool found = false;
-            for (int lw = 3; lw <= 8 && !found; lw++)
+            for (int lw = 3; lw <= 10 && !found; lw++)
             {
                 float d = Mathf.Clamp(safeWidth / (lw * 3), MinDiameter, MaxDiameter);
                 var r = PlaceShaped(laneBalls, lw, d, contour, widthScale, heightScale, floorY, ceilY, wallMargin, allowOverflow: false);

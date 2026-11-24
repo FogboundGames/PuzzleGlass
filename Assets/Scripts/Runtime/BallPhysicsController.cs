@@ -45,6 +45,37 @@ namespace PuzzleGlass
 
         private MonsterCharacter _targetMonster;
         private Action<BallPhysicsController> _onEatenCallback;
+        private static float s_LastSuctionPulseTime = -10f;
+        private static float s_LastBallImpactVfxTime = -10f;
+        private static readonly AnimationCurve s_SharedTrailWidthCurve = new AnimationCurve(
+            new Keyframe(0f, 1f),
+            new Keyframe(0.55f, 0.42f),
+            new Keyframe(1f, 0f));
+        private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Gradient> s_CachedTrailGradients =
+            new System.Collections.Generic.Dictionary<PuzzleColor, Gradient>(12);
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticTrailCache()
+        {
+            s_CachedTrailGradients.Clear();
+            s_LastSuctionPulseTime = -10f;
+            s_LastBallImpactVfxTime = -10f;
+        }
+
+        private static Gradient GetCachedTrailGradient(PuzzleColor color)
+        {
+            if (s_CachedTrailGradients.TryGetValue(color, out Gradient cached) && cached != null)
+            {
+                return cached;
+            }
+            Color c = Color.Lerp(PuzzleColorPalette.GetPrimaryColor(color), Color.white, 0.45f);
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(c, 0f), new GradientColorKey(Color.Lerp(c, Color.white, 0.35f), 1f) },
+                new[] { new GradientAlphaKey(0.46f, 0f), new GradientAlphaKey(0.16f, 0.55f), new GradientAlphaKey(0f, 1f) });
+            s_CachedTrailGradients[color] = grad;
+            return grad;
+        }
         private Vector3 _originalScale = Vector3.one;
         private Vector3 _visualBaseScale = Vector3.one;
         private Tweener _flightTween;
@@ -171,10 +202,7 @@ namespace PuzzleGlass
             {
                 _flightTrail.sharedMaterial = BlockClearCelebration.SpriteMaterial;
             }
-            _flightTrail.widthCurve = new AnimationCurve(
-                new Keyframe(0f, 1f),
-                new Keyframe(0.55f, 0.42f),
-                new Keyframe(1f, 0f));
+            _flightTrail.widthCurve = s_SharedTrailWidthCurve;
             _flightTrail.emitting = false;
             // Uçmayan topta iz renderer'ı tamamen kapalı: camdaki 100+ topun boş izi her kare güncellenmesin
             _flightTrail.enabled = false;
@@ -203,12 +231,7 @@ namespace PuzzleGlass
             _flightTrail.widthMultiplier = headW;
             _flightTrail.time = (PuzzleGlassGameManager.Instance != null && PuzzleGlassGameManager.Instance.IsFeverActive) ? 0.10f : 0.135f;
 
-            Color c = Color.Lerp(PuzzleColorPalette.GetPrimaryColor(colorType), Color.white, 0.45f);
-            var grad = new Gradient();
-            grad.SetKeys(
-                new[] { new GradientColorKey(c, 0f), new GradientColorKey(Color.Lerp(c, Color.white, 0.35f), 1f) },
-                new[] { new GradientAlphaKey(0.46f, 0f), new GradientAlphaKey(0.16f, 0.55f), new GradientAlphaKey(0f, 1f) });
-            _flightTrail.colorGradient = grad;
+            _flightTrail.colorGradient = GetCachedTrailGradient(colorType);
             _flightTrail.Clear();
             _flightTrail.emitting = true;
         }
@@ -357,6 +380,13 @@ namespace PuzzleGlass
 
         private void FlushPropertyBlock(float squashAmount)
         {
+            if (meshRenderer == null) return;
+            // Clear MPB when idle/resting so URP SRP Batcher batches all balls into shared-material batches
+            if (Application.isPlaying && Mathf.Abs(squashAmount) <= 0.0001f && _wobbleAmount <= 0.0001f)
+            {
+                meshRenderer.SetPropertyBlock(null);
+                return;
+            }
             BallObjectPool.ApplyBallPropertyBlock(
                 meshRenderer,
                 _mpbBaseColor,
@@ -412,7 +442,7 @@ namespace PuzzleGlass
                 out _mpbHighlightColor,
                 out _mpbSmoothness);
             _wobblePhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
-            _wobbleAmount = 0.55f;
+            _wobbleAmount = 0f;
 
             float diameter = ballRadius * 2.0f;
             _originalScale = new Vector3(diameter, diameter, diameter);
@@ -504,9 +534,13 @@ namespace PuzzleGlass
         {
             if (rb != null)
             {
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-                rb.isKinematic = !TrackCrowdQueue.UseRigidbodyPhysics;
+                bool shouldBeKinematic = !TrackCrowdQueue.UseRigidbodyPhysics;
+                rb.isKinematic = shouldBeKinematic;
+                if (!shouldBeKinematic)
+                {
+                    rb.linearVelocity = Vector3.zero;
+                    rb.angularVelocity = Vector3.zero;
+                }
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
             }
             ResetTrackQueueState(true);
@@ -785,6 +819,7 @@ namespace PuzzleGlass
             }
 
             // Tactile pop-scale + parabolic jump arc directly into the gray circular socket (without shrinking to zero!)
+            SetFlightTrailActive(true);
             Sequence flightSeq = DOTween.Sequence();
             flightSeq.Join(transform.DOJump(socketPos, jumpPower: 0.32f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
             flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
@@ -793,6 +828,7 @@ namespace PuzzleGlass
 
             flightSeq.OnComplete(() =>
             {
+                SetFlightTrailActive(false);
                 if (_targetMonster != null)
                 {
                     _targetMonster.FeedBallIntoSocket(this, socketIndex);
@@ -872,6 +908,16 @@ namespace PuzzleGlass
                 dropDur *= 0.60f;
             }
 
+            SetFlightTrailActive(true);
+            if (Time.unscaledTime - s_LastSuctionPulseTime >= 0.065f)
+            {
+                s_LastSuctionPulseTime = Time.unscaledTime;
+                BlockClearCelebration.PlayTubeSuctionPulse(
+                    channelPts[0],
+                    PuzzleColorPalette.GetPrimaryColor(colorType),
+                    Mathf.Max(0.11f, ballRadius * 2.2f));
+            }
+
             Sequence flightSeq = DOTween.Sequence();
             flightSeq.Append(transform.DOPath(pathPts, channelDur, PathType.CatmullRom).SetEase(Ease.InQuad));
             flightSeq.Join(transform.DORotate(new Vector3(260f, 0f, 45f), channelDur, RotateMode.FastBeyond360));
@@ -884,6 +930,7 @@ namespace PuzzleGlass
 
             flightSeq.OnComplete(() =>
             {
+                SetFlightTrailActive(false);
                 if (_targetMonster != null)
                 {
                     _targetMonster.FeedBallIntoSocket(this, socketIndex);
@@ -1018,6 +1065,7 @@ namespace PuzzleGlass
 
             float relSpeed = collision.relativeVelocity.magnitude;
             Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
+            Vector3 contactPt = (collision.contactCount > 0) ? collision.GetContact(0).point : transform.position;
 
             // Arrival squash & stretch on first settling impact inside the glass container
             if (!_hasPlayedArrivalSquash && relSpeed >= 0.65f)
@@ -1027,6 +1075,11 @@ namespace PuzzleGlass
                 float arrivalAmp = Mathf.Clamp(0.068f + relSpeed * 0.018f, 0.078f, 0.155f);
                 PlayVisualSquashStretch(arrivalAmp, normal, isArrival: true);
                 PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.50f) / 3.8f));
+                if (relSpeed >= 0.95f && Time.unscaledTime - s_LastBallImpactVfxTime >= 0.06f)
+                {
+                    s_LastBallImpactVfxTime = Time.unscaledTime;
+                    BlockClearCelebration.PlayCavityTapEffect(contactPt, PuzzleColorPalette.GetPrimaryColor(colorType), ballRadius * 2f);
+                }
                 return;
             }
 
@@ -1035,6 +1088,12 @@ namespace PuzzleGlass
 
             float amp = Mathf.Clamp(0.036f + (relSpeed - 0.52f) * 0.018f, 0.036f, 0.105f);
             PlayVisualSquashStretch(amp, normal, isArrival: false);
+
+            if (relSpeed >= 0.85f && Time.unscaledTime - s_LastBallImpactVfxTime >= 0.065f)
+            {
+                s_LastBallImpactVfxTime = Time.unscaledTime;
+                BlockClearCelebration.PlayCavityTapEffect(contactPt, PuzzleColorPalette.GetPrimaryColor(colorType), ballRadius * 2f);
+            }
 
             PuzzleSoundManager.Instance?.PlayBallTap(Mathf.Clamp01((relSpeed - 0.45f) / 3.9f));
         }

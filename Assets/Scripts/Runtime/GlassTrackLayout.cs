@@ -49,6 +49,13 @@ namespace PuzzleGlass
         // Duvar collider'ları bu ızgaradan çıkarılır; gerçek fizikte toplar duvara değdiği için daha ince ızgara
         private const int FieldRes = 112;
 
+        // Tüm levellerde şekilden bağımsız sabit cam dış boyutu ve sabit top çapı
+        public const float FixedOuterWidth = 3.44f;
+        public const float FixedOuterHeight = 2.45f;
+        public const float FixedBallDiameter = 0.102f;
+        public const int FixedTrackLanes = 5;
+        public const float FixedWallThickness = 0.082f;
+
         public struct TrackSegment
         {
             public Vector2 a;
@@ -474,10 +481,9 @@ namespace PuzzleGlass
                 : totalCount;
 
             bool isCustom = preset == GlassTrackPreset.Custom && customBranches != null && customBranches.Count > 0;
-            int presetLanes = -1;
             List<GlassTrackBranch> sourceBranches = isCustom
                 ? CloneBranches(customBranches)
-                : ChoosePresetForCount(preset, targetCount, lanesAcrossSetting, autoFitToBalls, out presetLanes);
+                : BuildPresetBranches(preset, 0.5f);
 
             if (sourceBranches.Count == 0)
             {
@@ -486,44 +492,22 @@ namespace PuzzleGlass
 
             bool addEntryRoad = useHidden && !isCustom && sourceBranches.Count > 0 && IsClosedPolyline(sourceBranches[0].points);
 
-            // Halkalı pistlerde yol, ortadaki boşluktan dar kalmalı: şerit sayısı top sayısına göre 2-4
-            bool isRing = false;
-            for (int i = 0; i < sourceBranches.Count; i++)
-                if (sourceBranches[i] != null && !sourceBranches[i].isBridge && IsClosedPolyline(sourceBranches[i].points)) { isRing = true; break; }
             int lanes = lanesAcrossSetting > 0
                 ? Mathf.Clamp(lanesAcrossSetting, 2, 6)
-                : presetLanes > 0 ? presetLanes
-                : (isRing
-                    ? (targetCount <= 28 ? 3 : (targetCount <= 84 ? 4 : 5))
-                    : ((preset == GlassTrackPreset.ArchLoop || preset == GlassTrackPreset.HeartLoop) ? 4 : (targetCount <= 20 ? 3 : (targetCount <= 72 ? 4 : 5))));
-            // Kanal yarı genişliğinin ölçeğe oranı üst sınırı (halkada ada boşluğu net görünsün)
-            float maxHalfWidthRatio = isRing ? RingHalfWidthRatio(preset) : 0.375f;
+                : FixedTrackLanes;
 
-            float chosenScale = Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.08f, 0.65f, 1.40f);
-            float chosenDiam = 0.102f;
-            float armTrim = 1.0f;
-
-            if (autoFitToBalls && targetCount > 0)
-            {
-                ChooseBestFitParameters(
-                    preset, sourceBranches, targetCount, lanes, maxHalfWidthRatio,
-                    out chosenScale, out chosenDiam, out armTrim);
-            }
-            else
-            {
-                float maxDiamForHole = (Mathf.Min(0.36f, maxHalfWidthRatio) * chosenScale) / Mathf.Max(1f, lanes * 0.495f);
-                chosenDiam = Mathf.Clamp(maxDiamForHole * 0.60f, 0.068f, 0.114f);
-            }
-
+            float chosenDiam = FixedBallDiameter;
             float innerHalfW = lanes * chosenDiam * 0.495f + 0.012f;
-            float clampedWall = Mathf.Clamp(wallThickness > 0.01f ? wallThickness : 0.092f, 0.045f, 0.14f);
+            float clampedWall = Mathf.Clamp(wallThickness > 0.01f ? wallThickness : FixedWallThickness, 0.045f, 0.14f);
 
             // Gizli kuyruk: halkanın en üst noktasından yukarı, ekranın üst kenarına kadar çıkan giriş yolu.
             // Bekleyen toplar bu yolda sıra halinde durur, ekranın dışından gelir ve halkada yer açıldıkça
             // aşağı akıp banda katılır. (Pist ölçeği ve top boyu hesabına katılmaz.)
             if (addEntryRoad) sourceBranches.Add(BuildEntryRoad(sourceBranches[0].points));
 
-            List<GlassTrackBranch> fittedBranches = TransformBranches(sourceBranches, chosenScale, armTrim);
+            List<GlassTrackBranch> fittedBranches = isCustom
+                ? TransformBranches(sourceBranches, Mathf.Clamp(manualScale > 0.05f ? manualScale : 1.08f, 0.65f, 1.40f), 1.0f)
+                : FitBranchesToFixedOuterSize(sourceBranches, innerHalfW + clampedWall, addEntryRoad);
             if (addEntryRoad && !float.IsNaN(entryRoadTopLocalY))
             {
                 var road = fittedBranches[fittedBranches.Count - 1].points;
@@ -534,20 +518,9 @@ namespace PuzzleGlass
                 road.Add(new Vector2(j.x, Mathf.Lerp(j.y, topY, 0.5f)));
                 road.Add(new Vector2(j.x, topY));
             }
-            compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes);
+            compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes, normalizeToFixedOuterSize: !isCustom);
 
             List<TrackSlot> allSlots = GeneratePackedTrackSlots(compiled);
-            if (autoFitToBalls)
-            {
-                for (int pass = 0; pass < 2 && targetCount > allSlots.Count && allSlots.Count > 0; pass++)
-                {
-                    float shrink = Mathf.Sqrt(allSlots.Count / (float)(targetCount + 5));
-                    chosenDiam = Mathf.Clamp(chosenDiam * Mathf.Min(shrink, 0.94f), 0.068f, 0.125f);
-                    innerHalfW = lanes * chosenDiam * 0.495f + 0.012f;
-                    compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes);
-                    allSlots = GeneratePackedTrackSlots(compiled);
-                }
-            }
 
             // Elle dizimde gereken slot sayısı (ilk çağrıda belirlenir; tekrar denemelerde büyüyen pist hedefiyle karışmaz).
             // Sabit kapasiteye küçük pay: topları sürükleyip yeniden dizmek için birkaç boş slot kalsın.
@@ -559,13 +532,13 @@ namespace PuzzleGlass
             {
                 if (compiled.closedLoopBranch >= 0)
                 {
-                    // Halka: önce tam top aralığıyla diz; yer yetmezse pisti değiştirmeden (otomatik dizilimle aynı pist
-                    // kalsın) şerit boyunca adımı sıkılaştır (en fazla %18 değme). Pist ancak bu da yetmezse büyütülür.
+                    // Halka: önce tam top aralığıyla diz; yer yetmezse cam ve top boyutunu bozmadan
+                    // şerit boyunca adımı sıkılaştır.
                     float stepFactor = 1.01f;
                     var ms = BuildManualTrackSlots(GenerateManualRingSlots(compiled, allSlots, stepFactor), chosenDiam, lanes);
-                    for (int it = 0; it < 3 && need > 0 && ms.Count < need && stepFactor > 0.821f; it++)
+                    for (int it = 0; it < 4 && need > 0 && ms.Count < need && stepFactor > 0.801f; it++)
                     {
-                        stepFactor = Mathf.Clamp(stepFactor * ms.Count / need * 0.99f, 0.82f, stepFactor - 0.01f);
+                        stepFactor = Mathf.Clamp(stepFactor * ms.Count / need * 0.99f, 0.80f, stepFactor - 0.01f);
                         ms = BuildManualTrackSlots(GenerateManualRingSlots(compiled, allSlots, stepFactor), chosenDiam, lanes);
                     }
                     compiled.manualSlots = ms;
@@ -573,20 +546,6 @@ namespace PuzzleGlass
                 else
                 {
                     compiled.manualSlots = BuildManualTrackSlots(allSlots, chosenDiam, lanes);
-                }
-            }
-
-            // Elle dizim: yine de yer kalmadıysa pisti biraz büyütüp tekrar dene
-            if (useManualLayout && compiled != null && manualRetry < 8)
-            {
-                if (compiled.manualSlots.Count < need)
-                {
-                    // Küçük adımlarla büyüt: oto-sığdırma topu gereğinden fazla küçültmesin
-                    int grown = targetCount + Mathf.Max(2, Mathf.CeilToInt((need - compiled.manualSlots.Count) * 0.6f));
-                    BuildForLevel(preset, customBranches, bottomToTopGroups, manualBalls, true, lanesAcrossSetting,
-                        autoFitToBalls, manualScale, wallThickness, hiddenRatio, entryRoadTopLocalY,
-                        out compiled, out layout, grown, manualRetry + 1, need);
-                    return;
                 }
             }
 
@@ -1147,13 +1106,59 @@ namespace PuzzleGlass
             return outPts;
         }
 
+        private static List<GlassTrackBranch> FitBranchesToFixedOuterSize(List<GlassTrackBranch> src, float padOut, bool hasTrailingEntryRoad)
+        {
+            var res = new List<GlassTrackBranch>(src.Count);
+            if (src.Count == 0) return res;
+
+            int bodyEnd = hasTrailingEntryRoad && src.Count > 1 ? src.Count - 1 : src.Count;
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minY = float.MaxValue, maxY = float.MinValue;
+            for (int b = 0; b < bodyEnd; b++)
+            {
+                var pts = src[b]?.points;
+                if (pts == null) continue;
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    minX = Mathf.Min(minX, pts[i].x);
+                    maxX = Mathf.Max(maxX, pts[i].x);
+                    minY = Mathf.Min(minY, pts[i].y);
+                    maxY = Mathf.Max(maxY, pts[i].y);
+                }
+            }
+            if (minX > maxX) { minX = -1f; maxX = 1f; minY = -0.56f; maxY = 0.8f; }
+
+            float targetCenterW = Mathf.Max(0.4f, FixedOuterWidth - 2f * padOut);
+            float targetCenterH = Mathf.Max(0.4f, FixedOuterHeight - 2f * padOut);
+            float sx = targetCenterW / Mathf.Max(0.01f, maxX - minX);
+            float sy = targetCenterH / Mathf.Max(0.01f, maxY - minY);
+            float cx = (minX + maxX) * 0.5f;
+            const float targetMinY = -0.56f;
+
+            for (int b = 0; b < src.Count; b++)
+            {
+                var br = src[b];
+                if (br == null || br.points == null || br.points.Count < 2) continue;
+                var nb = new GlassTrackBranch(br.name, br.isBridge);
+                for (int i = 0; i < br.points.Count; i++)
+                {
+                    float x = (br.points[i].x - cx) * sx;
+                    float y = targetMinY + (br.points[i].y - minY) * sy;
+                    nb.points.Add(new Vector2(x, y));
+                }
+                res.Add(nb);
+            }
+            return res;
+        }
+
         public static CompiledTrack CompileTrack(
             GlassTrackPreset preset,
             List<GlassTrackBranch> branches,
             float innerHalfWidth,
             float wallThickness,
             float ballDiameter,
-            int lanesAcross)
+            int lanesAcross,
+            bool normalizeToFixedOuterSize = false)
         {
             var track = new CompiledTrack
             {
@@ -1215,6 +1220,54 @@ namespace PuzzleGlass
             if (minX > maxX)
             {
                 minX = -1f; maxX = 1f; minY = -0.56f; maxY = 0.8f;
+            }
+
+            if (normalizeToFixedOuterSize && track.polylines.Count > 0)
+            {
+                float bx0 = float.MaxValue, bx1 = float.MinValue, by0 = float.MaxValue, by1 = float.MinValue;
+                for (int b = 0; b < track.polylines.Count; b++)
+                {
+                    bool isOpenArm = track.closedLoopBranch >= 0 && b != track.closedLoopBranch && !track.polylineIsBridge[b];
+                    if (isOpenArm) continue;
+                    var poly = track.polylines[b];
+                    for (int i = 0; i < poly.Count; i++)
+                    {
+                        bx0 = Mathf.Min(bx0, poly[i].x); bx1 = Mathf.Max(bx1, poly[i].x);
+                        by0 = Mathf.Min(by0, poly[i].y); by1 = Mathf.Max(by1, poly[i].y);
+                    }
+                }
+                if (bx0 <= bx1 && by0 <= by1)
+                {
+                    float padOutFixed = track.innerHalfWidth + track.wallThickness;
+                    float targetCenterW = Mathf.Max(0.4f, FixedOuterWidth - 2f * padOutFixed);
+                    float targetCenterH = Mathf.Max(0.4f, FixedOuterHeight - 2f * padOutFixed);
+                    float sx = targetCenterW / Mathf.Max(0.01f, bx1 - bx0);
+                    float sy = targetCenterH / Mathf.Max(0.01f, by1 - by0);
+                    float cx = (bx0 + bx1) * 0.5f;
+                    const float targetMinY = -0.56f;
+
+                    minX = float.MaxValue; maxX = float.MinValue;
+                    minY = float.MaxValue; maxY = float.MinValue;
+                    for (int b = 0; b < track.polylines.Count; b++)
+                    {
+                        var poly = track.polylines[b];
+                        for (int i = 0; i < poly.Count; i++)
+                        {
+                            Vector2 p = new Vector2((poly[i].x - cx) * sx, targetMinY + (poly[i].y - by0) * sy);
+                            poly[i] = p;
+                            minX = Mathf.Min(minX, p.x); maxX = Mathf.Max(maxX, p.x);
+                            minY = Mathf.Min(minY, p.y); maxY = Mathf.Max(maxY, p.y);
+                        }
+                    }
+                    for (int b = 0; b < track.polylines.Count; b++)
+                    {
+                        if (!track.polylineIsBridge[b] && track.polylines[b].Count > 0)
+                        {
+                            track.exitPoint = track.polylines[b][0];
+                            break;
+                        }
+                    }
+                }
             }
 
             // Halka varsa: halka üzerindeki her noktanın çıkışa bant yönünde (saat yönü) kalan yolu

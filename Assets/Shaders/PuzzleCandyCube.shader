@@ -186,6 +186,14 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float fillTerm = saturate(dot(N, L_fill)) * 0.12;
                 col = lerp(col, baseAlbedo * 1.05, fillTerm);
 
+                // Subtle object-space marble swirl & pearl spot on spheres so 3D rolling motion reads crisply
+                float isSphere = 1.0 - smoothstep(0.01, 0.08, bevelHigh);
+                float swirlCoord = dot(nOS, float3(0.68, 0.56, 0.47)) + 0.18 * sin(nOS.y * 5.2 + nOS.x * 3.1);
+                float swirlBand = exp(-pow(swirlCoord / 0.23, 2.0));
+                float pearlDot = smoothstep(0.84, 0.95, abs(dot(nOS, normalize(float3(-0.38, 0.78, 0.49)))));
+                float marblePattern = saturate(swirlBand * 0.17 + pearlDot * 0.21) * isSphere * (0.38 + 0.62 * wrapDiff);
+                col = lerp(col, lerp(highTone, float3(1.0, 0.99, 0.97), 0.38), marblePattern);
+
                 // 3. Soft Tactile Bevel Edge Catchlight (0 for spheres via _BevelHighlight = 0)
                 float maxAxis = max(abs(nOS.x), max(abs(nOS.y), abs(nOS.z)));
                 float bevelMask = saturate((0.975 - maxAxis) * 2.4) * 0.55;

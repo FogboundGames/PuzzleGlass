@@ -23,7 +23,7 @@ Shader "PuzzleGlass/CarrierBox"
         _LipOffset ("3D Lower Lip Offset", Float) = 0.088
         _CrateMode ("Collector Crate Mode", Float) = 1.0
         _StickerOutlineColor ("Sticker White Border Color", Color) = (0.985, 0.99, 1.0, 1.0)
-        _ExitHighlight ("Exit-Ready Rim Highlight", Float) = 0.0
+        _ExitHighlight ("Exit-Ready Rim Highlight", Float) = 1.0
         _DragHighlight ("Active Drag / Focus Highlight", Float) = 0.0
         _IceAmount ("Ice Freeze Overlay", Float) = 0.0
         _LockAmount ("Key-Locked Lid Overlay", Float) = 0.0
@@ -350,6 +350,15 @@ Shader "PuzzleGlass/CarrierBox"
                         col = lerp(col, iceCol, caseMask * iceAmt * 0.85);
                     }
 
+                    // Oynanamaz (2. sıra ve arkası / yolu kapalı) kutuları hafifçe grileştir (renk belli kalsın)
+                    float unplayableCrate = (1.0 - saturate(exitHighlight)) * (1.0 - saturate(iceAmount));
+                    if (unplayableCrate > 0.001)
+                    {
+                        float lumC = dot(col, float3(0.299, 0.587, 0.114));
+                        float3 grayC = lerp(float3(lumC, lumC, lumC) * 0.82 + float3(0.05, 0.05, 0.07), col, 0.58);
+                        col = lerp(col, grayC, unplayableCrate);
+                    }
+
                     return half4(col * IN.color.rgb, totalAlpha * IN.color.a);
                 }
 
@@ -588,6 +597,23 @@ Shader "PuzzleGlass/CarrierBox"
                     iceCol = lerp(iceCol, iceInner, plateMask);
 
                     col = lerp(col, iceCol, iceAmt);
+                }
+
+                // Oynanamaz (2. sıra ve arkası / yolu kapalı) kutuları hafifçe grileştir (renk belli kalsın)
+                float unplayable = (1.0 - saturate(exitHighlight)) * (1.0 - saturate(iceAmount));
+                if (unplayable > 0.001)
+                {
+                    float lum = dot(col, float3(0.299, 0.587, 0.114));
+                    float3 grayCol = lerp(float3(lum, lum, lum) * 0.82 + float3(0.05, 0.05, 0.07), col, 0.58);
+                    col = lerp(col, grayCol, unplayable);
+                }
+
+                // Tamamlanma sarji sirasinda (_DragHighlight > 1.0) kutuyu yumusak beyaz-altin isiltiyla parlat
+                float completeFlash = saturate((dragHighlight - 1.0) * 0.88);
+                if (completeFlash > 0.001)
+                {
+                    float3 warmFlash = lerp(highlightColor, float3(1.0, 0.99, 0.94), 0.74);
+                    col = lerp(col, warmFlash * 1.16, completeFlash);
                 }
 
                 return half4(col * IN.color.rgb, totalAlpha * IN.color.a);

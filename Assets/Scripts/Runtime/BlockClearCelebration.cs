@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
 
@@ -22,8 +23,66 @@ namespace PuzzleGlass
 
         private static Sprite s_SoftDot;
         private static Sprite s_CrispRing;
+        private static Sprite s_ConfettiStrip;
         private static Material s_SpriteMat;
         private static ParticleSystem s_Burst;
+        private static Mesh s_ConfettiSphereMesh;
+        private static Material s_ConfettiBallMat;
+        private static BalloonConfettiRunner s_ConfettiRunner;
+
+        private static readonly PuzzleColor[] s_PartyConfettiColors =
+        {
+            PuzzleColor.Yellow,
+            PuzzleColor.Pink,
+            PuzzleColor.Cyan,
+            PuzzleColor.Green,
+            PuzzleColor.Purple,
+            PuzzleColor.Orange,
+            PuzzleColor.White
+        };
+
+        /// <summary>
+        /// Smooth balloon-pop celebration: crisp expanding shockwave + glow flash + glossy 3D ball-confetti fountain.
+        /// </summary>
+        public static void PlayBalloonPop(Vector3 worldPos, Color boxColor, PuzzleColor puzzleColor, float size = 1f)
+        {
+            if (!Application.isPlaying) return;
+            EnsureResources();
+            EnsureConfettiRunner();
+
+            Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.58f);
+            PlayFlash(pos, Color.Lerp(boxColor, Color.white, 0.55f), size * 1.18f);
+            PlayRing(pos, boxColor, size, duration: 0.34f, endScale: 2.35f);
+            PlayRing(pos, Color.white, size * 0.72f, duration: 0.24f, endScale: 1.65f);
+
+            if (s_ConfettiRunner != null)
+            {
+                // Soft fluffy 4-lobe white cloud puff around the popped box
+                if (s_SoftDot != null)
+                {
+                    Color puffCol = Color.Lerp(Color.white, boxColor, 0.14f);
+                    for (int p = 0; p < 4; p++)
+                    {
+                        float ang = p * (Mathf.PI * 0.5f) + 0.45f;
+                        Vector3 puffPos = pos + new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), -0.02f) * (0.13f * size);
+                        s_ConfettiRunner.SpawnSpriteFx(
+                            s_SoftDot,
+                            puffPos,
+                            puffCol,
+                            startAlpha: 0.72f,
+                            startScale: 0.22f * size,
+                            endScale: Random.Range(0.76f, 0.96f) * size,
+                            duration: Random.Range(0.24f, 0.32f),
+                            sortingOrder: 501);
+                    }
+                }
+
+                s_ConfettiRunner.SpawnBurst(pos, puzzleColor, size, count: 12);
+                s_ConfettiRunner.SpawnRibbonBurst(pos, puzzleColor, size, count: 14);
+            }
+
+            Vibrate(26);
+        }
 
         public static void Play(Vector3 worldPos, Color color, float size = 1f)
         {
@@ -63,6 +122,42 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Compact crisp glass-neck suction pulse when a ball enters an exit channel.
+        /// </summary>
+        public static void PlayTubeSuctionPulse(Vector3 worldPos, Color color, float size = 0.22f)
+        {
+            if (!Application.isPlaying) return;
+            EnsureResources();
+            PlaySocketSeatRing(worldPos, Color.Lerp(color, Color.white, 0.42f), Mathf.Max(0.08f, size), alpha: 0.62f);
+        }
+
+        /// <summary>
+        /// Micro tactile spark + faint contact ripple when a ball collides inside a carrier box cavity.
+        /// </summary>
+        public static void PlayCavityTapEffect(Vector3 worldPos, Color color, float ballWorldDiameter)
+        {
+            if (!Application.isPlaying) return;
+            EnsureResources();
+            Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.12f);
+            float radius = Mathf.Max(0.055f, ballWorldDiameter * 0.62f);
+            PlaySocketSeatRing(pos, Color.Lerp(color, Color.white, 0.35f), radius, alpha: 0.52f);
+
+            if (s_Burst == null) s_Burst = CreateBurstSystem();
+            s_Burst.transform.position = pos;
+            var emit = new ParticleSystem.EmitParams { applyShapeToPosition = true };
+            for (int i = 0; i < 3; i++)
+            {
+                emit.startColor = i == 0 ? Color.white : Color.Lerp(color, Color.white, 0.45f);
+                emit.startSize = Mathf.Max(0.024f, ballWorldDiameter * Random.Range(0.28f, 0.44f));
+                float ang = Random.Range(0.15f, Mathf.PI - 0.15f);
+                float spd = Random.Range(0.45f, 1.15f);
+                emit.velocity = new Vector3(Mathf.Cos(ang) * spd, Mathf.Sin(ang) * spd, 0f);
+                emit.startLifetime = Random.Range(0.14f, 0.24f);
+                s_Burst.Emit(emit, 1);
+            }
+        }
+
+        /// <summary>
         /// Subtle thin colored contact ring played right around a gray socket when a ball snaps in.
         /// </summary>
         public static void PlaySocketSeatRing(Vector3 worldPos, Color color, float radius = 0.24f, float alpha = 0.82f)
@@ -70,68 +165,31 @@ namespace PuzzleGlass
             if (!Application.isPlaying) return;
             EnsureResources();
             if (s_CrispRing == null) return;
+            EnsureConfettiRunner();
 
-            var go = new GameObject("SocketSeatRing");
-            go.transform.position = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.14f);
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = s_CrispRing;
-            sr.sortingOrder = 492;
-
+            Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.14f);
             Color c = Color.Lerp(color, Color.white, 0.55f);
-            c.a = Mathf.Clamp01(alpha);
-            sr.color = c;
-
             float startScale = Mathf.Max(0.10f, radius * 1.15f);
             float endScale = Mathf.Max(0.22f, radius * 2.55f);
-            go.transform.localScale = Vector3.one * startScale;
-
-            Sequence seq = DOTween.Sequence();
-            seq.Join(go.transform.DOScale(endScale, 0.17f).SetEase(Ease.OutCubic));
-            seq.Join(sr.DOFade(0f, 0.17f).SetEase(Ease.InQuad));
-            seq.OnComplete(() => { if (go != null) Object.Destroy(go); });
-            seq.SetLink(go);
+            s_ConfettiRunner.SpawnSpriteFx(s_CrispRing, pos, c, Mathf.Clamp01(alpha), startScale, endScale, 0.17f, sortingOrder: 492);
         }
 
         // ---------- Parlama ----------
 
         private static void PlayFlash(Vector3 pos, Color color, float size)
         {
-            var go = new GameObject("BlockClearFlash");
-            go.transform.position = pos;
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = s_SoftDot;
-            sr.sortingOrder = 500;
+            if (s_SoftDot == null) return;
+            EnsureConfettiRunner();
             Color c = Color.Lerp(color, Color.white, 0.55f);
-            c.a = 0.95f;
-            sr.color = c;
-
-            float start = 0.35f * size, end = 1.9f * size;
-            go.transform.localScale = Vector3.one * start;
-            Sequence seq = DOTween.Sequence();
-            seq.Join(go.transform.DOScale(end, 0.32f).SetEase(Ease.OutCubic));
-            seq.Join(sr.DOFade(0f, 0.32f).SetEase(Ease.InQuad));
-            seq.OnComplete(() => { if (go != null) Object.Destroy(go); });
-            seq.SetLink(go);
+            s_ConfettiRunner.SpawnSpriteFx(s_SoftDot, pos, c, 0.95f, 0.35f * size, 1.9f * size, 0.32f, sortingOrder: 500);
         }
 
         private static void PlayRing(Vector3 pos, Color color, float size, float duration, float endScale)
         {
             if (s_CrispRing == null) return;
-            var go = new GameObject("BlockSealRing");
-            go.transform.position = pos;
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = s_CrispRing;
-            sr.sortingOrder = 502;
+            EnsureConfettiRunner();
             Color c = Color.Lerp(color, Color.white, 0.68f);
-            c.a = 0.92f;
-            sr.color = c;
-
-            go.transform.localScale = Vector3.one * (0.42f * size);
-            Sequence seq = DOTween.Sequence();
-            seq.Join(go.transform.DOScale(endScale * size, duration).SetEase(Ease.OutCubic));
-            seq.Join(sr.DOFade(0f, duration).SetEase(Ease.InQuad));
-            seq.OnComplete(() => { if (go != null) Object.Destroy(go); });
-            seq.SetLink(go);
+            s_ConfettiRunner.SpawnSpriteFx(s_CrispRing, pos, c, 0.92f, 0.42f * size, endScale * size, duration, sortingOrder: 502);
         }
 
         // ---------- Parçacıklar ----------
@@ -246,6 +304,28 @@ namespace PuzzleGlass
                 tex.Apply(false, true);
                 s_CrispRing = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), n);
             }
+            if (s_ConfettiStrip == null)
+            {
+                const int w = 24;
+                const int h = 10;
+                var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+                var px = new Color32[w * h];
+                for (int y = 0; y < h; y++)
+                {
+                    float ny = (y + 0.5f) / h * 2f - 1f;
+                    for (int x = 0; x < w; x++)
+                    {
+                        float nx = (x + 0.5f) / w * 2f - 1f;
+                        float edge = Mathf.Max(Mathf.Abs(nx) - 0.55f, 0f) / 0.45f;
+                        float dist = Mathf.Sqrt(edge * edge + ny * ny);
+                        float a = Mathf.Clamp01((1f - dist) * 4.5f);
+                        px[y * w + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                    }
+                }
+                tex.SetPixels32(px);
+                tex.Apply(false, true);
+                s_ConfettiStrip = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 24f);
+            }
             if (s_SpriteMat == null)
             {
                 // Sprite'ın varsayılan malzemesi (Sprites-Default / URP 2D sprite) her build'de bulunur
@@ -255,6 +335,393 @@ namespace PuzzleGlass
                     Object.Destroy(tmp);
                 else
                     Object.DestroyImmediate(tmp);
+            }
+        }
+
+        // ---------- Top Konfeti Havuzu ----------
+
+        private static void EnsureConfettiRunner()
+        {
+            if (s_ConfettiRunner != null) return;
+            var go = new GameObject("BalloonConfettiPool");
+            Object.DontDestroyOnLoad(go);
+            s_ConfettiRunner = go.AddComponent<BalloonConfettiRunner>();
+
+            if (s_ConfettiSphereMesh == null)
+            {
+                s_ConfettiSphereMesh = BallObjectPool.Instance != null ? BallObjectPool.Instance.SharedSphereMesh : null;
+                if (s_ConfettiSphereMesh == null)
+                {
+                    var temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    var mf = temp.GetComponent<MeshFilter>();
+                    if (mf != null) s_ConfettiSphereMesh = mf.sharedMesh;
+                    Object.Destroy(temp);
+                }
+            }
+
+            if (s_ConfettiBallMat == null)
+            {
+                if (BallObjectPool.Instance != null && BallObjectPool.Instance.SharedInstancedBallMaterial != null)
+                {
+                    s_ConfettiBallMat = BallObjectPool.Instance.SharedInstancedBallMaterial;
+                }
+                else
+                {
+                    Shader ballShader = Shader.Find("PuzzleGlass/CandyCubeLit")
+                        ?? Shader.Find("Universal Render Pipeline/Lit")
+                        ?? Shader.Find("Standard");
+                    s_ConfettiBallMat = new Material(ballShader)
+                    {
+                        name = "Mat_BalloonConfettiBall",
+                        enableInstancing = true,
+                        renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15
+                    };
+                }
+            }
+        }
+
+        private class BalloonConfettiRunner : MonoBehaviour
+        {
+            private struct ConfettiBall
+            {
+                public GameObject go;
+                public Transform tr;
+                public MeshRenderer mr;
+                public Vector3 vel;
+                public Vector3 spinAxis;
+                public float spinSpeed;
+                public float baseScale;
+                public float age;
+                public float lifetime;
+                public float drag;
+                public float gravity;
+                public bool active;
+            }
+
+            private struct SpriteFxItem
+            {
+                public GameObject go;
+                public Transform tr;
+                public SpriteRenderer sr;
+                public Color baseColor;
+                public float startAlpha;
+                public float startScale;
+                public float endScale;
+                public float age;
+                public float duration;
+                public bool active;
+            }
+
+            private struct RibbonItem
+            {
+                public GameObject go;
+                public Transform tr;
+                public SpriteRenderer sr;
+                public Color baseColor;
+                public Vector3 vel;
+                public float zSpinVel;
+                public float xFlutterSpeed;
+                public float xFlutterPhase;
+                public float baseScale;
+                public float age;
+                public float lifetime;
+                public float drag;
+                public float gravity;
+                public bool active;
+            }
+
+            private readonly List<ConfettiBall> _pool = new List<ConfettiBall>(64);
+            private readonly List<SpriteFxItem> _spritePool = new List<SpriteFxItem>(64);
+            private readonly List<RibbonItem> _ribbonPool = new List<RibbonItem>(64);
+
+            public void SpawnRibbonBurst(Vector3 center, PuzzleColor mainColor, float size, int count)
+            {
+                if (s_ConfettiStrip == null) return;
+                for (int i = 0; i < count; i++)
+                {
+                    int idx = AcquireRibbonIndex();
+                    RibbonItem r = _ribbonPool[idx];
+
+                    float ang = (i / (float)count) * Mathf.PI * 2f + Random.Range(-0.24f, 0.24f);
+                    float speed = Random.Range(1.8f, 3.85f) * size;
+                    Vector2 offset = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * Random.Range(0.06f, 0.20f);
+
+                    r.tr.position = new Vector3(center.x + offset.x, center.y + offset.y, center.z - 0.04f);
+                    r.tr.localRotation = Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
+                    r.vel = new Vector3(Mathf.Cos(ang) * speed, Mathf.Sin(ang) * speed + Random.Range(0.85f, 1.65f) * size, 0f);
+                    r.zSpinVel = Random.Range(-320f, 320f);
+                    r.xFlutterSpeed = Random.Range(7.5f, 13.5f);
+                    r.xFlutterPhase = Random.Range(0f, Mathf.PI * 2f);
+                    r.baseScale = Random.Range(0.11f, 0.17f) * size;
+                    r.age = 0f;
+                    r.lifetime = Random.Range(0.75f, 1.08f);
+                    r.drag = Random.Range(2.4f, 3.4f);
+                    r.gravity = Random.Range(2.2f, 3.4f) * size;
+                    r.active = true;
+
+                    PuzzleColor chosen = (i % 3 == 0)
+                        ? mainColor
+                        : s_PartyConfettiColors[Random.Range(0, s_PartyConfettiColors.Length)];
+                    Color col = Color.Lerp(PuzzleColorPalette.GetPrimaryColor(chosen), Color.white, 0.12f);
+                    col.a = 1f;
+                    r.baseColor = col;
+                    r.sr.color = col;
+                    r.tr.localScale = Vector3.zero;
+                    r.go.SetActive(true);
+                    _ribbonPool[idx] = r;
+                }
+            }
+
+            private int AcquireRibbonIndex()
+            {
+                for (int i = 0; i < _ribbonPool.Count; i++)
+                {
+                    if (!_ribbonPool[i].active) return i;
+                }
+
+                var go = new GameObject($"ConfettiRibbon_{_ribbonPool.Count}");
+                go.transform.SetParent(transform, false);
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = s_ConfettiStrip;
+                sr.sortingOrder = 505;
+                go.SetActive(false);
+
+                _ribbonPool.Add(new RibbonItem
+                {
+                    go = go,
+                    tr = go.transform,
+                    sr = sr,
+                    active = false
+                });
+                return _ribbonPool.Count - 1;
+            }
+
+            public void SpawnSpriteFx(
+                Sprite sprite,
+                Vector3 pos,
+                Color color,
+                float startAlpha,
+                float startScale,
+                float endScale,
+                float duration,
+                int sortingOrder)
+            {
+                int idx = AcquireSpriteFxIndex();
+                SpriteFxItem fx = _spritePool[idx];
+                fx.tr.position = pos;
+                fx.tr.localScale = Vector3.one * startScale;
+                fx.sr.sprite = sprite;
+                fx.sr.sortingOrder = sortingOrder;
+                color.a = startAlpha;
+                fx.sr.color = color;
+                fx.baseColor = new Color(color.r, color.g, color.b, 1f);
+                fx.startAlpha = startAlpha;
+                fx.startScale = startScale;
+                fx.endScale = endScale;
+                fx.age = 0f;
+                fx.duration = Mathf.Max(0.02f, duration);
+                fx.active = true;
+                fx.go.SetActive(true);
+                _spritePool[idx] = fx;
+            }
+
+            private int AcquireSpriteFxIndex()
+            {
+                for (int i = 0; i < _spritePool.Count; i++)
+                {
+                    if (!_spritePool[i].active) return i;
+                }
+
+                var go = new GameObject($"FxRing_{_spritePool.Count}");
+                go.transform.SetParent(transform, false);
+                var sr = go.AddComponent<SpriteRenderer>();
+                go.SetActive(false);
+
+                _spritePool.Add(new SpriteFxItem
+                {
+                    go = go,
+                    tr = go.transform,
+                    sr = sr,
+                    active = false
+                });
+                return _spritePool.Count - 1;
+            }
+
+            public void SpawnBurst(Vector3 center, PuzzleColor mainColor, float size, int count)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    int idx = AcquireIndex();
+                    ConfettiBall cb = _pool[idx];
+
+                    float baseAngle = (i / (float)count) * Mathf.PI * 2f + Random.Range(-0.22f, 0.22f);
+                    float speed = Random.Range(1.9f, 3.65f) * size;
+                    Vector2 offset = new Vector2(Mathf.Cos(baseAngle), Mathf.Sin(baseAngle)) * Random.Range(0.05f, 0.16f);
+
+                    cb.tr.position = new Vector3(center.x + offset.x, center.y + offset.y, center.z + Random.Range(-0.18f, 0.04f));
+                    cb.tr.rotation = Random.rotation;
+                    cb.vel = new Vector3(Mathf.Cos(baseAngle) * speed, Mathf.Sin(baseAngle) * speed + Random.Range(0.55f, 1.15f) * size, Random.Range(-0.35f, 0.15f));
+                    cb.spinAxis = Random.onUnitSphere;
+                    cb.spinSpeed = Random.Range(90f, 220f);
+                    cb.baseScale = Random.Range(0.056f, 0.108f) * size;
+                    cb.age = 0f;
+                    cb.lifetime = Random.Range(0.58f, 0.84f);
+                    cb.drag = Random.Range(2.2f, 3.0f);
+                    cb.gravity = Random.Range(4.2f, 5.8f) * size;
+                    cb.active = true;
+
+                    PuzzleColor chosenCol = (i % 2 == 0 || i < 4)
+                        ? mainColor
+                        : s_PartyConfettiColors[Random.Range(0, s_PartyConfettiColors.Length)];
+                    int variant = i % 3;
+                    BallObjectPool.ApplyBallPropertyBlock(cb.mr, chosenCol, variant, wobblePhase: i * 0.45f);
+
+                    cb.tr.localScale = Vector3.zero;
+                    cb.go.SetActive(true);
+                    _pool[idx] = cb;
+                }
+            }
+
+            private int AcquireIndex()
+            {
+                for (int i = 0; i < _pool.Count; i++)
+                {
+                    if (!_pool[i].active) return i;
+                }
+
+                var go = new GameObject($"ConfettiBall_{_pool.Count}");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = s_ConfettiSphereMesh;
+                var mr = go.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = s_ConfettiBallMat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                go.SetActive(false);
+
+                _pool.Add(new ConfettiBall
+                {
+                    go = go,
+                    tr = go.transform,
+                    mr = mr,
+                    active = false
+                });
+                return _pool.Count - 1;
+            }
+
+            private void Update()
+            {
+                float dt = Mathf.Min(Time.deltaTime, 0.04f);
+                if (dt <= 0f) return;
+
+                for (int i = 0; i < _pool.Count; i++)
+                {
+                    ConfettiBall cb = _pool[i];
+                    if (!cb.active || cb.go == null) continue;
+
+                    cb.age += dt;
+                    if (cb.age >= cb.lifetime)
+                    {
+                        cb.active = false;
+                        cb.go.SetActive(false);
+                        _pool[i] = cb;
+                        continue;
+                    }
+
+                    cb.vel *= Mathf.Exp(-cb.drag * dt);
+                    cb.vel.y -= cb.gravity * dt;
+                    cb.tr.position += cb.vel * dt;
+                    cb.tr.Rotate(cb.spinAxis, cb.spinSpeed * dt, Space.World);
+
+                    float scaleEnv;
+                    const float fadeInDur = 0.055f;
+                    float fadeOutDur = Mathf.Min(0.28f, cb.lifetime * 0.42f);
+                    if (cb.age < fadeInDur)
+                    {
+                        float u = cb.age / fadeInDur;
+                        scaleEnv = u * u * (3f - 2f * u);
+                    }
+                    else if (cb.age > cb.lifetime - fadeOutDur)
+                    {
+                        float u = Mathf.Clamp01((cb.lifetime - cb.age) / fadeOutDur);
+                        scaleEnv = u * u;
+                    }
+                    else
+                    {
+                        scaleEnv = 1f;
+                    }
+
+                    cb.tr.localScale = Vector3.one * (cb.baseScale * scaleEnv);
+                    _pool[i] = cb;
+                }
+
+                for (int i = 0; i < _spritePool.Count; i++)
+                {
+                    SpriteFxItem fx = _spritePool[i];
+                    if (!fx.active || fx.go == null) continue;
+
+                    fx.age += dt;
+                    float t = Mathf.Clamp01(fx.age / fx.duration);
+                    if (t >= 1f)
+                    {
+                        fx.active = false;
+                        fx.go.SetActive(false);
+                        _spritePool[i] = fx;
+                        continue;
+                    }
+
+                    float inv = 1f - t;
+                    float easeOut = 1f - inv * inv * inv;
+                    float fade = 1f - t * t;
+                    fx.tr.localScale = Vector3.one * Mathf.Lerp(fx.startScale, fx.endScale, easeOut);
+                    Color c = fx.baseColor;
+                    c.a = fx.startAlpha * fade;
+                    fx.sr.color = c;
+                    _spritePool[i] = fx;
+                }
+
+                for (int i = 0; i < _ribbonPool.Count; i++)
+                {
+                    RibbonItem r = _ribbonPool[i];
+                    if (!r.active || r.go == null) continue;
+
+                    r.age += dt;
+                    if (r.age >= r.lifetime)
+                    {
+                        r.active = false;
+                        r.go.SetActive(false);
+                        _ribbonPool[i] = r;
+                        continue;
+                    }
+
+                    r.vel *= Mathf.Exp(-r.drag * dt);
+                    r.vel.y -= r.gravity * dt;
+                    r.tr.position += r.vel * dt;
+
+                    float zRot = r.tr.localEulerAngles.z + r.zSpinVel * dt;
+                    float xTilt = Mathf.Sin(r.age * r.xFlutterSpeed + r.xFlutterPhase) * 65f;
+                    r.tr.localRotation = Quaternion.Euler(xTilt, 0f, zRot);
+
+                    float alpha = 1f;
+                    float scaleEnv = 1f;
+                    const float fadeIn = 0.05f;
+                    float fadeOut = 0.30f;
+                    if (r.age < fadeIn)
+                    {
+                        scaleEnv = r.age / fadeIn;
+                    }
+                    else if (r.age > r.lifetime - fadeOut)
+                    {
+                        float u = Mathf.Clamp01((r.lifetime - r.age) / fadeOut);
+                        alpha = u * u;
+                        scaleEnv = 0.65f + 0.35f * u;
+                    }
+
+                    r.tr.localScale = Vector3.one * (r.baseScale * scaleEnv);
+                    Color c = r.baseColor;
+                    c.a = alpha;
+                    r.sr.color = c;
+                    _ribbonPool[i] = r;
+                }
             }
         }
 

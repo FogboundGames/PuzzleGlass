@@ -10,7 +10,7 @@ namespace PuzzleGlass
 {
     /// <summary>
     /// Öğretici katman (Violet Theme UI assetleri + pastel lavanta teması):
-    ///  1. Level 1 spotlight tutorial: yalnızca hedef mavi kutu aydınlık/tıklanabilir kalır, diğer tüm alanlar
+    ///  1. Level 1 spotlight tutorial: yalnızca hedef (en baştaki mor) kutu aydınlık/tıklanabilir kalır, diğer tüm alanlar
     ///     karartılır ve kilitlenir; kutu slota yerleşince karartma akıcı biçimde kalkar ve oyun devam eder.
     ///  2. El ipucu: ilk levellerde oyuncu ilerleyemezse camdaki toplara uyan bir bloğu parmakla işaret eder.
     ///  3. Mekanik tanıtımı: buz, kilit & anahtar ve içi dolu kutu bir levelde İLK kez görüldüğünde
@@ -64,6 +64,7 @@ namespace PuzzleGlass
         private MonsterCharacter _spotlightTarget;
         private bool _spotlightActive;
         private bool _spotlightShown;
+        private bool _pauseGlassBallsForTutorial;
         private float _spotlightAlpha;
         private Tween _spotlightTween;
 
@@ -94,12 +95,39 @@ namespace PuzzleGlass
         private static readonly int ShaderHoleParamsId = Shader.PropertyToID("_HoleParams");
 
         public bool IsSpotlightTutorialActive => _spotlightActive;
+        public bool AreGlassBallsPausedForTutorial => _pauseGlassBallsForTutorial;
 
         public bool CanInteractWithBlock(MonsterCharacter block)
         {
             if (!_spotlightActive) return true;
             if (LevelTransitionController.IsTransitioning) return false;
             return block != null && block == _spotlightTarget && !block.IsMovingToSlot && block.assignedSlot == null;
+        }
+
+        /// <summary>
+        /// Level yüklenmeye başlarken çağrılır: Level 1'de toplar spotlight kutusu slota konana kadar durur.
+        /// </summary>
+        public void OnLevelLoading(PuzzleGlassLevelData lvl)
+        {
+            StopHint();
+            ClearCards();
+            ClearSpotlight();
+            _level = lvl;
+            _blocks = null;
+            _pauseGlassBallsForTutorial = lvl != null && lvl.levelNumber == 1;
+            if (!_pauseGlassBallsForTutorial)
+            {
+                ReleaseGlassBalls();
+            }
+        }
+
+        public void NotifySpotlightBlockPlaced(MonsterCharacter block)
+        {
+            if (!_spotlightActive) return;
+            if (block != null && block == _spotlightTarget)
+            {
+                EndSpotlightTutorial();
+            }
         }
 
         public static TutorialOverlay GetOrCreate()
@@ -118,6 +146,7 @@ namespace PuzzleGlass
 
         private void OnDestroy()
         {
+            _pauseGlassBallsForTutorial = false;
             _spotlightTween?.Kill();
             if (_spotlightMat != null) Destroy(_spotlightMat);
             if (Instance == this) Instance = null;
@@ -134,49 +163,65 @@ namespace PuzzleGlass
             _idleTime = 0f;
             _lastProgress = -1;
             // Tutorial yalnızca ilk level (levelNumber == 1) için geçerlidir; diğer levellerde çalışmaz
-            if (lvl == null || lvl.levelNumber != 1) return;
+            if (lvl == null || lvl.levelNumber != 1)
+            {
+                _pauseGlassBallsForTutorial = false;
+                ReleaseGlassBalls();
+                return;
+            }
 
             // 1) Level 1 Spotlight Tutorial veya el ipucu
             if (lvl.levelNumber == 1 && blocks != null && SlotSystem.IsActive)
             {
-                var pick = PickLevel1BlueSpotlightBlock(blocks) ?? PickSlotHintBlock(lvl, blocks);
+                var pick = PickLevel1PurpleSpotlightBlock(blocks) ?? PickSlotHintBlock(lvl, blocks);
                 if (pick != null)
                 {
                     _spotlightTarget = pick;
                     _spotlightActive = true;
                     _spotlightShown = false;
                     _spotlightAlpha = 0f;
+                    _pauseGlassBallsForTutorial = true;
                     StartSlotHint(pick);
                     _hintTime = -0.25f;
                 }
-            }
-            else if (lvl.tutorialHint && blocks != null && SlotSystem.IsActive)
-            {
-                _hintBlock = PickSlotHintBlock(lvl, blocks);
-                if (_hintBlock != null)
+                else
                 {
-                    StartSlotHint(_hintBlock);
-                    _hintTime = -0.8f;
+                    _pauseGlassBallsForTutorial = false;
+                    ReleaseGlassBalls();
                 }
             }
-            else if (lvl.tutorialHint && blocks != null && lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
+            else
             {
-                var entry = lvl.monsters[lvl.tutorialBlockIndex];
-                foreach (var b in blocks)
+                _pauseGlassBallsForTutorial = false;
+                ReleaseGlassBalls();
+                if (lvl.tutorialHint && blocks != null && SlotSystem.IsActive)
                 {
-                    if (b != null && b.gridAnchor == lvl.tutorialFromAnchor && b.colorType == entry.color && b.blockShape == entry.blockShape)
+                    _hintBlock = PickSlotHintBlock(lvl, blocks);
+                    if (_hintBlock != null)
                     {
-                        _hintBlock = b;
-                        break;
+                        StartSlotHint(_hintBlock);
+                        _hintTime = -0.8f;
                     }
                 }
-                if (_hintBlock != null && lvl.tutorialTargetAnchor != lvl.tutorialFromAnchor)
+                else if (lvl.tutorialHint && blocks != null && lvl.tutorialBlockIndex >= 0 && lvl.monsters != null && lvl.tutorialBlockIndex < lvl.monsters.Count)
                 {
-                    _hintFrom = lvl.tutorialFromAnchor;
-                    _hintTarget = lvl.tutorialTargetAnchor;
-                    _hintToSlot = false;
-                    _hintActive = true;
-                    _hintTime = -0.8f;
+                    var entry = lvl.monsters[lvl.tutorialBlockIndex];
+                    foreach (var b in blocks)
+                    {
+                        if (b != null && b.gridAnchor == lvl.tutorialFromAnchor && b.colorType == entry.color && b.blockShape == entry.blockShape)
+                        {
+                            _hintBlock = b;
+                            break;
+                        }
+                    }
+                    if (_hintBlock != null && lvl.tutorialTargetAnchor != lvl.tutorialFromAnchor)
+                    {
+                        _hintFrom = lvl.tutorialFromAnchor;
+                        _hintTarget = lvl.tutorialTargetAnchor;
+                        _hintToSlot = false;
+                        _hintActive = true;
+                        _hintTime = -0.8f;
+                    }
                 }
             }
 
@@ -242,13 +287,13 @@ namespace PuzzleGlass
                    && (grid == null || grid.IsBlockExitClearToSlots(b, blocks));
         }
 
-        private static MonsterCharacter PickLevel1BlueSpotlightBlock(List<MonsterCharacter> blocks)
+        private static MonsterCharacter PickLevel1PurpleSpotlightBlock(List<MonsterCharacter> blocks)
         {
             if (blocks == null) return null;
             MonsterCharacter best = null;
             foreach (var b in blocks)
             {
-                if (!IsSendable(b, blocks) || b.colorType != PuzzleColor.Blue) continue;
+                if (!IsSendable(b, blocks) || b.colorType != PuzzleColor.Purple) continue;
                 if (best == null
                     || b.gridAnchor.y > best.gridAnchor.y
                     || (b.gridAnchor.y == best.gridAnchor.y && b.gridAnchor.x < best.gridAnchor.x))
@@ -443,16 +488,6 @@ namespace PuzzleGlass
 
             if (!_spotlightRoot.activeSelf) _spotlightRoot.SetActive(true);
 
-            if (!_spotlightShown)
-            {
-                _spotlightShown = true;
-                _spotlightTween?.Kill();
-                _spotlightAlpha = 0f;
-                _spotlightTween = DOTween.To(() => _spotlightAlpha, v => _spotlightAlpha = v, 1f, 0.22f)
-                    .SetEase(Ease.OutQuad).SetUpdate(true);
-                SetBlockersActive(true);
-            }
-
             if (_spotlightTarget.IsMovingToSlot)
             {
                 if (_hintActive) StopHint();
@@ -472,6 +507,16 @@ namespace PuzzleGlass
                 return;
 
             UpdateSpotlightVisualAndBlockers(holeCenter, holeSize);
+
+            if (!_spotlightShown)
+            {
+                _spotlightShown = true;
+                _spotlightTween?.Kill();
+                _spotlightAlpha = 0f;
+                _spotlightTween = DOTween.To(() => _spotlightAlpha, v => _spotlightAlpha = v, 1f, 0.22f)
+                    .SetEase(Ease.OutQuad).SetUpdate(true);
+                SetBlockersActive(true);
+            }
         }
 
         private void UpdateSpotlightVisualAndBlockers(Vector2 holeCenter, Vector2 holeSize)
@@ -522,6 +567,8 @@ namespace PuzzleGlass
         {
             _spotlightActive = false;
             _spotlightTarget = null;
+            _pauseGlassBallsForTutorial = false;
+            ReleaseGlassBalls();
             StopHint();
             SetBlockersActive(false);
 
@@ -566,6 +613,24 @@ namespace PuzzleGlass
             _spotlightAlpha = 0f;
             SetBlockersActive(false);
             if (_spotlightRoot != null) _spotlightRoot.SetActive(false);
+        }
+
+        private static void ReleaseGlassBalls()
+        {
+            if (!Application.isPlaying) return;
+            if (BallObjectPool.Instance != null && BallObjectPool.Instance.ActiveBalls != null)
+            {
+                var active = BallObjectPool.Instance.ActiveBalls;
+                for (int i = 0; i < active.Count; i++)
+                {
+                    var ball = active[i];
+                    if (ball != null && ball.state == BallState.InContainer)
+                    {
+                        ball.ReleaseToPhysics();
+                    }
+                }
+            }
+            BallCollectionController.Instance?.MarkBallFieldDirty();
         }
 
         private bool TryGetTargetCanvasRect(MonsterCharacter target, Camera cam, out Vector2 center, out Vector2 size)

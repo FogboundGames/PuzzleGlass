@@ -234,6 +234,18 @@ namespace PuzzleGlass
             PlayClipWithPitch(_clipBlockSnap, 0.42f, Random.Range(0.98f, 1.03f));
         }
 
+        public void PlayLidLatch()
+        {
+            if (isMuted || !Application.isPlaying) return;
+            PlayClipWithPitch(_clipLidLatch, 0.46f, Random.Range(0.98f, 1.04f));
+        }
+
+        public void PlayBoxCompleteChime()
+        {
+            if (isMuted || !Application.isPlaying) return;
+            PlayClipWithPitch(_clipBoxComplete, 0.60f, 1.0f);
+        }
+
         public void PlayBoxComplete()
         {
             if (isMuted || !Application.isPlaying) return;

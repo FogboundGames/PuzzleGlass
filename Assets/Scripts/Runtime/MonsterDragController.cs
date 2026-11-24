@@ -33,6 +33,8 @@ namespace PuzzleGlass
         private bool _hasMovedBeyondTapThreshold = false;
         private bool _isLiftedOutOfGrid = false;
         private Camera _mainCam;
+        private PointerEventData _uiRaycastEvent;
+        private readonly List<RaycastResult> _uiRaycastResults = new List<RaycastResult>(16);
 
         public event Action<MonsterCharacter, SlotPlatform> OnMonsterPlaced;
         public event Action<MonsterCharacter> OnMonsterReturnedToTray;
@@ -62,26 +64,39 @@ namespace PuzzleGlass
             {
                 HandlePointerDown(pointerScreenPos);
             }
-            else if (_isDragging && pointerHeld)
+
+            if (_isDragging && !pointerDown && pointerHeld)
             {
                 HandlePointerDrag(pointerScreenPos);
             }
-            else if (_isDragging && pointerUp)
+
+            if (_isDragging && pointerUp)
             {
                 // Hızlı hareketlerde son karedeki parmak hareketi kaybolmasın: bırakmadan önce
                 // son konumla bir kez daha kaydır, sonra yerleştir.
                 if (GetPointerPosition(out Vector2 releasePos))
                 {
-                    HandlePointerDrag(releasePos);
+                    if (!pointerDown) HandlePointerDrag(releasePos);
                     pointerScreenPos = releasePos;
                 }
                 HandlePointerUp(pointerScreenPos);
             }
         }
 
+        private bool IsPointerOverBlockingUI(Vector2 screenPos)
+        {
+            if (EventSystem.current == null) return false;
+            if (_uiRaycastEvent == null) _uiRaycastEvent = new PointerEventData(EventSystem.current);
+            _uiRaycastEvent.Reset();
+            _uiRaycastEvent.position = screenPos;
+            _uiRaycastResults.Clear();
+            EventSystem.current.RaycastAll(_uiRaycastEvent, _uiRaycastResults);
+            return _uiRaycastResults.Count > 0;
+        }
+
         private void HandlePointerDown(Vector2 screenPos)
         {
-            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            if (IsPointerOverBlockingUI(screenPos))
             {
                 return;
             }
@@ -445,6 +460,7 @@ namespace PuzzleGlass
                 if (placedMonster == null) return;
                 placedMonster.SetMovingToSlot(false);
                 targetSlot.AttachMonster(placedMonster);
+                TutorialOverlay.Instance?.NotifySpotlightBlockPlaced(placedMonster);
                 OnMonsterPlaced?.Invoke(placedMonster, targetSlot);
 
                 if (SandMonsterFlowBridge.Instance != null)
@@ -605,7 +621,7 @@ namespace PuzzleGlass
         {
             screenPos = Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
-            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasReleasedThisFrame)
+            if (Touchscreen.current != null && (Touchscreen.current.primaryTouch.press.wasReleasedThisFrame || Touchscreen.current.primaryTouch.press.isPressed))
             {
                 screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
                 return true;

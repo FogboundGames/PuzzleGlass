@@ -67,7 +67,7 @@ namespace PuzzleGlass
 
         [Header("Spawn Settings")]
         [Range(0.06f, 0.28f)]
-        public float ballDiameter = 0.108f; // Glossy 3D pool spheres
+        public float ballDiameter = GlassTrackLayout.FixedBallDiameter; // Glossy 3D pool spheres
         public float patternVerticalOffset = 0.0f;
         [Tooltip("İlk desen şeklinin serbest düşmeden önce kısaca hayranlıkla izlenmesi için kinematic bekleme süresi (0 = hemen düşer)")]
         public float initialShapeHoldTime = 0.0f; // 0 = Immediately dynamic, obeying physics from frame 0!
@@ -119,7 +119,7 @@ namespace PuzzleGlass
                 patternType == ShapePatternType.HorizontalBands ||
                 patternType == ShapePatternType.VFunnelBands)
             {
-                ballDiameter = 0.114f;
+                ballDiameter = GlassTrackLayout.FixedBallDiameter;
             }
 
             float spacing = (customSpacing > 0.06f) ? customSpacing : ballDiameter;
@@ -288,6 +288,7 @@ namespace PuzzleGlass
             // Compute ordered layer indices (0 = bottom-most row, 1 = second row from bottom, etc.)
             List<float> rowYCenters = new List<float>();
             float rowClusterThreshold = ballDiameter * 0.42f;
+
             for (int i = 0; i < ballSpawns.Count; i++)
             {
                 float y = ballSpawns[i].pos.y;
@@ -326,6 +327,7 @@ namespace PuzzleGlass
             }
 
             float maxEntryY = float.MinValue;
+
             for (int i = 0; i < ballSpawns.Count; i++)
                 if (ballSpawns[i].pos.y > maxEntryY) maxEntryY = ballSpawns[i].pos.y;
             float headroom = (maxSpawnLocalY < float.MaxValue * 0.5f && maxEntryY > float.MinValue)
@@ -342,6 +344,8 @@ namespace PuzzleGlass
             var lockTrack = glassContainer != null && glassContainer.IsTrackShape ? glassContainer.compiledTrack : null;
             bool useLayerLock = Application.isPlaying && gmLock != null && gmLock.currentLevel != null
                 && gmLock.currentLevel.trackLayerLock && lockTrack != null && lockTrack.closedLoopBranch >= 0;
+
+            bool holdForTutorial = Application.isPlaying && TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial;
 
             for (int i = 0; i < ballSpawns.Count; i++)
             {
@@ -387,7 +391,7 @@ namespace PuzzleGlass
                         ball.hasHomeX = false;
                     }
 
-                    if (initialShapeHoldTime > 0.05f || !Application.isPlaying)
+                    if (initialShapeHoldTime > 0.05f || holdForTutorial || !Application.isPlaying)
                     {
                         ball.MakeKinematic();
                     }
@@ -439,6 +443,11 @@ namespace PuzzleGlass
         private IEnumerator ReleaseBallsHoldRoutine(float delay, List<BallPhysicsController> balls)
         {
             yield return new WaitForSeconds(delay);
+            if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
+            {
+                _releaseHoldCoroutine = null;
+                yield break;
+            }
 
             for (int i = 0; i < balls.Count; i++)
             {
@@ -673,7 +682,7 @@ namespace PuzzleGlass
             OrderedPoolLayout.ChooseLaneWidth(maxBallsInLane, safeWidth, availHeight, out int bestLaneWidth, out float bestDiam);
             float rowFactor = OrderedPoolLayout.RowFactor;
 
-            float effectiveBallDiam = Mathf.Clamp(bestDiam, 0.068f, 0.114f);
+            float effectiveBallDiam = Mathf.Clamp(bestDiam, 0.068f, GlassTrackLayout.FixedBallDiameter);
             this.ballDiameter = effectiveBallDiam;
             if (glassContainer != null)
             {
@@ -690,7 +699,7 @@ namespace PuzzleGlass
 
             bool hasZones = glassContainer != null && glassContainer.compartmentZones != null && glassContainer.compartmentZones.Count > 0;
             bool hasDividers = glassContainer != null && glassContainer.dividers != null && glassContainer.dividers.Count > 0;
-            float staggerScale = colSpacing / 0.114f;
+            float staggerScale = colSpacing / GlassTrackLayout.FixedBallDiameter;
 
             for (int r = 0; r < totalRows; r++)
             {

@@ -61,6 +61,13 @@ namespace PuzzleGlass
         private PhysicsMaterial _sharedPhysMaterial;
         private Mesh _sharedSphereMesh;
         private GameObject _poolContainer;
+        private static readonly Dictionary<int, Material> s_SharedVariantMaterials = new Dictionary<int, Material>(40);
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticVariantCache()
+        {
+            s_SharedVariantMaterials.Clear();
+        }
 
         public List<BallPhysicsController> ActiveBalls => _activeBalls;
         public Material SharedInstancedBallMaterial
@@ -274,8 +281,52 @@ namespace PuzzleGlass
 
         public static void ApplyBallPropertyBlock(Renderer renderer, PuzzleColor color, int variantIndex = 1, float wobblePhase = 0f, float wobbleAmount = 0f)
         {
+            if (renderer == null) return;
+            if (Application.isPlaying && wobbleAmount <= 0.0001f)
+            {
+                Material sharedMat = GetSharedVariantMaterial(color, variantIndex);
+                if (sharedMat != null)
+                {
+                    renderer.sharedMaterial = sharedMat;
+                    renderer.SetPropertyBlock(null);
+                    return;
+                }
+            }
             ComputeBallVariantVisuals(color, variantIndex, out Color baseCol, out Color shadowCol, out Color highCol, out float smooth);
             ApplyBallPropertyBlock(renderer, baseCol, shadowCol, highCol, smooth, wobblePhase, wobbleAmount, 0f, Vector3.up);
+        }
+
+        public static Material GetSharedVariantMaterial(PuzzleColor color, int variantIndex = 1)
+        {
+            int v = Mathf.Abs(variantIndex) % ColorVariantCount;
+            int key = ((int)color << 3) | v;
+            if (s_SharedVariantMaterials.TryGetValue(key, out Material cached) && cached != null)
+            {
+                return cached;
+            }
+
+            Material template = (_instance != null) ? _instance.SharedInstancedBallMaterial : null;
+            Shader ballShader = template != null ? template.shader : (Shader.Find("PuzzleGlass/CandyCubeLit") ?? Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            if (ballShader == null) return null;
+
+            ComputeBallVariantVisuals(color, v, out Color baseCol, out Color shadowCol, out Color highCol, out float smooth);
+            var mat = new Material(ballShader)
+            {
+                name = $"Mat_CandyBall_{color}_V{v}",
+                enableInstancing = true,
+                renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry + 15
+            };
+            mat.SetColor(BaseColorPropId, baseCol);
+            mat.SetColor(ColorPropId, baseCol);
+            if (mat.HasProperty(ShadowColorPropId)) mat.SetColor(ShadowColorPropId, shadowCol);
+            if (mat.HasProperty(HighlightColorPropId)) mat.SetColor(HighlightColorPropId, highCol);
+            if (mat.HasProperty(SmoothnessPropId)) mat.SetFloat(SmoothnessPropId, smooth);
+            if (mat.HasProperty(BevelHighlightPropId)) mat.SetFloat(BevelHighlightPropId, 0f);
+            if (mat.HasProperty(RimSeparationPropId)) mat.SetFloat(RimSeparationPropId, 0.46f);
+            if (mat.HasProperty(WobbleAmountPropId)) mat.SetFloat(WobbleAmountPropId, 0f);
+            if (mat.HasProperty(SquashAmountPropId)) mat.SetFloat(SquashAmountPropId, 0f);
+            s_SharedVariantMaterials[key] = mat;
+            return mat;
         }
 
         private BallPhysicsController CreateNewBallInstance()
@@ -340,7 +391,8 @@ namespace PuzzleGlass
             ball.gameObject.SetActive(true);
 
             int variantIdx = UnityEngine.Random.Range(0, ColorVariantCount);
-            ball.SetupBall(color, r, _sharedPhysMaterial, _sharedInstancedBallMaterial, _sharedSphereMesh, variantIdx);
+            Material mat = Application.isPlaying ? GetSharedVariantMaterial(color, variantIdx) : _sharedInstancedBallMaterial;
+            ball.SetupBall(color, r, _sharedPhysMaterial, mat ?? _sharedInstancedBallMaterial, _sharedSphereMesh, variantIdx);
 
             _activeBalls.Add(ball);
             return ball;
@@ -349,7 +401,7 @@ namespace PuzzleGlass
         public Material GetBallMaterialVariant(PuzzleColor color, int variantIndex)
         {
             EnsureSharedResources();
-            return _sharedInstancedBallMaterial;
+            return Application.isPlaying ? (GetSharedVariantMaterial(color, variantIndex) ?? _sharedInstancedBallMaterial) : _sharedInstancedBallMaterial;
         }
 
         public void ReturnBall(BallPhysicsController ball)

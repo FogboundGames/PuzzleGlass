@@ -178,27 +178,28 @@ namespace PuzzleGlass
         /// Elle top dizimli ama kendi cam şekli olmayan level: Level Design'daki düz ızgarayla aynı dikdörtgen kutu cam.
         /// Genişlik varsayılan kutu (2.64), yükseklik en üst dolu sıraya göre uzar. Oyun ve editör bu konturu birlikte kullanır.
         /// </summary>
-        public static List<GlassContourPoint> BuildManualBoxContour(List<ManualPoolBallEntry> manualBalls, int manualLaneWidth)
+        public static List<GlassContourPoint> BuildFixedBoxContour(float frameThickness = 0.055f)
         {
-            const float bottomY = -0.56f;
-            int lw = Mathf.Clamp(manualLaneWidth > 0 ? manualLaneWidth : 4, 3, 8);
-            int cols = lw * 3;
-            // Genişlik sütun sayısına oturur: petek kaydırması (±çeyrek çap) dahil satırlar duvardan duvara dolar, fizikte yere yayılmaz
-            float hw = Mathf.Min(1.32f, (cols * 0.5f + 0.35f) * OrderedPoolLayout.MaxDiameter + 0.11f);
-            float d = Mathf.Clamp((hw * 2f - 0.22f) / cols, OrderedPoolLayout.MinDiameter, OrderedPoolLayout.MaxDiameter);
-            int maxRow = 0;
-            if (manualBalls != null)
-                foreach (var b in manualBalls)
-                    if (b != null && b.row > maxRow) maxRow = b.row;
-            float needed = d + maxRow * d * OrderedPoolLayout.RowFactor + 0.03f;
-            float topY = bottomY + Mathf.Clamp(Mathf.Max(1.18f, needed), 1.18f, 2.80f);
+            float ft = Mathf.Clamp(frameThickness, 0.035f, 0.24f);
+            float visibleHalfW = GlassTrackLayout.FixedOuterWidth * 0.5f;
+            float visibleHalfH = GlassTrackLayout.FixedOuterHeight * 0.5f;
+            float quadHalfH = visibleHalfH / 0.76f;
+            float innerHalfH = visibleHalfH * Mathf.Max(0.28f, 0.76f - ft) / 0.76f;
+            float innerHalfW = Mathf.Max(0.40f, visibleHalfW - ft * quadHalfH);
+            float bottomY = BottleBottomY;
+            float topY = bottomY + innerHalfH * 2f;
             return new List<GlassContourPoint>
             {
-                new GlassContourPoint(bottomY, hw, 0f, 1f),
-                new GlassContourPoint(bottomY + 0.04f, hw, 0f, 1f),
-                new GlassContourPoint(topY - 0.04f, hw, 0f, 1f),
-                new GlassContourPoint(topY, hw, 0f, 1f)
+                new GlassContourPoint(bottomY, innerHalfW, 0f, 1f),
+                new GlassContourPoint(bottomY + 0.04f, innerHalfW, 0f, 1f),
+                new GlassContourPoint(topY - 0.04f, innerHalfW, 0f, 1f),
+                new GlassContourPoint(topY, innerHalfW, 0f, 1f)
             };
+        }
+
+        public static List<GlassContourPoint> BuildManualBoxContour(List<ManualPoolBallEntry> manualBalls, int manualLaneWidth)
+        {
+            return BuildFixedBoxContour(0.055f);
         }
 
         /// <summary>
@@ -605,8 +606,8 @@ namespace PuzzleGlass
         private void Awake()
         {
             particlesPerMonsterCount = 1;
-            if (IsFlatBottomBox) particleSize = 0.114f;
-            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
+            if (IsFlatBottomBox) particleSize = GlassTrackLayout.FixedBallDiameter;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = GlassTrackLayout.FixedBallDiameter;
             patternVerticalOffset = 0f;
             MigrateThemeIfNeeded();
             EnsureContourInitialized();
@@ -617,8 +618,8 @@ namespace PuzzleGlass
         private void OnEnable()
         {
             particlesPerMonsterCount = 1;
-            if (IsFlatBottomBox) particleSize = 0.114f;
-            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
+            if (IsFlatBottomBox) particleSize = GlassTrackLayout.FixedBallDiameter;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = GlassTrackLayout.FixedBallDiameter;
             patternVerticalOffset = 0f;
             MigrateThemeIfNeeded();
             EnsureContourInitialized();
@@ -672,8 +673,8 @@ namespace PuzzleGlass
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            if (IsFlatBottomBox) particleSize = 0.114f;
-            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = 0.104f;
+            if (IsFlatBottomBox) particleSize = GlassTrackLayout.FixedBallDiameter;
+            else if (particleSize < 0.065f || particleSize > 0.125f) particleSize = GlassTrackLayout.FixedBallDiameter;
             EnsureContourInitialized();
 
             UnityEditor.EditorApplication.delayCall += () =>
@@ -1137,13 +1138,9 @@ namespace PuzzleGlass
                 case GlassShapePreset.SquareBox:
                 case GlassShapePreset.RectangleBox:
                 case GlassShapePreset.TrackChannel:
-                    // Reference Image 2: Wide Rounded-Rectangle Periwinkle-Framed Sky-Blue Glass Ball Pool (11*D = 2.64m inner width)
                     symmetricMode = true;
                     showShoulderHandles = false;
-                    contourPoints.Add(new GlassContourPoint(-0.56f, 1.320f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint(-0.52f, 1.320f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 0.58f, 1.320f, 0f, 1.00f));
-                    contourPoints.Add(new GlassContourPoint( 0.62f, 1.320f, 0f, 1.00f));
+                    contourPoints.AddRange(BuildFixedBoxContour(boxFrameThickness));
                     if (preset == GlassShapePreset.TrackChannel && (trackBranches == null || trackBranches.Count == 0))
                     {
                         trackBranches = GlassTrackLayout.BuildPresetBranches(trackPreset);
@@ -3751,7 +3748,7 @@ namespace PuzzleGlass
 
             if (IsFlatBottomBox)
             {
-                particleSize = 0.114f;
+                particleSize = GlassTrackLayout.FixedBallDiameter;
             }
             else if (IsTrackShape && compiledTrack != null)
             {
@@ -3761,7 +3758,7 @@ namespace PuzzleGlass
             gen.glassContainer = this;
             gen.ballDiameter = IsTrackShape && compiledTrack != null
                 ? compiledTrack.ballDiameter
-                : (IsFlatBottomBox ? 0.114f : ((particleSize > 0.05f && particleSize <= 0.13f) ? particleSize : 0.114f));
+                : (IsFlatBottomBox ? GlassTrackLayout.FixedBallDiameter : ((particleSize > 0.05f && particleSize <= 0.13f) ? particleSize : GlassTrackLayout.FixedBallDiameter));
             gen.patternVerticalOffset = patternVerticalOffset;
             gen.initialShapeHoldTime = 0f;
 

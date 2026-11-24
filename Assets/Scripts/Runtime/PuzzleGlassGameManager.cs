@@ -771,8 +771,15 @@ namespace PuzzleGlass
                 Invoke(nameof(PrepareNextLevel), 0.5f);
             }
 
-            // Öğretici: el ipucu ve ilk kez görülen mekanik kartları (bloklar oluştuktan sonra)
-            if (Application.isPlaying) StartCoroutine(BeginTutorialNextFrame(levelData));
+            // Öğretici: Level 1'de toplar spotlight kutusu slota konana kadar durur; diğer levellerde temizlenir
+            if (Application.isPlaying)
+            {
+                if (levelData.levelNumber == 1)
+                    TutorialOverlay.GetOrCreate().OnLevelLoading(levelData);
+                else if (TutorialOverlay.Instance != null)
+                    TutorialOverlay.Instance.OnLevelLoading(levelData);
+                StartCoroutine(BeginTutorialNextFrame(levelData));
+            }
             comboStreak = 0;
             feverRemainingTime = 0f;
             moveCount = 0;
@@ -876,13 +883,13 @@ namespace PuzzleGlass
                     }
                 }
 
-                glassContainer.particleSize = 0.114f;
+                glassContainer.particleSize = GlassTrackLayout.FixedBallDiameter;
                 glassContainer.particlesPerMonsterCount = 1;
                 glassContainer.particleMode = ParticleArrangementMode.PhysicsBalls;
                 glassContainer.pixelArtPreset = levelData.pixelArtPreset;
                 glassContainer.customPattern = levelData.customPattern;
                 glassContainer.freezePatternInPlace = false;
-                glassContainer.gridCellSpacing = 0.114f;
+                glassContainer.gridCellSpacing = GlassTrackLayout.FixedBallDiameter;
                 glassContainer.patternVerticalOffset = 0f;
                 if (sandEngine != null) sandEngine.lockedSectionRatio = levelData.lockedSectionRatio;
 

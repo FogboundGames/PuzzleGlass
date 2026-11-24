@@ -307,6 +307,14 @@ namespace PuzzleGlass
                 if (accel.sqrMagnitude > 1e-6f)
                     b.rb.AddForce(ct.TransformDirection(new Vector3(accel.x, accel.y, 0f)), ForceMode.Acceleration);
 
+                // Smooth rolling spin along the conveyor belt velocity so marbles visibly tumble around bends
+                if (v.sqrMagnitude > 0.012f)
+                {
+                    Vector3 worldAxis = ct.TransformDirection(new Vector3(-v.y, v.x, v.x * 0.28f)).normalized;
+                    float spinRate = Mathf.Clamp(v.magnitude / Mathf.Max(0.03f, r), 0f, 24f) * 0.78f;
+                    b.rb.angularVelocity = Vector3.Lerp(b.rb.angularVelocity, worldAxis * spinRate, Mathf.Clamp01(dt * 10f));
+                }
+
                 if (!s_GOnRing[i] && v.sqrMagnitude > 0.05f * 0.05f) anyMoving = true;
             }
             RoadQueueCount = n - ringCount;
