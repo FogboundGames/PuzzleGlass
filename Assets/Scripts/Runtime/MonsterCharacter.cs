@@ -413,6 +413,10 @@ namespace PuzzleGlass
         private Tweener _idleTween;
         private Sequence _blinkSeq;
         private Tweener _fillAmountTween;
+        private Sequence _nearCompleteSeq;
+
+        /// <summary>Kutuda bu kadar (veya daha az) top kalınca her topta "neredeyse doldu" nabzı atar.</summary>
+        public static int NearCompleteThreshold = 3;
         private Tweener _fillWaveTween;
         private bool _isCompleted = false;
         public bool IsCompleted => _isCompleted;
@@ -2275,11 +2279,76 @@ namespace PuzzleGlass
                 .SetLink(gameObject, LinkBehaviour.KillOnDestroy);
         }
 
+        /// <summary>
+        /// Son birkaç topta "neredeyse doldu" beklentisi: kutu kısa bir parıltıyla nabız atar, sayaç daha güçlü zıplar.
+        /// Kalan top azaldıkça nabız biraz güçlenir; kapanma anı daha tatmin edici olsun diye.
+        /// </summary>
+        /// <summary>Izgarada, çıkışı açık olup şu an slota konabilecek kutu mu?</summary>
+        public bool IsPlayableInGrid =>
+            assignedSlot == null && !_isMovingToSlot && !_isCompleted && !isCollectingInGrid
+            && isExitClearInGrid && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+
+        private static void PlayReadyHopOnPlayableGridBoxes(MonsterCharacter except)
+        {
+            var gm = PuzzleGlassGameManager.Instance;
+            if (gm == null || gm.activeMonsters == null) return;
+            int n = 0;
+            for (int i = 0; i < gm.activeMonsters.Count; i++)
+            {
+                var m = gm.activeMonsters[i];
+                if (m == null || m == except || !m.IsPlayableInGrid) continue;
+                m.PlayReadyHop(0.38f + n * 0.05f); // slot nabzının hemen ardından, soldan sağa hafif dalga
+                n++;
+            }
+        }
+
+        /// <summary>Oynanabilir kutunun kısa "beni seç" zıplaması (gövde pivotunda; ızgara konumuna dokunmaz).</summary>
+        public void PlayReadyHop(float delay)
+        {
+            if (!Application.isPlaying || bodyPivot == null) return;
+            DOVirtual.DelayedCall(delay, () =>
+            {
+                if (this == null || bodyPivot == null || !IsPlayableInGrid) return;
+                bodyPivot.DOKill(true);
+                bodyPivot.localPosition = new Vector3(bodyPivot.localPosition.x, 0f, bodyPivot.localPosition.z);
+                bodyPivot.localScale = _originalBodyScale;
+                Sequence hop = DOTween.Sequence();
+                hop.Append(bodyPivot.DOLocalMoveY(0.07f, 0.11f).SetEase(Ease.OutQuad));
+                hop.Join(bodyPivot.DOScale(new Vector3(_originalBodyScale.x * 0.96f, _originalBodyScale.y * 1.05f, _originalBodyScale.z), 0.11f));
+                hop.Append(bodyPivot.DOLocalMoveY(0f, 0.16f).SetEase(Ease.OutBounce));
+                hop.Join(bodyPivot.DOScale(_originalBodyScale, 0.16f).SetEase(Ease.OutBack));
+            }, ignoreTimeScale: false);
+        }
+
+        private void PlayNearCompletePulse()
+        {
+            float urgency = 1f - (remainingCount - 1f) / Mathf.Max(1f, NearCompleteThreshold); // son topta 1
+            float peak = Mathf.Lerp(0.45f, 0.85f, urgency);
+
+            if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
+            _nearCompleteSeq = DOTween.Sequence();
+            _nearCompleteSeq.Append(DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, peak, 0.06f).SetEase(Ease.OutQuad));
+            _nearCompleteSeq.Append(DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, 0f, 0.22f).SetEase(Ease.InQuad));
+
+            if (counterText != null)
+            {
+                counterText.transform.DOKill(true);
+                counterText.transform.DOPunchScale(Vector3.one * Mathf.Lerp(0.32f, 0.46f, urgency), 0.20f, 6, 0.6f);
+            }
+        }
+
         private void DecrementCounterAndCheckComplete()
         {
             remainingCount = Mathf.Max(0, remainingCount - 1);
             UpdateBadgeText();
             AnimateCollectionFillProgress();
+
+            if (!isFilledBox && Application.isPlaying)
+            {
+                // Her top: çok kısa, hafif dokunsal tık (hızlı akışta seyreltilir)
+                BlockClearCelebration.VibrateTick();
+                if (remainingCount > 0 && remainingCount <= NearCompleteThreshold) PlayNearCompletePulse();
+            }
 
             OnEatenCube?.Invoke(this);
             if (PuzzleGlassGameManager.Instance != null)
@@ -2289,6 +2358,8 @@ namespace PuzzleGlass
 
             if (remainingCount <= 0)
             {
+                // Beklenti nabzı tamamlanma parıltısıyla aynı değeri sürer: çakışmasın
+                if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
                 _isCompleted = true;
                 StagingGridBoard.Instance?.MarkGridDirty();
                 if (ShowsCavityBalls && !isFilledBox)
@@ -2425,8 +2496,12 @@ namespace PuzzleGlass
             }
             if (assignedSlot != null)
             {
+                SlotPlatform freedSlot = assignedSlot;
                 assignedSlot.DetachMonster();
                 assignedSlot = null;
+                // Boşalan slot "hazır" nabzı + ızgarada şu an oynanabilir kutular hafifçe zıplar: oyuncuyu sıradaki hamleye yönlendirir
+                freedSlot.PlayFreedPulse();
+                PlayReadyHopOnPlayableGridBoxes(this);
             }
             OnTargetReached?.Invoke(this);
 

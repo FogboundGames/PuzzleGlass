@@ -242,6 +242,27 @@ namespace PuzzleGlass
             if (_vipBadgeObj != null) _vipBadgeObj.SetActive(true);
         }
 
+        /// <summary>
+        /// Kutu tamamlanıp slottan ayrılınca, slotun boşaldığını ve yeni kutu beklediğini gösteren kısa nabız:
+        /// karo hafifçe zıplar, üstünde beyaz bir halka açılır. Kutunun patlama efektiyle üst üste binmesin diye gecikmeli.
+        /// </summary>
+        public void PlayFreedPulse(float delay = 0.32f)
+        {
+            if (!Application.isPlaying || isLocked) return;
+            DOVirtual.DelayedCall(delay, () =>
+            {
+                if (this == null || isOccupied || !gameObject.activeInHierarchy) return;
+                Transform tile = _tileBodyRenderer != null ? _tileBodyRenderer.transform : null;
+                if (tile != null)
+                {
+                    tile.DOKill(true);
+                    tile.DOPunchScale(Vector3.one * 0.14f, 0.32f, 6, 0.55f);
+                }
+                float radius = VisibleHalfExtent * Mathf.Abs(transform.lossyScale.x);
+                BlockClearCelebration.PlaySocketSeatRing(GetPlacementPosition(), Color.white, Mathf.Max(0.12f, radius * 0.9f), 0.78f);
+            }, ignoreTimeScale: false);
+        }
+
         public void TryUnlockSlot()
         {
             if (!isLocked) return;

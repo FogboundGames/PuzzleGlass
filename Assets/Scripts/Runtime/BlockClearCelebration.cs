@@ -784,5 +784,55 @@ namespace PuzzleGlass
             Handheld.Vibrate();
 #endif
         }
+
+        /// <summary>Art arda iki tık arasındaki en kısa süre (sn): hızlı akışta telefon sürekli vızıldamasın.</summary>
+        public static float TickMinInterval = 0.09f;
+        private static float s_LastTickTime = -1f;
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static AndroidJavaObject s_Vibrator;
+        private static AndroidJavaObject s_TickEffect;
+        private static bool s_TickInitDone;
+#endif
+
+        /// <summary>
+        /// Top kutuya girdiğinde çok kısa, hafif "tık" titreşimi (kutu kapanışındaki titreşimden çok daha yumuşak).
+        /// Android 10+ sistemin hazır EFFECT_TICK'ini, daha eskilerde 12 ms'lik düşük genlikli titreşimi kullanır.
+        /// Titreşim nesneleri bir kez alınıp saklanır (her topta JNI ile yeniden aranmaz). iOS'ta uzun sistem
+        /// titreşimi olduğu için kullanılmaz.
+        /// </summary>
+        public static void VibrateTick()
+        {
+            if (!HapticsEnabled) return;
+            float now = Time.unscaledTime;
+            if (now - s_LastTickTime < TickMinInterval) return;
+            s_LastTickTime = now;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                if (!s_TickInitDone)
+                {
+                    s_TickInitDone = true;
+                    int sdk;
+                    using (var version = new AndroidJavaClass("android.os.Build$VERSION")) sdk = version.GetStatic<int>("SDK_INT");
+                    if (sdk < 26) return; // eski cihazlarda genlik ayarı yok: tık yerine titreşim vermeyelim
+                    using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                    using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                        s_Vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
+                    using (var effectClass = new AndroidJavaClass("android.os.VibrationEffect"))
+                    {
+                        s_TickEffect = sdk >= 29
+                            ? effectClass.CallStatic<AndroidJavaObject>("createPredefined", 2) // EFFECT_TICK
+                            : effectClass.CallStatic<AndroidJavaObject>("createOneShot", 12L, 70);
+                    }
+                }
+                if (s_Vibrator != null && s_TickEffect != null) s_Vibrator.Call("vibrate", s_TickEffect);
+            }
+            catch (System.Exception)
+            {
+                s_Vibrator = null;
+                s_TickEffect = null;
+            }
+#endif
+        }
     }
 }
