@@ -468,11 +468,11 @@ namespace PuzzleGlass
 
         private void FixedUpdate()
         {
+            using (s_MStepBalls.Auto()) StepAllBallPhysics();
             if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
             {
                 return;
             }
-            using (s_MStepBalls.Auto()) StepAllBallPhysics();
             using (s_MAttraction.Auto()) UpdateAttractionPhysics();
             using (s_MFunnel.Auto()) ApplyPoolDrainFunnel();
             using (s_MDrift.Auto()) ApplyFloorDriftTowardHungryMonsters();

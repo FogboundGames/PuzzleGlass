@@ -103,7 +103,8 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Level yüklenmeye başlarken çağrılır: Level 1'de toplar spotlight kutusu slota konana kadar durur.
+        /// Level yüklenmeye başlarken çağrılır: Level 1'de toplar fizikle doğal yerleşir ama
+        /// spotlight kutusu slota konana kadar bant dönmez ve toplama başlamaz.
         /// </summary>
         public void OnLevelLoading(PuzzleGlassLevelData lvl)
         {

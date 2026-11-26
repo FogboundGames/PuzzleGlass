@@ -1886,6 +1886,36 @@ namespace PuzzleGlass
             _deadlockTimer = 0f;
         }
 
+        public bool TryGetCompletedLevelFeatureProgress(out FeatureProgressInfo info)
+        {
+            if (currentLevel == null)
+            {
+                info = default;
+                return false;
+            }
+            return MechanicUnlockProgression.TryGetProgressForCompletedLevel(levels, currentLevel.levelNumber, out info);
+        }
+
+        public bool HasWinFeatureCardToShow()
+        {
+            return TryGetCompletedLevelFeatureProgress(out _);
+        }
+
+        public void ProceedAfterWinCard()
+        {
+            if (!Application.isPlaying) return;
+            if (LevelTransitionController.IsTransitioning) return;
+            CancelInvoke(nameof(LoadNextLevel));
+            if (useBallPourTransition)
+            {
+                LevelTransitionController.GetOrCreate().PlayNextLevelTransition(GetNextLevelColors());
+            }
+            else
+            {
+                LoadNextLevel();
+            }
+        }
+
         private void OnLevelCleared()
         {
             SetEndgameFastForward(false);
@@ -1896,6 +1926,12 @@ namespace PuzzleGlass
             {
                 // Geçiş sırasında oyun kapanırsa bir sonraki levelden devam edilsin
                 if (currentLevel != null) SaveProgress(currentLevel.levelNumber + 1);
+
+                // Yeni mekanik ilerleme kartı gösterilecekse geçişi oyuncu "NEXT LEVEL"e basana kadar beklet
+                if (HasWinFeatureCardToShow())
+                {
+                    return;
+                }
 
                 // Top dökülmeli geçiş: ekran toplarla kapanınca sonraki level yüklenir.
                 if (useBallPourTransition)

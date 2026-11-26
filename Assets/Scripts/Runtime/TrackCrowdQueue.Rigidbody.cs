@@ -104,11 +104,11 @@ namespace PuzzleGlass
         }
 
         private static bool StepRigidbody(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt,
-            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f)
+            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f, bool holdBelt = false)
         {
             IsMoving = false;
-            float beltSpeed = BeltSpeed * speedMul;
-            float maxSpeed = MaxSpeed * speedMul;
+            float beltSpeed = holdBelt ? 0f : BeltSpeed * speedMul;
+            float maxSpeed = holdBelt ? 0f : MaxSpeed * speedMul;
             float driveGain = PhysDriveGain * speedMul;
             float maxDriveAccel = PhysMaxDriveAccel * speedMul * speedMul;
             float spreadAccel = PhysSpreadAccel * speedMul * speedMul;
@@ -358,7 +358,7 @@ namespace PuzzleGlass
 
             // 3. Gizli kuyruk: yolun tepesi boşsa sıradaki top belirir; yol yoksa halka girişinde (kapasite varsa)
             using var spawnScope = s_MSpawn.Auto();
-            if (s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
+            if (!holdBelt && s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
             {
                 Vector2 spawn;
                 bool allowed;

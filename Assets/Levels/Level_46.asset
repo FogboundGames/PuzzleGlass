@@ -1944,6 +1944,16 @@ MonoBehaviour:
     row: 14
     hasTrackPos: 1
     trackPos: {x: 0.8264039, y: 0.35403493}
+  - color: 0
+    column: 0
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.58327967, y: 0.21678457}
+  - color: 0
+    column: 0
+    row: 4
+    hasTrackPos: 1
+    trackPos: {x: 0.6109853, y: 0.21938805}
   bottomToTopTriplets: 040000000300000004000000030000000600000000000000
   bottomToTopGroups:
   - color: 4
@@ -2008,7 +2018,7 @@ MonoBehaviour:
     filledBallColor: 0
   monsters:
   - color: 4
-    count: 50
+    count: 44
     blockShape: 0
     gridAnchor: {x: 0, y: 1}
     hasGridAnchor: 1
@@ -2018,7 +2028,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 46
+    count: 47
     blockShape: 0
     gridAnchor: {x: 1, y: 1}
     hasGridAnchor: 1
@@ -2028,7 +2038,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 4
-    count: 38
+    count: 44
     blockShape: 0
     gridAnchor: {x: 2, y: 1}
     hasGridAnchor: 1
@@ -2038,7 +2048,7 @@ MonoBehaviour:
     isFilledBox: 0
     filledBallColor: 0
   - color: 0
-    count: 46
+    count: 47
     blockShape: 0
     gridAnchor: {x: 3, y: 1}
     hasGridAnchor: 1

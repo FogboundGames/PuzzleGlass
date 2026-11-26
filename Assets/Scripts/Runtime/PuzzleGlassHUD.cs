@@ -32,6 +32,8 @@ namespace PuzzleGlass
         private RectTransform _resultCardRect;
         private Text _resultTitleText;
         private Text _resultBodyText;
+        private FeatureUnlockShowcaseView _featureShowcase;
+        private RectTransform _resultActionRect;
         private GameObject _winStarsGroup;
         private GameObject _failBadgeGroup;
         private Button _resultActionButton;
@@ -57,6 +59,8 @@ namespace PuzzleGlass
         private bool _lastCompleted = false;
         private bool _lastFailed = false;
         private bool _wasOverlayVisible = false;
+        private float _winCardDelayTimer = -1f;
+        private bool _nextClicked = false;
 
         private static readonly Color ColCardCream    = new Color(1.000f, 0.992f, 0.980f, 0.99f);
         private static readonly Color ColPillWhite    = new Color(0.992f, 0.988f, 0.998f, 0.98f);
@@ -335,10 +339,11 @@ namespace PuzzleGlass
             // Kart Başlığı (mor header şeridinin içine oturur)
             Color titleColor = panelSprite != null ? Color.white : ColIndigoDeep;
             _resultTitleText = CreateText("ResultTitle", cardFace, "WELL DONE!", 44, FontStyle.Bold, titleColor, TextAnchor.MiddleCenter);
-            _resultTitleText.rectTransform.anchorMin = new Vector2(0.08f, 0.80f);
-            _resultTitleText.rectTransform.anchorMax = new Vector2(0.92f, 0.97f);
-            _resultTitleText.rectTransform.offsetMin = Vector2.zero;
-            _resultTitleText.rectTransform.offsetMax = Vector2.zero;
+            _resultTitleText.rectTransform.anchorMin = new Vector2(0.08f, 1f);
+            _resultTitleText.rectTransform.anchorMax = new Vector2(0.92f, 1f);
+            _resultTitleText.rectTransform.pivot = new Vector2(0.5f, 1f);
+            _resultTitleText.rectTransform.anchoredPosition = new Vector2(0f, -14f);
+            _resultTitleText.rectTransform.sizeDelta = new Vector2(0f, 96f);
             if (panelSprite != null)
             {
                 AddSoftTextShadow(_resultTitleText.gameObject, new Color(0.15f, 0.08f, 0.38f, 0.55f), new Vector2(0f, -3f));
@@ -352,11 +357,16 @@ namespace PuzzleGlass
             _resultBodyText.rectTransform.offsetMax = Vector2.zero;
             _resultBodyText.horizontalOverflow = HorizontalWrapMode.Wrap;
 
+            // Yeni Mekanik İlerleme Tam Ekran Vitrini (2. referans görsel tarzı)
+            _featureShowcase = FeatureUnlockShowcaseView.Create(root, _uiFont, _theme, pillBg);
+            _featureShowcase.Hide();
+
             // Aksiyon Butonu (NEXT LEVEL / TRY AGAIN)
             RectTransform actRect = CreateRect("ResultActionBtn", cardFace);
-            actRect.anchorMin = new Vector2(0.5f, 0.18f);
-            actRect.anchorMax = new Vector2(0.5f, 0.18f);
-            actRect.anchoredPosition = Vector2.zero;
+            _resultActionRect = actRect;
+            actRect.anchorMin = new Vector2(0.5f, 0f);
+            actRect.anchorMax = new Vector2(0.5f, 0f);
+            actRect.anchoredPosition = new Vector2(0f, 96f);
             actRect.sizeDelta = new Vector2(352f, 86f);
 
             RectTransform actShadow = CreateRect("ActShadow", actRect);
@@ -533,72 +543,140 @@ namespace PuzzleGlass
                 }
             }
 
-            if (force || completed != _lastCompleted || failed != _lastFailed)
+            bool stateChanged = force || completed != _lastCompleted || failed != _lastFailed;
+            if (stateChanged)
             {
                 _lastCompleted = completed;
                 _lastFailed = failed;
 
-                if (_resultOverlay != null)
+                if (!completed && !failed)
                 {
-                    // Top dökülmeli geçiş açıkken "Tebrikler" paneli gösterilmez; geçişin kendisi kutlama
-                    bool pourTransition = gm != null && gm.useBallPourTransition;
-                    bool show = (completed && !pourTransition) || failed;
-                    _resultOverlay.SetActive(show);
+                    _winCardDelayTimer = -1f;
+                    _nextClicked = false;
+                    _wasOverlayVisible = false;
+                    if (_featureShowcase != null) _featureShowcase.Hide();
+                    if (_resultOverlay != null) _resultOverlay.SetActive(false);
+                }
+                else if (completed && gm != null && gm.HasWinFeatureCardToShow())
+                {
+                    _nextClicked = false;
+                    _winCardDelayTimer = force ? 0f : 0.38f;
+                }
+                else
+                {
+                    _winCardDelayTimer = -1f;
+                    _nextClicked = false;
+                    UpdateResultOverlayContent(gm, levelNum, completed, failed);
+                }
+            }
 
-                    if (show && !_wasOverlayVisible && _resultCardRect != null)
+            if (_winCardDelayTimer >= 0f)
+            {
+                if (!completed || gm == null)
+                {
+                    _winCardDelayTimer = -1f;
+                }
+                else
+                {
+                    _winCardDelayTimer -= Time.unscaledDeltaTime;
+                    if (_winCardDelayTimer <= 0f)
                     {
-                        _resultCardRect.DOKill(true);
-                        _resultCardRect.localScale = Vector3.one * 0.82f;
-                        _resultCardRect.DOScale(1f, 0.30f).SetEase(Ease.OutBack).SetUpdate(true);
+                        _winCardDelayTimer = -1f;
+                        UpdateResultOverlayContent(gm, levelNum, completed: true, failed: false);
                     }
-                    _wasOverlayVisible = show;
+                }
+            }
+        }
 
-                    if (completed && gm != null)
+        private void UpdateResultOverlayContent(PuzzleGlassGameManager gm, int levelNum, bool completed, bool failed)
+        {
+            if (_resultOverlay == null) return;
+
+            bool pourTransition = gm != null && gm.useBallPourTransition;
+            FeatureProgressInfo featureInfo = default;
+            bool hasFeatureCard = completed && gm != null && gm.TryGetCompletedLevelFeatureProgress(out featureInfo);
+
+            // Yeni mekanik ilerleme kartı varsa tam ekran kutlama katmanını göster (2. referans görsel stili)
+            if (hasFeatureCard && _featureShowcase != null)
+            {
+                _resultOverlay.SetActive(false);
+                _wasOverlayVisible = false;
+                _featureShowcase.Show(levelNum, featureInfo, () => gm.ProceedAfterWinCard());
+                return;
+            }
+
+            if (_featureShowcase != null) _featureShowcase.Hide();
+
+            bool show = (completed && !pourTransition) || failed;
+            _resultOverlay.SetActive(show);
+
+            if (!show)
+            {
+                _wasOverlayVisible = false;
+                return;
+            }
+
+            if (!_wasOverlayVisible && _resultCardRect != null)
+            {
+                _resultCardRect.DOKill(true);
+                _resultCardRect.localScale = Vector3.one * 0.82f;
+                _resultCardRect.DOScale(1f, 0.30f).SetEase(Ease.OutBack).SetUpdate(true);
+            }
+            _wasOverlayVisible = true;
+
+            if (_resultCardRect != null) _resultCardRect.sizeDelta = new Vector2(780f, 560f);
+            _resultBodyText.fontSize = 32;
+            _resultBodyText.rectTransform.anchorMin = new Vector2(0.10f, 0.40f);
+            _resultBodyText.rectTransform.anchorMax = new Vector2(0.90f, 0.72f);
+            if (_resultActionRect != null) _resultActionRect.anchoredPosition = new Vector2(0f, 96f);
+
+            if (completed && gm != null)
+            {
+                if (_winStarsGroup != null) _winStarsGroup.SetActive(_theme != null && (_theme.coloredStar != null || _theme.iconStar != null));
+                if (_failBadgeGroup != null) _failBadgeGroup.SetActive(false);
+
+                _resultTitleText.text = "WELL DONE!";
+                _resultBodyText.text = $"Level {levelNum} Complete!";
+
+                _resultActionLabel.text = "NEXT LEVEL";
+                ApplyActionButtonTheme(isWin: true);
+
+                if (_resultActionButton != null)
+                {
+                    _resultActionButton.gameObject.SetActive(!gm.useBallPourTransition);
+                    _resultActionButton.onClick.RemoveAllListeners();
+                    _resultActionButton.onClick.AddListener(() =>
                     {
-                        if (_winStarsGroup != null) _winStarsGroup.SetActive(_theme != null && (_theme.coloredStar != null || _theme.iconStar != null));
-                        if (_failBadgeGroup != null) _failBadgeGroup.SetActive(false);
+                        if (_nextClicked || LevelTransitionController.IsTransitioning) return;
+                        _nextClicked = true;
+                        PuzzleSoundManager.GetOrCreate().PlayUiClick();
+                        PunchButton(_resultActionRect);
+                        _resultOverlay.SetActive(false);
+                        _wasOverlayVisible = false;
+                        gm.ProceedAfterWinCard();
+                    });
+                }
+            }
+            else if (failed && gm != null)
+            {
+                if (_winStarsGroup != null) _winStarsGroup.SetActive(false);
+                if (_failBadgeGroup != null) _failBadgeGroup.SetActive(_theme != null && _theme.iconWarning != null);
 
-                        _resultTitleText.text = "WELL DONE!";
-                        _resultBodyText.text = $"Level {levelNum} complete!";
+                _resultTitleText.text = "NO MOVES LEFT";
+                _resultBodyText.text = "Try again and place the boxes in a better order.";
 
-                        _resultActionLabel.text = "NEXT LEVEL";
-                        ApplyActionButtonTheme(isWin: true);
+                _resultActionLabel.text = "TRY AGAIN";
+                ApplyActionButtonTheme(isWin: false);
 
-                        if (_resultActionButton != null)
-                        {
-                            _resultActionButton.gameObject.SetActive(!gm.useBallPourTransition);
-                            _resultActionButton.onClick.RemoveAllListeners();
-                            _resultActionButton.onClick.AddListener(() =>
-                            {
-                                PuzzleSoundManager.GetOrCreate().PlayUiClick();
-                                if (LevelTransitionController.IsTransitioning) return;
-                                gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
-                                gm.LoadNextLevel();
-                            });
-                        }
-                    }
-                    else if (failed && gm != null)
+                if (_resultActionButton != null)
+                {
+                    _resultActionButton.gameObject.SetActive(true);
+                    _resultActionButton.onClick.RemoveAllListeners();
+                    _resultActionButton.onClick.AddListener(() =>
                     {
-                        if (_winStarsGroup != null) _winStarsGroup.SetActive(false);
-                        if (_failBadgeGroup != null) _failBadgeGroup.SetActive(_theme != null && _theme.iconWarning != null);
-
-                        _resultTitleText.text = "NO MOVES LEFT";
-                        _resultBodyText.text = "Try again and place the boxes in a better order.";
-
-                        _resultActionLabel.text = "TRY AGAIN";
-                        ApplyActionButtonTheme(isWin: false);
-
-                        if (_resultActionButton != null)
-                        {
-                            _resultActionButton.gameObject.SetActive(true);
-                            _resultActionButton.onClick.RemoveAllListeners();
-                            _resultActionButton.onClick.AddListener(() =>
-                            {
-                                PuzzleSoundManager.GetOrCreate().PlayUiClick();
-                                gm.RestartCurrentPattern();
-                            });
-                        }
-                    }
+                        PuzzleSoundManager.GetOrCreate().PlayUiClick();
+                        gm.RestartCurrentPattern();
+                    });
                 }
             }
         }

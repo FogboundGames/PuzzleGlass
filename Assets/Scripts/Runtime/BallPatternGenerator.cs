@@ -345,8 +345,6 @@ namespace PuzzleGlass
             bool useLayerLock = Application.isPlaying && gmLock != null && gmLock.currentLevel != null
                 && gmLock.currentLevel.trackLayerLock && lockTrack != null && lockTrack.closedLoopBranch >= 0;
 
-            bool holdForTutorial = Application.isPlaying && TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial;
-
             for (int i = 0; i < ballSpawns.Count; i++)
             {
                 var entry = ballSpawns[i];
@@ -391,7 +389,7 @@ namespace PuzzleGlass
                         ball.hasHomeX = false;
                     }
 
-                    if (initialShapeHoldTime > 0.05f || holdForTutorial || !Application.isPlaying)
+                    if (initialShapeHoldTime > 0.05f || !Application.isPlaying)
                     {
                         ball.MakeKinematic();
                     }
@@ -410,8 +408,14 @@ namespace PuzzleGlass
             if (Application.isPlaying)
             {
                 if (glassContainer != null && glassContainer.IsTrackShape && glassContainer.cachedTrackLayout.HasValue)
+                {
                     TrackCrowdQueue.SetPending(glassContainer.cachedTrackLayout.Value.overflowColors, ballRadius,
                         glassContainer.cachedTrackLayout.Value.beltCount);
+                    if (initialShapeHoldTime <= 0.05f && spawnedBalls.Count > 0)
+                    {
+                        TrackCrowdQueue.PrewarmSettle(glassContainer, spawnedBalls);
+                    }
+                }
                 else
                     TrackCrowdQueue.ClearPending();
             }
@@ -443,11 +447,6 @@ namespace PuzzleGlass
         private IEnumerator ReleaseBallsHoldRoutine(float delay, List<BallPhysicsController> balls)
         {
             yield return new WaitForSeconds(delay);
-            if (TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial)
-            {
-                _releaseHoldCoroutine = null;
-                yield break;
-            }
 
             for (int i = 0; i < balls.Count; i++)
             {

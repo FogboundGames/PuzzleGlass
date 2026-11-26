@@ -160,10 +160,11 @@ namespace PuzzleGlass
         }
 
         private static bool StepGranular(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt,
-            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f)
+            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul = 1f,
+            bool holdBelt = false, bool emitFeedback = true)
         {
             IsMoving = false;
-            float beltSpeed = BeltSpeed * speedMul;
+            float beltSpeed = holdBelt ? 0f : BeltSpeed * speedMul;
             float maxSpeed = MaxSpeed * speedMul;
             float maxBallSpeed = MaxBallSpeed * speedMul;
             float driveGain = GranularDriveGain * speedMul;
@@ -263,7 +264,7 @@ namespace PuzzleGlass
                     }
                 }
 
-                float target = s_GOnRing[i] ? beltSpeed : maxSpeed * 0.6f;
+                float target = s_GOnRing[i] ? beltSpeed : (holdBelt ? 0f : maxSpeed * 0.6f);
                 if (!blocked) target *= 1f + GranularCatchUp;
 
                 Vector2 v = s_Vel[i];
@@ -287,7 +288,7 @@ namespace PuzzleGlass
                 float ph = (b.GetInstanceID() & 1023) * 0.0613f;
                 Vector2 jit = new Vector2(Mathf.Sin(now * 6.1f + ph) + 0.5f * Mathf.Sin(now * 11.3f + ph * 2.1f),
                                           Mathf.Cos(now * 5.3f + ph * 1.7f) + 0.5f * Mathf.Cos(now * 9.7f + ph));
-                v += jit * (GranularJitter * d * dt);
+                if (!holdBelt) v += jit * (GranularJitter * d * dt);
 
                 if (v.sqrMagnitude > maxBallSpeed * maxBallSpeed) v = v.normalized * maxBallSpeed;
                 s_Vel[i] = v;
@@ -386,7 +387,7 @@ namespace PuzzleGlass
                 b.trackQueueSpeed = v.magnitude;
 
                 float hit = s_Corr[i].magnitude / dt;
-                if (hit > 0.9f)
+                if (emitFeedback && hit > 0.9f)
                 {
                     Vector3 axis = ct.TransformDirection(new Vector3(s_Corr[i].x, s_Corr[i].y, 0f));
                     b.PlayTrackBump(axis, Mathf.Clamp(hit * 0.02f, 0.025f, 0.07f));
@@ -399,7 +400,7 @@ namespace PuzzleGlass
             RoadQueueCount = n - ringCount;
 
             // 5. Gizli kuyruk: yolun tepesi boşsa sıradaki top belirir; yol yoksa halkanın girişinde (kapasite varsa)
-            if (s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
+            if (!holdBelt && s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
             {
                 Vector2 spawn;
                 bool allowed;

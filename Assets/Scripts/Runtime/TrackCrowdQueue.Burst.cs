@@ -229,7 +229,8 @@ namespace PuzzleGlass
         // ==================== Adım ====================
 
         private static bool StepBurst(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt,
-            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul)
+            BeltLoop loop, GlassTrackLayout.CompiledTrack track, Transform ct, float speedMul,
+            bool holdBelt = false, bool emitFeedback = true)
         {
             IsMoving = false;
             BurstActive = true;
@@ -292,8 +293,8 @@ namespace PuzzleGlass
                     ringBand = track.innerHalfWidth + r * 0.6f,
                     innerHalfWidth = track.innerHalfWidth,
                     exitPoint = track.exitPoint,
-                    beltSpeed = BeltSpeed * speedMul,
-                    roadSpeed = MaxSpeed * speedMul * 0.6f,
+                    beltSpeed = holdBelt ? 0f : BeltSpeed * speedMul,
+                    roadSpeed = holdBelt ? 0f : MaxSpeed * speedMul * 0.6f,
                     driveGain = PhysDriveGain * speedMul,
                     maxDriveAccel = PhysMaxDriveAccel * speedMul * speedMul,
                     spreadAccel = PhysSpreadAccel * speedMul * speedMul,
@@ -393,7 +394,7 @@ namespace PuzzleGlass
                     b.burstRot = s_BRot[i];
 
                     float hit = s_BImpact[i];
-                    if (hit > 0.45f)
+                    if (emitFeedback && hit > 0.45f)
                     {
                         float2 hn = s_BImpactN[i];
                         b.ApplyContactFeedback(hit, ctRot * new Vector3(hn.x, hn.y, 0f));
@@ -414,7 +415,7 @@ namespace PuzzleGlass
             RoadQueueCount = n - ringCount;
 
             // 3. Gizli kuyruk: yolun tepesi boşsa sıradaki top belirir; yol yoksa halka girişinde (kapasite varsa)
-            if (s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
+            if (!holdBelt && s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
             {
                 Vector2 spawn;
                 bool allowed;
@@ -520,6 +521,16 @@ namespace PuzzleGlass
             s_RCount = 0;
             s_RDirty = true;
             BurstActive = false;
+        }
+
+        internal static void SyncBurstRenderAfterPrewarm()
+        {
+            if (!BurstActive || s_RCount <= 0 || !s_RPrev.IsCreated || !s_RCur.IsCreated) return;
+            for (int i = 0; i < s_RCount; i++)
+            {
+                s_RPrev[i] = s_RCur[i];
+                if (s_RRotPrev.IsCreated && s_RRotCur.IsCreated) s_RRotPrev[i] = s_RRotCur[i];
+            }
         }
 
         // ==================== Burst işleri ====================

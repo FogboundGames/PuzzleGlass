@@ -64,6 +64,11 @@ namespace PuzzleGlass
                 : 1.0f;
         }
 
+        private static bool IsBeltRotationHeldForTutorial()
+        {
+            return Application.isPlaying && TutorialOverlay.Instance != null && TutorialOverlay.Instance.AreGlassBallsPausedForTutorial;
+        }
+
         // ==================== Bant (döngü) verisi ====================
 
         private sealed class BeltLoop
@@ -419,6 +424,59 @@ namespace PuzzleGlass
         private static GlassTrackLayout.CompiledTrack s_FrontTrackRef;
 
         /// <summary>
+        /// Level başında pistteki topları bant dönmesi olmadan birkaç fizik adımı önceden oturtur;
+        /// böylece ilk kareden itibaren yerçekimi ve temaslarla doğal konumlarında görünürler.
+        /// </summary>
+        public static void PrewarmSettle(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, int steps = 36, float dt = 0.016f)
+        {
+            if (container == null || !container.IsTrackShape || activeBalls == null || activeBalls.Count == 0 || steps <= 0) return;
+            RefreshLayerLock();
+            if (container.compiledTrack == null) container.RebuildTrackCompiledData();
+            var track = container.compiledTrack;
+            if (track == null) return;
+            var loop = GetLoop(container);
+            if (loop == null) return;
+
+            Transform ct = container.transform;
+            EnsureCapacity(activeBalls.Count);
+
+            if (UseBurstSim)
+            {
+                for (int s = 0; s < steps; s++)
+                {
+                    StepBurst(container, activeBalls, dt, loop, track, ct, 1f, holdBelt: true, emitFeedback: false);
+                }
+            }
+            else
+            {
+                for (int s = 0; s < steps; s++)
+                {
+                    StepGranular(container, activeBalls, dt, loop, track, ct, 1f, holdBelt: true, emitFeedback: false);
+                }
+            }
+
+            for (int i = 0; i < activeBalls.Count; i++)
+            {
+                var b = activeBalls[i];
+                if (b == null || !b.trackQueueDriven || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                b.trackVel = Vector2.zero;
+                b.trackQueueSpeed = 0f;
+                b.burstPrevLocalPos = b.trackQueueLocalPos;
+                b.burstPrevRot = b.burstRot;
+                Vector3 wp = ct.TransformPoint(new Vector3(b.trackQueueLocalPos.x, b.trackQueueLocalPos.y, b.trackQueueLocalZ));
+                b.transform.position = wp;
+                if (b.rb != null && !b.rb.isKinematic)
+                {
+                    b.rb.position = wp;
+                    b.rb.linearVelocity = Vector3.zero;
+                    b.rb.angularVelocity = Vector3.zero;
+                }
+            }
+
+            if (UseBurstSim) SyncBurstRenderAfterPrewarm();
+        }
+
+        /// <summary>
         /// Pisti bir fizik adımı ilerletir. Bir top bile hareket ettiyse true döner.
         /// </summary>
         public static bool Step(ShapedGlassContainer container, List<BallPhysicsController> activeBalls, float dt)
@@ -434,12 +492,13 @@ namespace PuzzleGlass
             EnsureCapacity(activeBalls.Count);
             var loop = GetLoop(container);
             float speedMul = GetActiveSpeedMultiplier();
-            if (UseBurstSim && loop != null) return StepBurst(container, activeBalls, dt, loop, track, ct, speedMul);
+            bool holdBelt = IsBeltRotationHeldForTutorial();
+            if (UseBurstSim && loop != null) return StepBurst(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
             if (BurstActive) ResetBurstRenderSet();
-            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul);
-            if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct, speedMul);
+            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
+            if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
 
-            float beltSpeed = BeltSpeed * speedMul;
+            float beltSpeed = holdBelt ? 0f : BeltSpeed * speedMul;
             float maxSpeed = MaxSpeed * speedMul;
             float maxAccel = Acceleration * speedMul;
             float maxBallSpeed = MaxBallSpeed * speedMul;
@@ -477,7 +536,7 @@ namespace PuzzleGlass
                 }
 
                 if (!anyOnBelt) s_CachedFrontRow = -1;
-                loop.phase = anyOnBelt ? Frac(loop.phase + beltSpeed * dt / Mathf.Max(0.01f, loop.centerLen)) : 0f;
+                loop.phase = (anyOnBelt && !holdBelt) ? Frac(loop.phase + beltSpeed * dt / Mathf.Max(0.01f, loop.centerLen)) : 0f;
 
                 if (s_SlotPos.Length < loop.totalSlots)
                 {
@@ -510,7 +569,7 @@ namespace PuzzleGlass
                 s_Occupied = occupied;
 
                 // Giriş yolu olmayan pistte (banda sığmamış toplar): eski usul girişten banda besleme
-                if (!loop.hasRoad && s_Pending.Count > 0 && CanJoinBelt(occupied) && AllSeated(activeBalls))
+                if (!holdBelt && !loop.hasRoad && s_Pending.Count > 0 && CanJoinBelt(occupied) && AllSeated(activeBalls))
                     FeedFromHiddenQueue(loop, container, d, s_BeltLimit > 0 ? s_BeltLimit - occupied : int.MaxValue);
                 EnsureCapacity(activeBalls.Count); // yeni giren toplar için
             }
@@ -762,7 +821,7 @@ namespace PuzzleGlass
             }
 
             // Giriş yolunun tepesi boşsa kuyruktaki sıradaki top orada belirir ve aşağı akar
-            if (loop != null && loop.hasRoad && s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
+            if (!holdBelt && loop != null && loop.hasRoad && s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
             {
                 float clearSq = (d * 1.05f) * (d * 1.05f);
                 bool topFree = true;

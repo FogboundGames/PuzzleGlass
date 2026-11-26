@@ -2594,66 +2594,32 @@ namespace PuzzleGlass
             if (_gulpGlowTween != null && _gulpGlowTween.IsActive()) _gulpGlowTween.Kill();
             _gulpGlowTween = null;
 
-            // 1. Let the final poured ball(s) drop, bounce, and settle inside the pit
-            if (IsHollowPitStyle && _pitAnyActive)
-            {
-                float settleElapsed = 0f;
-                while (_pitAnyActive && settleElapsed < 0.24f)
-                {
-                    settleElapsed += Time.deltaTime;
-                    yield return null;
-                }
-                if (settleElapsed < 0.08f)
-                {
-                    yield return new WaitForSeconds(0.08f - settleElapsed);
-                }
-            }
-            else
-            {
-                yield return new WaitForSeconds(useCrateVisuals ? 0.12f : 0.05f);
-            }
-
             if (transparentLidTransform != null && transparentLidTransform.gameObject.activeSelf)
             {
                 transparentLidTransform.gameObject.SetActive(false);
             }
 
-            // 2. Smooth luminous white-gold charge + gentle cushion & buoyant tilted hop (inspired by reference)
-            DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, 1.95f, 0.24f)
-                .SetEase(Ease.InOutSine)
-                .SetTarget(this);
-
-            if (IsHollowPitStyle && ShowsCavityBalls)
-            {
-                JostlePitBalls(new Vector2(0f, 0.48f), wakeAll: true);
-            }
-            else
-            {
-                StartCoroutine(PlaySocketCompletionWaveRoutine());
-            }
+            // Direkt balon patlaması: bekleme / eğilip sallanma olmadan anlık şişme ve patlayarak yok olma
+            _mpbDragHighlight = 1.85f;
+            ApplyBoxPropertyBlock();
+            if (_shadowRenderer != null) _shadowRenderer.enabled = false;
 
             if (bodyPivot != null)
             {
                 bodyPivot.DOKill(false);
-                Sequence liftSeq = DOTween.Sequence();
-                // Smooth soft cushion down, then buoyant upward hop + graceful tilt while glowing bright
-                liftSeq.Append(bodyPivot.DOScale(new Vector3(_originalBodyScale.x * 1.07f, _originalBodyScale.y * 0.92f, _originalBodyScale.z), 0.075f).SetEase(Ease.InOutSine));
-                liftSeq.Join(bodyPivot.DOLocalMoveY(-0.016f, 0.075f).SetEase(Ease.InOutSine));
-                liftSeq.Append(bodyPivot.DOScale(_originalBodyScale * 1.18f, 0.20f).SetEase(Ease.OutCubic));
-                liftSeq.Join(bodyPivot.DOLocalMoveY(0.18f, 0.20f).SetEase(Ease.OutCubic));
-                liftSeq.Join(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -15f), 0.20f).SetEase(Ease.OutSine));
-                yield return liftSeq.WaitForCompletion();
+                bodyPivot.localPosition = Vector3.zero;
+                bodyPivot.localRotation = Quaternion.identity;
+                bodyPivot.localScale = _originalBodyScale;
+                yield return bodyPivot.DOScale(_originalBodyScale * 1.24f, 0.045f).SetEase(Ease.OutQuad).WaitForCompletion();
             }
             else
             {
                 Vector3 baseS = transform.localScale;
-                yield return transform.DOScale(baseS * 1.18f, 0.22f).SetEase(Ease.OutCubic).WaitForCompletion();
+                yield return transform.DOScale(baseS * 1.24f, 0.045f).SetEase(Ease.OutQuad).WaitForCompletion();
             }
 
-            // 3. Crisp smooth balloon POP into fluffy white cloud puff + glossy balls & confetti shower
             PuzzleSoundManager.Instance?.PlayBoxComplete();
 
-            // Notify listeners & detach slot right as the luminous box pops in mid-hop
             if (PuzzleGlassGameManager.Instance != null)
             {
                 PuzzleGlassGameManager.Instance.OnCarrierBoxCompleted(this);
@@ -2663,30 +2629,17 @@ namespace PuzzleGlass
                 SlotPlatform freedSlot = assignedSlot;
                 assignedSlot.DetachMonster();
                 assignedSlot = null;
-                // Boşalan slot "hazır" nabzı + ızgarada şu an oynanabilir kutular hafifçe zıplar: oyuncuyu sıradaki hamleye yönlendirir
                 freedSlot.PlayFreedPulse();
                 PlayReadyHopOnPlayableGridBoxes(this);
             }
             OnTargetReached?.Invoke(this);
 
-            if (_shadowRenderer != null) _shadowRenderer.enabled = false;
-
-            // Brief balloon over-stretch right as the puff & confetti burst out
-            if (bodyPivot != null)
-            {
-                yield return bodyPivot.DOScale(_originalBodyScale * 1.26f, 0.04f).SetEase(Ease.OutQuad).WaitForCompletion();
-            }
-            else
-            {
-                yield return transform.DOScale(transform.localScale * 1.06f, 0.04f).SetEase(Ease.OutQuad).WaitForCompletion();
-            }
-
             _pitAnyActive = false;
             Vector3 popCenter = (bodyPivot != null) ? bodyPivot.position : transform.position;
-            BlockClearCelebration.PlayBalloonPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), colorType, 1.12f);
+            BlockClearCelebration.PlayBalloonPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), colorType, 1.18f);
 
             transform.DOKill(false);
-            yield return transform.DOScale(Vector3.zero, 0.06f).SetEase(Ease.InQuad).WaitForCompletion();
+            if (bodyPivot != null) bodyPivot.DOKill(false);
 
             _mpbDragHighlight = 0f;
             ApplyBoxPropertyBlock();
