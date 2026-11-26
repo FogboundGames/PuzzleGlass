@@ -68,6 +68,16 @@ namespace PuzzleGlass.Editor.Studio
             if ((groups == null || groups.Count == 0) && lvl != null && !lvl.HasAnyFilledBox() && lvl.monsters != null && lvl.monsters.Count > 0)
                 groups = lvl.monsters;
 
+            // Önbellek: pist derlemesi (duvarlar, 112x112 mesafe alanı, şeritler) ~300 ms sürüyor ve stüdyo her tıklamada
+            // birkaç kez çağırıyordu (dizilim, ölçüler, çözücü kontrolü). Girdilerin içeriği aynıysa hazır sonuç döner.
+            string key = TrackCacheKey(preset, branches, groups, lvl, lanes, autoFit, scale, wallThick);
+            if (s_TrackCache.TryGetValue(key, out var cached))
+            {
+                compiled = cached.compiled;
+                layout = cached.layout;
+                return;
+            }
+
             GlassTrackLayout.BuildForLevel(
                 preset,
                 branches,
@@ -83,6 +93,33 @@ namespace PuzzleGlass.Editor.Studio
                 out compiled,
                 out layout,
                 lvl != null ? lvl.manualTrackCapacity : 0);
+
+            if (s_TrackCache.Count >= TrackCacheMax) s_TrackCache.Clear();
+            s_TrackCache[key] = (compiled, layout);
+        }
+
+        private const int TrackCacheMax = 16;
+        private static readonly Dictionary<string, (GlassTrackLayout.CompiledTrack compiled, OrderedPoolLayout.Result layout)> s_TrackCache =
+            new Dictionary<string, (GlassTrackLayout.CompiledTrack, OrderedPoolLayout.Result)>();
+        private static readonly System.Text.StringBuilder s_KeySb = new System.Text.StringBuilder(4096);
+
+        /// <summary>Pist derlemesini etkileyen tüm girdilerin içeriği (serileştirilmiş alanlar dahil).</summary>
+        private static string TrackCacheKey(GlassTrackPreset preset, List<GlassTrackBranch> branches, List<LevelMonsterEntry> groups,
+            PuzzleGlassLevelData lvl, int lanes, bool autoFit, float scale, float wallThick)
+        {
+            var sb = s_KeySb;
+            sb.Clear();
+            sb.Append((int)preset).Append('|').Append(lanes).Append('|').Append(autoFit).Append('|')
+              .Append(scale.ToString("R")).Append('|').Append(wallThick.ToString("R")).Append('|');
+            if (lvl != null)
+                sb.Append(lvl.useManualBallLayout).Append('|').Append(lvl.manualTrackCapacity).Append('|');
+            if (branches != null) foreach (var b in branches) sb.Append(JsonUtility.ToJson(b)).Append(';');
+            sb.Append('#');
+            if (groups != null) foreach (var g in groups) if (g != null) sb.Append(JsonUtility.ToJson(g)).Append(';');
+            sb.Append('#');
+            if (lvl != null && lvl.useManualBallLayout && lvl.manualBalls != null)
+                foreach (var m in lvl.manualBalls) if (m != null) sb.Append(JsonUtility.ToJson(m)).Append(';');
+            return sb.ToString();
         }
 
         /// <summary>

@@ -167,12 +167,20 @@ namespace PuzzleGlass
                 if ((!Application.isEditor || resumeSavedProgressInEditor) && TryLoadSavedProgress())
                     return;
 
+                // Build'de kayıt yoksa her zaman ilk levelden başla. currentLevel/currentLevelIndex oyun sırasında güncellenip
+                // sahneyle kaydediliyor (editörde test edilen level); yeni oyuncu bu yüzden Level 4'ten başlıyordu.
+                bool hasList = levels != null && levels.Count > 0 && levels[0] != null;
+                if (!Application.isEditor && hasList)
+                {
+                    LoadLevelByIndex(0);
+                    return;
+                }
                 if (currentLevel != null)
                 {
                     LoadLevel(currentLevel);
                     return;
                 }
-                if (levels != null && levels.Count > 0 && levels[0] != null)
+                if (hasList)
                 {
                     LoadLevelByIndex(currentLevelIndex);
                     return;
@@ -837,7 +845,7 @@ namespace PuzzleGlass
             // Öğretici: Level 1'de toplar spotlight kutusu slota konana kadar durur; diğer levellerde temizlenir
             if (Application.isPlaying)
             {
-                if (levelData.levelNumber == 1)
+                if (levelData.tutorial != LevelTutorial.None || levelData.tutorialHint)
                     TutorialOverlay.GetOrCreate().OnLevelLoading(levelData);
                 else if (TutorialOverlay.Instance != null)
                     TutorialOverlay.Instance.OnLevelLoading(levelData);
@@ -1397,6 +1405,7 @@ namespace PuzzleGlass
         {
             PuzzleGlassLevelData runtimeLvl = ScriptableObject.CreateInstance<PuzzleGlassLevelData>();
             runtimeLvl.levelNumber = Mathf.Max(1, levelNum);
+            if (runtimeLvl.levelNumber == 1) runtimeLvl.tutorial = LevelTutorial.FirstLevel; // kayıtlı level yoksa ilk level tanıtımı
             runtimeLvl.difficulty = diff;
             runtimeLvl.useStagingColumnQueue = true;
             PuzzleLevelGenerator.GenerateForLevelData(runtimeLvl);
@@ -1488,7 +1497,7 @@ namespace PuzzleGlass
         {
             yield return null;
             if (currentLevel != lvl) yield break;
-            if (lvl != null && lvl.levelNumber == 1)
+            if (lvl != null && (lvl.tutorial != LevelTutorial.None || lvl.tutorialHint))
             {
                 TutorialOverlay.GetOrCreate().Begin(lvl, activeMonsters);
             }

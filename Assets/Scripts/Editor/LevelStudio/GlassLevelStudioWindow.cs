@@ -1394,6 +1394,13 @@ namespace PuzzleGlass.Editor.Studio
             // Kanalda elle dizim: adresleri oturulan slotlara göre güncelle, konumları kaydet
             GlassShapeData.CanonicalizeManualTrackBalls(m_Level);
             EditorUtility.SetDirty(m_Level);
+            // İpucu kutusu taşındıysa kayıtlı konumu güncel tut
+            if (m_Level.tutorialBlockIndex >= 0 && m_Level.monsters != null && m_Level.tutorialBlockIndex < m_Level.monsters.Count
+                && PuzzleLevelSolver.UseSlotModel)
+            {
+                m_Level.tutorialFromAnchor = m_Level.monsters[m_Level.tutorialBlockIndex].gridAnchor;
+                m_Level.tutorialTargetAnchor = m_Level.tutorialFromAnchor;
+            }
             m_Solve = null;
             ScheduleSolve();
             RefreshAll();
@@ -4823,6 +4830,18 @@ namespace PuzzleGlass.Editor.Studio
             var tutTitle = new Label("Öğretici");
             tutTitle.AddToClassList("inspector__title");
             m_Inspector.Add(tutTitle);
+            var tutorialField = new EnumField("Tutorial", lvl.tutorial)
+            {
+                tooltip = "Bu levelin başında gösterilecek öğretici.\nNone: yok.\nFirstLevel: ilk level tanıtımı (spotlight + el).\n" +
+                          "FrozenBlock / LockAndKey / FilledBox: mekanik tanıtım kartı (oyuncu başına bir kez)."
+            };
+            tutorialField.RegisterValueChangedCallback(e =>
+            {
+                Record("Tutorial seçimi");
+                lvl.tutorial = (LevelTutorial)e.newValue;
+                OnEdited(syncScene: false);
+            });
+            m_Inspector.Add(tutorialField);
             var tutToggle = new Toggle("El ipucu") { value = lvl.tutorialHint, tooltip = "Level başında çözümün ilk hamlesini bir el ile gösterir (ilk leveller için)." };
             tutToggle.RegisterValueChangedCallback(e =>
             {
@@ -4834,10 +4853,59 @@ namespace PuzzleGlass.Editor.Studio
             m_Inspector.Add(tutToggle);
             if (lvl.tutorialHint && PuzzleLevelSolver.UseSlotModel)
             {
-                // Oyun slot sisteminde ipucu bloğunu kendisi seçer (TutorialOverlay.PickSlotHintBlock): "Tap to send it up"
-                var tutDesc = new Label("Oyunda slota gönderilebilecek ilk blok bir el ile gösterilir (oyun otomatik seçer).");
-                tutDesc.AddToClassList("inspector__sub");
-                m_Inspector.Add(tutDesc);
+                // Slot sisteminde el, seçilen kutunun üstünde "dokun, yukarı gönder" der (TutorialOverlay.PickSlotHintBlock).
+                // Otomatik: oyun slota gönderilebilecek ilk kutuyu seçer.
+                // Tepsideki dizilişe göre: üst satırdan alta, soldan sağa (numara kutuya bağlıdır, taşınınca değişmez)
+                var hintChoices = new List<int>();
+                for (int i = 0; i < lvl.monsters.Count; i++) hintChoices.Add(i);
+                hintChoices.Sort((a, b) =>
+                {
+                    var pa = lvl.monsters[a].gridAnchor; var pb = lvl.monsters[b].gridAnchor;
+                    return pa.y != pb.y ? pb.y.CompareTo(pa.y) : pa.x.CompareTo(pb.x);
+                });
+                hintChoices.Insert(0, -1);
+                int current = lvl.tutorialBlockIndex >= 0 && lvl.tutorialBlockIndex < lvl.monsters.Count ? lvl.tutorialBlockIndex : -1;
+                System.Func<int, string> hintLabel = i =>
+                {
+                    if (i < 0 || i >= lvl.monsters.Count) return "Otomatik (oyun seçer)";
+                    var m = lvl.monsters[i];
+                    return $"#{i + 1} {m.color} {m.blockShape} ({m.gridAnchor.x + 1},{m.gridAnchor.y + 1})";
+                };
+                var hintField = new PopupField<int>("İpucu kutusu", hintChoices, current, hintLabel, hintLabel)
+                {
+                    tooltip = "El hangi kutunun üstünde gösterilsin? Kutu level başında slota gönderilebilir olmalı " +
+                              "(kilitsiz, buzsuz, önü açık); değilse oyun otomatik seçime döner."
+                };
+                // Dikkat: PopupField<int> kurucusunda üçüncü parametre "varsayılan sıra numarası" olarak yorumlanıyor
+                // (değer değil) → liste bir satır kaymış gösteriyordu. Değer açıkça atanır.
+                hintField.SetValueWithoutNotify(current);
+                hintField.RegisterValueChangedCallback(e =>
+                {
+                    Record("İpucu kutusu");
+                    int idx = e.newValue;
+                    lvl.tutorialBlockIndex = idx;
+                    if (idx >= 0 && idx < lvl.monsters.Count)
+                    {
+                        lvl.tutorialFromAnchor = lvl.monsters[idx].gridAnchor;
+                        lvl.tutorialTargetAnchor = lvl.monsters[idx].gridAnchor;
+                    }
+                    OnEdited(syncScene: false);
+                });
+                m_Inspector.Add(hintField);
+                if (m_SelectedBlock >= 0 && m_SelectedBlock < lvl.monsters.Count && m_SelectedBlock != current)
+                {
+                    int sel = m_SelectedBlock;
+                    var useSel = new Button(() =>
+                    {
+                        Record("İpucu kutusu");
+                        lvl.tutorialBlockIndex = sel;
+                        lvl.tutorialFromAnchor = lvl.monsters[sel].gridAnchor;
+                        lvl.tutorialTargetAnchor = lvl.monsters[sel].gridAnchor;
+                        OnEdited(syncScene: false);
+                    }) { text = $"Seçili kutuyu (#{sel + 1}) ipucu yap" };
+                    useSel.AddToClassList("inspector__action");
+                    m_Inspector.Add(useSel);
+                }
             }
             else if (lvl.tutorialHint)
             {

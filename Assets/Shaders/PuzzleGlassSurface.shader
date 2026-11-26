@@ -973,6 +973,24 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return TrackSDF(p, g);
             }
 
+            // Kanal iç mesafesi + çıkış boynu (EvaluateTrackChannel ile aynı birleşim). Işık yönü bunun merkezi farkından alınır.
+            float TrackInnerDist(float2 p)
+            {
+                float d = TrackSDF(p);
+                if (_TrackNeck.w > 0.5)
+                {
+                    float wallThick = max(_TrackWallThick, 0.025);
+                    float neckX = _TrackExitPos.x;
+                    float neckTopY = _TrackExitPos.y + max(_TrackHalfWidth, 0.04);
+                    float neckBotY = _TrackNeck.x - 0.6;
+                    float neckHW = max(_TrackNeck.y, 0.02);
+                    float dNeck = sdRoundBox2D(p - float2(neckX, (neckTopY + neckBotY) * 0.5),
+                                               float2(neckHW, (neckTopY - neckBotY) * 0.5), 0.0);
+                    d = opSmoothUnion(d, dNeck, wallThick * 1.1);
+                }
+                return d;
+            }
+
             half4 EvaluateTrackChannel(Varyings IN)
             {
                 float aspect = max(_BoxAspect, 0.25);
@@ -1016,12 +1034,13 @@ Shader "PuzzleGlass/GlassChamberLit"
                 // çözüldüğü için ekranın y yönünün platforma göre ters olması sonucu etkilemez.
                 // (Türevler discard'dan ÖNCE alınmalı.)
                 float2 dpx = ddx(p), dpy = ddy(p);
-                float ddxD = ddx(dInner), ddyD = ddy(dInner);
-                float aa = max((abs(ddxD) + abs(ddyD)) * 1.15, 0.0014);
-                float det = dpx.x * dpy.y - dpx.y * dpy.x;
-                float2 derivGrad = abs(det) > 1e-10
-                    ? float2(ddxD * dpy.y - ddyD * dpx.y, dpx.x * ddyD - dpy.x * ddxD) / det
-                    : smoothGrad;
+                // Mesafe gradyanı: piksel türevi (ddx/ddy) yerine mesafe fonksiyonunun merkezi farkı. Mobil GPU'lar türevi
+                // 2x2 blokta düşük hassasiyetle hesaplıyor; keskin parlamada (pow 85) karıncalı/kumlu beyaz noktalar yapıyordu.
+                // Merkezi fark tam hassasiyetli ve pürüzsüz; cam level başında bir kez pişirildiği için 4 ek mesafe hesabı sorun değil.
+                const float fdE = 0.0025;
+                float2 derivGrad = float2(TrackInnerDist(p + float2(fdE, 0.0)) - TrackInnerDist(p - float2(fdE, 0.0)),
+                                          TrackInnerDist(p + float2(0.0, fdE)) - TrackInnerDist(p - float2(0.0, fdE))) / (2.0 * fdE);
+                float aa = max((abs(dot(dpx, derivGrad)) + abs(dot(dpy, derivGrad))) * 1.15, 0.0014);
                 float derivLenSq = dot(derivGrad, derivGrad);
                 if (derivLenSq > 1e-5)
                 {

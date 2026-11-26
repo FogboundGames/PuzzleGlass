@@ -98,10 +98,11 @@ MonoBehaviour:
   feedTubeWidthMultiplier: 1.24
   feedTubeAnchorSpread: 0.68
   feedTubeDropInterval: 0.14
-  tutorialHint: 0
-  tutorialBlockIndex: -1
-  tutorialFromAnchor: {x: 0, y: 0}
-  tutorialTargetAnchor: {x: 0, y: 0}
+  tutorial: 4
+  tutorialHint: 1
+  tutorialBlockIndex: 8
+  tutorialFromAnchor: {x: 0, y: 2}
+  tutorialTargetAnchor: {x: 0, y: 2}
   iceMeltMode: 0
   useManualBallLayout: 1
   manualLaneWidth: 4
@@ -112,1942 +113,1942 @@ MonoBehaviour:
     column: 4
     row: 0
     hasTrackPos: 1
-    trackPos: {x: 0.5, y: 0.07694989}
+    trackPos: {x: 0.49999985, y: 0.06896734}
   - color: 6
     column: 3
-    row: 1
+    row: 71
     hasTrackPos: 1
-    trackPos: {x: 0.48744538, y: 0.11077084}
+    trackPos: {x: 0.48751783, y: 0.10606316}
   - color: 6
     column: 4
-    row: 92
+    row: 96
     hasTrackPos: 1
-    trackPos: {x: 0.47495264, y: 0.07869195}
+    trackPos: {x: 0.47509038, y: 0.07071412}
   - color: 6
     column: 3
-    row: 88
+    row: 90
     hasTrackPos: 1
-    trackPos: {x: 0.46235794, y: 0.112953424}
+    trackPos: {x: 0.4625757, y: 0.10822846}
+  - color: 6
+    column: 4
+    row: 95
+    hasTrackPos: 1
+    trackPos: {x: 0.45029062, y: 0.074137546}
+  - color: 6
+    column: 3
+    row: 89
+    hasTrackPos: 1
+    trackPos: {x: 0.43785748, y: 0.113432914}
   - color: 6
     column: 4
     row: 94
     hasTrackPos: 1
-    trackPos: {x: 0.45001918, y: 0.082244314}
+    trackPos: {x: 0.42564768, y: 0.07952313}
   - color: 6
     column: 3
-    row: 87
+    row: 88
     hasTrackPos: 1
-    trackPos: {x: 0.43748423, y: 0.11818195}
+    trackPos: {x: 0.41342866, y: 0.120738596}
   - color: 6
     column: 4
     row: 93
     hasTrackPos: 1
-    trackPos: {x: 0.42522472, y: 0.08762473}
+    trackPos: {x: 0.40138566, y: 0.08760732}
   - color: 6
     column: 3
-    row: 86
+    row: 87
     hasTrackPos: 1
-    trackPos: {x: 0.41290295, y: 0.12562776}
+    trackPos: {x: 0.38928425, y: 0.12975535}
+  - color: 6
+    column: 4
+    row: 92
+    hasTrackPos: 1
+    trackPos: {x: 0.37739864, y: 0.09712058}
+  - color: 6
+    column: 3
+    row: 85
+    hasTrackPos: 1
+    trackPos: {x: 0.36554816, y: 0.14075492}
   - color: 6
     column: 4
     row: 91
     hasTrackPos: 1
-    trackPos: {x: 0.40081784, y: 0.09588888}
+    trackPos: {x: 0.35372669, y: 0.10814567}
   - color: 6
     column: 3
-    row: 85
+    row: 86
     hasTrackPos: 1
-    trackPos: {x: 0.38860697, y: 0.13482416}
-  - color: 6
-    column: 4
-    row: 90
-    hasTrackPos: 1
-    trackPos: {x: 0.37670153, y: 0.10568794}
-  - color: 6
-    column: 3
-    row: 84
-    hasTrackPos: 1
-    trackPos: {x: 0.3646613, y: 0.14581123}
+    trackPos: {x: 0.34228793, y: 0.1535821}
   - color: 6
     column: 4
     row: 89
     hasTrackPos: 1
-    trackPos: {x: 0.3528731, y: 0.11689284}
+    trackPos: {x: 0.3305754, y: 0.12116709}
+  - color: 6
+    column: 3
+    row: 84
+    hasTrackPos: 1
+    trackPos: {x: 0.31938016, y: 0.16759405}
+  - color: 6
+    column: 4
+    row: 90
+    hasTrackPos: 1
+    trackPos: {x: 0.3077495, y: 0.1352516}
   - color: 6
     column: 3
     row: 83
     hasTrackPos: 1
-    trackPos: {x: 0.34121308, y: 0.15881814}
+    trackPos: {x: 0.2968323, y: 0.18273519}
   - color: 6
     column: 4
     row: 88
     hasTrackPos: 1
-    trackPos: {x: 0.32951885, y: 0.13000916}
-  - color: 6
-    column: 3
-    row: 81
-    hasTrackPos: 1
-    trackPos: {x: 0.3181263, y: 0.17306976}
-  - color: 6
-    column: 4
-    row: 86
-    hasTrackPos: 1
-    trackPos: {x: 0.3065522, y: 0.14444177}
+    trackPos: {x: 0.28525212, y: 0.15036353}
   - color: 6
     column: 3
     row: 82
     hasTrackPos: 1
-    trackPos: {x: 0.29539376, y: 0.18846658}
+    trackPos: {x: 0.27482224, y: 0.1993681}
   - color: 6
     column: 4
     row: 87
     hasTrackPos: 1
-    trackPos: {x: 0.28391078, y: 0.1599051}
+    trackPos: {x: 0.26328698, y: 0.16695164}
+  - color: 6
+    column: 4
+    row: 86
+    hasTrackPos: 1
+    trackPos: {x: 0.24171197, y: 0.18450409}
   - color: 6
     column: 3
-    row: 80
+    row: 81
     hasTrackPos: 1
-    trackPos: {x: 0.27309194, y: 0.2051254}
+    trackPos: {x: 0.2532367, y: 0.21704836}
   - color: 6
     column: 4
     row: 85
     hasTrackPos: 1
-    trackPos: {x: 0.26166755, y: 0.17653303}
-  - color: 6
-    column: 4
-    row: 83
-    hasTrackPos: 1
-    trackPos: {x: 0.2399412, y: 0.1945089}
+    trackPos: {x: 0.2205008, y: 0.20291689}
   - color: 6
     column: 3
-    row: 79
+    row: 80
     hasTrackPos: 1
-    trackPos: {x: 0.25130704, y: 0.22313225}
+    trackPos: {x: 0.23205534, y: 0.23566781}
   - color: 6
     column: 4
     row: 84
     hasTrackPos: 1
-    trackPos: {x: 0.218606, y: 0.21341386}
+    trackPos: {x: 0.19984186, y: 0.22253636}
+  - color: 6
+    column: 3
+    row: 79
+    hasTrackPos: 1
+    trackPos: {x: 0.21135505, y: 0.25533855}
+  - color: 6
+    column: 4
+    row: 83
+    hasTrackPos: 1
+    trackPos: {x: 0.17976567, y: 0.24330099}
   - color: 6
     column: 3
     row: 78
     hasTrackPos: 1
-    trackPos: {x: 0.22994182, y: 0.24213552}
+    trackPos: {x: 0.19136594, y: 0.27640402}
   - color: 6
     column: 4
     row: 82
     hasTrackPos: 1
-    trackPos: {x: 0.19767354, y: 0.2332399}
+    trackPos: {x: 0.16019146, y: 0.26498413}
   - color: 6
     column: 3
     row: 77
     hasTrackPos: 1
-    trackPos: {x: 0.20901759, y: 0.26213425}
+    trackPos: {x: 0.17199668, y: 0.2985619}
   - color: 6
     column: 4
     row: 81
     hasTrackPos: 1
-    trackPos: {x: 0.17742074, y: 0.25447425}
+    trackPos: {x: 0.14136288, y: 0.2879497}
   - color: 6
     column: 3
     row: 76
     hasTrackPos: 1
-    trackPos: {x: 0.18871762, y: 0.2834266}
+    trackPos: {x: 0.15329073, y: 0.32182926}
   - color: 6
     column: 4
     row: 80
     hasTrackPos: 1
-    trackPos: {x: 0.15784322, y: 0.27695212}
+    trackPos: {x: 0.12357928, y: 0.3124893}
   - color: 6
     column: 3
     row: 75
     hasTrackPos: 1
-    trackPos: {x: 0.16923761, y: 0.30622566}
+    trackPos: {x: 0.13570961, y: 0.346776}
   - color: 6
     column: 4
     row: 79
     hasTrackPos: 1
-    trackPos: {x: 0.13888589, y: 0.3005067}
+    trackPos: {x: 0.10663368, y: 0.33814037}
   - color: 6
     column: 3
     row: 74
     hasTrackPos: 1
-    trackPos: {x: 0.15049407, y: 0.33025125}
-  - color: 6
-    column: 4
-    row: 78
-    hasTrackPos: 1
-    trackPos: {x: 0.12090739, y: 0.3256103}
-  - color: 6
-    column: 3
-    row: 73
-    hasTrackPos: 1
-    trackPos: {x: 0.1325499, y: 0.35552964}
-  - color: 6
-    column: 4
-    row: 76
-    hasTrackPos: 1
-    trackPos: {x: 0.104394116, y: 0.35267133}
-  - color: 6
-    column: 3
-    row: 72
-    hasTrackPos: 1
-    trackPos: {x: 0.11651355, y: 0.38332903}
+    trackPos: {x: 0.11957391, y: 0.3735303}
   - color: 6
     column: 4
     row: 77
     hasTrackPos: 1
-    trackPos: {x: 0.08897636, y: 0.38103026}
+    trackPos: {x: 0.09115064, y: 0.3655943}
   - color: 6
     column: 3
-    row: 71
+    row: 73
     hasTrackPos: 1
-    trackPos: {x: 0.102257945, y: 0.41297734}
+    trackPos: {x: 0.10476497, y: 0.40174803}
+  - color: 6
+    column: 4
+    row: 78
+    hasTrackPos: 1
+    trackPos: {x: 0.077686265, y: 0.39502}
+  - color: 6
+    column: 3
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.09216243, y: 0.43205622}
   - color: 6
     column: 4
     row: 75
     hasTrackPos: 1
-    trackPos: {x: 0.07588975, y: 0.41174722}
-  - color: 6
-    column: 3
-    row: 70
-    hasTrackPos: 1
-    trackPos: {x: 0.0898501, y: 0.4443091}
-  - color: 6
-    column: 4
-    row: 74
-    hasTrackPos: 1
-    trackPos: {x: 0.065568455, y: 0.4444245}
-  - color: 4
-    column: 3
-    row: 68
-    hasTrackPos: 1
-    trackPos: {x: 0.08178733, y: 0.4784997}
-  - color: 4
-    column: 4
-    row: 72
-    hasTrackPos: 1
-    trackPos: {x: 0.05773693, y: 0.47862756}
+    trackPos: {x: 0.057493564, y: 0.45870775}
   - color: 4
     column: 3
     row: 69
     hasTrackPos: 1
-    trackPos: {x: 0.077741854, y: 0.513884}
+    trackPos: {x: 0.08320867, y: 0.46471068}
+  - color: 4
+    column: 4
+    row: 74
+    hasTrackPos: 1
+    trackPos: {x: 0.05128037, y: 0.49251515}
+  - color: 4
+    column: 3
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.07672906, y: 0.498489}
   - color: 4
     column: 4
     row: 73
     hasTrackPos: 1
-    trackPos: {x: 0.05474576, y: 0.5142491}
+    trackPos: {x: 0.04972528, y: 0.52745914}
+  - color: 4
+    column: 4
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.05044258, y: 0.5623616}
+  - color: 4
+    column: 3
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.077367, y: 0.56835735}
   - color: 4
     column: 4
     row: 71
     hasTrackPos: 1
-    trackPos: {x: 0.053965546, y: 0.5501994}
-  - color: 4
-    column: 3
-    row: 67
-    hasTrackPos: 1
-    trackPos: {x: 0.07693522, y: 0.5499172}
-  - color: 4
-    column: 4
-    row: 69
-    hasTrackPos: 1
-    trackPos: {x: 0.057945482, y: 0.58572596}
+    trackPos: {x: 0.054751646, y: 0.5968537}
   - color: 4
     column: 3
     row: 66
     hasTrackPos: 1
-    trackPos: {x: 0.08123623, y: 0.5854713}
+    trackPos: {x: 0.08202802, y: 0.602827}
   - color: 4
     column: 4
     row: 70
     hasTrackPos: 1
-    trackPos: {x: 0.063870125, y: 0.62063634}
+    trackPos: {x: 0.061612733, y: 0.6304467}
   - color: 4
     column: 3
     row: 65
     hasTrackPos: 1
-    trackPos: {x: 0.08821705, y: 0.62003624}
+    trackPos: {x: 0.0904208, y: 0.6358827}
+  - color: 4
+    column: 4
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.07017816, y: 0.66333425}
+  - color: 4
+    column: 3
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.100937724, y: 0.667619}
   - color: 4
     column: 4
     row: 68
     hasTrackPos: 1
-    trackPos: {x: 0.072671205, y: 0.654355}
+    trackPos: {x: 0.08193168, y: 0.69420266}
   - color: 4
     column: 3
-    row: 64
+    row: 63
     hasTrackPos: 1
-    trackPos: {x: 0.09749836, y: 0.6535466}
+    trackPos: {x: 0.113358125, y: 0.6980551}
   - color: 4
     column: 4
     row: 67
     hasTrackPos: 1
-    trackPos: {x: 0.08410855, y: 0.6863287}
+    trackPos: {x: 0.09491832, y: 0.7240478}
   - color: 4
     column: 3
-    row: 63
+    row: 61
     hasTrackPos: 1
-    trackPos: {x: 0.1100038, y: 0.68485975}
+    trackPos: {x: 0.12837665, y: 0.72610563}
   - color: 4
     column: 4
     row: 66
     hasTrackPos: 1
-    trackPos: {x: 0.09701813, y: 0.7171823}
+    trackPos: {x: 0.109971225, y: 0.7519696}
   - color: 4
     column: 3
     row: 62
     hasTrackPos: 1
-    trackPos: {x: 0.12455107, y: 0.7142212}
+    trackPos: {x: 0.14492495, y: 0.7523421}
   - color: 4
     column: 4
     row: 65
     hasTrackPos: 1
-    trackPos: {x: 0.11250867, y: 0.7454988}
-  - color: 4
-    column: 3
-    row: 61
-    hasTrackPos: 1
-    trackPos: {x: 0.14065292, y: 0.7418902}
-  - color: 4
-    column: 4
-    row: 63
-    hasTrackPos: 1
-    trackPos: {x: 0.1293321, y: 0.7721298}
+    trackPos: {x: 0.12666766, y: 0.7779344}
   - color: 4
     column: 3
     row: 60
     hasTrackPos: 1
-    trackPos: {x: 0.15855798, y: 0.7672285}
+    trackPos: {x: 0.16269043, y: 0.77699685}
   - color: 4
     column: 4
     row: 64
     hasTrackPos: 1
-    trackPos: {x: 0.14733009, y: 0.7971939}
+    trackPos: {x: 0.14433908, y: 0.8026227}
   - color: 4
     column: 3
     row: 59
     hasTrackPos: 1
-    trackPos: {x: 0.17792426, y: 0.79020864}
+    trackPos: {x: 0.18197447, y: 0.7993256}
   - color: 4
     column: 4
-    row: 62
+    row: 63
     hasTrackPos: 1
-    trackPos: {x: 0.16690083, y: 0.8197035}
+    trackPos: {x: 0.1635547, y: 0.82494664}
   - color: 4
     column: 3
     row: 58
     hasTrackPos: 1
-    trackPos: {x: 0.19819693, y: 0.8115001}
+    trackPos: {x: 0.20232238, y: 0.81966853}
   - color: 4
     column: 4
     row: 61
     hasTrackPos: 1
-    trackPos: {x: 0.18728994, y: 0.8406143}
+    trackPos: {x: 0.18363851, y: 0.8456632}
   - color: 4
     column: 3
-    row: 57
+    row: 56
     hasTrackPos: 1
-    trackPos: {x: 0.21932659, y: 0.8310511}
+    trackPos: {x: 0.22339185, y: 0.8385122}
+  - color: 4
+    column: 4
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.20440252, y: 0.8650584}
   - color: 4
     column: 4
     row: 60
     hasTrackPos: 1
-    trackPos: {x: 0.2084089, y: 0.8600207}
+    trackPos: {x: 0.22615306, y: 0.88219494}
+  - color: 4
+    column: 3
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.24520993, y: 0.85563606}
   - color: 4
     column: 4
     row: 59
     hasTrackPos: 1
-    trackPos: {x: 0.2304714, y: 0.8771372}
+    trackPos: {x: 0.24858443, y: 0.89740497}
   - color: 4
     column: 3
-    row: 56
+    row: 55
     hasTrackPos: 1
-    trackPos: {x: 0.24144623, y: 0.8482024}
+    trackPos: {x: 0.26811922, y: 0.86962914}
   - color: 4
     column: 4
     row: 58
     hasTrackPos: 1
-    trackPos: {x: 0.253232, y: 0.8921605}
-  - color: 4
-    column: 3
-    row: 55
-    hasTrackPos: 1
-    trackPos: {x: 0.2643266, y: 0.8630579}
-  - color: 4
-    column: 4
-    row: 57
-    hasTrackPos: 1
-    trackPos: {x: 0.27655548, y: 0.9053722}
+    trackPos: {x: 0.27163187, y: 0.9107801}
   - color: 4
     column: 3
     row: 54
     hasTrackPos: 1
-    trackPos: {x: 0.28780168, y: 0.8759205}
+    trackPos: {x: 0.29150647, y: 0.8819465}
+  - color: 0
+    column: 4
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.29531124, y: 0.92176867}
+  - color: 0
+    column: 3
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.31538177, y: 0.89226323}
   - color: 0
     column: 4
     row: 56
     hasTrackPos: 1
-    trackPos: {x: 0.30049857, y: 0.9160774}
-  - color: 0
-    column: 3
-    row: 52
-    hasTrackPos: 1
-    trackPos: {x: 0.31181723, y: 0.88658905}
-  - color: 0
-    column: 4
-    row: 55
-    hasTrackPos: 1
-    trackPos: {x: 0.32505855, y: 0.9224088}
+    trackPos: {x: 0.31953162, y: 0.9295524}
   - color: 0
     column: 3
     row: 53
     hasTrackPos: 1
-    trackPos: {x: 0.33674234, y: 0.8897261}
-  - color: 0
-    column: 4
-    row: 53
-    hasTrackPos: 1
-    trackPos: {x: 0.35013264, y: 0.9229324}
-  - color: 0
-    column: 3
-    row: 51
-    hasTrackPos: 1
-    trackPos: {x: 0.3617517, y: 0.8880913}
+    trackPos: {x: 0.34028393, y: 0.8943072}
   - color: 0
     column: 4
     row: 54
     hasTrackPos: 1
-    trackPos: {x: 0.3746649, y: 0.9166779}
+    trackPos: {x: 0.34445724, y: 0.930699}
+  - color: 0
+    column: 3
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.3649738, y: 0.8914475}
+  - color: 0
+    column: 4
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.36911452, y: 0.92734593}
   - color: 0
     column: 3
     row: 50
     hasTrackPos: 1
-    trackPos: {x: 0.38551396, y: 0.8763157}
+    trackPos: {x: 0.3885398, y: 0.8797549}
+  - color: 0
+    column: 4
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.39272636, y: 0.9161087}
+  - color: 0
+    column: 3
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.4111896, y: 0.8650164}
   - color: 0
     column: 4
     row: 52
     hasTrackPos: 1
-    trackPos: {x: 0.39832816, y: 0.9047584}
+    trackPos: {x: 0.41566026, y: 0.9024709}
   - color: 0
     column: 3
-    row: 49
+    row: 48
     hasTrackPos: 1
-    trackPos: {x: 0.40847972, y: 0.86177075}
+    trackPos: {x: 0.4331918, y: 0.8483986}
   - color: 0
     column: 4
     row: 51
     hasTrackPos: 1
-    trackPos: {x: 0.4210503, y: 0.8895971}
+    trackPos: {x: 0.43786052, y: 0.8865136}
   - color: 0
     column: 3
-    row: 48
+    row: 47
     hasTrackPos: 1
-    trackPos: {x: 0.43078122, y: 0.84514487}
+    trackPos: {x: 0.4544734, y: 0.8299916}
   - color: 0
     column: 4
     row: 50
     hasTrackPos: 1
-    trackPos: {x: 0.44323277, y: 0.8728407}
-  - color: 0
-    column: 3
-    row: 47
-    hasTrackPos: 1
-    trackPos: {x: 0.4523415, y: 0.8265822}
+    trackPos: {x: 0.45921752, y: 0.86843896}
   - color: 0
     column: 4
     row: 49
     hasTrackPos: 1
-    trackPos: {x: 0.4647369, y: 0.85431635}
-  - color: 0
-    column: 4
-    row: 48
-    hasTrackPos: 1
-    trackPos: {x: 0.48525274, y: 0.8336297}
+    trackPos: {x: 0.47995877, y: 0.8490397}
   - color: 0
     column: 3
     row: 46
     hasTrackPos: 1
-    trackPos: {x: 0.47288954, y: 0.8058076}
+    trackPos: {x: 0.47469038, y: 0.80937666}
   - color: 0
     column: 3
     row: 45
     hasTrackPos: 1
-    trackPos: {x: 0.50484544, y: 0.79005325}
+    trackPos: {x: 0.503317, y: 0.7937391}
   - color: 0
     column: 3
     row: 44
     hasTrackPos: 1
-    trackPos: {x: 0.5271106, y: 0.8058077}
+    trackPos: {x: 0.52530897, y: 0.80937606}
   - color: 0
     column: 4
     row: 47
     hasTrackPos: 1
-    trackPos: {x: 0.51474684, y: 0.8336293}
+    trackPos: {x: 0.52004135, y: 0.84903985}
+  - color: 0
+    column: 4
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.5407828, y: 0.86843926}
+  - color: 0
+    column: 3
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.54552597, y: 0.8299911}
   - color: 0
     column: 4
     row: 46
     hasTrackPos: 1
-    trackPos: {x: 0.53526276, y: 0.8543159}
+    trackPos: {x: 0.56213987, y: 0.88651395}
   - color: 0
     column: 3
-    row: 43
+    row: 42
     hasTrackPos: 1
-    trackPos: {x: 0.54765856, y: 0.8265821}
+    trackPos: {x: 0.5668075, y: 0.848398}
   - color: 0
     column: 4
     row: 45
     hasTrackPos: 1
-    trackPos: {x: 0.5567669, y: 0.8728405}
-  - color: 0
-    column: 3
-    row: 42
-    hasTrackPos: 1
-    trackPos: {x: 0.5692189, y: 0.84514505}
-  - color: 0
-    column: 4
-    row: 44
-    hasTrackPos: 1
-    trackPos: {x: 0.5789495, y: 0.889597}
+    trackPos: {x: 0.58434016, y: 0.9024711}
   - color: 0
     column: 3
     row: 41
     hasTrackPos: 1
-    trackPos: {x: 0.5915203, y: 0.8617707}
+    trackPos: {x: 0.5888095, y: 0.86501575}
+  - color: 6
+    column: 4
+    row: 44
+    hasTrackPos: 1
+    trackPos: {x: 0.60727406, y: 0.9161087}
+  - color: 6
+    column: 3
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.6114595, y: 0.8797544}
+  - color: 6
+    column: 4
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.6308859, y: 0.92734593}
+  - color: 6
+    column: 3
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.63502544, y: 0.89144707}
   - color: 6
     column: 4
     row: 43
     hasTrackPos: 1
-    trackPos: {x: 0.60167164, y: 0.9047581}
+    trackPos: {x: 0.6555431, y: 0.9306989}
   - color: 6
     column: 3
-    row: 40
+    row: 37
     hasTrackPos: 1
-    trackPos: {x: 0.61448634, y: 0.87631565}
-  - color: 6
-    column: 4
-    row: 42
-    hasTrackPos: 1
-    trackPos: {x: 0.6253349, y: 0.91667783}
-  - color: 6
-    column: 3
-    row: 39
-    hasTrackPos: 1
-    trackPos: {x: 0.63824856, y: 0.8880914}
+    trackPos: {x: 0.6597153, y: 0.89430714}
   - color: 6
     column: 4
     row: 41
     hasTrackPos: 1
-    trackPos: {x: 0.64986724, y: 0.9229321}
+    trackPos: {x: 0.68046874, y: 0.9295523}
   - color: 6
     column: 3
     row: 38
     hasTrackPos: 1
-    trackPos: {x: 0.66325796, y: 0.88972604}
+    trackPos: {x: 0.68461746, y: 0.8922634}
   - color: 6
     column: 4
     row: 40
     hasTrackPos: 1
-    trackPos: {x: 0.6749413, y: 0.922409}
+    trackPos: {x: 0.70468915, y: 0.9217685}
   - color: 6
     column: 3
-    row: 37
+    row: 36
     hasTrackPos: 1
-    trackPos: {x: 0.68818307, y: 0.88658893}
+    trackPos: {x: 0.7084928, y: 0.88194674}
   - color: 6
     column: 4
     row: 39
     hasTrackPos: 1
-    trackPos: {x: 0.6995012, y: 0.91607744}
+    trackPos: {x: 0.72836846, y: 0.91077983}
   - color: 6
     column: 3
-    row: 36
+    row: 35
     hasTrackPos: 1
-    trackPos: {x: 0.7121987, y: 0.8759204}
+    trackPos: {x: 0.7318801, y: 0.86962944}
   - color: 6
     column: 4
     row: 38
     hasTrackPos: 1
-    trackPos: {x: 0.72344434, y: 0.9053724}
+    trackPos: {x: 0.75141597, y: 0.89740473}
   - color: 6
     column: 3
-    row: 35
+    row: 34
     hasTrackPos: 1
-    trackPos: {x: 0.7356737, y: 0.86305773}
+    trackPos: {x: 0.75478923, y: 0.85563666}
   - color: 6
     column: 4
     row: 37
     hasTrackPos: 1
-    trackPos: {x: 0.7467678, y: 0.8921606}
+    trackPos: {x: 0.7738472, y: 0.8821947}
   - color: 6
     column: 3
-    row: 34
+    row: 32
     hasTrackPos: 1
-    trackPos: {x: 0.7585541, y: 0.8482021}
+    trackPos: {x: 0.77660745, y: 0.8385128}
   - color: 6
     column: 4
     row: 36
     hasTrackPos: 1
-    trackPos: {x: 0.7695284, y: 0.87713736}
-  - color: 6
-    column: 3
-    row: 33
-    hasTrackPos: 1
-    trackPos: {x: 0.78067386, y: 0.83105075}
-  - color: 6
-    column: 4
-    row: 35
-    hasTrackPos: 1
-    trackPos: {x: 0.79159075, y: 0.860021}
-  - color: 6
-    column: 4
-    row: 33
-    hasTrackPos: 1
-    trackPos: {x: 0.8127097, y: 0.8406147}
-  - color: 6
-    column: 3
-    row: 32
-    hasTrackPos: 1
-    trackPos: {x: 0.8018033, y: 0.81149983}
+    trackPos: {x: 0.79559773, y: 0.8650583}
   - color: 6
     column: 4
     row: 34
     hasTrackPos: 1
-    trackPos: {x: 0.8330988, y: 0.8197038}
+    trackPos: {x: 0.81636184, y: 0.84566295}
+  - color: 6
+    column: 3
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.79767704, y: 0.8196692}
+  - color: 6
+    column: 4
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.8364457, y: 0.8249463}
   - color: 6
     column: 3
     row: 31
     hasTrackPos: 1
-    trackPos: {x: 0.82207584, y: 0.7902085}
+    trackPos: {x: 0.81802493, y: 0.7993263}
+  - color: 6
+    column: 4
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.85566133, y: 0.80262226}
+  - color: 6
+    column: 3
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.83730906, y: 0.77699757}
   - color: 6
     column: 4
     row: 32
     hasTrackPos: 1
-    trackPos: {x: 0.8526697, y: 0.7971942}
+    trackPos: {x: 0.8733328, y: 0.7779338}
   - color: 6
     column: 3
-    row: 30
+    row: 28
     hasTrackPos: 1
-    trackPos: {x: 0.8414421, y: 0.7672284}
+    trackPos: {x: 0.8550745, y: 0.7523429}
   - color: 6
     column: 4
     row: 31
     hasTrackPos: 1
-    trackPos: {x: 0.8706676, y: 0.7721303}
+    trackPos: {x: 0.89002925, y: 0.75196886}
   - color: 6
     column: 3
     row: 29
     hasTrackPos: 1
-    trackPos: {x: 0.8593472, y: 0.7418901}
+    trackPos: {x: 0.8716229, y: 0.7261066}
   - color: 6
     column: 4
     row: 30
     hasTrackPos: 1
-    trackPos: {x: 0.88749105, y: 0.7454992}
+    trackPos: {x: 0.90508205, y: 0.72404724}
   - color: 6
     column: 3
     row: 27
     hasTrackPos: 1
-    trackPos: {x: 0.875449, y: 0.7142211}
+    trackPos: {x: 0.8866415, y: 0.6980561}
+  - color: 6
+    column: 4
+    row: 28
+    hasTrackPos: 1
+    trackPos: {x: 0.91806865, y: 0.69420195}
+  - color: 6
+    column: 3
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.8990619, y: 0.66762006}
   - color: 6
     column: 4
     row: 29
     hasTrackPos: 1
-    trackPos: {x: 0.90298176, y: 0.71718276}
+    trackPos: {x: 0.92982197, y: 0.66333383}
   - color: 6
     column: 3
-    row: 28
+    row: 25
     hasTrackPos: 1
-    trackPos: {x: 0.8899963, y: 0.6848594}
+    trackPos: {x: 0.9095789, y: 0.63588387}
   - color: 6
     column: 4
     row: 27
     hasTrackPos: 1
-    trackPos: {x: 0.9158914, y: 0.686329}
-  - color: 6
-    column: 3
-    row: 26
-    hasTrackPos: 1
-    trackPos: {x: 0.9025017, y: 0.6535465}
-  - color: 6
-    column: 4
-    row: 28
-    hasTrackPos: 1
-    trackPos: {x: 0.9273287, y: 0.65435517}
-  - color: 6
-    column: 3
-    row: 25
-    hasTrackPos: 1
-    trackPos: {x: 0.91178304, y: 0.6200361}
-  - color: 6
-    column: 4
-    row: 26
-    hasTrackPos: 1
-    trackPos: {x: 0.9361298, y: 0.62063676}
+    trackPos: {x: 0.9383874, y: 0.6304462}
   - color: 6
     column: 3
     row: 24
     hasTrackPos: 1
-    trackPos: {x: 0.9187638, y: 0.58547086}
+    trackPos: {x: 0.9179718, y: 0.6028282}
   - color: 6
     column: 4
-    row: 25
+    row: 26
     hasTrackPos: 1
-    trackPos: {x: 0.9420545, y: 0.58572614}
+    trackPos: {x: 0.9452485, y: 0.59685296}
   - color: 6
     column: 4
     row: 24
     hasTrackPos: 1
-    trackPos: {x: 0.94603443, y: 0.5501995}
+    trackPos: {x: 0.9495575, y: 0.5623608}
   - color: 6
     column: 3
     row: 23
     hasTrackPos: 1
-    trackPos: {x: 0.9230648, y: 0.5499169}
+    trackPos: {x: 0.9226329, y: 0.56835854}
+  - color: 6
+    column: 4
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.9502747, y: 0.52745837}
+  - color: 6
+    column: 3
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.923271, y: 0.49848995}
   - color: 6
     column: 4
     row: 23
     hasTrackPos: 1
-    trackPos: {x: 0.9452543, y: 0.5142492}
-  - color: 6
-    column: 3
-    row: 21
-    hasTrackPos: 1
-    trackPos: {x: 0.92225826, y: 0.51388395}
-  - color: 6
-    column: 4
-    row: 22
-    hasTrackPos: 1
-    trackPos: {x: 0.9422632, y: 0.47862762}
-  - color: 6
-    column: 3
-    row: 22
-    hasTrackPos: 1
-    trackPos: {x: 0.91821265, y: 0.47849977}
-  - color: 6
-    column: 4
-    row: 21
-    hasTrackPos: 1
-    trackPos: {x: 0.9344316, y: 0.44442478}
+    trackPos: {x: 0.9487195, y: 0.49251443}
   - color: 6
     column: 3
     row: 20
     hasTrackPos: 1
-    trackPos: {x: 0.91014993, y: 0.44430906}
+    trackPos: {x: 0.91679156, y: 0.4647116}
+  - color: 6
+    column: 4
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.9425063, y: 0.45870715}
+  - color: 6
+    column: 3
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.9078379, y: 0.432057}
+  - color: 6
+    column: 4
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.9223137, y: 0.39501974}
+  - color: 6
+    column: 3
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.89523536, y: 0.40174866}
   - color: 6
     column: 4
     row: 20
     hasTrackPos: 1
-    trackPos: {x: 0.92411023, y: 0.4117475}
-  - color: 6
-    column: 3
-    row: 19
-    hasTrackPos: 1
-    trackPos: {x: 0.8977422, y: 0.4129776}
-  - color: 6
-    column: 4
-    row: 19
-    hasTrackPos: 1
-    trackPos: {x: 0.9110238, y: 0.38103044}
-  - color: 6
-    column: 3
-    row: 18
-    hasTrackPos: 1
-    trackPos: {x: 0.8834865, y: 0.38332915}
-  - color: 6
-    column: 4
-    row: 18
-    hasTrackPos: 1
-    trackPos: {x: 0.89560616, y: 0.35267174}
+    trackPos: {x: 0.9088492, y: 0.36559394}
   - color: 6
     column: 3
     row: 17
     hasTrackPos: 1
-    trackPos: {x: 0.8674501, y: 0.35552958}
+    trackPos: {x: 0.88042635, y: 0.37353078}
+  - color: 6
+    column: 4
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.8933662, y: 0.33814022}
+  - color: 6
+    column: 3
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.8642906, y: 0.34677628}
   - color: 6
     column: 4
     row: 17
     hasTrackPos: 1
-    trackPos: {x: 0.8790928, y: 0.32561067}
+    trackPos: {x: 0.8764205, y: 0.312489}
   - color: 6
     column: 3
     row: 16
     hasTrackPos: 1
-    trackPos: {x: 0.84950584, y: 0.33025104}
+    trackPos: {x: 0.84670955, y: 0.32182956}
   - color: 6
     column: 4
     row: 16
     hasTrackPos: 1
-    trackPos: {x: 0.8611143, y: 0.30050698}
+    trackPos: {x: 0.858637, y: 0.28794947}
   - color: 0
     column: 3
     row: 14
     hasTrackPos: 1
-    trackPos: {x: 0.8307624, y: 0.30622563}
-  - color: 0
-    column: 4
-    row: 15
-    hasTrackPos: 1
-    trackPos: {x: 0.8421569, y: 0.27695224}
-  - color: 0
-    column: 3
-    row: 15
-    hasTrackPos: 1
-    trackPos: {x: 0.8112824, y: 0.28342664}
+    trackPos: {x: 0.82800347, y: 0.2985621}
   - color: 0
     column: 4
     row: 14
     hasTrackPos: 1
-    trackPos: {x: 0.82257944, y: 0.25447452}
+    trackPos: {x: 0.8398084, y: 0.26498395}
   - color: 0
     column: 3
     row: 13
     hasTrackPos: 1
-    trackPos: {x: 0.7909825, y: 0.26213425}
+    trackPos: {x: 0.8086343, y: 0.2764043}
+  - color: 0
+    column: 4
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.8202341, y: 0.24330078}
+  - color: 0
+    column: 3
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.7886451, y: 0.2553387}
   - color: 0
     column: 4
     row: 13
     hasTrackPos: 1
-    trackPos: {x: 0.80232644, y: 0.23323987}
+    trackPos: {x: 0.8001579, y: 0.22253613}
   - color: 0
     column: 3
     row: 11
     hasTrackPos: 1
-    trackPos: {x: 0.7700584, y: 0.24213569}
+    trackPos: {x: 0.7679449, y: 0.235668}
+  - color: 0
+    column: 4
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.7794988, y: 0.20291647}
+  - color: 0
+    column: 3
+    row: 9
+    hasTrackPos: 1
+    trackPos: {x: 0.7467633, y: 0.21704839}
   - color: 0
     column: 4
     row: 11
     hasTrackPos: 1
-    trackPos: {x: 0.7813938, y: 0.2134137}
-  - color: 0
-    column: 3
-    row: 12
-    hasTrackPos: 1
-    trackPos: {x: 0.74869305, y: 0.22313234}
-  - color: 0
-    column: 4
-    row: 12
-    hasTrackPos: 1
-    trackPos: {x: 0.7600586, y: 0.19450873}
+    trackPos: {x: 0.75828767, y: 0.18450376}
   - color: 0
     column: 4
     row: 10
     hasTrackPos: 1
-    trackPos: {x: 0.7383324, y: 0.17653298}
+    trackPos: {x: 0.73671263, y: 0.16695137}
   - color: 0
     column: 3
     row: 10
     hasTrackPos: 1
-    trackPos: {x: 0.72690815, y: 0.20512548}
+    trackPos: {x: 0.72517776, y: 0.19936815}
   - color: 0
     column: 4
     row: 9
     hasTrackPos: 1
-    trackPos: {x: 0.7160892, y: 0.1599051}
-  - color: 0
-    column: 3
-    row: 9
-    hasTrackPos: 1
-    trackPos: {x: 0.7046063, y: 0.18846661}
-  - color: 0
-    column: 4
-    row: 8
-    hasTrackPos: 1
-    trackPos: {x: 0.6934479, y: 0.14444183}
+    trackPos: {x: 0.71474755, y: 0.15036322}
   - color: 0
     column: 3
     row: 8
     hasTrackPos: 1
-    trackPos: {x: 0.6818738, y: 0.17306982}
+    trackPos: {x: 0.7031678, y: 0.18273526}
   - color: 0
     column: 4
-    row: 7
+    row: 8
     hasTrackPos: 1
-    trackPos: {x: 0.67048126, y: 0.13000925}
+    trackPos: {x: 0.69225013, y: 0.13525136}
   - color: 0
     column: 3
     row: 7
     hasTrackPos: 1
-    trackPos: {x: 0.6587869, y: 0.15881811}
+    trackPos: {x: 0.6806201, y: 0.16759418}
   - color: 0
     column: 4
-    row: 6
+    row: 7
     hasTrackPos: 1
-    trackPos: {x: 0.6471269, y: 0.11689284}
+    trackPos: {x: 0.66942424, y: 0.12116688}
   - color: 0
     column: 3
     row: 6
     hasTrackPos: 1
-    trackPos: {x: 0.63533854, y: 0.1458112}
+    trackPos: {x: 0.6577122, y: 0.15358217}
   - color: 0
     column: 4
-    row: 5
+    row: 6
     hasTrackPos: 1
-    trackPos: {x: 0.62329865, y: 0.105688}
+    trackPos: {x: 0.646273, y: 0.10814552}
   - color: 0
     column: 3
     row: 5
     hasTrackPos: 1
-    trackPos: {x: 0.61139315, y: 0.13482416}
+    trackPos: {x: 0.634452, y: 0.140755}
   - color: 0
     column: 4
     row: 4
     hasTrackPos: 1
-    trackPos: {x: 0.59918225, y: 0.09588891}
+    trackPos: {x: 0.62260103, y: 0.09712044}
+  - color: 0
+    column: 3
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.61071587, y: 0.12975536}
+  - color: 0
+    column: 4
+    row: 5
+    hasTrackPos: 1
+    trackPos: {x: 0.59861404, y: 0.0876072}
   - color: 0
     column: 3
     row: 4
     hasTrackPos: 1
-    trackPos: {x: 0.5870971, y: 0.12562779}
+    trackPos: {x: 0.5865713, y: 0.12073857}
   - color: 0
     column: 4
     row: 3
     hasTrackPos: 1
-    trackPos: {x: 0.5747753, y: 0.08762473}
+    trackPos: {x: 0.57435226, y: 0.0795231}
   - color: 0
     column: 3
-    row: 3
+    row: 2
     hasTrackPos: 1
-    trackPos: {x: 0.56251574, y: 0.11818201}
+    trackPos: {x: 0.56214255, y: 0.11343287}
   - color: 0
     column: 4
     row: 1
     hasTrackPos: 1
-    trackPos: {x: 0.5499809, y: 0.082244314}
+    trackPos: {x: 0.5497092, y: 0.07413745}
   - color: 0
     column: 3
-    row: 2
+    row: 1
     hasTrackPos: 1
-    trackPos: {x: 0.5376419, y: 0.112953395}
+    trackPos: {x: 0.5374243, y: 0.10822841}
   - color: 0
     column: 4
     row: 2
     hasTrackPos: 1
-    trackPos: {x: 0.5250475, y: 0.07869198}
+    trackPos: {x: 0.52490914, y: 0.07071407}
   - color: 0
     column: 3
     row: 0
     hasTrackPos: 1
-    trackPos: {x: 0.51255465, y: 0.11077084}
+    trackPos: {x: 0.51248217, y: 0.10606316}
   - color: 0
     column: 2
     row: 0
     hasTrackPos: 1
-    trackPos: {x: 0.5, y: 0.14284521}
+    trackPos: {x: 0.5, y: 0.14140815}
   - color: 0
     column: 2
-    row: 82
+    row: 84
     hasTrackPos: 1
-    trackPos: {x: 0.47498482, y: 0.14466989}
-  - color: 0
-    column: 2
-    row: 81
-    hasTrackPos: 1
-    trackPos: {x: 0.45012578, y: 0.14882112}
+    trackPos: {x: 0.47509128, y: 0.14325589}
   - color: 0
     column: 2
     row: 83
     hasTrackPos: 1
-    trackPos: {x: 0.42549565, y: 0.15519322}
+    trackPos: {x: 0.45034608, y: 0.14740114}
   - color: 0
     column: 2
-    row: 80
+    row: 82
     hasTrackPos: 1
-    trackPos: {x: 0.40116048, y: 0.16368878}
+    trackPos: {x: 0.42583546, y: 0.15374361}
+  - color: 0
+    column: 2
+    row: 81
+    hasTrackPos: 1
+    trackPos: {x: 0.4016271, y: 0.1621783}
   - color: 0
     column: 2
     row: 79
     hasTrackPos: 1
-    trackPos: {x: 0.37728694, y: 0.17456983}
+    trackPos: {x: 0.37793973, y: 0.17315215}
+  - color: 4
+    column: 2
+    row: 80
+    hasTrackPos: 1
+    trackPos: {x: 0.35464418, y: 0.18563008}
   - color: 4
     column: 2
     row: 78
     hasTrackPos: 1
-    trackPos: {x: 0.35382128, y: 0.18711345}
+    trackPos: {x: 0.33173487, y: 0.19945422}
   - color: 4
     column: 2
     row: 77
     hasTrackPos: 1
-    trackPos: {x: 0.33073223, y: 0.20101969}
+    trackPos: {x: 0.3092127, y: 0.21450412}
   - color: 4
     column: 2
     row: 76
     hasTrackPos: 1
-    trackPos: {x: 0.30801934, y: 0.21617456}
-  - color: 4
-    column: 2
-    row: 75
-    hasTrackPos: 1
-    trackPos: {x: 0.28579855, y: 0.23277253}
-  - color: 4
-    column: 2
-    row: 73
-    hasTrackPos: 1
-    trackPos: {x: 0.2640498, y: 0.25060114}
+    trackPos: {x: 0.28725097, y: 0.23110895}
   - color: 4
     column: 2
     row: 74
     hasTrackPos: 1
-    trackPos: {x: 0.24274068, y: 0.26948437}
+    trackPos: {x: 0.2657208, y: 0.24877727}
+  - color: 4
+    column: 2
+    row: 75
+    hasTrackPos: 1
+    trackPos: {x: 0.24462828, y: 0.26745534}
+  - color: 4
+    column: 2
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.22399679, y: 0.2871353}
   - color: 4
     column: 2
     row: 72
     hasTrackPos: 1
-    trackPos: {x: 0.22189902, y: 0.2894231}
+    trackPos: {x: 0.20411496, y: 0.30828473}
   - color: 4
     column: 2
     row: 71
     hasTrackPos: 1
-    trackPos: {x: 0.20167328, y: 0.31063896}
+    trackPos: {x: 0.18497081, y: 0.3307146}
   - color: 4
     column: 2
     row: 70
     hasTrackPos: 1
-    trackPos: {x: 0.18232438, y: 0.33346382}
+    trackPos: {x: 0.16661935, y: 0.35440448}
   - color: 4
     column: 2
     row: 69
     hasTrackPos: 1
-    trackPos: {x: 0.16379614, y: 0.35763416}
+    trackPos: {x: 0.14917569, y: 0.3794259}
   - color: 4
     column: 2
     row: 68
     hasTrackPos: 1
-    trackPos: {x: 0.14629327, y: 0.38331535}
-  - color: 4
-    column: 2
-    row: 67
-    hasTrackPos: 1
-    trackPos: {x: 0.13033283, y: 0.41103464}
+    trackPos: {x: 0.13367458, y: 0.4068645}
   - color: 4
     column: 2
     row: 66
     hasTrackPos: 1
-    trackPos: {x: 0.117018804, y: 0.44147533}
+    trackPos: {x: 0.12025639, y: 0.43631676}
+  - color: 4
+    column: 2
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.109590694, y: 0.46778247}
   - color: 4
     column: 2
     row: 65
     hasTrackPos: 1
-    trackPos: {x: 0.10699945, y: 0.474233}
+    trackPos: {x: 0.10238196, y: 0.50124466}
   - color: 4
     column: 2
     row: 64
     hasTrackPos: 1
-    trackPos: {x: 0.100922115, y: 0.508851}
+    trackPos: {x: 0.10106293, y: 0.53621817}
   - color: 4
     column: 2
     row: 63
     hasTrackPos: 1
-    trackPos: {x: 0.09960759, y: 0.5447574}
+    trackPos: {x: 0.10387596, y: 0.57086915}
   - color: 4
     column: 2
     row: 62
     hasTrackPos: 1
-    trackPos: {x: 0.10388786, y: 0.58018285}
+    trackPos: {x: 0.10986085, y: 0.6047579}
   - color: 4
     column: 2
     row: 61
     hasTrackPos: 1
-    trackPos: {x: 0.11125947, y: 0.61443835}
+    trackPos: {x: 0.11857595, y: 0.63754135}
   - color: 4
     column: 2
     row: 60
     hasTrackPos: 1
-    trackPos: {x: 0.121378854, y: 0.6472256}
+    trackPos: {x: 0.13064544, y: 0.6681911}
   - color: 4
     column: 2
     row: 59
     hasTrackPos: 1
-    trackPos: {x: 0.13404723, y: 0.6782438}
+    trackPos: {x: 0.14494166, y: 0.69682175}
   - color: 4
     column: 2
     row: 58
     hasTrackPos: 1
-    trackPos: {x: 0.14953704, y: 0.7065062}
+    trackPos: {x: 0.16097659, y: 0.7235731}
   - color: 4
     column: 2
     row: 57
     hasTrackPos: 1
-    trackPos: {x: 0.16674845, y: 0.7325635}
+    trackPos: {x: 0.178547, y: 0.74841017}
   - color: 4
     column: 2
     row: 56
     hasTrackPos: 1
-    trackPos: {x: 0.1853361, y: 0.7566042}
+    trackPos: {x: 0.19779119, y: 0.77069205}
   - color: 4
     column: 2
     row: 55
     hasTrackPos: 1
-    trackPos: {x: 0.20511033, y: 0.77866256}
+    trackPos: {x: 0.21812133, y: 0.7909415}
   - color: 4
     column: 2
     row: 54
     hasTrackPos: 1
-    trackPos: {x: 0.2261183, y: 0.7982482}
+    trackPos: {x: 0.2392629, y: 0.809478}
   - color: 4
     column: 2
     row: 53
     hasTrackPos: 1
-    trackPos: {x: 0.24795745, y: 0.8158216}
-  - color: 4
-    column: 2
-    row: 52
-    hasTrackPos: 1
-    trackPos: {x: 0.2705784, y: 0.8311535}
+    trackPos: {x: 0.26114795, y: 0.8262424}
   - color: 4
     column: 2
     row: 51
     hasTrackPos: 1
-    trackPos: {x: 0.2939219, y: 0.84415}
+    trackPos: {x: 0.2841495, y: 0.8397904}
+  - color: 4
+    column: 2
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.30770588, y: 0.85125387}
   - color: 4
     column: 2
     row: 50
     hasTrackPos: 1
-    trackPos: {x: 0.3178436, y: 0.8548115}
+    trackPos: {x: 0.33198798, y: 0.857759}
   - color: 4
     column: 2
     row: 49
     hasTrackPos: 1
-    trackPos: {x: 0.34274492, y: 0.8569054}
-  - color: 4
-    column: 2
-    row: 47
-    hasTrackPos: 1
-    trackPos: {x: 0.36706817, y: 0.8506801}
+    trackPos: {x: 0.3567562, y: 0.85719126}
   - color: 4
     column: 2
     row: 48
     hasTrackPos: 1
-    trackPos: {x: 0.39043033, y: 0.8378426}
+    trackPos: {x: 0.38025585, y: 0.8454485}
   - color: 0
     column: 2
     row: 46
     hasTrackPos: 1
-    trackPos: {x: 0.41287366, y: 0.82187384}
+    trackPos: {x: 0.40274912, y: 0.830403}
   - color: 0
     column: 2
     row: 45
     hasTrackPos: 1
-    trackPos: {x: 0.43443614, y: 0.80358267}
+    trackPos: {x: 0.44559473, y: 0.7946541}
   - color: 0
     column: 2
     row: 44
     hasTrackPos: 1
-    trackPos: {x: 0.4551992, y: 0.7835183}
+    trackPos: {x: 0.4655927, y: 0.77372175}
   - color: 0
     column: 2
     row: 43
     hasTrackPos: 1
-    trackPos: {x: 0.47644097, y: 0.7649163}
+    trackPos: {x: 0.48825324, y: 0.75948286}
   - color: 0
     column: 2
     row: 42
     hasTrackPos: 1
-    trackPos: {x: 0.5, y: 0.7530817}
+    trackPos: {x: 0.5117464, y: 0.7594827}
   - color: 0
     column: 2
     row: 41
     hasTrackPos: 1
-    trackPos: {x: 0.5235593, y: 0.76491624}
+    trackPos: {x: 0.53440696, y: 0.7737215}
   - color: 0
     column: 2
     row: 40
     hasTrackPos: 1
-    trackPos: {x: 0.54480094, y: 0.78351843}
+    trackPos: {x: 0.554405, y: 0.79465383}
   - color: 0
-    column: 2
-    row: 39
+    column: 1
+    row: 37
     hasTrackPos: 1
-    trackPos: {x: 0.56556404, y: 0.80358267}
+    trackPos: {x: 0.4999996, y: 0.71845156}
   - color: 0
     column: 2
     row: 38
     hasTrackPos: 1
-    trackPos: {x: 0.58712643, y: 0.82187396}
+    trackPos: {x: 0.57547915, y: 0.8133609}
   - color: 0
     column: 2
     row: 37
     hasTrackPos: 1
-    trackPos: {x: 0.6095698, y: 0.83784264}
+    trackPos: {x: 0.619744, y: 0.8454483}
   - color: 0
     column: 2
     row: 36
     hasTrackPos: 1
-    trackPos: {x: 0.63293195, y: 0.8506801}
+    trackPos: {x: 0.6432436, y: 0.8571911}
   - color: 0
     column: 2
     row: 35
     hasTrackPos: 1
-    trackPos: {x: 0.65725535, y: 0.8569053}
+    trackPos: {x: 0.66801196, y: 0.85775894}
   - color: 0
     column: 2
     row: 34
     hasTrackPos: 1
-    trackPos: {x: 0.6821566, y: 0.8548113}
+    trackPos: {x: 0.6922941, y: 0.85125387}
   - color: 0
     column: 2
     row: 33
     hasTrackPos: 1
-    trackPos: {x: 0.70607835, y: 0.84414995}
+    trackPos: {x: 0.71585035, y: 0.83979046}
   - color: 0
     column: 2
     row: 32
     hasTrackPos: 1
-    trackPos: {x: 0.7294218, y: 0.83115345}
-  - color: 0
-    column: 2
-    row: 31
-    hasTrackPos: 1
-    trackPos: {x: 0.7520427, y: 0.8158214}
+    trackPos: {x: 0.73885185, y: 0.8262424}
   - color: 0
     column: 2
     row: 30
     hasTrackPos: 1
-    trackPos: {x: 0.7738819, y: 0.79824793}
+    trackPos: {x: 0.76073694, y: 0.80947816}
+  - color: 0
+    column: 2
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.7818785, y: 0.7909418}
   - color: 0
     column: 2
     row: 29
     hasTrackPos: 1
-    trackPos: {x: 0.79488987, y: 0.7786624}
+    trackPos: {x: 0.8022087, y: 0.77069217}
   - color: 0
     column: 2
     row: 28
     hasTrackPos: 1
-    trackPos: {x: 0.8146641, y: 0.756604}
+    trackPos: {x: 0.8214529, y: 0.74841034}
   - color: 0
     column: 2
     row: 27
     hasTrackPos: 1
-    trackPos: {x: 0.8332518, y: 0.7325632}
+    trackPos: {x: 0.8390233, y: 0.7235733}
   - color: 0
     column: 2
     row: 26
     hasTrackPos: 1
-    trackPos: {x: 0.8504631, y: 0.70650584}
+    trackPos: {x: 0.85505825, y: 0.69682205}
   - color: 0
     column: 2
     row: 25
     hasTrackPos: 1
-    trackPos: {x: 0.8659529, y: 0.67824364}
+    trackPos: {x: 0.8693544, y: 0.66819143}
   - color: 0
     column: 2
     row: 24
     hasTrackPos: 1
-    trackPos: {x: 0.8786212, y: 0.64722556}
-  - color: 0
-    column: 2
-    row: 23
-    hasTrackPos: 1
-    trackPos: {x: 0.8887406, y: 0.614438}
+    trackPos: {x: 0.8814239, y: 0.63754183}
   - color: 0
     column: 2
     row: 22
     hasTrackPos: 1
-    trackPos: {x: 0.89611214, y: 0.58018255}
+    trackPos: {x: 0.8901391, y: 0.6047582}
+  - color: 0
+    column: 2
+    row: 23
+    hasTrackPos: 1
+    trackPos: {x: 0.896124, y: 0.57086945}
   - color: 0
     column: 2
     row: 21
     hasTrackPos: 1
-    trackPos: {x: 0.9003924, y: 0.54475707}
+    trackPos: {x: 0.89893705, y: 0.5362185}
   - color: 0
     column: 2
     row: 20
     hasTrackPos: 1
-    trackPos: {x: 0.89907795, y: 0.50885063}
+    trackPos: {x: 0.897618, y: 0.501245}
   - color: 0
     column: 2
     row: 19
     hasTrackPos: 1
-    trackPos: {x: 0.8930005, y: 0.47423273}
+    trackPos: {x: 0.8904094, y: 0.46778277}
   - color: 0
     column: 2
     row: 18
     hasTrackPos: 1
-    trackPos: {x: 0.88298106, y: 0.4414752}
+    trackPos: {x: 0.87974375, y: 0.43631697}
   - color: 0
     column: 2
     row: 17
     hasTrackPos: 1
-    trackPos: {x: 0.86966705, y: 0.41103452}
+    trackPos: {x: 0.8663255, y: 0.4068646}
   - color: 0
     column: 2
     row: 16
     hasTrackPos: 1
-    trackPos: {x: 0.85370666, y: 0.38331518}
-  - color: 0
-    column: 2
-    row: 14
-    hasTrackPos: 1
-    trackPos: {x: 0.8362038, y: 0.3576341}
+    trackPos: {x: 0.85082436, y: 0.37942612}
   - color: 0
     column: 2
     row: 15
     hasTrackPos: 1
-    trackPos: {x: 0.81767553, y: 0.3334637}
+    trackPos: {x: 0.83338076, y: 0.35440454}
+  - color: 0
+    column: 2
+    row: 14
+    hasTrackPos: 1
+    trackPos: {x: 0.81502926, y: 0.33071473}
   - color: 0
     column: 2
     row: 13
     hasTrackPos: 1
-    trackPos: {x: 0.79832673, y: 0.31063902}
+    trackPos: {x: 0.7958852, y: 0.3082849}
   - color: 0
     column: 2
     row: 12
     hasTrackPos: 1
-    trackPos: {x: 0.7781011, y: 0.28942317}
+    trackPos: {x: 0.7760033, y: 0.2871354}
   - color: 0
-    column: 2
-    row: 11
-    hasTrackPos: 1
-    trackPos: {x: 0.7572593, y: 0.26948434}
-  - color: 1
     column: 2
     row: 10
     hasTrackPos: 1
-    trackPos: {x: 0.7359501, y: 0.25060105}
+    trackPos: {x: 0.75537175, y: 0.26745537}
+  - color: 1
+    column: 2
+    row: 11
+    hasTrackPos: 1
+    trackPos: {x: 0.7342793, y: 0.24877733}
   - color: 1
     column: 2
     row: 9
     hasTrackPos: 1
-    trackPos: {x: 0.71420145, y: 0.23277253}
+    trackPos: {x: 0.7127492, y: 0.23110907}
   - color: 1
     column: 2
     row: 8
     hasTrackPos: 1
-    trackPos: {x: 0.6919806, y: 0.21617453}
+    trackPos: {x: 0.69078743, y: 0.21450423}
   - color: 1
     column: 2
     row: 7
     hasTrackPos: 1
-    trackPos: {x: 0.6692677, y: 0.2010196}
+    trackPos: {x: 0.6682652, y: 0.19945428}
   - color: 1
     column: 2
     row: 6
     hasTrackPos: 1
-    trackPos: {x: 0.64617866, y: 0.18711342}
+    trackPos: {x: 0.64535576, y: 0.18563007}
   - color: 1
     column: 2
     row: 5
     hasTrackPos: 1
-    trackPos: {x: 0.6227129, y: 0.17456979}
+    trackPos: {x: 0.6220602, y: 0.17315212}
   - color: 1
     column: 2
     row: 4
     hasTrackPos: 1
-    trackPos: {x: 0.59883934, y: 0.16368867}
-  - color: 1
-    column: 2
-    row: 3
-    hasTrackPos: 1
-    trackPos: {x: 0.57450426, y: 0.1551932}
+    trackPos: {x: 0.5983729, y: 0.16217825}
   - color: 1
     column: 2
     row: 2
     hasTrackPos: 1
-    trackPos: {x: 0.5498741, y: 0.14882115}
+    trackPos: {x: 0.57416457, y: 0.15374358}
+  - color: 1
+    column: 2
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.5496539, y: 0.1474011}
   - color: 1
     column: 2
     row: 1
     hasTrackPos: 1
-    trackPos: {x: 0.5250151, y: 0.14466986}
+    trackPos: {x: 0.5249087, y: 0.14325587}
   - color: 1
     column: 0
     row: 0
     hasTrackPos: 1
-    trackPos: {x: 0.5, y: 0.20874053}
+    trackPos: {x: 0.5000001, y: 0.21384896}
   - color: 1
     column: 1
-    row: 48
+    row: 57
     hasTrackPos: 1
-    trackPos: {x: 0.4874227, y: 0.17675276}
-  - color: 1
-    column: 0
-    row: 80
-    hasTrackPos: 1
-    trackPos: {x: 0.47486418, y: 0.21065897}
-  - color: 1
-    column: 1
-    row: 80
-    hasTrackPos: 1
-    trackPos: {x: 0.46232927, y: 0.17955251}
-  - color: 1
-    column: 0
-    row: 79
-    hasTrackPos: 1
-    trackPos: {x: 0.4499274, y: 0.21546216}
-  - color: 1
-    column: 1
-    row: 79
-    hasTrackPos: 1
-    trackPos: {x: 0.43742785, y: 0.18497282}
-  - color: 1
-    column: 0
-    row: 78
-    hasTrackPos: 1
-    trackPos: {x: 0.42532688, y: 0.22298507}
-  - color: 1
-    column: 1
-    row: 78
-    hasTrackPos: 1
-    trackPos: {x: 0.41292313, y: 0.19335508}
-  - color: 1
-    column: 0
-    row: 77
-    hasTrackPos: 1
-    trackPos: {x: 0.40112388, y: 0.23283032}
-  - color: 1
-    column: 1
-    row: 77
-    hasTrackPos: 1
-    trackPos: {x: 0.38883075, y: 0.20387119}
-  - color: 1
-    column: 0
-    row: 76
-    hasTrackPos: 1
-    trackPos: {x: 0.37734824, y: 0.24465357}
-  - color: 1
-    column: 1
-    row: 76
-    hasTrackPos: 1
-    trackPos: {x: 0.36514407, y: 0.21613118}
-  - color: 1
-    column: 0
-    row: 75
-    hasTrackPos: 1
-    trackPos: {x: 0.35401395, y: 0.25818792}
-  - color: 1
-    column: 1
-    row: 75
-    hasTrackPos: 1
-    trackPos: {x: 0.3418699, y: 0.2299345}
-  - color: 1
-    column: 0
-    row: 74
-    hasTrackPos: 1
-    trackPos: {x: 0.33112693, y: 0.2732392}
-  - color: 1
-    column: 1
-    row: 74
-    hasTrackPos: 1
-    trackPos: {x: 0.31900397, y: 0.2451065}
-  - color: 1
-    column: 0
-    row: 73
-    hasTrackPos: 1
-    trackPos: {x: 0.30878118, y: 0.28988302}
-  - color: 1
-    column: 1
-    row: 73
-    hasTrackPos: 1
-    trackPos: {x: 0.2966567, y: 0.26180065}
-  - color: 1
-    column: 0
-    row: 71
-    hasTrackPos: 1
-    trackPos: {x: 0.2869027, y: 0.30774617}
-  - color: 1
-    column: 1
-    row: 72
-    hasTrackPos: 1
-    trackPos: {x: 0.27479076, y: 0.27974838}
-  - color: 1
-    column: 1
-    row: 71
-    hasTrackPos: 1
-    trackPos: {x: 0.2534028, y: 0.29883814}
+    trackPos: {x: 0.48755938, y: 0.17860194}
   - color: 1
     column: 0
     row: 72
     hasTrackPos: 1
-    trackPos: {x: 0.26552805, y: 0.32681903}
+    trackPos: {x: 0.47512466, y: 0.21579526}
   - color: 1
     column: 1
-    row: 70
+    row: 76
     hasTrackPos: 1
-    trackPos: {x: 0.2325304, y: 0.3190735}
+    trackPos: {x: 0.4627409, y: 0.18138944}
+  - color: 1
+    column: 0
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.450463, y: 0.22065161}
+  - color: 1
+    column: 1
+    row: 75
+    hasTrackPos: 1
+    trackPos: {x: 0.4381195, y: 0.18677574}
   - color: 1
     column: 0
     row: 70
     hasTrackPos: 1
-    trackPos: {x: 0.24470256, y: 0.3471077}
+    trackPos: {x: 0.42616174, y: 0.22825052}
+  - color: 1
+    column: 1
+    row: 74
+    hasTrackPos: 1
+    trackPos: {x: 0.4139295, y: 0.19518493}
+  - color: 1
+    column: 0
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.40228635, y: 0.23815507}
+  - color: 1
+    column: 1
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.39015967, y: 0.205632}
+  - color: 1
+    column: 0
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.37885767, y: 0.2500106}
+  - color: 1
+    column: 1
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.3668055, y: 0.21778923}
+  - color: 1
+    column: 0
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.3558876, y: 0.26354536}
+  - color: 1
+    column: 1
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.34387335, y: 0.23145844}
+  - color: 1
+    column: 0
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.3333692, y: 0.27852228}
+  - color: 1
+    column: 1
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.32135558, y: 0.24644814}
+  - color: 1
+    column: 0
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.31142935, y: 0.29510415}
   - color: 1
     column: 1
     row: 69
     hasTrackPos: 1
-    trackPos: {x: 0.21222386, y: 0.34047282}
+    trackPos: {x: 0.29941797, y: 0.2630477}
   - color: 1
     column: 0
-    row: 68
+    row: 64
     hasTrackPos: 1
-    trackPos: {x: 0.2245131, y: 0.3686789}
-  - color: 4
+    trackPos: {x: 0.28996283, y: 0.31285226}
+  - color: 1
     column: 1
     row: 68
     hasTrackPos: 1
-    trackPos: {x: 0.19291516, y: 0.36370385}
-  - color: 4
-    column: 0
-    row: 67
-    hasTrackPos: 1
-    trackPos: {x: 0.20520966, y: 0.39188048}
-  - color: 4
-    column: 1
-    row: 67
-    hasTrackPos: 1
-    trackPos: {x: 0.17459604, y: 0.38851115}
-  - color: 4
-    column: 0
-    row: 66
-    hasTrackPos: 1
-    trackPos: {x: 0.18710856, y: 0.41699657}
-  - color: 4
+    trackPos: {x: 0.27792588, y: 0.28074333}
+  - color: 1
     column: 1
     row: 66
     hasTrackPos: 1
-    trackPos: {x: 0.15768117, y: 0.41524363}
-  - color: 4
+    trackPos: {x: 0.25690708, y: 0.2995223}
+  - color: 1
     column: 0
-    row: 65
+    row: 63
     hasTrackPos: 1
-    trackPos: {x: 0.17069463, y: 0.44434872}
-  - color: 4
+    trackPos: {x: 0.26900682, y: 0.33175936}
+  - color: 1
     column: 1
-    row: 65
+    row: 67
     hasTrackPos: 1
-    trackPos: {x: 0.14273098, y: 0.44424653}
-  - color: 4
-    column: 0
-    row: 64
-    hasTrackPos: 1
-    trackPos: {x: 0.15691501, y: 0.47409973}
-  - color: 4
-    column: 1
-    row: 64
-    hasTrackPos: 1
-    trackPos: {x: 0.13081588, y: 0.47591665}
-  - color: 4
+    trackPos: {x: 0.23639596, y: 0.31938162}
+  - color: 1
     column: 0
     row: 62
     hasTrackPos: 1
-    trackPos: {x: 0.14894058, y: 0.50186676}
+    trackPos: {x: 0.24860947, y: 0.35183215}
+  - color: 1
+    column: 1
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.21653312, y: 0.34051263}
+  - color: 1
+    column: 0
+    row: 61
+    hasTrackPos: 1
+    trackPos: {x: 0.22885476, y: 0.373144}
   - color: 4
     column: 1
     row: 63
     hasTrackPos: 1
-    trackPos: {x: 0.12385627, y: 0.5100554}
+    trackPos: {x: 0.19761126, y: 0.36327428}
+  - color: 4
+    column: 0
+    row: 60
+    hasTrackPos: 1
+    trackPos: {x: 0.21004243, y: 0.39608508}
+  - color: 4
+    column: 1
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.17962053, y: 0.38745493}
+  - color: 4
+    column: 0
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.19241433, y: 0.42079976}
   - color: 4
     column: 1
     row: 62
     hasTrackPos: 1
-    trackPos: {x: 0.12288007, y: 0.5461129}
+    trackPos: {x: 0.16292517, y: 0.4133565}
   - color: 4
     column: 0
-    row: 61
+    row: 58
     hasTrackPos: 1
-    trackPos: {x: 0.14655015, y: 0.54880494}
+    trackPos: {x: 0.17649147, y: 0.44763747}
   - color: 4
     column: 1
     row: 61
     hasTrackPos: 1
-    trackPos: {x: 0.12739827, y: 0.5816985}
+    trackPos: {x: 0.14803734, y: 0.4413479}
   - color: 4
-    column: 0
-    row: 59
+    column: 4
+    row: 76
     hasTrackPos: 1
-    trackPos: {x: 0.15160559, y: 0.5812563}
+    trackPos: {x: 0.06557741, y: 0.42561257}
   - color: 4
     column: 1
     row: 60
     hasTrackPos: 1
-    trackPos: {x: 0.13607343, y: 0.61562735}
+    trackPos: {x: 0.13576171, y: 0.47172454}
   - color: 4
     column: 0
-    row: 58
+    row: 56
     hasTrackPos: 1
-    trackPos: {x: 0.16052641, y: 0.6127981}
+    trackPos: {x: 0.15593009, y: 0.5021626}
   - color: 4
     column: 1
     row: 59
     hasTrackPos: 1
-    trackPos: {x: 0.14794669, y: 0.64743185}
+    trackPos: {x: 0.12818983, y: 0.50506014}
   - color: 4
-    column: 0
-    row: 57
-    hasTrackPos: 1
-    trackPos: {x: 0.17328197, y: 0.6433324}
-  - color: 2
     column: 1
     row: 58
     hasTrackPos: 1
-    trackPos: {x: 0.16248187, y: 0.6768715}
-  - color: 2
-    column: 0
-    row: 56
-    hasTrackPos: 1
-    trackPos: {x: 0.18898822, y: 0.67151546}
-  - color: 2
-    column: 1
-    row: 57
-    hasTrackPos: 1
-    trackPos: {x: 0.17916371, y: 0.703873}
-  - color: 2
+    trackPos: {x: 0.12676397, y: 0.5397313}
+  - color: 4
     column: 0
     row: 55
     hasTrackPos: 1
-    trackPos: {x: 0.20690528, y: 0.6969065}
-  - color: 2
+    trackPos: {x: 0.15334626, y: 0.5476191}
+  - color: 4
     column: 1
     row: 56
     hasTrackPos: 1
-    trackPos: {x: 0.19757898, y: 0.72849697}
-  - color: 2
+    trackPos: {x: 0.13049099, y: 0.5742265}
+  - color: 4
+    column: 3
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.07533136, y: 0.53352743}
+  - color: 4
+    column: 1
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.13797893, y: 0.60750085}
+  - color: 4
     column: 0
     row: 54
     hasTrackPos: 1
-    trackPos: {x: 0.22657435, y: 0.7194524}
-  - color: 2
+    trackPos: {x: 0.16634713, y: 0.60916096}
+  - color: 4
     column: 1
-    row: 55
+    row: 54
     hasTrackPos: 1
-    trackPos: {x: 0.21738487, y: 0.75084007}
-  - color: 2
+    trackPos: {x: 0.14862283, y: 0.6389972}
+  - color: 4
     column: 0
     row: 53
     hasTrackPos: 1
-    trackPos: {x: 0.24746294, y: 0.73958206}
-  - color: 2
-    column: 1
-    row: 54
-    hasTrackPos: 1
-    trackPos: {x: 0.2385182, y: 0.7705257}
-  - color: 2
-    column: 0
-    row: 52
-    hasTrackPos: 1
-    trackPos: {x: 0.26930693, y: 0.75748855}
+    trackPos: {x: 0.1785557, y: 0.6391515}
   - color: 2
     column: 1
     row: 53
     hasTrackPos: 1
-    trackPos: {x: 0.26051715, y: 0.78811026}
+    trackPos: {x: 0.16198692, y: 0.66842836}
+  - color: 2
+    column: 0
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.19368207, y: 0.6669289}
   - color: 2
     column: 1
     row: 52
     hasTrackPos: 1
-    trackPos: {x: 0.28341717, y: 0.80306005}
+    trackPos: {x: 0.17760362, y: 0.69563276}
   - color: 2
     column: 0
     row: 51
     hasTrackPos: 1
-    trackPos: {x: 0.29213735, y: 0.7725838}
+    trackPos: {x: 0.21108478, y: 0.69196695}
   - color: 2
     column: 1
     row: 51
     hasTrackPos: 1
-    trackPos: {x: 0.3070481, y: 0.815502}
+    trackPos: {x: 0.19504854, y: 0.72060645}
   - color: 2
     column: 0
     row: 50
     hasTrackPos: 1
-    trackPos: {x: 0.31577992, y: 0.78489554}
+    trackPos: {x: 0.23021504, y: 0.71433973}
   - color: 2
     column: 1
     row: 50
     hasTrackPos: 1
-    trackPos: {x: 0.3310302, y: 0.8236987}
+    trackPos: {x: 0.21428795, y: 0.74284554}
   - color: 2
     column: 0
     row: 49
     hasTrackPos: 1
-    trackPos: {x: 0.34412023, y: 0.79264164}
+    trackPos: {x: 0.25063252, y: 0.73435247}
   - color: 2
     column: 1
     row: 49
     hasTrackPos: 1
-    trackPos: {x: 0.3540452, y: 0.8223185}
+    trackPos: {x: 0.2346748, y: 0.7629291}
   - color: 2
     column: 0
     row: 48
     hasTrackPos: 1
-    trackPos: {x: 0.3657254, y: 0.7815385}
+    trackPos: {x: 0.27203348, y: 0.7522181}
+  - color: 2
+    column: 1
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.25595313, y: 0.7810878}
   - color: 2
     column: 1
     row: 47
     hasTrackPos: 1
-    trackPos: {x: 0.37773845, y: 0.8101038}
+    trackPos: {x: 0.27811557, y: 0.7969643}
   - color: 2
     column: 0
     row: 47
     hasTrackPos: 1
-    trackPos: {x: 0.38834125, y: 0.7657879}
+    trackPos: {x: 0.2944528, y: 0.7673062}
   - color: 2
     column: 1
     row: 46
     hasTrackPos: 1
-    trackPos: {x: 0.40030956, y: 0.7940428}
+    trackPos: {x: 0.30117908, y: 0.8101923}
+  - color: 2
+    column: 0
+    row: 1
+    hasTrackPos: 1
+    trackPos: {x: 0.5248757, y: 0.21579525}
+  - color: 2
+    column: 1
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.3248749, y: 0.8210258}
   - color: 2
     column: 0
     row: 46
     hasTrackPos: 1
-    trackPos: {x: 0.41011736, y: 0.74768806}
+    trackPos: {x: 0.33067375, y: 0.78524196}
   - color: 2
-    column: 1
-    row: 45
+    column: 2
+    row: 47
     hasTrackPos: 1
-    trackPos: {x: 0.42206028, y: 0.7758217}
-  - color: 2
-    column: 1
-    row: 43
-    hasTrackPos: 1
-    trackPos: {x: 0.4429229, y: 0.7556059}
+    trackPos: {x: 0.42452052, y: 0.81336117}
   - color: 2
     column: 0
     row: 45
     hasTrackPos: 1
-    trackPos: {x: 0.4309256, y: 0.7274037}
-  - color: 2
-    column: 0
-    row: 44
-    hasTrackPos: 1
-    trackPos: {x: 0.45208538, y: 0.7080157}
+    trackPos: {x: 0.35616127, y: 0.7805969}
   - color: 2
     column: 1
     row: 44
     hasTrackPos: 1
-    trackPos: {x: 0.46413255, y: 0.736358}
+    trackPos: {x: 0.36825156, y: 0.81300116}
   - color: 2
     column: 0
-    row: 42
+    row: 44
     hasTrackPos: 1
-    trackPos: {x: 0.4755727, y: 0.6950441}
+    trackPos: {x: 0.3788136, y: 0.76622474}
   - color: 2
     column: 1
-    row: 41
+    row: 43
     hasTrackPos: 1
-    trackPos: {x: 0.48773265, y: 0.72371006}
+    trackPos: {x: 0.3908158, y: 0.7982892}
   - color: 2
     column: 0
     row: 43
     hasTrackPos: 1
-    trackPos: {x: 0.5000008, y: 0.68830514}
+    trackPos: {x: 0.40050107, y: 0.7490563}
   - color: 2
     column: 1
     row: 42
     hasTrackPos: 1
-    trackPos: {x: 0.51226807, y: 0.72371066}
+    trackPos: {x: 0.41253522, y: 0.78118765}
+  - color: 2
+    column: 1
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.43344176, y: 0.7621973}
   - color: 2
     column: 0
     row: 41
     hasTrackPos: 1
-    trackPos: {x: 0.5244287, y: 0.6950451}
+    trackPos: {x: 0.4212578, y: 0.729773}
+  - color: 2
+    column: 0
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.4413637, y: 0.70911276}
   - color: 2
     column: 1
     row: 40
     hasTrackPos: 1
-    trackPos: {x: 0.53586835, y: 0.7363583}
+    trackPos: {x: 0.4534656, y: 0.7413696}
   - color: 2
     column: 0
     row: 40
     hasTrackPos: 1
-    trackPos: {x: 0.5479163, y: 0.70801663}
-  - color: 2
-    column: 0
-    row: 39
-    hasTrackPos: 1
-    trackPos: {x: 0.5690758, y: 0.7274052}
+    trackPos: {x: 0.46409535, y: 0.6949248}
   - color: 2
     column: 1
     row: 39
     hasTrackPos: 1
-    trackPos: {x: 0.55707777, y: 0.7556066}
-  - color: 2
-    column: 1
-    row: 38
-    hasTrackPos: 1
-    trackPos: {x: 0.57794046, y: 0.7758223}
-  - color: 2
-    column: 0
-    row: 38
-    hasTrackPos: 1
-    trackPos: {x: 0.5898841, y: 0.7476892}
-  - color: 2
-    column: 1
-    row: 37
-    hasTrackPos: 1
-    trackPos: {x: 0.5996912, y: 0.7940434}
+    trackPos: {x: 0.47617465, y: 0.7272036}
   - color: 2
     column: 0
     row: 37
     hasTrackPos: 1
-    trackPos: {x: 0.61166, y: 0.7657888}
+    trackPos: {x: 0.51241076, y: 0.68331885}
+  - color: 2
+    column: 1
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.5238245, y: 0.7272032}
+  - color: 2
+    column: 0
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.5359035, y: 0.6949242}
   - color: 2
     column: 1
     row: 36
     hasTrackPos: 1
-    trackPos: {x: 0.6222624, y: 0.8101044}
+    trackPos: {x: 0.5465336, y: 0.7413689}
+  - color: 2
+    column: 0
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.55863523, y: 0.70911175}
   - color: 2
     column: 0
     row: 35
     hasTrackPos: 1
-    trackPos: {x: 0.63427603, y: 0.78153896}
+    trackPos: {x: 0.5787411, y: 0.7297718}
+  - color: 2
+    column: 1
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.56655747, y: 0.76219654}
   - color: 2
     column: 1
     row: 34
     hasTrackPos: 1
-    trackPos: {x: 0.64595556, y: 0.82231885}
+    trackPos: {x: 0.5874641, y: 0.78118706}
   - color: 2
     column: 0
     row: 34
     hasTrackPos: 1
-    trackPos: {x: 0.6558785, y: 0.7926413}
+    trackPos: {x: 0.5994977, y: 0.74905527}
   - color: 2
     column: 1
     row: 33
     hasTrackPos: 1
-    trackPos: {x: 0.6689706, y: 0.82369876}
+    trackPos: {x: 0.60918367, y: 0.79828876}
   - color: 2
     column: 0
-    row: 32
+    row: 33
     hasTrackPos: 1
-    trackPos: {x: 0.68421996, y: 0.78489554}
+    trackPos: {x: 0.62118506, y: 0.7662237}
   - color: 2
-    column: 1
-    row: 32
+    column: 2
+    row: 39
     hasTrackPos: 1
-    trackPos: {x: 0.6929523, y: 0.81550187}
+    trackPos: {x: 0.59725064, y: 0.8304028}
   - color: 2
     column: 0
     row: 31
     hasTrackPos: 1
-    trackPos: {x: 0.70786256, y: 0.77258384}
+    trackPos: {x: 0.64383745, y: 0.78059614}
+  - color: 2
+    column: 1
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.6506987, y: 0.8221819}
+  - color: 2
+    column: 0
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.48758805, y: 0.6833194}
   - color: 2
     column: 1
     row: 31
     hasTrackPos: 1
-    trackPos: {x: 0.71658313, y: 0.80305994}
-  - color: 2
-    column: 1
-    row: 30
-    hasTrackPos: 1
-    trackPos: {x: 0.73948324, y: 0.7881099}
-  - color: 2
-    column: 0
-    row: 30
-    hasTrackPos: 1
-    trackPos: {x: 0.730693, y: 0.7574886}
-  - color: 2
-    column: 1
-    row: 29
-    hasTrackPos: 1
-    trackPos: {x: 0.76148236, y: 0.77052516}
+    trackPos: {x: 0.6751242, y: 0.8210261}
   - color: 2
     column: 0
     row: 29
     hasTrackPos: 1
-    trackPos: {x: 0.75253695, y: 0.73958206}
+    trackPos: {x: 0.6822564, y: 0.7796634}
   - color: 2
     column: 1
-    row: 28
+    row: 30
     hasTrackPos: 1
-    trackPos: {x: 0.7826156, y: 0.7508397}
+    trackPos: {x: 0.69882005, y: 0.8101926}
   - color: 2
     column: 0
     row: 28
     hasTrackPos: 1
-    trackPos: {x: 0.7734256, y: 0.7194524}
+    trackPos: {x: 0.70554525, y: 0.76730734}
   - color: 2
     column: 1
-    row: 27
+    row: 28
     hasTrackPos: 1
-    trackPos: {x: 0.80242145, y: 0.7284966}
+    trackPos: {x: 0.7218837, y: 0.7969646}
+  - color: 2
+    column: 1
+    row: 29
+    hasTrackPos: 1
+    trackPos: {x: 0.7440462, y: 0.78108835}
   - color: 2
     column: 0
     row: 27
     hasTrackPos: 1
-    trackPos: {x: 0.79309464, y: 0.69690657}
+    trackPos: {x: 0.7279646, y: 0.7522197}
+  - color: 2
+    column: 1
+    row: 27
+    hasTrackPos: 1
+    trackPos: {x: 0.7653247, y: 0.7629296}
+  - color: 2
+    column: 0
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.7493658, y: 0.73435414}
   - color: 2
     column: 1
     row: 26
     hasTrackPos: 1
-    trackPos: {x: 0.8208366, y: 0.7038726}
+    trackPos: {x: 0.7857117, y: 0.742846}
   - color: 2
     column: 0
     row: 25
     hasTrackPos: 1
-    trackPos: {x: 0.81101173, y: 0.6715156}
-  - color: 4
+    trackPos: {x: 0.7697835, y: 0.71434146}
+  - color: 2
     column: 1
     row: 25
     hasTrackPos: 1
-    trackPos: {x: 0.8375184, y: 0.676871}
-  - color: 4
+    trackPos: {x: 0.8049511, y: 0.72060704}
+  - color: 2
     column: 0
     row: 24
     hasTrackPos: 1
-    trackPos: {x: 0.8267179, y: 0.64333266}
-  - color: 4
+    trackPos: {x: 0.788914, y: 0.69196874}
+  - color: 2
     column: 1
     row: 24
     hasTrackPos: 1
-    trackPos: {x: 0.8520535, y: 0.64743125}
-  - color: 4
+    trackPos: {x: 0.8223961, y: 0.69563323}
+  - color: 2
     column: 0
     row: 23
     hasTrackPos: 1
-    trackPos: {x: 0.83947355, y: 0.61279833}
+    trackPos: {x: 0.8063166, y: 0.6669307}
   - color: 4
     column: 1
     row: 23
     hasTrackPos: 1
-    trackPos: {x: 0.8639268, y: 0.61562634}
+    trackPos: {x: 0.83801293, y: 0.66842884}
   - color: 4
     column: 0
     row: 22
     hasTrackPos: 1
-    trackPos: {x: 0.84839505, y: 0.581254}
+    trackPos: {x: 0.8214433, y: 0.6391535}
   - color: 4
     column: 1
     row: 22
     hasTrackPos: 1
-    trackPos: {x: 0.87260187, y: 0.58169734}
+    trackPos: {x: 0.851377, y: 0.6389976}
   - color: 4
     column: 0
-    row: 20
+    row: 14
     hasTrackPos: 1
-    trackPos: {x: 0.8534501, y: 0.54880327}
+    trackPos: {x: 0.8075857, y: 0.42079985}
+  - color: 4
+    column: 1
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.862021, y: 0.60750127}
+  - color: 4
+    column: 0
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.8418268, y: 0.5793198}
   - color: 4
     column: 1
     row: 20
     hasTrackPos: 1
-    trackPos: {x: 0.8771202, y: 0.5461117}
+    trackPos: {x: 0.8695089, y: 0.574227}
+  - color: 4
+    column: 3
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.9246687, y: 0.53352857}
   - color: 4
     column: 1
     row: 19
     hasTrackPos: 1
-    trackPos: {x: 0.87614375, y: 0.51005435}
-  - color: 4
-    column: 0
-    row: 18
-    hasTrackPos: 1
-    trackPos: {x: 0.8510594, y: 0.50186664}
+    trackPos: {x: 0.87323606, y: 0.53973186}
   - color: 4
     column: 1
     row: 18
     hasTrackPos: 1
-    trackPos: {x: 0.869184, y: 0.4759162}
+    trackPos: {x: 0.87181014, y: 0.5050603}
   - color: 4
     column: 0
     row: 17
     hasTrackPos: 1
-    trackPos: {x: 0.84308577, y: 0.47410163}
+    trackPos: {x: 0.8466672, y: 0.5198977}
   - color: 4
     column: 1
     row: 17
     hasTrackPos: 1
-    trackPos: {x: 0.85726887, y: 0.4442462}
+    trackPos: {x: 0.8642384, y: 0.4717247}
   - color: 4
     column: 0
     row: 16
     hasTrackPos: 1
-    trackPos: {x: 0.82930565, y: 0.4443493}
+    trackPos: {x: 0.8368126, y: 0.47674584}
+  - color: 4
+    column: 1
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.8519627, y: 0.4413479}
+  - color: 4
+    column: 0
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.8235086, y: 0.4476375}
   bottomToTopTriplets: 0600000004000000000000000600000000000000040000000000000001000000040000000200000004000000
   bottomToTopGroups:
   - color: 6
@@ -2164,7 +2165,7 @@ MonoBehaviour:
   - color: 2
     count: 36
     blockShape: 0
-    gridAnchor: {x: 0, y: 2}
+    gridAnchor: {x: 0, y: 0}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0
@@ -2244,7 +2245,7 @@ MonoBehaviour:
   - color: 4
     count: 32
     blockShape: 0
-    gridAnchor: {x: 0, y: 0}
+    gridAnchor: {x: 0, y: 2}
     hasGridAnchor: 1
     hasKey: 0
     lockKeyCount: 0

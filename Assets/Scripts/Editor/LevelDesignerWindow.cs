@@ -464,6 +464,9 @@ namespace PuzzleGlass.Editor
             EditorGUILayout.EndHorizontal();
 
             lvl.levelName = EditorGUILayout.TextField("Bölüm Adı", lvl.levelName);
+            lvl.tutorial = (LevelTutorial)EditorGUILayout.EnumPopup(
+                new GUIContent("Tutorial", "Bu levelin başında gösterilecek öğretici. None: yok. FirstLevel: ilk level tanıtımı. Diğerleri: mekanik tanıtım kartı (oyuncu başına bir kez)."),
+                lvl.tutorial);
 
             EditorGUILayout.BeginHorizontal();
             lvl.slotCount = EditorGUILayout.IntSlider("Üst Slot Sayısı (2 - 5)", lvl.slotCount, 2, 5);

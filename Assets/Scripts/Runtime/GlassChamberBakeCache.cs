@@ -31,6 +31,8 @@ namespace PuzzleGlass
         private static readonly int SrcBlendId = Shader.PropertyToID("_SrcBlend");
         private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        private static readonly int UseTrackSdfId = Shader.PropertyToID("_UseTrackSDF");
+        private static readonly int UseExitChanSdfId = Shader.PropertyToID("_UseExitChanSDF");
         private static readonly string[] BakeableModes = { "_IsTrackChannel", "_IsExitChannels", "_IsRoundedBoxPool" };
         private static readonly string[] NonBakeableModes = { "_IsCollar", "_IsFeedTube", "_TrackBake" };
 
@@ -217,11 +219,22 @@ namespace PuzzleGlass
             m.SetFloat(SrcBlendId, (float)BlendMode.One);
             m.SetFloat(DstBlendId, (float)BlendMode.Zero);
 
+            // Pişirme tek seferlik: mesafe alanını FP16 SDF dokusundan değil, shader'ın tam hassasiyetli segment döngüsünden
+            // hesaplat. Mobil GPU'lar FP16 dokuyu düşük hassasiyetle filtrelediği için dokudan türetilen normal gürültülüydü
+            // ve keskin parlamada karıncalı/kumlu beyaz noktalar yapıyordu. Döngü pahalı ama burada level başına bir kez çalışır.
+            float prevUseTrack = Shader.GetGlobalFloat(UseTrackSdfId);
+            float prevUseExit = Shader.GetGlobalFloat(UseExitChanSdfId);
+            Shader.SetGlobalFloat(UseTrackSdfId, 0f);
+            Shader.SetGlobalFloat(UseExitChanSdfId, 0f);
+
             var prevActive = RenderTexture.active;
             RenderTexture.active = e.rt;
             GL.Clear(false, true, Color.clear);
             Graphics.Blit(null, e.rt, m, 0);
             RenderTexture.active = prevActive;
+
+            Shader.SetGlobalFloat(UseTrackSdfId, prevUseTrack);
+            Shader.SetGlobalFloat(UseExitChanSdfId, prevUseExit);
 
             m.SetFloat(SrcBlendId, src);
             m.SetFloat(DstBlendId, dst);

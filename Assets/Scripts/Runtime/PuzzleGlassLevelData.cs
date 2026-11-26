@@ -204,6 +204,21 @@ namespace PuzzleGlass
         }
     }
 
+    /// <summary>Level başında oyuncuya gösterilecek öğretici. Level tasarımında seçilir; varsayılan None.</summary>
+    public enum LevelTutorial
+    {
+        /// <summary>Öğretici yok.</summary>
+        None = 0,
+        /// <summary>İlk level: spotlight ile ilk bloğu slota gönderme + takılınca el ipucu.</summary>
+        FirstLevel = 1,
+        /// <summary>Buzlu blok tanıtım kartı.</summary>
+        FrozenBlock = 2,
+        /// <summary>Kilit ve anahtar tanıtım kartı.</summary>
+        LockAndKey = 3,
+        /// <summary>Dolu kutu tanıtım kartı.</summary>
+        FilledBox = 4,
+    }
+
     public enum IceMeltMode
     {
         PerBallCollected = 0,   // Her top toplandığında buz sayacı 1 azalır
@@ -441,7 +456,9 @@ namespace PuzzleGlass
         [Range(0.05f, 0.50f)]
         public float feedTubeDropInterval = 0.14f;
 
-        [Header("Öğretici (ilk levellerde el ipucu)")]
+        [Header("Öğretici")]
+        [Tooltip("Bu levelin başında gösterilecek öğretici. None: yok. FirstLevel: ilk level tanıtımı. Diğerleri: mekanik tanıtım kartı (oyuncu başına bir kez).")]
+        public LevelTutorial tutorial = LevelTutorial.None;
         [Tooltip("Açıkken level başında bir el, hangi bloğun nereye sürükleneceğini gösterir.")]
         public bool tutorialHint = false;
         public int tutorialBlockIndex = -1;

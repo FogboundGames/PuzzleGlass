@@ -58,6 +58,15 @@ namespace PuzzleGlass
                     if (UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp) urp.renderScale = rs;
                 }
                 else if (kv[0] == "hide") _hide = kv[1].Split(',');
+                // Test: "lvl=6" → o levelden başla (GameManager.Start'tan önce çalışır); "intro=0" → tanıtım kartlarını sıfırla
+                else if (kv[0] == "lvl" && int.TryParse(kv[1], out int lvlNum) && lvlNum > 0) PlayerPrefs.SetInt(PuzzleGlassGameManager.SavedLevelPrefKey, lvlNum);
+                else if (kv[0] == "intro" && kv[1] == "0")
+                {
+                    PlayerPrefs.DeleteKey(TutorialOverlay.PrefIce);
+                    PlayerPrefs.DeleteKey(TutorialOverlay.PrefLock);
+                    PlayerPrefs.DeleteKey(TutorialOverlay.PrefFilledBox);
+                    PlayerPrefs.DeleteKey(TutorialOverlay.PrefSlotWarning);
+                }
                 else if (kv[0] == "si" && int.TryParse(kv[1], out int si)) { Physics.defaultSolverIterations = si; _si = si; }
                 else if (kv[0] == "svi" && int.TryParse(kv[1], out int svi)) { Physics.defaultSolverVelocityIterations = svi; _svi = svi; }
                 else if (kv[0] == "fdt" && float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fdt)) Time.fixedDeltaTime = fdt;

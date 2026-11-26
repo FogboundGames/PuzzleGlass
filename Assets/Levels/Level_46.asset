@@ -98,6 +98,7 @@ MonoBehaviour:
   feedTubeWidthMultiplier: 1.24
   feedTubeAnchorSpread: 0.68
   feedTubeDropInterval: 0.14
+  tutorial: 1
   tutorialHint: 0
   tutorialBlockIndex: -1
   tutorialFromAnchor: {x: 0, y: 0}

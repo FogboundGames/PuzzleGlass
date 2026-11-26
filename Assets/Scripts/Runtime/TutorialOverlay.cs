@@ -29,8 +29,6 @@ namespace PuzzleGlass
         private const float TapCycleSeconds = 1.25f;
         /// <summary>Kart açıldıktan sonra bu süre dolmadan dokunuş kartı kapatmaz (yanlışlıkla geçmeyi önler).</summary>
         private const float CardMinSeconds = 0.6f;
-        /// <summary>Takılınca ipucu yalnızca ilk levelde (levelNumber == 1) verilir.</summary>
-        private const int IdleHintMaxLevel = 1;
         private const float IdleHintSeconds = 6f;
 
         private enum IntroMechanic
@@ -114,7 +112,7 @@ namespace PuzzleGlass
             ClearSpotlight();
             _level = lvl;
             _blocks = null;
-            _pauseGlassBallsForTutorial = lvl != null && lvl.levelNumber == 1;
+            _pauseGlassBallsForTutorial = lvl != null && lvl.tutorial == LevelTutorial.FirstLevel;
             if (!_pauseGlassBallsForTutorial)
             {
                 ReleaseGlassBalls();
@@ -162,18 +160,21 @@ namespace PuzzleGlass
             _blocks = blocks;
             _idleTime = 0f;
             _lastProgress = -1;
-            // Tutorial yalnızca ilk level (levelNumber == 1) için geçerlidir; diğer levellerde çalışmaz
-            if (lvl == null || lvl.levelNumber != 1)
+            // Öğretici level numarasına değil level tasarımındaki seçime bağlı (PuzzleGlassLevelData.tutorial).
+            // Eskiden burada "level 1 değilse çık" vardı; bu yüzden buz/kilit/dolu kutu kartları hiç görünmüyordu.
+            if (lvl == null)
             {
                 _pauseGlassBallsForTutorial = false;
                 ReleaseGlassBalls();
                 return;
             }
 
-            // 1) Level 1 Spotlight Tutorial veya el ipucu
-            if (lvl.levelNumber == 1 && blocks != null && SlotSystem.IsActive)
+            // 1) İlk level: spotlight tanıtımı veya el ipucu
+            if (lvl.tutorial == LevelTutorial.FirstLevel && blocks != null && SlotSystem.IsActive)
             {
-                var pick = PickLevel1PurpleSpotlightBlock(blocks) ?? PickSlotHintBlock(lvl, blocks);
+                // Tasarımcı ipucu kutusunu seçtiyse o (gönderilebilirse), yoksa eski kural: mor kutu, sonra otomatik
+                var pick = (lvl.tutorialBlockIndex >= 0 ? PickDesignerHintBlock(lvl, blocks) : null)
+                           ?? PickLevel1PurpleSpotlightBlock(blocks) ?? PickSlotHintBlock(lvl, blocks);
                 if (pick != null)
                 {
                     _spotlightTarget = pick;
@@ -225,19 +226,10 @@ namespace PuzzleGlass
                 }
             }
 
-            // 2) Mekanik tanıtımları (ilk görüldüklerinde bir kez)
-            bool hasIce = false, hasLock = false, hasKey = false, hasFilled = false;
-            if (lvl.monsters != null)
-            {
-                foreach (var m in lvl.monsters)
-                {
-                    if (m == null) continue;
-                    if (m.iceCount > 0) hasIce = true;
-                    if (m.lockKeyCount > 0) hasLock = true;
-                    if (m.hasKey) hasKey = true;
-                    if (m.isFilledBox) hasFilled = true;
-                }
-            }
+            // 2) Mekanik tanıtım kartı: level tasarımında seçilen (oyuncu başına bir kez)
+            bool hasIce = lvl.tutorial == LevelTutorial.FrozenBlock;
+            bool hasLock = lvl.tutorial == LevelTutorial.LockAndKey, hasKey = false;
+            bool hasFilled = lvl.tutorial == LevelTutorial.FilledBox;
             // "Görüldü" kaydı kart kapanınca yapılır (CloseCard): okunmadan level yeniden başlarsa kart tekrar çıkar
             if (hasIce && PlayerPrefs.GetInt(PrefIce, 0) == 0)
             {
@@ -304,6 +296,18 @@ namespace PuzzleGlass
             return best;
         }
 
+        /// <summary>Level tasarımında seçilen ipucu kutusu (indeks + konum + renk eşleşmeli ve gönderilebilir olmalı).</summary>
+        private static MonsterCharacter PickDesignerHintBlock(PuzzleGlassLevelData lvl, List<MonsterCharacter> blocks)
+        {
+            if (lvl == null || blocks == null || lvl.monsters == null) return null;
+            if (lvl.tutorialBlockIndex < 0 || lvl.tutorialBlockIndex >= lvl.monsters.Count) return null;
+            var entry = lvl.monsters[lvl.tutorialBlockIndex];
+            // Kutunun güncel konumu (seçimden sonra kutu taşınmış olabilir; kayıtlı tutorialFromAnchor eskiyebilir)
+            foreach (var b in blocks)
+                if (IsSendable(b, blocks) && b.gridAnchor == entry.gridAnchor && b.colorType == entry.color) return b;
+            return null;
+        }
+
         private static MonsterCharacter PickSlotHintBlock(PuzzleGlassLevelData lvl, List<MonsterCharacter> blocks)
         {
             var grid = StagingGridBoard.Instance;
@@ -340,9 +344,10 @@ namespace PuzzleGlass
             UpdateSpotlight();
             if (_cardObj != null)
             {
-                // Kart açıkken el ipucu bekler; el/halka kartın anlattığı bloğu gösterir
+                // Kart açıkken el gösterilmez (rastgele bir bloğu işaretlemesi kafa karıştırıyordu);
+                // el ipucu kart kapandıktan sonra başlar.
                 UpdateCard();
-                UpdateCardPointer();
+                if (_handGroup != null && !_hintActive) _handGroup.alpha = 0f;
             }
             else
             {
@@ -369,7 +374,7 @@ namespace PuzzleGlass
         private void UpdateIdleHint()
         {
             var gm = PuzzleGlassGameManager.Instance;
-            if (_spotlightActive || _hintActive || _level == null || _level.levelNumber > IdleHintMaxLevel || _blocks == null || !SlotSystem.IsActive
+            if (_spotlightActive || _hintActive || _level == null || _level.tutorial != LevelTutorial.FirstLevel || _blocks == null || !SlotSystem.IsActive
                 || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed)) || LevelTransitionController.IsTransitioning
                 || PointerPressedThisFrame())
             {
@@ -435,33 +440,6 @@ namespace PuzzleGlass
 #else
             return false;
 #endif
-        }
-
-        /// <summary>Kart açıkken: el ve nabız gibi atan halka kartın anlattığı bloğun üstünde durur.</summary>
-        private void UpdateCardPointer()
-        {
-            var target = _currentCard.target;
-            var cam = Camera.main;
-            if (target == null || cam == null || !target.gameObject.activeInHierarchy)
-            {
-                if (_handGroup != null) _handGroup.alpha = 0f;
-                return;
-            }
-
-            float t = Mathf.Max(0f, _cardTime - 0.25f);
-            float press = 0.5f + 0.5f * Mathf.Sin(t * 5.2f);
-            _handGroup.alpha = Mathf.Clamp01(t / 0.3f);
-            Vector2 pos = WorldToCanvas(cam, target.transform.position);
-
-            bool hasHandSprite = _theme != null && _theme.iconHandClick != null;
-            Vector2 fingerPos = pos + new Vector2(26f, -34f);
-            _finger.anchoredPosition = hasHandSprite ? fingerPos : (fingerPos + new Vector2(18f, -26f));
-            _finger.localScale = Vector3.one * Mathf.Lerp(1.06f, 0.94f, press);
-            _finger.localRotation = hasHandSprite ? Quaternion.Euler(0f, 0f, -14f) : Quaternion.identity;
-
-            _ring.anchoredPosition = pos;
-            _ring.localScale = Vector3.one * Mathf.Lerp(1.05f, 1.45f, press);
-            _ringImg.color = new Color(1f, 0.92f, 0.45f, Mathf.Lerp(0.95f, 0.55f, press));
         }
 
         // ==================== Level 1 Spotlight ====================
