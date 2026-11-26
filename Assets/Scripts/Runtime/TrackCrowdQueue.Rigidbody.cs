@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Profiling;
 
 namespace PuzzleGlass
 {
@@ -37,8 +38,20 @@ namespace PuzzleGlass
         public static float PhysBallFriction = 0.22f;
         public static float PhysBallBounce = 0.08f;
 
+        /// <summary>true: pist topları Discrete çarpışma + düşük solver iterasyonu kullanır (mobil performans).
+        /// PerfProbe "trackperf=0" ile eski ayarlar (Speculative CCD, proje solver değerleri) karşılaştırılabilir.</summary>
+        public static bool UseTrackPerfPhysics = true;
+
         /// <summary>Teşhis: duvar dışına çıkıp içeri geri alınan top sayısı (normalde 0 kalmalı).</summary>
         public static int EscapeRecoveries { get; private set; }
+
+        // Profiler işaretleri (geliştirme build'lerinde ve editörde görünür; release build'de maliyetsiz)
+        private static readonly ProfilerMarker s_MRead = new ProfilerMarker("TrackRB.1_ReadBalls");
+        private static readonly ProfilerMarker s_MGrid = new ProfilerMarker("TrackRB.2_BuildGrid");
+        private static readonly ProfilerMarker s_MForces = new ProfilerMarker("TrackRB.3_Forces");
+        private static readonly ProfilerMarker s_MNeighbors = new ProfilerMarker("TrackRB.3a_Neighbors");
+        private static readonly ProfilerMarker s_MApply = new ProfilerMarker("TrackRB.3b_ApplyRigidbody");
+        private static readonly ProfilerMarker s_MSpawn = new ProfilerMarker("TrackRB.4_Spawn");
 
         private static PhysicsMaterial s_TrackBallMat;
         private static GameObject s_GateObj;
@@ -59,7 +72,12 @@ namespace PuzzleGlass
             rb.maxAngularVelocity = 35f;
             rb.maxDepenetrationVelocity = 0.90f;         // sıkışmada patlama/teleport olmasın
             rb.sleepThreshold = 0.004f;
-            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            // Performans (telefon profili: tek fizik adımı ~9,6 ms): pist topları yavaş (bant hızı) ve kanal duvarları
+            // kalın olduğu için sürekli çarpışma algılaması (CCD) gerekmez; kaçan top olursa ReadBalls'taki güvenlik
+            // ağı (EscapeRecoveries) içeri alır. Solver 12/4 → 6/2: yüzlerce topluk yoğun kalabalıkta PhysX'i ~%14 hızlandırır.
+            rb.collisionDetectionMode = UseTrackPerfPhysics ? CollisionDetectionMode.Discrete : CollisionDetectionMode.ContinuousSpeculative;
+            rb.solverIterations = UseTrackPerfPhysics ? 6 : Physics.defaultSolverIterations;
+            rb.solverVelocityIterations = UseTrackPerfPhysics ? 2 : Physics.defaultSolverVelocityIterations;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             if (b.sphereCollider != null)
             {
@@ -116,7 +134,14 @@ namespace PuzzleGlass
             int rows = Mathf.Max(1, Mathf.CeilToInt(fr.height / d));
             if (s_CellHead.Length < cols * rows) s_CellHead = new int[cols * rows];
 
+            // Cam dönüşümü adım boyunca sabit: top başına Transform çağrısı (native) yerine bir kez alınır.
+            // TransformDirection/InverseTransformDirection ölçekten etkilenmez → yalnızca dönüş kullanılır.
+            Matrix4x4 w2l = ct.worldToLocalMatrix;
+            Quaternion ctRot = ct.rotation;
+            Quaternion ctInvRot = Quaternion.Inverse(ctRot);
+
             // 1. Konumları ve hızları oku (fizik motorunun sonucu)
+            s_MRead.Begin();
             int n = 0, ringCount = 0;
             for (int i = 0; i < activeBalls.Count; i++)
             {
@@ -125,7 +150,7 @@ namespace PuzzleGlass
                     continue;
                 if (b.rb.isKinematic) ConfigureDynamicTrackBall(b);
 
-                Vector3 lp = ct.InverseTransformPoint(b.rb.position);
+                Vector3 lp = w2l.MultiplyPoint3x4(b.rb.position);
                 Vector2 p = new Vector2(lp.x, lp.y);
 
                 // Güvenlik ağı: merkezi kanal dışına çıkmış top (ör. collider'a gömülü doğup dışa itilmiş) en yakın iç
@@ -172,7 +197,7 @@ namespace PuzzleGlass
                 b.trackLoopSlot = onRing ? RingMarker : -1;
                 if (onRing) ringCount++;
 
-                Vector3 lv = ct.InverseTransformDirection(b.rb.linearVelocity);
+                Vector3 lv = ctInvRot * b.rb.linearVelocity;
                 s_All[n] = b;
                 s_Pos[n] = p;
                 s_Vel[n] = new Vector2(lv.x, lv.y);
@@ -181,6 +206,7 @@ namespace PuzzleGlass
                 s_GOffset[n] = offset;
                 n++;
             }
+            s_MRead.End();
             s_RingCount = ringCount;
             s_Occupied = ringCount;
             bool canJoin = CanJoinBelt(ringCount);
@@ -188,9 +214,12 @@ namespace PuzzleGlass
 
             // 2. Sürüş kuvveti: yol boyunca hedef hıza (ağırlıklı, sınırlı ivme). Önü tıkalı ve yavaşsa kuvvet yok:
             //    top fiziksel dengeye gelip durabilir/uyuyabilir; önü açılınca kuvvet geri gelir ve uyanır.
+            s_MGrid.Begin();
             BuildGranularGrid(n, fr, d, cols, rows);
+            s_MGrid.End();
             float aheadMax = d * 1.15f, aheadLat = d * 0.7f;
             bool anyMoving = false;
+            s_MForces.Begin();
             for (int i = 0; i < n; i++)
             {
                 var b = s_All[i];
@@ -209,6 +238,7 @@ namespace PuzzleGlass
                 float cohMax = d * 2.00f;
                 float alignMaxSq = (d * 1.60f) * (d * 1.60f);
 
+                s_MNeighbors.Begin();
                 int cx = Mathf.Clamp(Mathf.FloorToInt((p.x - fr.xMin) / d), 0, cols - 1);
                 int cy = Mathf.Clamp(Mathf.FloorToInt((p.y - fr.yMin) / d), 0, rows - 1);
                 for (int gy = Mathf.Max(0, cy - 1); gy <= Mathf.Min(rows - 1, cy + 1); gy++)
@@ -252,6 +282,8 @@ namespace PuzzleGlass
                         }
                     }
                 }
+
+                s_MNeighbors.End();
 
                 Vector2 accel = Vector2.zero;
                 // Dinlenme yalnızca giriş yolunda sırasını bekleyen toplar için: halka doluyken her topun önünde top
@@ -304,23 +336,28 @@ namespace PuzzleGlass
                         accel += LayerBandAccel(b.trackLayer, s_LayerOutOff[i], s_LayerOutDir[i], v, track, d);
                 }
 
+                s_MApply.Begin();
                 if (accel.sqrMagnitude > 1e-6f)
-                    b.rb.AddForce(ct.TransformDirection(new Vector3(accel.x, accel.y, 0f)), ForceMode.Acceleration);
+                    b.rb.AddForce(ctRot * new Vector3(accel.x, accel.y, 0f), ForceMode.Acceleration);
 
                 // Smooth rolling spin along the conveyor belt velocity so marbles visibly tumble around bends
                 if (v.sqrMagnitude > 0.012f)
                 {
-                    Vector3 worldAxis = ct.TransformDirection(new Vector3(-v.y, v.x, v.x * 0.28f)).normalized;
+                    Vector3 worldAxis = (ctRot * new Vector3(-v.y, v.x, v.x * 0.28f)).normalized;
                     float spinRate = Mathf.Clamp(v.magnitude / Mathf.Max(0.03f, r), 0f, 24f) * 0.78f;
                     b.rb.angularVelocity = Vector3.Lerp(b.rb.angularVelocity, worldAxis * spinRate, Mathf.Clamp01(dt * 10f));
                 }
 
+                s_MApply.End();
+
                 if (!s_GOnRing[i] && v.sqrMagnitude > 0.05f * 0.05f) anyMoving = true;
             }
+            s_MForces.End();
             RoadQueueCount = n - ringCount;
             IsMoving = anyMoving; // kilitlenme kontrolü: yalnızca halkaya girmeyi bekleyen yoldaki hareket sayılır
 
             // 3. Gizli kuyruk: yolun tepesi boşsa sıradaki top belirir; yol yoksa halka girişinde (kapasite varsa)
+            using var spawnScope = s_MSpawn.Auto();
             if (s_Pending.Count > 0 && Application.isPlaying && Time.time >= s_NextRoadSpawn)
             {
                 Vector2 spawn;

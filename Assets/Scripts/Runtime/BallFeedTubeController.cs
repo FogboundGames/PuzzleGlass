@@ -775,7 +775,8 @@ namespace PuzzleGlass
             for (int i = 0; i < active.Count; i++)
             {
                 var b = active[i];
-                if (b != null && b.gameObject.activeInHierarchy && b.state == BallState.InContainer && b.rb != null && b.rb.isKinematic)
+                // Burst pist simülasyonundaki toplar kinematiktir ama "tutulmuş" değildir (serbestçe akarlar)
+                if (b != null && b.gameObject.activeInHierarchy && b.state == BallState.InContainer && b.rb != null && b.rb.isKinematic && !b.burstConfigured)
                     return true;
             }
             return false;

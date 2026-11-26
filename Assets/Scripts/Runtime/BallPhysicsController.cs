@@ -60,6 +60,18 @@ namespace PuzzleGlass
             s_LastSuctionPulseTime = -10f;
         }
 
+        /// <summary>Havuz (kutu cam) toplarına sürekli yatay salınım ve sürekli dönme. Kapalı: toplar yalnızca yerçekimiyle
+        /// düşer/yuvarlanır (oyuncu: "sallanıyorlar, sinir bozucu"). Salınım ayrıca sürekli çarpışma → ezilme üretiyordu.</summary>
+        public static bool PoolAgitation = false;
+        /// <summary>Toplanabilir topların (çıkıştakiler) nabız gibi atan açık renk parıltısı. Kapalı: soluk "leke" görünmez.</summary>
+        public static bool ReadyGlowEnabled = false;
+
+        // BallSpeedStreaks izleme durumu (eskiden top başına sözlükte tutuluyordu: her karede 2 sözlük işlemi × yüzlerce top)
+        [NonSerialized] public Vector3 streakLastPos;
+        [NonSerialized] public Vector3 streakVel;
+        [NonSerialized] public float streakStrength;
+        [NonSerialized] public int streakLastFrame = -100;
+
         private static Gradient GetCachedTrailGradient(PuzzleColor color)
         {
             if (s_CachedTrailGradients.TryGetValue(color, out Gradient cached) && cached != null)
@@ -113,6 +125,11 @@ namespace PuzzleGlass
         [System.NonSerialized] public int trackLayer = -1;
         /// <summary>Pist fiziği: topun cam yerel düzlemdeki hızı (yay takibi + çarpışmalar).</summary>
         [System.NonSerialized] public Vector2 trackVel;
+        // Burst pist simülasyonu (TrackCrowdQueue.Burst): top PhysX dışında, durum burada tutulur
+        [System.NonSerialized] public bool burstConfigured;
+        [System.NonSerialized] public Vector2 burstPrevLocalPos;
+        [System.NonSerialized] public Quaternion burstRot = Quaternion.identity;
+        [System.NonSerialized] public Quaternion burstPrevRot = Quaternion.identity;
         public bool IsGpuSquashing => _isGpuSquashing;
         public bool IsReadyGlowTransitioning => Mathf.Abs(_readyGlow - _targetReadyGlow) > 0.002f;
         public bool IsTrackMode => _isTrackMode;
@@ -313,7 +330,7 @@ namespace PuzzleGlass
             float t = Time.time;
             float p1 = _wobblePhase;
             float p2 = _wobblePhase * 1.73f;
-            float ax = Mathf.Sin(t * 4.6f + p1) + 0.65f * Mathf.Cos(t * 7.4f - p2);
+            float ax = PoolAgitation ? Mathf.Sin(t * 4.6f + p1) + 0.65f * Mathf.Cos(t * 7.4f - p2) : 0f;
             Vector2 agitateAccel = new Vector2(ax * 0.45f, 0f);
 
             // 3. Tutarlı aşağı (-Y) yerçekimi ve ağırlık/momentum akışı
@@ -343,6 +360,7 @@ namespace PuzzleGlass
                 Mathf.Cos(t * 3.4f * spinMul + p1) * 1.4f,
                 Mathf.Sin(t * 3.9f * spinMul + p2) * 1.4f,
                 Mathf.Sin(t * 2.8f * spinMul + p1) * 0.7f) * spinMul;
+            if (!PoolAgitation) continuousSpin = Vector3.zero; // yalnızca yuvarlanmadan gelen dönüş
             Vector3 targetAngVel = new Vector3(-vel.y / r, vel.x / r, 0f) * 0.85f + continuousSpin;
             rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, targetAngVel, 12f * fixedDt);
         }
@@ -383,7 +401,7 @@ namespace PuzzleGlass
 
         public bool SetReadyGlowTarget(float target)
         {
-            float clamped = Mathf.Clamp01(target);
+            float clamped = ReadyGlowEnabled ? Mathf.Clamp01(target) : 0f;
             _targetReadyGlow = clamped;
             return IsReadyGlowTransitioning;
         }
@@ -544,6 +562,13 @@ namespace PuzzleGlass
 
         private void ResetTrackQueueState(bool driven)
         {
+            if (!driven && burstConfigured)
+            {
+                // Burst simülasyonundan çıkış: PhysX'e geri dön (collider açık, yumuşatma Rigidbody'de)
+                burstConfigured = false;
+                if (sphereCollider != null) sphereCollider.enabled = true;
+                if (rb != null) rb.interpolation = RigidbodyInterpolation.Interpolate;
+            }
             trackQueueDriven = driven;
             trackQueuePosValid = false;
             trackQueueSpeed = 0f;
@@ -566,8 +591,10 @@ namespace PuzzleGlass
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
             }
             ResetTrackQueueState(true);
+            // Burst modunda top PhysX dışındadır (kinematik, collider kapalı); simülasyon TrackCrowdQueue.Burst'te
+            if (TrackCrowdQueue.UseBurstSim) TrackCrowdQueue.ConfigureBurstTrackBall(this);
             // Gerçek fizik modunda pist topu dinamik Rigidbody'dir (çarpışma, yuvarlanma, momentum, uyku PhysX'te)
-            if (TrackCrowdQueue.UseRigidbodyPhysics) TrackCrowdQueue.ConfigureDynamicTrackBall(this);
+            else if (TrackCrowdQueue.UseRigidbodyPhysics) TrackCrowdQueue.ConfigureDynamicTrackBall(this);
         }
 
         public void ReleaseToPhysics()
@@ -1122,13 +1149,20 @@ namespace PuzzleGlass
         private void OnCollisionEnter(Collision collision)
         {
             if (state != BallState.InContainer || !Application.isPlaying) return;
+            float relSpeed = collision.relativeVelocity.magnitude;
+            Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
+            ApplyContactFeedback(relSpeed, normal);
+        }
+
+        /// <summary>Çarpışma geri bildirimi (ezilme + tık sesi). PhysX'te OnCollisionEnter, Burst pist simülasyonunda
+        /// ölçülen yaklaşma hızı çağırır.</summary>
+        public void ApplyContactFeedback(float relSpeed, Vector3 normal)
+        {
+            if (state != BallState.InContainer || !Application.isPlaying) return;
             if (meshRenderer == null) return;
             if (Time.time < _spawnTime + 0.045f) return;
 
             BallCollectionController.Instance?.MarkBallFieldDirty();
-
-            float relSpeed = collision.relativeVelocity.magnitude;
-            Vector3 normal = (collision.contactCount > 0) ? collision.GetContact(0).normal : Vector3.up;
 
             // Arrival squash & stretch on first settling impact inside the glass container
             if (!_hasPlayedArrivalSquash && relSpeed >= 0.65f)

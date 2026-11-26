@@ -105,6 +105,11 @@ namespace PuzzleGlass
         private bool _ballFieldDirty = true;
         private float _lastBallFieldRebuildTime = -10f;
         private float _nextGlowRefreshTime = -10f;
+        private float _lastGlowRefreshTime = -10f;
+        /// <summary>Alan "kirli" olsa bile parlama hesabı en fazla bu aralıkla yenilenir. Pistte toplar sürekli hareket
+        /// ettiği için kirli bayrağı her fizik adımında kalkıyordu ve hesap her karede tüm toplar için yapılıyordu.
+        /// Parlama zaten yumuşak geçişle değiştiğinden 50 ms gecikme görünmez.</summary>
+        private const float GlowDirtyMinInterval = 0.05f;
 
         public void MarkBallFieldDirty()
         {
@@ -155,6 +160,59 @@ namespace PuzzleGlass
             AutoActivateMatchingTopEdgeBlocks();
             PollSlottedMonsters();
             UpdateSupplyBoxFeeds();
+            if (Debug.isDebugBuild) LogPoolStallOnce();
+        }
+
+        // ---------- Teşhis: kutu camda toplama durursa (yalnızca Development Build) ----------
+        // Oyuncu: "kutu levelde toplar tıkanıyor, aşağı inmiyor". Editörde tekrarlanamadı; cihazda tıkanma anının
+        // durumunu logcat'e ("POOLSTALL") bir kez yazar. Toplama yeniden başlayınca tekrar kurulur.
+        private bool _stallLogged;
+
+        private void LogPoolStallOnce()
+        {
+            var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            if (!UsesPoolHatch(container) || _activeStreams.Count == 0 || _attractingBalls.Count > 0)
+            {
+                if (_attractingBalls.Count > 0) _stallLogged = false;
+                return;
+            }
+            float now = Time.time;
+            if (now - _lastGlobalCollectionTime < 3f) { _stallLogged = false; return; }
+            if (_stallLogged) return;
+            _stallLogged = true;
+
+            var sb = new System.Text.StringBuilder(512);
+            sb.Append("POOLSTALL t=").Append(now.ToString("F1")).Append(" perSlotChannels=").Append(container.HasPerSlotExitChannels);
+            foreach (var kvp in _activeStreams)
+            {
+                var m = kvp.Value.monster;
+                if (m == null) continue;
+                sb.Append("\n  monster ").Append(m.colorType).Append(" rem=").Append(m.remainingCount)
+                  .Append(" active=").Append(m.IsActivelyCollecting).Append(" slot=").Append(m.assignedSlot != null)
+                  .Append(" chan=").Append(container.GetChannelIndexForMonster(m)).Append(" inTransit=").Append(kvp.Value.inTransitBalls.Count);
+            }
+            var cands = CollectBottomCandidates();
+            var candSet = new HashSet<BallPhysicsController>(cands);
+            var pool = BallObjectPool.Instance;
+            int inGlass = 0, atHatch = 0;
+            if (pool != null)
+            {
+                foreach (var b in pool.ActiveBalls)
+                {
+                    if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
+                    inGlass++;
+                    if (!IsAtPoolHatch(container, b)) continue;
+                    atHatch++;
+                    if (atHatch > 12) continue;
+                    Vector3 lp = container.transform.InverseTransformPoint(b.transform.position);
+                    sb.Append("\n  hatchBall ").Append(b.colorType).Append(" local=(").Append(lp.x.ToString("F2")).Append(',').Append(lp.y.ToString("F2"))
+                      .Append(") bottomCand=").Append(candSet.Contains(b)).Append(" kin=").Append(b.rb != null && b.rb.isKinematic)
+                      .Append(" sleeping=").Append(b.rb != null && b.rb.IsSleeping());
+                }
+            }
+            sb.Append("\n  inGlass=").Append(inGlass).Append(" atHatch=").Append(atHatch).Append(" bottomCands=").Append(cands.Count)
+              .Append(" floorY=").Append(container.GetChamberFloorY().ToString("F2"));
+            Debug.Log(sb.ToString());
         }
 
         private readonly Dictionary<string, float> _supplyNextLaunchTime = new Dictionary<string, float>();
@@ -312,8 +370,9 @@ namespace PuzzleGlass
             if (BallObjectPool.Instance == null) return;
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
 
-            if (_ballFieldDirty || Time.time >= _nextGlowRefreshTime)
+            if ((_ballFieldDirty && Time.time >= _lastGlowRefreshTime + GlowDirtyMinInterval) || Time.time >= _nextGlowRefreshTime)
             {
+                _lastGlowRefreshTime = Time.time;
                 _nextGlowRefreshTime = Time.time + 0.08f;
                 _collectableGlowSet.Clear();
 
@@ -413,11 +472,19 @@ namespace PuzzleGlass
             {
                 return;
             }
-            StepAllBallPhysics();
-            UpdateAttractionPhysics();
-            ApplyPoolDrainFunnel();
-            ApplyFloorDriftTowardHungryMonsters();
+            using (s_MStepBalls.Auto()) StepAllBallPhysics();
+            using (s_MAttraction.Auto()) UpdateAttractionPhysics();
+            using (s_MFunnel.Auto()) ApplyPoolDrainFunnel();
+            using (s_MDrift.Auto()) ApplyFloorDriftTowardHungryMonsters();
         }
+
+        // Profiler işaretleri (geliştirme build'lerinde ve editörde görünür; release build'de maliyetsiz)
+        private static readonly Unity.Profiling.ProfilerMarker s_MStepBalls = new Unity.Profiling.ProfilerMarker("BallColl.StepAllBallPhysics");
+        private static readonly Unity.Profiling.ProfilerMarker s_MAttraction = new Unity.Profiling.ProfilerMarker("BallColl.UpdateAttraction");
+        private static readonly Unity.Profiling.ProfilerMarker s_MFunnel = new Unity.Profiling.ProfilerMarker("BallColl.PoolDrainFunnel");
+        private static readonly Unity.Profiling.ProfilerMarker s_MDrift = new Unity.Profiling.ProfilerMarker("BallColl.FloorDrift");
+        private static readonly Unity.Profiling.ProfilerMarker s_MTrack = new Unity.Profiling.ProfilerMarker("BallColl.TrackStep");
+        private static readonly Unity.Profiling.ProfilerMarker s_MPerBall = new Unity.Profiling.ProfilerMarker("BallColl.PerBallStep");
 
         private void StepAllBallPhysics()
         {
@@ -430,10 +497,13 @@ namespace PuzzleGlass
 
             // Pist camı: toplar Bus Traffic Fever tarzı sıralı kuyruk halinde çıkışa yürür (fizik yok)
             var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
+            s_MTrack.Begin();
             if (container != null && container.IsTrackShape && TrackCrowdQueue.Step(container, activeBalls, fixedDt))
             {
                 anyAwakeMoving = true;
             }
+            s_MTrack.End();
+            using var perBallScope = s_MPerBall.Auto();
             for (int i = 0; i < activeBalls.Count; i++)
             {
                 var b = activeBalls[i];

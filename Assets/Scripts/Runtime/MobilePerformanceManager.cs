@@ -145,8 +145,13 @@ namespace PuzzleGlass
             QualitySettings.maxQueuedFrames = 2;
         }
 
+        private DebugGuiRelay m_FpsGuiRelay;
+
         private void Update()
         {
+            // FPS sayacı yalnızca açıkken OnGUI çalıştırır (boş OnGUI bile her kare IMGUI maliyeti getiriyordu)
+            if (m_ShowFpsCounter != (m_FpsGuiRelay != null && m_FpsGuiRelay.enabled))
+                DebugGuiRelay.Sync(gameObject, ref m_FpsGuiRelay, m_ShowFpsCounter, DrawFpsCounter);
             float dt = Time.unscaledDeltaTime;
             m_FpsTimeLeft -= dt;
             m_FpsAccumulator += 1f / Mathf.Max(1e-4f, dt);
@@ -205,7 +210,7 @@ namespace PuzzleGlass
             if (s_Instance == this) s_Instance = null;
         }
 
-        private void OnGUI()
+        private void DrawFpsCounter()
         {
             if (!m_ShowFpsCounter) return;
 

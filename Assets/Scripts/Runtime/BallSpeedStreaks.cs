@@ -15,31 +15,23 @@ namespace PuzzleGlass
     public class BallSpeedStreaks : MonoBehaviour
     {
         public static bool Enabled = true;
-        public static int MaxStreaks = 18;
+        // Hafifletildi (oyuncu geri bildirimi: virajlarda "rüzgar" gibi görünüp topları soluklaştırıyordu):
+        // iz yalnızca bant hızını belirgin aşan toplarda, daha kısa ve daha saydam.
+        public static int MaxStreaks = 10;
         /// <summary>İz bu hızdan (bant hızının katı) itibaren belirmeye başlar ve <see cref="FullSpeedMul"/>'da tam olur.</summary>
-        public static float StartSpeedMul = 0.35f;
-        public static float FullSpeedMul = 0.75f;
+        public static float StartSpeedMul = 1.15f;
+        public static float FullSpeedMul = 1.6f;
         /// <summary>İz uzunluğu = hız × bu süre (sn), top çapının <see cref="MaxLengthInDiameters"/> katıyla sınırlı.</summary>
-        public static float LengthSeconds = 0.18f;
-        public static float MaxLengthInDiameters = 2.6f;
-        public static float Alpha = 0.55f;
+        public static float LengthSeconds = 0.10f;
+        public static float MaxLengthInDiameters = 1.6f;
+        public static float Alpha = 0.25f;
         /// <summary>İzin z kayması: negatif = topların önünde (dolu halkada arkadaki toplar izi örtmesin).</summary>
         public static float ZOffset = -0.04f;
 
         private const string ShaderName = "PuzzleGlass/BallSpeedStreak";
 
-        private struct Tracked
-        {
-            public Vector3 lastPos;
-            public Vector3 vel;      // yumuşatılmış dünya hızı
-            public float strength;  // 0..1, yumuşak giriş/çıkış
-            public int lastFrame;
-        }
-
         private static BallSpeedStreaks s_Instance;
 
-        private readonly Dictionary<int, Tracked> _tracked = new Dictionary<int, Tracked>(512);
-        private readonly List<int> _staleKeys = new List<int>(64);
         private readonly List<(float score, BallPhysicsController ball, Vector3 vel, float strength)> _candidates
             = new List<(float, BallPhysicsController, Vector3, float)>(512);
 
@@ -123,38 +115,33 @@ namespace PuzzleGlass
                 var b = balls[i];
                 if (b == null) continue;
                 bool onTrack = b.state == BallState.InContainer || b.state == BallState.AttractingToExit;
-                int id = b.GetInstanceID();
                 Vector3 pos = b.transform.position;
 
-                if (!_tracked.TryGetValue(id, out Tracked tr) || frame - tr.lastFrame > 2 || !onTrack)
+                // İzleme durumu topun üzerinde tutulur (havuza dönüp yeniden çıkan top: kare boşluğu > 2 → sıfırlanır)
+                if (frame - b.streakLastFrame > 2 || !onTrack)
                 {
-                    tr = new Tracked { lastPos = pos, vel = Vector3.zero, strength = 0f, lastFrame = frame };
-                    _tracked[id] = tr;
+                    b.streakLastPos = pos;
+                    b.streakVel = Vector3.zero;
+                    b.streakStrength = 0f;
+                    b.streakLastFrame = frame;
                     continue;
                 }
 
-                Vector3 instVel = (pos - tr.lastPos) / dt;
+                Vector3 instVel = (pos - b.streakLastPos) / dt;
                 instVel.z = 0f;
                 // Işınlanma / yeniden konumlanma: iz çizme
                 if (instVel.sqrMagnitude > (vFull * 6f) * (vFull * 6f)) instVel = Vector3.zero;
-                tr.vel = Vector3.Lerp(tr.vel, instVel, velBlend);
-                tr.lastPos = pos;
-                tr.lastFrame = frame;
+                Vector3 vel = Vector3.Lerp(b.streakVel, instVel, velBlend);
+                b.streakVel = vel;
+                b.streakLastPos = pos;
+                b.streakLastFrame = frame;
 
-                float speed = tr.vel.magnitude;
+                float speed = vel.magnitude;
                 float target = Mathf.InverseLerp(vStart, vFull, speed);
-                tr.strength = Mathf.Lerp(tr.strength, target, target > tr.strength ? fadeIn : fadeOut);
-                _tracked[id] = tr;
+                float strength = Mathf.Lerp(b.streakStrength, target, target > b.streakStrength ? fadeIn : fadeOut);
+                b.streakStrength = strength;
 
-                if (tr.strength > 0.02f) _candidates.Add((tr.strength * speed, b, tr.vel, tr.strength));
-            }
-
-            // Artık havuzda olmayan topların kayıtlarını ara sıra temizle
-            if ((frame & 63) == 0)
-            {
-                _staleKeys.Clear();
-                foreach (var kv in _tracked) if (frame - kv.Value.lastFrame > 60) _staleKeys.Add(kv.Key);
-                for (int i = 0; i < _staleKeys.Count; i++) _tracked.Remove(_staleKeys[i]);
+                if (strength > 0.02f) _candidates.Add((strength * speed, b, vel, strength));
             }
 
             int count = Mathf.Min(MaxStreaks, _candidates.Count);

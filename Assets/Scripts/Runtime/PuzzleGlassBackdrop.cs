@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace PuzzleGlass
 {
@@ -46,6 +48,18 @@ namespace PuzzleGlass
         private float _quadWorldHeight = 9f;
         private Vector4 _lastSplitDockParams = new Vector4(float.NaN, float.NaN, float.NaN, float.NaN);
         private float _lastSplitEnabled = -1f;
+
+        // ---------- Pişirme (bake) ----------
+        // Prosedürel arka plan durağan (zamana bağlı değil) ama her karede tam ekran, piksel başına çok sayıda
+        // exp/pow ile yeniden hesaplanıyordu (cihazda GPU yükünün ~%25'i). Play modunda bir kez RenderTexture'a
+        // çizilir; ekrandaki quad aynı shader'ın tek örneklemeli texture modunu kullanır. Parametre değişince yeniden pişirilir.
+        /// <summary>Arka plan pişirme açık mı (PerfProbe ile karşılaştırma için kapatılabilir).</summary>
+        public static bool BakeEnabled = true;
+        private Material _displayMaterial;
+        private MeshRenderer _quadRenderer;
+        private RenderTexture _bakedRT;
+        private bool _bakeDirty = true;
+        private float _bakedForAspect = -1f;
 
         private static readonly int MainTexId           = Shader.PropertyToID("_MainTex");
         private static readonly int TintColorId         = Shader.PropertyToID("_TintColor");
@@ -129,11 +143,108 @@ namespace PuzzleGlass
         {
             SyncWithCamera(force: false);
             UpdateSplitDockUniforms(force: false);
+            UpdateBake();
+        }
+
+        private void OnDisable()
+        {
+            ReleaseBake();
         }
 
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
+            ReleaseBake();
+            if (_displayMaterial != null)
+            {
+                if (Application.isPlaying) Destroy(_displayMaterial); else DestroyImmediate(_displayMaterial);
+                _displayMaterial = null;
+            }
+        }
+
+        private void UpdateBake()
+        {
+            if (_backdropMaterial == null || _quadRenderer == null) return;
+
+            // Texture arka plan zaten ucuz; edit modunda canlı düzenleme için prosedürel çizim kalır.
+            bool wantBake = BakeEnabled && Application.isPlaying && !(useTextureBackdrop && backdropTexture != null);
+            if (!wantBake)
+            {
+                if (_quadRenderer.sharedMaterial != _backdropMaterial) _quadRenderer.sharedMaterial = _backdropMaterial;
+                ReleaseBake();
+                return;
+            }
+
+            GetBakeSize(out int w, out int h);
+            bool sizeChanged = _bakedRT == null || _bakedRT.width != w || _bakedRT.height != h;
+            // Android'de uygulama arka plana geçince GPU içeriği kaybolabilir
+            bool lost = _bakedRT != null && !_bakedRT.IsCreated();
+            if (!_bakeDirty && !sizeChanged && !lost && _quadRenderer.sharedMaterial == _displayMaterial) return;
+
+            if (sizeChanged)
+            {
+                ReleaseBake();
+                _bakedRT = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "RT_PuzzleGlassBackdrop",
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                _bakedRT.Create();
+            }
+            else if (lost)
+            {
+                _bakedRT.Create();
+            }
+
+            Graphics.Blit(null, _bakedRT, _backdropMaterial, 0);
+            _bakeDirty = false;
+
+            if (_displayMaterial == null)
+            {
+                _displayMaterial = new Material(_backdropMaterial.shader) { name = "Mat_PuzzleGlassBackdrop_Baked" };
+            }
+            float aspect = _lastAspect > 0f ? _lastAspect : 0.5625f;
+            if (!Mathf.Approximately(_bakedForAspect, aspect) || _displayMaterial.GetTexture(MainTexId) != _bakedRT)
+            {
+                _bakedForAspect = aspect;
+                _displayMaterial.SetTexture(MainTexId, _bakedRT);
+                _displayMaterial.SetColor(TintColorId, Color.white);
+                _displayMaterial.SetFloat(UseTextureId, 1f);
+                // Texture en-boy oranı = görüntü en-boy oranı → shader UV'yi birebir kullanır
+                _displayMaterial.SetFloat(TexAspectId, aspect);
+                _displayMaterial.SetFloat(AspectId, aspect);
+            }
+            if (_quadRenderer.sharedMaterial != _displayMaterial) _quadRenderer.sharedMaterial = _displayMaterial;
+        }
+
+        /// <summary>Pişirme çözünürlüğü: quad'ın ekranda kapladığı gerçek render pikseli kadar (keskin kenarlar korunur).</summary>
+        private void GetBakeSize(out int w, out int h)
+        {
+            float rs = 1f;
+            if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp) rs = urp.renderScale;
+            // Quad yüksekliği ortho*2.15, görünür alan ortho*2 → ekranın 1.075 katı
+            const float overscan = 2.15f / 2f;
+            w = Mathf.Clamp(Mathf.CeilToInt(Screen.width * rs * overscan), 16, 4096);
+            h = Mathf.Clamp(Mathf.CeilToInt(Screen.height * rs * overscan), 16, 4096);
+        }
+
+        private void ReleaseBake()
+        {
+            if (_quadRenderer != null && _backdropMaterial != null && _quadRenderer.sharedMaterial != _backdropMaterial)
+            {
+                _quadRenderer.sharedMaterial = _backdropMaterial;
+            }
+            if (_bakedRT != null)
+            {
+                _bakedRT.Release();
+                if (Application.isPlaying) Destroy(_bakedRT); else DestroyImmediate(_bakedRT);
+                _bakedRT = null;
+            }
+            _bakeDirty = true;
+            _bakedForAspect = -1f;
         }
 
         public void EnsureBackdropQuad()
@@ -181,6 +292,11 @@ namespace PuzzleGlass
                     }
                 }
             }
+
+            if (_quadRenderer == null && _quadTransform != null)
+            {
+                _quadRenderer = _quadTransform.GetComponent<MeshRenderer>();
+            }
         }
 
         public void SyncWithCamera(bool force)
@@ -205,6 +321,7 @@ namespace PuzzleGlass
                     if (_backdropMaterial != null && _backdropMaterial.HasProperty(BackdropWorldRectId))
                     {
                         _backdropMaterial.SetVector(BackdropWorldRectId, new Vector4(camPos.x, camPos.y, _quadWorldWidth, _quadWorldHeight));
+                        _bakeDirty = true;
                     }
                 }
                 return;
@@ -229,6 +346,7 @@ namespace PuzzleGlass
         private void ApplyMaterialProperties(float aspect)
         {
             if (_backdropMaterial == null) return;
+            _bakeDirty = true;
             bool hasTex = useTextureBackdrop && backdropTexture != null;
             if (_backdropMaterial.HasProperty(MainTexId)) _backdropMaterial.SetTexture(MainTexId, backdropTexture);
             if (_backdropMaterial.HasProperty(TintColorId)) _backdropMaterial.SetColor(TintColorId, backdropTint);
@@ -280,6 +398,7 @@ namespace PuzzleGlass
 
             _lastSplitEnabled = enabled;
             _lastSplitDockParams = splitParams;
+            _bakeDirty = true;
             if (_backdropMaterial.HasProperty(SplitEnabledId)) _backdropMaterial.SetFloat(SplitEnabledId, enabled);
             if (_backdropMaterial.HasProperty(SplitDockParamsId)) _backdropMaterial.SetVector(SplitDockParamsId, splitParams);
         }

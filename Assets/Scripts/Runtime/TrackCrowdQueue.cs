@@ -434,6 +434,8 @@ namespace PuzzleGlass
             EnsureCapacity(activeBalls.Count);
             var loop = GetLoop(container);
             float speedMul = GetActiveSpeedMultiplier();
+            if (UseBurstSim && loop != null) return StepBurst(container, activeBalls, dt, loop, track, ct, speedMul);
+            if (BurstActive) ResetBurstRenderSet();
             if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul);
             if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct, speedMul);
 

@@ -9,7 +9,7 @@ namespace PuzzleGlass
     ///   adb shell am start -n .../com.unity3d.player.UnityPlayerGameActivity -e perf "rs=0.8;hide=SoftBackdrop,GlassChamberLit"
     /// rs: URP render scale, hide: shader adında bu parçaları geçen renderer'lar kapatılır.
     /// si / svi: Physics solver / velocity iteration (mevcut ve yeni Rigidbody.lere uygulanır), fdt: Time.fixedDeltaTime,
-    /// bake=0: cam pişirmeyi kapatır (GlassChamberBakeCache), mdt: Time.maximumDeltaTime, ffts: oyun sonu hızlanmasının timeScale'i (varsayılan 2).
+    /// bake=0: cam pişirmeyi kapatır (GlassChamberBakeCache), bdbake=0: arka plan pişirmeyi kapatır (PuzzleGlassBackdrop), trackperf=0: pist topları eski fizik ayarları (Speculative CCD, solver 12/4), burst=0: pist için Burst simülasyonu yerine PhysX, spin=0..3: pist topu dönmesi (kapalı/azaltılmış/göreli/eski), mdt: Time.maximumDeltaTime, ffts: oyun sonu hızlanmasının timeScale'i (varsayılan 2).
     /// Her 2 saniyede logcat'e "PERFPROBE" etiketiyle FPS yazar. Normal açılışta hiçbir şey yapmaz.
     /// </summary>
     public class PerfProbe : MonoBehaviour
@@ -62,6 +62,10 @@ namespace PuzzleGlass
                 else if (kv[0] == "svi" && int.TryParse(kv[1], out int svi)) { Physics.defaultSolverVelocityIterations = svi; _svi = svi; }
                 else if (kv[0] == "fdt" && float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fdt)) Time.fixedDeltaTime = fdt;
                 else if (kv[0] == "bake") GlassChamberBakeCache.Enabled = kv[1] != "0";
+                else if (kv[0] == "bdbake") PuzzleGlassBackdrop.BakeEnabled = kv[1] != "0";
+                else if (kv[0] == "trackperf") TrackCrowdQueue.UseTrackPerfPhysics = kv[1] != "0";
+                else if (kv[0] == "burst") TrackCrowdQueue.UseBurstSim = kv[1] != "0";
+                else if (kv[0] == "spin" && int.TryParse(kv[1], out int spin)) TrackCrowdQueue.BurstSpinMode = (TrackCrowdQueue.TrackSpinMode)Mathf.Clamp(spin, 0, 3);
                 else if (kv[0] == "mdt"&& float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mdt)) Time.maximumDeltaTime = mdt;
                 else if (kv[0] == "ffts" && float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ffts)) PuzzleGlassGameManager.EndgameTimeScale = ffts;
             }
@@ -100,15 +104,28 @@ namespace PuzzleGlass
 
         private int _fixedSteps, _cappedFrames;
         private float _gameTime;
+        // Takılma takibi: ortalama FPS tek karelik takılmaları gizler
+        private float _maxFrameMs;
+        private int _hitches;          // > HitchMs süren kareler (60 Hz'de en az bir vsync kaçırılmış)
+        private const float HitchMs = 25f;
 
         private void FixedUpdate() { _fixedSteps++; }
 
         private void Update()
         {
+            float dtMs = Time.unscaledDeltaTime * 1000f;
             _frames++;
             _time += Time.unscaledDeltaTime;
             _gameTime += Time.deltaTime;
             if (Time.deltaTime >= Time.maximumDeltaTime * 0.999f) _cappedFrames++;
+            if (dtMs > _maxFrameMs) _maxFrameMs = dtMs;
+            if (dtMs > HitchMs)
+            {
+                _hitches++;
+                // Takılmanın hangi oyun anına denk geldiğini logcat'te yan yana görebilmek için anında yaz
+                if (dtMs > 50f) Debug.Log(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "PERFPROBE hitch {0:F0}ms t={1:F1} ts={2:F1}", dtMs, Time.realtimeSinceStartup, Time.timeScale));
+            }
 
             // Oyun sonu hızlanmasında (timeScale > 1) daha sık raporla
             float window = Time.timeScale > 1.01f ? 1f : 2f;
@@ -116,10 +133,11 @@ namespace PuzzleGlass
             {
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
                 Debug.Log(string.Format(ci,
-                    "PERFPROBE fps={0:F1} ts={1:F1} steps/frame={2:F2} capped={3:P0} gameSpeed={4:F2}",
+                    "PERFPROBE fps={0:F1} max={5:F1}ms hitch={6} ts={1:F1} steps/frame={2:F2} capped={3:P0} gameSpeed={4:F2} t={7:F0}",
                     _frames / _time, Time.timeScale, (float)_fixedSteps / _frames,
-                    (float)_cappedFrames / _frames, _gameTime / _time));
+                    (float)_cappedFrames / _frames, _gameTime / _time, _maxFrameMs, _hitches, Time.realtimeSinceStartup));
                 _frames = 0; _time = 0f; _gameTime = 0f; _fixedSteps = 0; _cappedFrames = 0;
+                _maxFrameMs = 0f; _hitches = 0;
             }
         }
     }

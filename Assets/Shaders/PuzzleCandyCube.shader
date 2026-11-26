@@ -41,6 +41,8 @@ Shader "PuzzleGlass/CandyCubeLit"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            float _PuzzleBallMarble; // genel (global) değişken; ayarlanmazsa 0 = desen kapalı
+
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
                 float4 _Color;
@@ -196,7 +198,9 @@ Shader "PuzzleGlass/CandyCubeLit"
                 float swirlCoord = dot(nOS, float3(0.68, 0.56, 0.47)) + 0.18 * sin(nOS.y * 5.2 + nOS.x * 3.1);
                 float swirlBand = exp(-pow(swirlCoord / 0.23, 2.0));
                 float pearlDot = smoothstep(0.84, 0.95, abs(dot(nOS, normalize(float3(-0.38, 0.78, 0.49)))));
-                float marblePattern = saturate(swirlBand * 0.17 + pearlDot * 0.21) * isSphere * (0.38 + 0.62 * wrapDiff);
+                // Oyuncu: toplar üzerinde her yöne dağılmış beyaz "leke" gibi görünüyordu → varsayılan kapalı.
+                // Genel değişken _PuzzleBallMarble (Shader.SetGlobalFloat) 1 yapılırsa eski desen geri gelir.
+                float marblePattern = saturate(swirlBand * 0.17 + pearlDot * 0.21) * isSphere * (0.38 + 0.62 * wrapDiff) * _PuzzleBallMarble;
                 col = lerp(col, lerp(highTone, float3(1.0, 0.99, 0.97), 0.38), marblePattern);
 
                 // 3. Soft Tactile Bevel Edge Catchlight (0 for spheres via _BevelHighlight = 0)

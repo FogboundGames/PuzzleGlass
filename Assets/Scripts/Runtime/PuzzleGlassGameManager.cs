@@ -482,10 +482,25 @@ namespace PuzzleGlass
         {
             Transform t = glassContainer.transform;
             t.localScale = _baseGlassLocalScale;
-            if (cam == null || !cam.orthographic || !glassContainer.IsTrackShape) return;
+            if (cam == null || !cam.orthographic) return;
 
-            float parentScaleX = t.parent != null ? Mathf.Abs(t.parent.lossyScale.x) : 1f;
-            float glassWorldW = GlassTrackLayout.FixedOuterWidth * Mathf.Abs(_baseGlassLocalScale.x) * parentScaleX;
+            float glassWorldW;
+            if (glassContainer.IsTrackShape)
+            {
+                float parentScaleX = t.parent != null ? Mathf.Abs(t.parent.lossyScale.x) : 1f;
+                glassWorldW = GlassTrackLayout.FixedOuterWidth * Mathf.Abs(_baseGlassLocalScale.x) * parentScaleX;
+            }
+            else if (glassContainer.IsPoolShape
+                     && glassContainer.TryGetVisibleFrameWorldBounds(out float bMinX, out float bMaxX, out _, out _))
+            {
+                // Kutu/özel havuz camı da taşıyordu (oyuncu: "kareli leveller ekrana sığmıyor"). Kontur bu noktada yeni
+                // levele göre kurulmuş olur (ApplyShapePreset yukarıda), görünen çerçeve genişliği ölçülür.
+                glassWorldW = bMaxX - bMinX;
+            }
+            else
+            {
+                return;
+            }
             float availableW = cam.orthographicSize * cam.aspect * 2f - GlassScreenSideMargin * 2f;
             if (glassWorldW <= 0.01f || glassWorldW <= availableW) return;
 
@@ -526,8 +541,13 @@ namespace PuzzleGlass
             SetEndgameFastForward(false);
         }
 
+        private DebugGuiRelay _debugGuiRelay;
+
         private void Update()
         {
+            // Test HUD'u yalnızca açıkken OnGUI çalıştırır (boş OnGUI bile her kare IMGUI maliyeti getiriyordu)
+            if (showDebugGui != (_debugGuiRelay != null && _debugGuiRelay.enabled))
+                DebugGuiRelay.Sync(gameObject, ref _debugGuiRelay, showDebugGui, DrawDebugGui);
             HandleKeyboardInput();
             if (Application.isPlaying)
             {
@@ -1915,7 +1935,7 @@ namespace PuzzleGlass
         }
 
         // ==================== ON-SCREEN TESTING HUD ====================
-        private void OnGUI()
+        private void DrawDebugGui()
         {
             if (!showDebugGui) return;
 
