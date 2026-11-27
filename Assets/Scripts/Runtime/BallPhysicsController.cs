@@ -720,7 +720,7 @@ namespace PuzzleGlass
                 var activeList = BallObjectPool.Instance.ActiveBalls;
                 bool flatPool = BallContainerManager.Instance != null
                     && BallContainerManager.Instance.glassContainer != null
-                    && BallContainerManager.Instance.glassContainer.IsFlatBottomBox;
+                    && BallContainerManager.Instance.glassContainer.IsPoolShape;
                 float wakeRangeX = ballRadius * (flatPool ? 3.0f : 4.8f);
                 float nudgeCap = flatPool ? 0.18f : 0.45f;
                 float nudgeDown = flatPool ? -0.12f : -0.24f;

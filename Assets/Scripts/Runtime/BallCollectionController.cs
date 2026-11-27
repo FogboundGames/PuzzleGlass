@@ -755,9 +755,9 @@ namespace PuzzleGlass
         private readonly float[] _cachedTrackExitDist = new float[512];
         private readonly Vector2[] _cachedTrackFlowDir = new Vector2[512];
 
-        /// <summary>Kapak kuralı geçerli mi: slot sistemi + düz tabanlı kutu cam.</summary>
+        /// <summary>Kapak kuralı geçerli mi: slot sistemi + düz tabanlı havuz cam.</summary>
         private bool UsesPoolHatch(ShapedGlassContainer container) =>
-            poolHatchOnly && container != null && container.IsFlatBottomBox && SlotSystem.IsActive;
+            poolHatchOnly && container != null && container.IsPoolShape && SlotSystem.IsActive;
 
         /// <summary>Top, alt çıkış kapağının (yakanın) üstünde mi? (yaka genişliği + yarım top payı)</summary>
         private static bool IsAtPoolHatch(ShapedGlassContainer container, BallPhysicsController ball)
@@ -830,7 +830,7 @@ namespace PuzzleGlass
 
             // Düz tabanlı havuzlarda tek merkez deliği vardır: top hangi sütunda olursa olsun
             // aynı delikten çıkar. Bölme varsa yalnızca deliğe giden yol kapalıysa engelle.
-            if (container != null && container.IsFlatBottomBox)
+            if (container != null && container.IsPoolShape)
             {
                 Vector3 ballLocal = container.transform.InverseTransformPoint(ball.transform.position);
                 Vector3 exitLocal = container.transform.InverseTransformPoint(container.GetBottomExitWorldPosition());
@@ -1119,7 +1119,7 @@ namespace PuzzleGlass
                 : null;
             bool isTrack = trackContainer != null && trackContainer.IsTrackShape;
             bool isBelt = isTrack && TrackCrowdQueue.HasLoop(trackContainer);
-            bool isFlatBottomPool = trackContainer != null && trackContainer.IsFlatBottomBox;
+            bool isFlatBottomPool = trackContainer != null && trackContainer.IsPoolShape;
             Vector3 drainExitWorld = isFlatBottomPool ? trackContainer.GetBottomExitWorldPosition() : Vector3.zero;
 
             foreach (var kvp in _activeStreams)
@@ -1204,7 +1204,7 @@ namespace PuzzleGlass
             ShapedGlassContainer container = BallContainerManager.Instance != null
                 ? BallContainerManager.Instance.glassContainer
                 : null;
-            if (container == null || !container.IsFlatBottomBox) return;
+            if (container == null || !container.IsPoolShape) return;
             // Kapak kuralında huni, slotta top bekleyen blok varken hep çalışır ve tüm tabanı kapsar:
             // kapaktan uzaktaki toplar da zamanla kapağa akar (köşede top kalmaz)
             bool hatch = UsesPoolHatch(container);
@@ -1263,8 +1263,8 @@ namespace PuzzleGlass
                 ? BallContainerManager.Instance.glassContainer
                 : null;
 
-            // Kare havuzda merkez deliğe çeken huni varken canavara doğru yatay sürükleme yapma.
-            if (enablePoolDrainFunnel && container != null && container.IsFlatBottomBox) return;
+            // Düz tabanlı havuzda merkez deliğe çeken huni varken canavara doğru yatay sürükleme yapma.
+            if (enablePoolDrainFunnel && container != null && container.IsPoolShape) return;
 
             float floorLocalY = (container != null) ? container.GetChamberFloorY() : -0.56f;
             float ballDiam = (container != null && container.particleSize > 0.08f) ? container.particleSize : 0.24f;

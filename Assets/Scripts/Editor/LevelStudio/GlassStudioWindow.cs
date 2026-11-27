@@ -413,6 +413,9 @@ namespace PuzzleGlass.Editor.Studio
                 case GlassTrackPreset.SCurve: return "Fasulye";
                 case GlassTrackPreset.DoubleArch: return "Kare";
                 case GlassTrackPreset.OvalRing: return "Oval Halka";
+                case GlassTrackPreset.CloverRing: return "Yonca";
+                case GlassTrackPreset.ButterflyRing: return "Kelebek";
+                case GlassTrackPreset.PeanutRing: return "Fıstık";
                 default: return "Özel Pist";
             }
         }
@@ -961,7 +964,10 @@ namespace PuzzleGlass.Editor.Studio
                 ("Stadyum", GlassTrackPreset.UChannel, "Hap biçimli halka"),
                 ("Oval Halka", GlassTrackPreset.ORing, "Oval halka"),
                 ("Fasulye", GlassTrackPreset.SCurve, "Fasulye biçimli halka"),
-                ("Kare", GlassTrackPreset.DoubleArch, "Yuvarlatılmış kare halka")
+                ("Kare", GlassTrackPreset.DoubleArch, "Yuvarlatılmış kare halka"),
+                ("Yonca", GlassTrackPreset.CloverRing, "4 yapraklı yonca halka"),
+                ("Kelebek", GlassTrackPreset.ButterflyRing, "Kelebek biçimli halka"),
+                ("Fıstık", GlassTrackPreset.PeanutRing, "Ortadan boğumlu fıstık halka")
             };
             foreach (var item in trackList)
             {
@@ -2237,11 +2243,13 @@ namespace PuzzleGlass.Editor.Studio
 
         private static List<GlassContourPoint> HourglassJar() => new List<GlassContourPoint>
         {
-            new GlassContourPoint(-0.56f, 1.24f, 0f, 0.30f),
-            new GlassContourPoint(-0.22f, 1.18f, 0f, 0.15f),
-            new GlassContourPoint( 0.12f, 0.82f, 0f, 0.10f),
-            new GlassContourPoint( 0.46f, 1.22f, 0f, 0.15f),
-            new GlassContourPoint( 0.80f, 1.26f, 0f, 0.30f)
+            new GlassContourPoint(-0.56f, 1.62f, 0f, 0.30f),
+            new GlassContourPoint(-0.22f, 1.56f, 0f, 0.15f),
+            new GlassContourPoint( 0.16f, 1.16f, 0f, 0.12f),
+            new GlassContourPoint( 0.575f, 0.78f, 0f, 0.12f),
+            new GlassContourPoint( 0.99f, 1.16f, 0f, 0.12f),
+            new GlassContourPoint( 1.37f, 1.56f, 0f, 0.15f),
+            new GlassContourPoint( 1.71f, 1.62f, 0f, 0.30f)
         };
 
         private static List<GlassContourPoint> WideBowl() => new List<GlassContourPoint>

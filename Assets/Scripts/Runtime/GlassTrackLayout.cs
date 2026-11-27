@@ -13,7 +13,10 @@ namespace PuzzleGlass
         SCurve = 4,      // Kıvrımlı S-Kanal
         DoubleArch = 5,  // Çift Kemerli Pist
         Custom = 6,      // Cam Stüdyosu'nda Serbest Düzenlenen Pist
-        OvalRing = 7     // Sabit genişlikli kapalı oval halka (bant) + sağ üstten giriş kolu
+        OvalRing = 7,    // Sabit genişlikli kapalı oval halka (bant) + sağ üstten giriş kolu
+        CloverRing = 8,  // 4 yapraklı yonca halkası
+        ButterflyRing = 9, // Kelebek biçimli halka (geniş üst kanatlar, ince bel, alt kanatlar)
+        PeanutRing = 10  // Simetrik fıstık / kum saati beli halkası
     }
 
     [Serializable]
@@ -306,6 +309,18 @@ namespace PuzzleGlass
                 case GlassTrackPreset.DoubleArch:
                     list.Add(BuildRingBranch("Kare Halka", th => c + SuperEllipse(th, 0.92f, 0.66f, 4.5f)));
                     break;
+
+                case GlassTrackPreset.CloverRing:
+                    list.Add(BuildRingBranch("Yonca Halka", th => c + CloverRingShape(th), 48));
+                    break;
+
+                case GlassTrackPreset.ButterflyRing:
+                    list.Add(BuildRingBranch("Kelebek Halka", th => c + ButterflyRingShape(th), 48));
+                    break;
+
+                case GlassTrackPreset.PeanutRing:
+                    list.Add(BuildRingBranch("Fıstık Halka", th => c + PeanutRingShape(th), 48));
+                    break;
             }
             return list;
         }
@@ -369,15 +384,46 @@ namespace PuzzleGlass
         private const int RingControlPoints = 32;
 
         /// <summary>th = -90° (alt, çıkış) noktasından başlayıp saat yönünde dönen kapalı halka kolu üretir.</summary>
-        private static GlassTrackBranch BuildRingBranch(string name, System.Func<float, Vector2> shape)
+        private static GlassTrackBranch BuildRingBranch(string name, System.Func<float, Vector2> shape, int controlPoints = RingControlPoints)
         {
+            int n = Mathf.Max(16, controlPoints);
             var ring = new GlassTrackBranch(name, false);
-            for (int i = 0; i <= RingControlPoints; i++)
+            for (int i = 0; i <= n; i++)
             {
-                float th = -Mathf.PI * 0.5f - (i % RingControlPoints) * (Mathf.PI * 2f / RingControlPoints);
+                float th = -Mathf.PI * 0.5f - (i % n) * (Mathf.PI * 2f / n);
                 ring.points.Add(shape(th));
             }
             return ring;
+        }
+
+        /// <summary>4 yapraklı yonca: köşelerde yumuşak dış loblar, eksenlerde belirgin iç girinti.</summary>
+        private static Vector2 CloverRingShape(float th)
+        {
+            float r = 1.0f - 0.17f * Mathf.Cos(4f * th);
+            return new Vector2(1.06f * r * Mathf.Cos(th), 0.68f * r * Mathf.Sin(th));
+        }
+
+        /// <summary>Kelebek: geniş üst kanatlar ve üst V girintisi, belde daralma, daha dar alt kanatlar.</summary>
+        private static Vector2 ButterflyRingShape(float th)
+        {
+            float cs = Mathf.Cos(th), sn = Mathf.Sin(th);
+            float waist = sn + 0.08f;
+            float wing = 1.05f + 0.16f * sn - 0.14f * Mathf.Exp(-(waist * waist) / 0.08f);
+            float x = wing * cs;
+            float topDip = Mathf.Max(0f, sn) * Mathf.Exp(-(cs * cs) / 0.08f) * 0.20f;
+            float botDip = Mathf.Max(0f, -sn) * Mathf.Exp(-(cs * cs) / 0.10f) * 0.08f;
+            float y = 0.66f * sn - topDip + botDip;
+            return new Vector2(x, y);
+        }
+
+        /// <summary>Fıstık: iki yanda dolgun loblar, ortada üstten ve alttan simetrik boğum.</summary>
+        private static Vector2 PeanutRingShape(float th)
+        {
+            float cs = Mathf.Cos(th), sn = Mathf.Sin(th);
+            float x = 1.06f * Mathf.Sign(cs) * Mathf.Pow(Mathf.Abs(cs), 0.88f);
+            float pinch = 1.0f - 0.34f * Mathf.Exp(-(cs * cs) / 0.14f);
+            float y = 0.64f * pinch * Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), 0.92f);
+            return new Vector2(x, y);
         }
 
         /// <summary>Yuvarlatılmış kalp: üstte iki tümsek ve ortada çukur, altta küt uç (kanal ucu sıkıştırmasın).</summary>
