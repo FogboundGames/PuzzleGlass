@@ -66,6 +66,26 @@ namespace PuzzleGlass
             return !IsBlockedTowardExit(ball, d);
         }
 
+        /// <summary>
+        /// Katmanları koru: top halkada üstü kapalı mı (dış tarafında, çıkışa giden yolunu kesen başka top var mı)?
+        /// Kapalı top dönse de çıkıştan ayrılamaz; kilitlenme kontrolü bunu "toplanabilir" saymamalı. Ayar kapalıysa false.
+        /// </summary>
+        /// <summary>Halka orta çizgisinin bu noktaya en yakın yerindeki dışa doğru birim normal (halka yoksa aşağı).</summary>
+        public static Vector2 RingOutwardAt(Vector2 localPos)
+        {
+            if (s_Loop == null || s_Loop.centerPts == null || s_Loop.centerNorm == null) return Vector2.down;
+            var cp = s_Loop.centerPts;
+            int bi = 0; float best = float.MaxValue;
+            for (int k = 0; k < cp.Length; k++) { float dsq = (cp[k] - localPos).sqrMagnitude; if (dsq < best) { best = dsq; bi = k; } }
+            return s_Loop.centerNorm[bi];
+        }
+
+        public static bool IsCoveredOnRing(BallPhysicsController ball)
+        {
+            if (!s_KeepLayers || ball == null || s_Loop == null || s_Loop.source == null || !ball.trackQueuePosValid) return false;
+            return IsBlockedTowardExit(ball, s_Loop.source.ballDiameter);
+        }
+
         private static bool IsBlockedTowardExit(BallPhysicsController ball, float d)
         {
             var pool = BallObjectPool.Instance;
@@ -76,6 +96,17 @@ namespace PuzzleGlass
             Vector2 p = ball.trackQueueLocalPos;
             float laneHalf = d * 0.92f;   // alttan iki top arasına yaslanan üst top da engelli sayılır
             float minDrop = d * 0.28f;    // en az bu kadar aşağıdaysa "altında" sayılır
+            // Katmanları koru: "alt" ekranın aşağısı değil, kanalın dış tarafıdır (halka orta çizgisinin dış normali).
+            // Böylece çıkışın kıvrımlı bölgesinde de iç şeritteki top, dışındaki top gitmeden çıkamaz.
+            Vector2 down = Vector2.down;
+            if (s_KeepLayers && s_Loop != null && s_Loop.centerPts != null && s_Loop.centerNorm != null)
+            {
+                var cp = s_Loop.centerPts;
+                int bi = 0; float best = float.MaxValue;
+                for (int k = 0; k < cp.Length; k++) { float dsq = (cp[k] - p).sqrMagnitude; if (dsq < best) { best = dsq; bi = k; } }
+                down = s_Loop.centerNorm[bi];
+            }
+            Vector2 side = new Vector2(-down.y, down.x);
             for (int i = 0; i < balls.Count; i++)
             {
                 var o = balls[i];
@@ -99,8 +130,9 @@ namespace PuzzleGlass
                 {
                     continue;
                 }
-                float drop = p.y - q.y;
-                if (drop >= minDrop && drop <= d * 2.5f && Mathf.Abs(q.x - p.x) < laneHalf) return true;
+                Vector2 rel = q - p;
+                float drop = Vector2.Dot(rel, down);
+                if (drop >= minDrop && drop <= d * 2.5f && Mathf.Abs(Vector2.Dot(rel, side)) < laneHalf) return true;
             }
             return false;
         }

@@ -307,6 +307,7 @@ namespace PuzzleGlass
                     relax = BurstContactRelax,
                     maxDepen = BurstMaxDepenetration / containerScale,
                     layerLock = layerLock ? 1 : 0,
+                    keepLayers = s_KeepLayers ? 1 : 0,
                     openLayer = openLayer,
                     keepStiff = LayerKeepStiffness,
                     keepDamp = LayerKeepDamping,
@@ -542,7 +543,7 @@ namespace PuzzleGlass
             public float2 exitPoint;
             public float beltSpeed, roadSpeed, driveGain, maxDriveAccel, spreadAccel, downG, cohesionAccel, alignGain;
             public float damping, maxSpeed, contact, relax, maxDepen;
-            public int layerLock, openLayer;
+            public int layerLock, openLayer, keepLayers;
             public float keepStiff, keepDamp, layerWallTol;
             public int hasRoad, canJoin;
             public float2 roadJunction, roadDir;
@@ -812,6 +813,9 @@ namespace PuzzleGlass
                 {
                     float latGrav = math.dot(new float2(0f, -p.downG), nr);
                     float2 grav = nr * latGrav;
+                    // Katmanları koru: yanal kuvvet hep dışa (çıkış tarafı). Halkanın üstünde de toplar dışa yaslanır, şeritler
+                    // turda yer değiştirmez; dıştaki top gidince içteki o boşluğa düşer.
+                    if (p.keepLayers != 0) grav = outDir[i] * p.downG;
                     if (math.abs(q.y - p.exitPoint.y) <= p.innerHalfWidth * 2.2f && t.y <= 0.05f) grav.y -= p.downG * 0.42f;
                     int ly = layer[i];
                     bool locked = p.layerLock != 0 && ly >= 0 && ly > p.openLayer;

@@ -56,6 +56,9 @@ namespace PuzzleGlass
         [Tooltip("Kanal camında topun konumu (pist sınırlarına göre 0..1). Slot düzeni değişse de top en yakın slota oturur.")]
         public bool hasTrackPos;
         public Vector2 trackPos;
+        [Tooltip("Kuyrukta başlar: top başta pistte değil, dışarıda sırada bekler. Banttan top ayrılıp yer açıldıkça " +
+                 "listedeki sırasıyla banda katılır. Kanalda konumu saklanır; kuyruktan çıkarılınca yerine döner.")]
+        public bool queued;
 
         public ManualPoolBallEntry() { }
 
@@ -480,6 +483,10 @@ namespace PuzzleGlass
         [Tooltip("Kanal camında katman kilidi: toplar doğdukları şeride göre dış / orta / iç katmandadır. Daha dış " +
                  "katmanda top kaldıkça içteki katmanın topları çıkamaz; dış katman bitince sıradaki açılır.")]
         public bool trackLayerLock = false;
+        [Tooltip("Kanal camında katmanları koru (kilitsiz): halkadaki toplara yerçekimi yerine hep dışa (çıkış tarafına) doğru " +
+                 "kuvvet uygulanır. Toplar dönerken şeritleri karışmaz; dıştaki top gidince içteki o boşluğa düşer. " +
+                 "İç renk, altındaki dış toplar toplandıkça çıkışa ulaşır.")]
+        public bool trackKeepLayers = false;
         public List<ManualPoolBallEntry> manualBalls = new List<ManualPoolBallEntry>();
 
         [Tooltip("Cam haznedeki top gruplarının En Alttan (0) En Üste doğru renk sırası (Eski/uyumluluk listesi)")]

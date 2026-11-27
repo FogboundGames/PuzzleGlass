@@ -98,6 +98,11 @@ namespace PuzzleGlass
 
         public static bool LayerLockActive => s_LayerLock;
 
+        private static bool s_KeepLayers;
+        /// <summary>Katmanları koru (kilitsiz): halkada yanal kuvvet hep dışa doğru (PuzzleGlassLevelData.trackKeepLayers).</summary>
+        public static bool KeepLayersActive => s_KeepLayers;
+        public static void SetKeepLayers(bool active) => s_KeepLayers = active;
+
         /// <summary>Şu an açık olan katman (camda top kalmadıysa int.MaxValue).</summary>
         public static int OpenLayer
         {

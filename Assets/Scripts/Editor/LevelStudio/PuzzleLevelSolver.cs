@@ -38,6 +38,8 @@ namespace PuzzleGlass.Editor.Studio
         /// <summary>Slot modelinde öndeki toplara uyan bloğu seçen (akıllı) oyuncunun kilitlenme oranı (0-1); -1 = hesaplanmadı.</summary>
         public float smartFailRate = -1f;
         public bool HasDifficultyRates => randomFailRate >= 0f && smartFailRate >= 0f;
+        /// <summary>Slot modelinde affedicilik ölçüleri (hata payı, adil başlangıç, kritik anlar); null = hesaplanmadı.</summary>
+        public LevelMetrics metrics;
         /// <summary>Slot modelinde çözümdeki slota gönderme sayısı.</summary>
         public int SlotSends
         {
@@ -110,7 +112,7 @@ namespace PuzzleGlass.Editor.Studio
     /// En az kaydırmayla çözümü genişlik öncelikli arar; arama sınırı aşılırsa "belirsiz" der.
     /// Cam dizilimi OrderedPoolLayout ile oyundakiyle aynı hesaplanır.
     /// </summary>
-    public static class PuzzleLevelSolver
+    public static partial class PuzzleLevelSolver
     {
         public const int DefaultStateLimit = 20000;
 
@@ -351,6 +353,7 @@ namespace PuzzleGlass.Editor.Studio
                         break;
                     case SolveStatus.LimitReached:
                         list.Add(new LevelFinding { severity = FindingSeverity.Warning, text = $"Çözüm aranırken sınıra ulaşıldı ({solve.exploredStates} durum); çözülebilirliği kesin değil.", why = "Çok büyük tepsi/çok blok aramayı uzatır. Oynayarak doğrula." });
+                        if (UseSlotModel) AddMetricFindings(lvl, solve, list);
                         break;
                     case SolveStatus.Solved when UseSlotModel:
                         // Slot sisteminde zorluk: rastgele oynayan oyuncunun kilitlenme oranı
@@ -365,6 +368,7 @@ namespace PuzzleGlass.Editor.Studio
                                     why = "Level ayarlarından zorluğu ölçülene çek ya da 'Otomatik üret' ile bu zorlukta yeniden üret."
                                 });
                         }
+                        AddMetricFindings(lvl, solve, list);
                         break;
                     case SolveStatus.Solved:
                         if (solve.openingCollectors == 0)
@@ -445,8 +449,11 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     var stacks = s.wave == 0 ? w1 : w2;
                     front.Clear();
-                    for (int c = 0; c < stacks.Length; c++)
-                        if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
+                    var belt = GetBelt(w1);
+                    if (belt != null) BeltColors(belt, s, front);
+                    else
+                        for (int c = 0; c < stacks.Length; c++)
+                            if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
                     if (s.supplied != null)
                         for (int c = 0; c < s.supplied.Length; c++)
                             if (s.supplied[c] > 0) front.Add((PuzzleColor)c);
@@ -656,6 +663,28 @@ namespace PuzzleGlass.Editor.Studio
             }
 
             bc = localBc;
+            // Halkalı pist: toplar döner, bant sırası önemsiz bir havuzdur (PuzzleLevelSolver.Belt.cs)
+            if (!hasWave2 && UseSlotModel)
+            {
+                // Katmanları koru: dilim yığınları (sadece en dıştaki top çıkabilir)
+                var ringStacks = TryBuildRingStacks(lvl, split.chamberBalls);
+                if (ringStacks != null)
+                {
+                    bc = ringStacks.Length;
+                    wave1Stacks = ringStacks;
+                    wave2Stacks = new List<PuzzleColor>[bc];
+                    for (int c = 0; c < bc; c++) wave2Stacks[c] = new List<PuzzleColor>();
+                    stackGridCol = new int[bc];
+                    for (int c = 0; c < bc; c++) stackGridCol[c] = -1;
+                    return true;
+                }
+                var belt = TryBuildBelt(lvl, split.chamberBalls);
+                if (belt != null)
+                {
+                    s_Belts.Add(localWave1, belt);
+                    bc = QueueIndex + 1;
+                }
+            }
             wave1Stacks = localWave1;
             wave2Stacks = localWave2;
             stackGridCol = localGridCol;
@@ -1028,6 +1057,12 @@ namespace PuzzleGlass.Editor.Studio
             bool hasWave2, int[] stackGridCol, int rows, IceMeltMode iceMeltMode, bool isTrack,
             System.Action<int, int> onStepCompleted)
         {
+            var belt = s.inSlot != null ? GetBelt(wave1Stacks) : null;
+            if (belt != null)
+            {
+                BeltClosure(s, blocks, belt, onStepCompleted);
+                return;
+            }
             bool changed = true;
             while (changed)
             {

@@ -300,6 +300,14 @@ namespace PuzzleGlass
                     Vector2 jitter = trackFlowDir * UnityEngine.Random.Range(0.02f, ballRadius * 1.15f)
                         + perp * UnityEngine.Random.Range(-ballRadius * 0.25f, ballRadius * 0.25f);
                     Vector2 localPt = exitPt + jitter;
+                    // Katmanları koru: dolu kutunun döktüğü top en dış şeride iner (hemen alınabilir); aksi halde dolu dış
+                    // şeridin altına sıkışıp kapalı kalıyordu. Oradaki top bir sıra içe itilir.
+                    if (TrackCrowdQueue.KeepLayersActive)
+                    {
+                        Vector2 outward = TrackCrowdQueue.RingOutwardAt(exitPt);
+                        float edge = Mathf.Max(0f, container.compiledTrack.innerHalfWidth - ballRadius * 1.15f);
+                        localPt = exitPt + outward * edge + trackFlowDir * UnityEngine.Random.Range(-ballRadius, ballRadius);
+                    }
                     return container.transform.TransformPoint(new Vector3(localPt.x, localPt.y, -0.10f));
                 }
                 return mouthWorldPos + new Vector3(0f, ballRadius * 1.8f, 0f);
@@ -1576,6 +1584,8 @@ namespace PuzzleGlass
                     if (ball.colorType != m.colorType) continue;
                     // Katman kilidi: kilitli katmandaki top bu kutuya gelemez; sadece açık katman sayılır
                     if (!TrackCrowdQueue.IsLayerOpen(ball)) continue;
+                    // Katmanları koru: dış tarafı başka topla kapalı top dönse de çıkamaz; toplanabilir sayılmaz
+                    if (TrackCrowdQueue.IsCoveredOnRing(ball)) continue;
                     // Sadece banttaki toplar; giriş yolundakiler bant doluyken giremez (ayrıca kontrol edilir)
                     if (ball.trackLoopSlot >= 0) return true;
                 }

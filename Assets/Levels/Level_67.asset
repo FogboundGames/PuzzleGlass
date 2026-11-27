@@ -1,0 +1,2423 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 85a325236feaeb241833408923acac61, type: 3}
+  m_Name: Level_67
+  m_EditorClassIdentifier: Assembly-CSharp::PuzzleGlass.PuzzleGlassLevelData
+  levelNumber: 22
+  levelName: Level 22
+  difficulty: 2
+  useCustomSlotSettings: 0
+  slotCount: 5
+  slotSpacing: 0.59
+  useCustomGlassShape: 1
+  glassIsBottle: 0
+  glassPreset: 15
+  colorTheme: 0
+  layerPattern: 0
+  symmetricMode: 1
+  curveSubdivisions: 12
+  widthScale: 1
+  heightScale: 1
+  glassBodyColor: {r: 0.35, g: 0.7, b: 0.98, a: 0.76}
+  glassCenterGlowColor: {r: 0.58, g: 0.84, b: 1, a: 0.42}
+  glassOuterRimColor: {r: 0.36, g: 0.69, b: 0.97, a: 1}
+  glassInnerRimColor: {r: 0.74, g: 0.91, b: 1, a: 0.88}
+  glassFrontLensColor: {r: 0.85, g: 0.96, b: 1, a: 0.12}
+  earHandleColor: {r: 0.92, g: 0.96, b: 1, a: 1}
+  glassRimRadius: 0.042
+  innerRimInset: 0.064
+  glassShellDepth: 0.08
+  showShoulderHandles: 0
+  showSpecularReflections: 1
+  boxCornerRadius: 0.2
+  boxFrameThickness: 0.055
+  boxFrameColor: {r: 0.5, g: 0.5, b: 0.9, a: 1}
+  boxFrameHighlightColor: {r: 0.84, g: 0.84, b: 0.98, a: 1}
+  boxFrameEdgeShadeColor: {r: 0.38, g: 0.36, b: 0.8, a: 1}
+  dropShadowColor: {r: 0.72, g: 0.6, b: 0.48, a: 0.3}
+  particleSize: 0.255
+  particlesPerMonsterCount: 1
+  particleMode: 2
+  patternShape: 1
+  pixelArtPreset: 0
+  customPattern:
+    patternName: Frog
+    width: 11
+    height: 8
+    rawAscii: []
+  initialSimulationMode: 0
+  freezePatternInPlace: 0
+  gridCellSpacing: 0.24
+  patternVerticalOffset: 0
+  fillEmptyWithColor: 0
+  emptyCellColor: 0
+  lockedSectionRatio: 0.3
+  contourPoints: []
+  trackPreset: 4
+  trackLanesAcross: 0
+  trackAutoFitToBalls: 1
+  trackScale: 1
+  trackWallThickness: 0.082
+  trackHiddenRatio: 0
+  trackBranches: []
+  compartmentPreset: 7
+  dividers: []
+  compartmentZones: []
+  stagingGridCols: 5
+  stagingGridRows: 3
+  gridWalls: []
+  useCustomTraySettings: 0
+  trayMatchGlassWidth: 1
+  trayMaxBoardWidth: 2.822
+  trayMaxBoardHeight: 3.2
+  trayFramePadding: 0.115
+  trayInnerMargin: 0.06
+  trayFrameCornerRadius: 0.18
+  trayGapBelowGlass: 0.11
+  trayUseManualCellSize: 0
+  trayManualCellSize: 0.506
+  trayShowOuterGlassJar: 0
+  ballsPerBox: 3
+  carrierBoxFormatVersion: 4
+  puzzleLayerStyle: 0
+  stagingColumns: 3
+  useStagingColumnQueue: 0
+  useBallFeedTubes: 0
+  feedTubeMode: 0
+  feedTubeContainerLimit: 12
+  feedTubeQueueVisibleCount: 5
+  feedTubeWidthMultiplier: 1.24
+  feedTubeAnchorSpread: 0.68
+  feedTubeDropInterval: 0.14
+  tutorial: 0
+  tutorialHint: 0
+  tutorialBlockIndex: -1
+  tutorialFromAnchor: {x: 0, y: 0}
+  tutorialTargetAnchor: {x: 0, y: 0}
+  iceMeltMode: 0
+  useManualBallLayout: 1
+  manualLaneWidth: 4
+  manualTrackCapacity: 348
+  trackLayerLock: 0
+  trackKeepLayers: 1
+  manualBalls:
+  - color: 2
+    column: 4
+    row: 0
+    hasTrackPos: 1
+    trackPos: {x: 0.50188684, y: 0.06931799}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.48652655, y: 0.10536744}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 85
+    hasTrackPos: 1
+    trackPos: {x: 0.47316545, y: 0.06902631}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 79
+    hasTrackPos: 1
+    trackPos: {x: 0.45771515, y: 0.10563215}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 84
+    hasTrackPos: 1
+    trackPos: {x: 0.4444578, y: 0.07010151}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 78
+    hasTrackPos: 1
+    trackPos: {x: 0.4289238, y: 0.1073031}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 83
+    hasTrackPos: 1
+    trackPos: {x: 0.41578063, y: 0.07227827}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 77
+    hasTrackPos: 1
+    trackPos: {x: 0.40017653, y: 0.11011299}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 82
+    hasTrackPos: 1
+    trackPos: {x: 0.38714954, y: 0.07544289}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 76
+    hasTrackPos: 1
+    trackPos: {x: 0.37150177, y: 0.11411265}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 81
+    hasTrackPos: 1
+    trackPos: {x: 0.35858658, y: 0.07967562}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 75
+    hasTrackPos: 1
+    trackPos: {x: 0.34299028, y: 0.11989834}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 80
+    hasTrackPos: 1
+    trackPos: {x: 0.3302343, y: 0.08612273}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 74
+    hasTrackPos: 1
+    trackPos: {x: 0.3147057, y: 0.12755425}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 79
+    hasTrackPos: 1
+    trackPos: {x: 0.30213284, y: 0.09440911}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.2867267, y: 0.13717587}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 78
+    hasTrackPos: 1
+    trackPos: {x: 0.27435613, y: 0.10459089}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.2591713, y: 0.149006}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 77
+    hasTrackPos: 1
+    trackPos: {x: 0.24699093, y: 0.11679321}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.23238611, y: 0.16392866}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 76
+    hasTrackPos: 1
+    trackPos: {x: 0.22030622, y: 0.131711}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.20655134, y: 0.18179195}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 75
+    hasTrackPos: 1
+    trackPos: {x: 0.19460976, y: 0.14968604}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.1819021, y: 0.20262896}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 74
+    hasTrackPos: 1
+    trackPos: {x: 0.16993971, y: 0.17022906}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.15870327, y: 0.22654548}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.14648882, y: 0.19348334}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.12520078, y: 0.22054778}
+    queued: 0
+  - color: 4
+    column: 0
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.29894292, y: 0.24551572}
+    queued: 0
+  - color: 4
+    column: 0
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.44061598, y: 0.21529806}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.13754708, y: 0.25401297}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.10609212, y: 0.2505465}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.11937373, y: 0.28538024}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.0890044, y: 0.28289992}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.104097754, y: 0.31955567}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.07526248, y: 0.31830955}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 63
+    hasTrackPos: 1
+    trackPos: {x: 0.09180873, y: 0.35604858}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.06470064, y: 0.35572547}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.0828253, y: 0.39449212}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.056646075, y: 0.39437106}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 60
+    hasTrackPos: 1
+    trackPos: {x: 0.07827483, y: 0.4344405}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.05220251, y: 0.43421313}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 61
+    hasTrackPos: 1
+    trackPos: {x: 0.07579386, y: 0.4747232}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.049964774, y: 0.47440118}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.075126804, y: 0.5151486}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.04932177, y: 0.514696}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 58
+    hasTrackPos: 1
+    trackPos: {x: 0.07616382, y: 0.555564}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 63
+    hasTrackPos: 1
+    trackPos: {x: 0.050213695, y: 0.55499125}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.07905475, y: 0.59581566}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.05294057, y: 0.59513736}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 56
+    hasTrackPos: 1
+    trackPos: {x: 0.08505462, y: 0.6353841}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 60
+    hasTrackPos: 1
+    trackPos: {x: 0.058539215, y: 0.6346726}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 61
+    hasTrackPos: 1
+    trackPos: {x: 0.066753425, y: 0.6731954}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.09479644, y: 0.67334145}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.07807672, y: 0.71024966}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 54
+    hasTrackPos: 1
+    trackPos: {x: 0.1076933, y: 0.7094084}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.110344216, y: 0.7767269}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.12354581, y: 0.7431692}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 56
+    hasTrackPos: 1
+    trackPos: {x: 0.12986435, y: 0.8062911}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.14288718, y: 0.77316266}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 54
+    hasTrackPos: 1
+    trackPos: {x: 0.15204598, y: 0.8319016}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.16463411, y: 0.7996173}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.17567658, y: 0.8547229}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 50
+    hasTrackPos: 1
+    trackPos: {x: 0.18811733, y: 0.822949}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.20050938, y: 0.874925}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.21304528, y: 0.84317136}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.2265854, y: 0.8918322}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.23922932, y: 0.8600637}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.2535061, y: 0.90585303}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 47
+    hasTrackPos: 1
+    trackPos: {x: 0.2663296, y: 0.87380797}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 50
+    hasTrackPos: 1
+    trackPos: {x: 0.2810425, y: 0.91713583}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 46
+    hasTrackPos: 1
+    trackPos: {x: 0.29414555, y: 0.8841972}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.30912274, y: 0.925533}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.32248616, y: 0.8912063}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.33767217, y: 0.9299361}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 44
+    hasTrackPos: 1
+    trackPos: {x: 0.35117245, y: 0.89475167}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 47
+    hasTrackPos: 1
+    trackPos: {x: 0.3663622, y: 0.93075144}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 46
+    hasTrackPos: 1
+    trackPos: {x: 0.39500415, y: 0.9285409}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.37998736, y: 0.89429456}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.42344314, y: 0.92290807}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.408576, y: 0.8893737}
+    queued: 0
+  - color: 4
+    column: 4
+    row: 44
+    hasTrackPos: 1
+    trackPos: {x: 0.45152324, y: 0.91444284}
+    queued: 0
+  - color: 4
+    column: 3
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.4368751, y: 0.88186705}
+    queued: 0
+  - color: 6
+    column: 4
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.47949165, y: 0.90527}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.46497372, y: 0.87289697}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.27748695, y: 0.7640709}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.558664, y: 0.73124534}
+    queued: 0
+  - color: 6
+    column: 4
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.50748575, y: 0.89625144}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.49302956, y: 0.86366314}
+    queued: 0
+  - color: 6
+    column: 4
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.5354892, y: 0.8872886}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.52114975, y: 0.85482097}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.5634654, y: 0.87815917}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 37
+    hasTrackPos: 1
+    trackPos: {x: 0.549198, y: 0.8455387}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 29
+    hasTrackPos: 1
+    trackPos: {x: 0.86045176, y: 0.78607655}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.57732457, y: 0.8367352}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.59156096, y: 0.8698559}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.6057676, y: 0.8303422}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 34
+    hasTrackPos: 1
+    trackPos: {x: 0.634487, y: 0.83022344}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.61730605, y: 0.8654918}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.6631364, y: 0.8343212}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 37
+    hasTrackPos: 1
+    trackPos: {x: 0.6459648, y: 0.8678001}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.6744763, y: 0.8726616}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.6918576, y: 0.8363095}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.703195, y: 0.87226605}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.72061515, y: 0.8344184}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 34
+    hasTrackPos: 1
+    trackPos: {x: 0.7317782, y: 0.86884165}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.74914974, y: 0.8287862}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.7600671, y: 0.8622073}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 29
+    hasTrackPos: 1
+    trackPos: {x: 0.77635765, y: 0.8155848}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.7871104, y: 0.8486323}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 28
+    hasTrackPos: 1
+    trackPos: {x: 0.8022088, y: 0.7979427}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.81289935, y: 0.83107865}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 27
+    hasTrackPos: 1
+    trackPos: {x: 0.8266169, y: 0.7765412}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.83750194, y: 0.81032515}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.8494723, y: 0.751921}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 27
+    hasTrackPos: 1
+    trackPos: {x: 0.8814217, y: 0.7585833}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.8699632, y: 0.723476}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 28
+    hasTrackPos: 1
+    trackPos: {x: 0.9006128, y: 0.7286762}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 23
+    hasTrackPos: 1
+    trackPos: {x: 0.88778496, y: 0.6917719}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.91735405, y: 0.6959089}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 24
+    hasTrackPos: 1
+    trackPos: {x: 0.90274656, y: 0.65735525}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 24
+    hasTrackPos: 1
+    trackPos: {x: 0.93038356, y: 0.6600293}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.9406678, y: 0.6225051}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.9144335, y: 0.6204186}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 23
+    hasTrackPos: 1
+    trackPos: {x: 0.9468651, y: 0.5831281}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.92083573, y: 0.58097684}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.9497484, y: 0.54303867}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 20
+    hasTrackPos: 1
+    trackPos: {x: 0.92399764, y: 0.5408175}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.9505266, y: 0.5027698}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.9246629, y: 0.5004164}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 20
+    hasTrackPos: 1
+    trackPos: {x: 0.9492792, y: 0.46248767}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.92296594, y: 0.46006134}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.94502884, y: 0.42260367}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 17
+    hasTrackPos: 1
+    trackPos: {x: 0.9185838, y: 0.42007154}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.9371692, y: 0.38394395}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.9091537, y: 0.38188136}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 17
+    hasTrackPos: 1
+    trackPos: {x: 0.92648584, y: 0.34655645}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.8961329, y: 0.34595305}
+    queued: 0
+  - color: 0
+    column: 4
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.9115529, y: 0.3121188}
+    queued: 0
+  - color: 6
+    column: 3
+    row: 14
+    hasTrackPos: 1
+    trackPos: {x: 0.87992084, y: 0.31260538}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.89400226, y: 0.28031418}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 13
+    hasTrackPos: 1
+    trackPos: {x: 0.86075854, y: 0.2823876}
+    queued: 0
+  - color: 2
+    column: 0
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.7946353, y: 0.34561238}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 14
+    hasTrackPos: 1
+    trackPos: {x: 0.8744366, y: 0.25083226}
+    queued: 0
+  - color: 2
+    column: 1
+    row: 11
+    hasTrackPos: 1
+    trackPos: {x: 0.78590584, y: 0.29121476}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 13
+    hasTrackPos: 1
+    trackPos: {x: 0.8526118, y: 0.22461668}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.83898205, y: 0.25589514}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.82925254, y: 0.20119786}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 11
+    hasTrackPos: 1
+    trackPos: {x: 0.8157237, y: 0.2320783}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 11
+    hasTrackPos: 1
+    trackPos: {x: 0.80488086, y: 0.17992137}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 10
+    hasTrackPos: 1
+    trackPos: {x: 0.79126906, y: 0.21074289}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 10
+    hasTrackPos: 1
+    trackPos: {x: 0.77961934, y: 0.16074261}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 9
+    hasTrackPos: 1
+    trackPos: {x: 0.7658454, y: 0.19172437}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 9
+    hasTrackPos: 1
+    trackPos: {x: 0.7534782, y: 0.1440344}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 8
+    hasTrackPos: 1
+    trackPos: {x: 0.7396061, y: 0.17499816}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 8
+    hasTrackPos: 1
+    trackPos: {x: 0.7267383, y: 0.12934038}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 7
+    hasTrackPos: 1
+    trackPos: {x: 0.7126769, y: 0.16060272}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 7
+    hasTrackPos: 1
+    trackPos: {x: 0.6995663, y: 0.116314426}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 6
+    hasTrackPos: 1
+    trackPos: {x: 0.6852977, y: 0.1480165}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 6
+    hasTrackPos: 1
+    trackPos: {x: 0.67203057, y: 0.10487299}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 5
+    hasTrackPos: 1
+    trackPos: {x: 0.6575655, y: 0.13706231}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 5
+    hasTrackPos: 1
+    trackPos: {x: 0.64418894, y: 0.09497163}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 4
+    hasTrackPos: 1
+    trackPos: {x: 0.6295169, y: 0.12784928}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 4
+    hasTrackPos: 1
+    trackPos: {x: 0.6159736, y: 0.08743084}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.6011722, y: 0.12056628}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.5876022, y: 0.08118087}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 2
+    hasTrackPos: 1
+    trackPos: {x: 0.5726575, y: 0.11472524}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 2
+    hasTrackPos: 1
+    trackPos: {x: 0.5591193, y: 0.07602596}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 1
+    hasTrackPos: 1
+    trackPos: {x: 0.54403055, y: 0.11010024}
+    queued: 0
+  - color: 2
+    column: 4
+    row: 1
+    hasTrackPos: 1
+    trackPos: {x: 0.53054494, y: 0.072002314}
+    queued: 0
+  - color: 2
+    column: 3
+    row: 0
+    hasTrackPos: 1
+    trackPos: {x: 0.5153111, y: 0.10686037}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 0
+    hasTrackPos: 1
+    trackPos: {x: 0.49998233, y: 0.14170943}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.47101912, y: 0.14144933}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.44207257, y: 0.1427249}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.4131632, y: 0.1451503}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.38431188, y: 0.148675}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.35558185, y: 0.15371162}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.32706505, y: 0.16076715}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.29883784, y: 0.16987117}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.27111706, y: 0.18165733}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.24412076, y: 0.19635397}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.21811382, y: 0.21417566}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 63
+    hasTrackPos: 1
+    trackPos: {x: 0.19346888, y: 0.23540963}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.17064853, y: 0.26030996}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 60
+    hasTrackPos: 1
+    trackPos: {x: 0.18116403, y: 0.3508464}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 61
+    hasTrackPos: 1
+    trackPos: {x: 0.15020715, y: 0.288994}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 60
+    hasTrackPos: 1
+    trackPos: {x: 0.13272583, y: 0.32135606}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.11901229, y: 0.35717285}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 58
+    hasTrackPos: 1
+    trackPos: {x: 0.109622896, y: 0.39562622}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.10426316, y: 0.43550378}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 56
+    hasTrackPos: 1
+    trackPos: {x: 0.10158385, y: 0.4759609}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.1009431, y: 0.5165918}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 54
+    hasTrackPos: 1
+    trackPos: {x: 0.10218645, y: 0.5571958}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.105573416, y: 0.59754777}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.111934066, y: 0.63720036}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.12319442, y: 0.6746686}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 50
+    hasTrackPos: 1
+    trackPos: {x: 0.13825859, y: 0.70935225}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.15667535, y: 0.74060535}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.17790587, y: 0.7681084}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 47
+    hasTrackPos: 1
+    trackPos: {x: 0.20135264, y: 0.79185706}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 46
+    hasTrackPos: 1
+    trackPos: {x: 0.22647776, y: 0.81198514}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.2528803, y: 0.82867926}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 44
+    hasTrackPos: 1
+    trackPos: {x: 0.28018433, y: 0.84224766}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.3083592, y: 0.8516165}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.33704144, y: 0.85698175}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.365947, y: 0.85831267}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.39478737, y: 0.85546595}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.4233588, y: 0.84894335}
+    queued: 0
+  - color: 6
+    column: 2
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.4516335, y: 0.8401293}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.41858447, y: 0.7762546}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 37
+    hasTrackPos: 1
+    trackPos: {x: 0.47980934, y: 0.830708}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.508078, y: 0.821852}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.536282, y: 0.81260043}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 34
+    hasTrackPos: 1
+    trackPos: {x: 0.5645306, y: 0.80362165}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.59300953, y: 0.7963516}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.62178385, y: 0.7932469}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.65068376, y: 0.7956226}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.679437, y: 0.8003463}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 29
+    hasTrackPos: 1
+    trackPos: {x: 0.708397, y: 0.7996915}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 28
+    hasTrackPos: 1
+    trackPos: {x: 0.73713, y: 0.7947137}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 27
+    hasTrackPos: 1
+    trackPos: {x: 0.76473176, y: 0.7829845}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.7907561, y: 0.7654169}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.8150555, y: 0.74342227}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 24
+    hasTrackPos: 1
+    trackPos: {x: 0.8374832, y: 0.7177974}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 23
+    hasTrackPos: 1
+    trackPos: {x: 0.8575923, y: 0.68858325}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.8745647, y: 0.6556295}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.8871288, y: 0.61901194}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 20
+    hasTrackPos: 1
+    trackPos: {x: 0.8945888, y: 0.57984686}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.8981934, y: 0.53958243}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.89882016, y: 0.49897856}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 17
+    hasTrackPos: 1
+    trackPos: {x: 0.89670694, y: 0.45847538}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.8912826, y: 0.41865566}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.88101554, y: 0.38065454}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 14
+    hasTrackPos: 1
+    trackPos: {x: 0.8658259, y: 0.34603277}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 13
+    hasTrackPos: 1
+    trackPos: {x: 0.8470388, y: 0.31514445}
+    queued: 0
+  - color: 1
+    column: 1
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.80895984, y: 0.31515792}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 12
+    hasTrackPos: 1
+    trackPos: {x: 0.82575345, y: 0.28766373}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 11
+    hasTrackPos: 1
+    trackPos: {x: 0.80259204, y: 0.2633364}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 10
+    hasTrackPos: 1
+    trackPos: {x: 0.7780314, y: 0.24185468}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 9
+    hasTrackPos: 1
+    trackPos: {x: 0.75240964, y: 0.22293368}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 8
+    hasTrackPos: 1
+    trackPos: {x: 0.72596604, y: 0.20636114}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 7
+    hasTrackPos: 1
+    trackPos: {x: 0.69886863, y: 0.19199923}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 6
+    hasTrackPos: 1
+    trackPos: {x: 0.6712376, y: 0.17980962}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 5
+    hasTrackPos: 1
+    trackPos: {x: 0.6432615, y: 0.16930959}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 4
+    hasTrackPos: 1
+    trackPos: {x: 0.6149426, y: 0.16086322}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 3
+    hasTrackPos: 1
+    trackPos: {x: 0.5863828, y: 0.15413876}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 2
+    hasTrackPos: 1
+    trackPos: {x: 0.5576831, y: 0.14869379}
+    queued: 0
+  - color: 1
+    column: 2
+    row: 1
+    hasTrackPos: 1
+    trackPos: {x: 0.52888024, y: 0.14445032}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.48467237, y: 0.1777931}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 73
+    hasTrackPos: 1
+    trackPos: {x: 0.46933755, y: 0.2138728}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.45596424, y: 0.17822126}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 71
+    hasTrackPos: 1
+    trackPos: {x: 0.42728126, y: 0.1800783}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 72
+    hasTrackPos: 1
+    trackPos: {x: 0.41193625, y: 0.21788639}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 70
+    hasTrackPos: 1
+    trackPos: {x: 0.39864287, y: 0.18301746}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.38332292, y: 0.2216403}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 69
+    hasTrackPos: 1
+    trackPos: {x: 0.37007946, y: 0.18716592}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.35487536, y: 0.22727375}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 68
+    hasTrackPos: 1
+    trackPos: {x: 0.34173143, y: 0.1935871}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.32670042, y: 0.23514904}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 67
+    hasTrackPos: 1
+    trackPos: {x: 0.31367603, y: 0.20214708}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 66
+    hasTrackPos: 1
+    trackPos: {x: 0.28606254, y: 0.21314754}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.2718425, y: 0.2588267}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 65
+    hasTrackPos: 1
+    trackPos: {x: 0.2591102, y: 0.22695926}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.24575469, y: 0.2756334}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 64
+    hasTrackPos: 1
+    trackPos: {x: 0.23313206, y: 0.24402666}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 63
+    hasTrackPos: 1
+    trackPos: {x: 0.20857745, y: 0.26478124}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 63
+    hasTrackPos: 1
+    trackPos: {x: 0.22123972, y: 0.29650748}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.18605037, y: 0.28962484}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 62
+    hasTrackPos: 1
+    trackPos: {x: 0.19922933, y: 0.3218037}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 61
+    hasTrackPos: 1
+    trackPos: {x: 0.166337, y: 0.31876153}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.15026307, y: 0.35197914}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 59
+    hasTrackPos: 1
+    trackPos: {x: 0.1677298, y: 0.38278556}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 58
+    hasTrackPos: 1
+    trackPos: {x: 0.13847505, y: 0.38858274}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 58
+    hasTrackPos: 1
+    trackPos: {x: 0.1586666, y: 0.41811854}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 57
+    hasTrackPos: 1
+    trackPos: {x: 0.13126074, y: 0.42744544}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 56
+    hasTrackPos: 1
+    trackPos: {x: 0.1544125, y: 0.454128}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 56
+    hasTrackPos: 1
+    trackPos: {x: 0.12779091, y: 0.46743068}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.17038748, y: 0.64558697}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.152482, y: 0.4943776}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 55
+    hasTrackPos: 1
+    trackPos: {x: 0.12664133, y: 0.5076963}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 54
+    hasTrackPos: 1
+    trackPos: {x: 0.15274984, y: 0.53472006}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 54
+    hasTrackPos: 1
+    trackPos: {x: 0.12747605, y: 0.54798174}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.15520842, y: 0.574912}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 53
+    hasTrackPos: 1
+    trackPos: {x: 0.13049644, y: 0.5880567}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.16100529, y: 0.61440665}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 52
+    hasTrackPos: 1
+    trackPos: {x: 0.13694698, y: 0.62726396}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 51
+    hasTrackPos: 1
+    trackPos: {x: 0.14835642, y: 0.66423094}
+    queued: 0
+  - color: 5
+    column: 1
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.16395998, y: 0.69804436}
+    queued: 0
+  - color: 5
+    column: 0
+    row: 49
+    hasTrackPos: 1
+    trackPos: {x: 0.18423086, y: 0.67545855}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.18336307, y: 0.7277411}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 48
+    hasTrackPos: 1
+    trackPos: {x: 0.20334466, y: 0.7038375}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 47
+    hasTrackPos: 1
+    trackPos: {x: 0.20572017, y: 0.7530423}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 47
+    hasTrackPos: 1
+    trackPos: {x: 0.22616827, y: 0.7282526}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 46
+    hasTrackPos: 1
+    trackPos: {x: 0.23017856, y: 0.7741583}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 46
+    hasTrackPos: 1
+    trackPos: {x: 0.25110197, y: 0.7481595}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 45
+    hasTrackPos: 1
+    trackPos: {x: 0.25614363, y: 0.7913255}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 44
+    hasTrackPos: 1
+    trackPos: {x: 0.28307062, y: 0.80528265}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.30485097, y: 0.77615976}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 43
+    hasTrackPos: 1
+    trackPos: {x: 0.31085765, y: 0.81525904}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.33305898, y: 0.78351635}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 42
+    hasTrackPos: 1
+    trackPos: {x: 0.33925322, y: 0.8208862}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.36169207, y: 0.78593254}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 41
+    hasTrackPos: 1
+    trackPos: {x: 0.36791182, y: 0.8220601}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.39029703, y: 0.7832126}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 40
+    hasTrackPos: 1
+    trackPos: {x: 0.3964654, y: 0.81858516}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 39
+    hasTrackPos: 1
+    trackPos: {x: 0.42470652, y: 0.811451}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.45270976, y: 0.8025313}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 38
+    hasTrackPos: 1
+    trackPos: {x: 0.44661358, y: 0.7673364}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 37
+    hasTrackPos: 1
+    trackPos: {x: 0.48066476, y: 0.7933139}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 37
+    hasTrackPos: 1
+    trackPos: {x: 0.47459188, y: 0.7581051}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.50868917, y: 0.7845194}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 36
+    hasTrackPos: 1
+    trackPos: {x: 0.50264144, y: 0.7493083}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.5366392, y: 0.7752695}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 35
+    hasTrackPos: 1
+    trackPos: {x: 0.53061575, y: 0.74005014}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 33
+    hasTrackPos: 1
+    trackPos: {x: 0.56466395, y: 0.76647735}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 34
+    hasTrackPos: 1
+    trackPos: {x: 0.5869715, y: 0.7243808}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 34
+    hasTrackPos: 1
+    trackPos: {x: 0.59296393, y: 0.75975716}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.61552197, y: 0.7204034}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 32
+    hasTrackPos: 1
+    trackPos: {x: 0.6215194, y: 0.75698143}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.6442393, y: 0.72203547}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 31
+    hasTrackPos: 1
+    trackPos: {x: 0.6501909, y: 0.75903904}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.6727946, y: 0.7265095}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 30
+    hasTrackPos: 1
+    trackPos: {x: 0.6786784, y: 0.7641081}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 29
+    hasTrackPos: 1
+    trackPos: {x: 0.7073846, y: 0.76349884}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.8406731, y: 0.58655494}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 28
+    hasTrackPos: 1
+    trackPos: {x: 0.73585945, y: 0.75840294}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 26
+    hasTrackPos: 1
+    trackPos: {x: 0.7629224, y: 0.7453631}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 27
+    hasTrackPos: 1
+    trackPos: {x: 0.7497318, y: 0.713557}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.78803605, y: 0.7259008}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 25
+    hasTrackPos: 1
+    trackPos: {x: 0.7736252, y: 0.6957421}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 24
+    hasTrackPos: 1
+    trackPos: {x: 0.8112069, y: 0.7021457}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 24
+    hasTrackPos: 1
+    trackPos: {x: 0.79682094, y: 0.67201424}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 23
+    hasTrackPos: 1
+    trackPos: {x: 0.8319688, y: 0.6743716}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.84948105, y: 0.64252114}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 22
+    hasTrackPos: 1
+    trackPos: {x: 0.8305883, y: 0.61742324}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 21
+    hasTrackPos: 1
+    trackPos: {x: 0.8626794, y: 0.60687786}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 20
+    hasTrackPos: 1
+    trackPos: {x: 0.8700279, y: 0.56806636}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.84602576, y: 0.5474233}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 19
+    hasTrackPos: 1
+    trackPos: {x: 0.8729492, y: 0.5280236}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 18
+    hasTrackPos: 1
+    trackPos: {x: 0.84738797, y: 0.5071666}
+    queued: 0
+  - color: 3
+    column: 0
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.8409152, y: 0.4362125}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 17
+    hasTrackPos: 1
+    trackPos: {x: 0.87275314, y: 0.4877469}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.83067185, y: 0.4039196}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 16
+    hasTrackPos: 1
+    trackPos: {x: 0.86946553, y: 0.44774914}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 15
+    hasTrackPos: 1
+    trackPos: {x: 0.8613642, y: 0.40930757}
+    queued: 0
+  - color: 6
+    column: 1
+    row: 13
+    hasTrackPos: 1
+    trackPos: {x: 0.8299081, y: 0.34261012}
+    queued: 0
+  - color: 3
+    column: 1
+    row: 14
+    hasTrackPos: 1
+    trackPos: {x: 0.8478044, y: 0.3739685}
+    queued: 0
+  - color: 6
+    column: 0
+    row: 13
+    hasTrackPos: 1
+    trackPos: {x: 0.8150535, y: 0.3736778}
+    queued: 0
+  bottomToTopTriplets: 02000000040000000600000000000000010000000500000003000000
+  bottomToTopGroups:
+  - color: 2
+    count: 56
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 58
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 103
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 25
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 38
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 41
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 3
+    count: 27
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 0
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  monsters:
+  - color: 3
+    count: 33
+    blockShape: 0
+    gridAnchor: {x: 0, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 1
+    count: 38
+    blockShape: 0
+    gridAnchor: {x: 1, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 3
+    count: 26
+    blockShape: 0
+    gridAnchor: {x: 2, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 43
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 29
+    blockShape: 0
+    gridAnchor: {x: 3, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 19
+    blockShape: 0
+    gridAnchor: {x: 4, y: 2}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 73
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 20
+    blockShape: 0
+    gridAnchor: {x: 0, y: 1}
+    hasGridAnchor: 1
+    hasKey: 1
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 22
+    blockShape: 0
+    gridAnchor: {x: 1, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 5
+    count: 19
+    blockShape: 0
+    gridAnchor: {x: 2, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 24
+    blockShape: 0
+    gridAnchor: {x: 3, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 0
+    count: 33
+    blockShape: 0
+    gridAnchor: {x: 4, y: 1}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 1
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 32
+    blockShape: 0
+    gridAnchor: {x: 0, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 1
+    filledBallColor: 3
+  - color: 2
+    count: 25
+    blockShape: 0
+    gridAnchor: {x: 1, y: 0}
+    hasGridAnchor: 1
+    hasKey: 1
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 2
+    count: 31
+    blockShape: 0
+    gridAnchor: {x: 2, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 4
+    count: 29
+    blockShape: 0
+    gridAnchor: {x: 3, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 1
+    iceCount: 0
+    isFilledBox: 0
+    filledBallColor: 0
+  - color: 6
+    count: 32
+    blockShape: 0
+    gridAnchor: {x: 4, y: 0}
+    hasGridAnchor: 1
+    hasKey: 0
+    lockKeyCount: 0
+    iceCount: 0
+    isFilledBox: 1
+    filledBallColor: 0

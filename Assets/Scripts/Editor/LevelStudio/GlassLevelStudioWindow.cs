@@ -100,6 +100,7 @@ namespace PuzzleGlass.Editor.Studio
         private List<LevelFinding> m_Findings = new List<LevelFinding>();
         private PuzzleLevelSolver.Run m_SolveRun;       // arka planda (her karede birkaç ms) ilerleyen çözüm
         private PuzzleLevelSolver.DifficultyRun m_DiffRun; // zorluk simülasyonunu da karelere böler (UI donmaz)
+        private PuzzleLevelSolver.MetricsRun m_MetricsRun; // hata payı / adil başlangıç / kritik an ölçümü (karelere bölünür)
         private bool m_LiveSync;
         private double m_SceneSyncDue = -1;             // sahne güncellemesi: son değişiklikten kısa süre sonra tek sefer
         private const double SceneSyncDelay = 1.5;
@@ -144,6 +145,7 @@ namespace PuzzleGlass.Editor.Studio
             EditorApplication.update -= OnEditorUpdate;
             m_SolveRun = null;
             m_DiffRun = null;
+            m_MetricsRun = null;
             DiscardPending();
         }
 
@@ -2118,8 +2120,9 @@ namespace PuzzleGlass.Editor.Studio
                 {
                     m_Solve = m_SolveRun.Result;
                     m_SolveRun = null;
+                    m_MetricsRun = null; // önceki levelden kalan ölçüm yeni sonuca yazılmasın
                     var shown = Shown;
-                    if (PuzzleLevelSolver.UseSlotModel && shown != null && m_Solve != null && m_Solve.status == SolveStatus.Solved)
+                    if (PuzzleLevelSolver.UseSlotModel && shown != null && m_Solve != null && (m_Solve.status == SolveStatus.Solved || m_Solve.status == SolveStatus.LimitReached))
                     {
                         m_DiffRun = new PuzzleLevelSolver.DifficultyRun(shown, GetGlassDims(shown), 150, 12345);
                     }
@@ -2136,6 +2139,18 @@ namespace PuzzleGlass.Editor.Studio
                         m_Solve.smartFailRate = m_DiffRun.SmartFailRate;
                     }
                     m_DiffRun = null;
+                    var shown = Shown;
+                    if (shown != null && m_Solve != null && (m_Solve.status == SolveStatus.Solved || m_Solve.status == SolveStatus.LimitReached))
+                        m_MetricsRun = new PuzzleLevelSolver.MetricsRun(shown, GetGlassDims(shown));
+                    RefreshSolveDependentUI();
+                }
+            }
+            else if (m_MetricsRun != null)
+            {
+                if (m_MetricsRun.Step(2.0))
+                {
+                    if (m_Solve != null) m_Solve.metrics = m_MetricsRun.Result;
+                    m_MetricsRun = null;
                     RefreshSolveDependentUI();
                 }
             }
@@ -2187,6 +2202,7 @@ namespace PuzzleGlass.Editor.Studio
             var lvl = Shown;
             m_Solve = null;
             m_DiffRun = null;
+            m_MetricsRun = null;
             m_SolveRun = lvl != null ? new PuzzleLevelSolver.Run(lvl, GetGlassDims(lvl)) : null;
         }
 
@@ -3240,7 +3256,7 @@ namespace PuzzleGlass.Editor.Studio
                 if (lvl.manualBalls != null)
                 {
                     foreach (var mb in lvl.manualBalls)
-                        if (mb != null && !occupied.ContainsKey((mb.column, mb.row)))
+                        if (mb != null && !mb.queued && !occupied.ContainsKey((mb.column, mb.row)))
                             occupied[(mb.column, mb.row)] = mb.color;
                 }
 
@@ -3544,7 +3560,7 @@ namespace PuzzleGlass.Editor.Studio
             for (int i = 0; i < m_Level.manualBalls.Count; i++)
             {
                 var b = m_Level.manualBalls[i];
-                if (b != null && b.column == col && b.row == row) return i;
+                if (b != null && !b.queued && b.column == col && b.row == row) return i;
             }
             return -1;
         }
@@ -4375,6 +4391,7 @@ namespace PuzzleGlass.Editor.Studio
             var dl = new Label(detail);
             dl.AddToClassList("solve__detail");
             m_SolveCard.Add(dl);
+            AddSolveMetricLines(m_SolveCard);
 
             if (m_Pending == null && m_Solve != null && m_Solve.status == SolveStatus.Invalid && lvl.monsters != null && lvl.monsters.Count > 0)
             {
@@ -4431,6 +4448,47 @@ namespace PuzzleGlass.Editor.Studio
 
             if (m_SelectedBlock >= 0 && m_SelectedBlock < (m_Level.monsters?.Count ?? 0)) BuildBlockInspector(m_SelectedBlock);
             else BuildLevelInspector();
+        }
+
+        /// <summary>Çözüm kartının altına zorluk puanı ve affedicilik ölçüleri (hata payı, ilk hamle, kritik an).</summary>
+        private void AddSolveMetricLines(VisualElement card)
+        {
+            if (m_Solve == null || !PuzzleLevelSolver.UseSlotModel) return;
+            if (m_Solve.status != SolveStatus.Solved && m_Solve.status != SolveStatus.LimitReached) return;
+            var lines = new List<string>();
+            int score = PuzzleLevelSolver.DifficultyScore(m_Solve);
+            if (score >= 0) lines.Add($"Zorluk puanı: {score}/100");
+            var m = m_Solve.metrics;
+            if (m == null)
+            {
+                if (m_MetricsRun != null || m_DiffRun != null) lines.Add("Hata payı ölçülüyor…");
+            }
+            else if (m.minSlots > 0)
+            {
+                string approx = m.complete ? "" : " (yaklaşık)";
+                lines.Add(m.Slack > 0
+                    ? $"Hata payı: {m.minSlots} slot yetiyor, {m.Slack} slot boşta kalabilir{approx}"
+                    : $"Hata payı yok: {m.slotCapacity} slotun hepsi gerekiyor{approx}");
+                lines.Add(m.firstMoveTraps > 0
+                    ? $"İlk hamle: {m.firstMoves} seçenekten {m.firstMoveTraps} tanesi kaybettiriyor"
+                    : $"İlk hamle: {m.firstMoves} seçeneğin hepsi güvenli");
+                if (m.decisionSteps > 0)
+                    lines.Add($"Çözüm yolu: {m.pathSteps} adım, {m.criticalSteps} adımda tek doğru hamle, seçeneklerin %{Mathf.RoundToInt(m.TrapRate * 100f)}'i tuzak");
+            }
+            else if (!m.complete)
+            {
+                lines.Add("Hata payı ölçülemedi (arama sınırı)");
+            }
+            else
+            {
+                lines.Add("Sadece slota göndererek hiçbir sırayla çözülemiyor (tüm sıralar denendi)");
+            }
+            foreach (var line in lines)
+            {
+                var l = new Label(line);
+                l.AddToClassList("solve__detail");
+                card.Add(l);
+            }
         }
 
         private static VisualElement Stat(string value, string label)
@@ -4658,6 +4716,133 @@ namespace PuzzleGlass.Editor.Studio
             m_Inspector.Add(hint);
         }
 
+        /// <summary>
+        /// Kuyruk: seçilen toplar başta pistte olmaz, dışarıda sırayla bekler ve banttan top ayrıldıkça girer.
+        /// Dönen pistte kilitlenmeyi (zorluğu) mümkün kılan tek araç budur. Sıra = elle dizim listesindeki sıra.
+        /// </summary>
+        private void BuildQueueSection(PuzzleGlassLevelData lvl)
+        {
+            if (lvl == null || !lvl.useManualBallLayout || lvl.manualBalls == null || lvl.manualBalls.Count == 0 || !GlassShapeData.IsTrack(lvl)) return;
+
+            var title = new Label("Kuyruk (dışarıda bekleyen toplar)");
+            title.AddToClassList("inspector__title");
+            m_Inspector.Add(title);
+            var sub = new Label("Kuyruktaki toplar başta pistte olmaz. Banttan top ayrıldıkça aşağıdaki sırayla girer. " +
+                                "Kuyruk yoksa toplar hep döndüğü için level kaybedilemez; zorluk buradan gelir.");
+            sub.AddToClassList("inspector__sub");
+            m_Inspector.Add(sub);
+
+            int total = 0, queued = 0;
+            var onTrack = new Dictionary<PuzzleColor, int>();
+            var inQueue = new Dictionary<PuzzleColor, int>();
+            var order = new List<(PuzzleColor color, int count)>();
+            foreach (var b in lvl.manualBalls)
+            {
+                if (b == null) continue;
+                total++;
+                var dict = b.queued ? inQueue : onTrack;
+                dict[b.color] = (dict.TryGetValue(b.color, out int v) ? v : 0) + 1;
+                if (!b.queued) continue;
+                queued++;
+                if (order.Count > 0 && order[order.Count - 1].color == b.color)
+                    order[order.Count - 1] = (b.color, order[order.Count - 1].count + 1);
+                else order.Add((b.color, 1));
+            }
+
+            var summary = new Label(queued == 0
+                ? "Kuyruk boş: bütün toplar pistte başlıyor."
+                : $"Kuyrukta {queued} / {total} top (%{Mathf.RoundToInt(100f * queued / Mathf.Max(1, total))})");
+            summary.AddToClassList("inspector__sub");
+            m_Inspector.Add(summary);
+            if (order.Count > 0)
+            {
+                var seq = new List<string>();
+                foreach (var g in order) seq.Add($"{PuzzleLevelSolver.ColorName(g.color)} {g.count}");
+                var ord = new Label("Giriş sırası: " + string.Join(" → ", seq));
+                ord.AddToClassList("inspector__sub");
+                ord.style.whiteSpace = WhiteSpace.Normal;
+                m_Inspector.Add(ord);
+            }
+
+            var colors = new List<PuzzleColor>(onTrack.Keys);
+            foreach (var c in inQueue.Keys) if (!colors.Contains(c)) colors.Add(c);
+            colors.Sort();
+            foreach (var color in colors)
+            {
+                var c = color;
+                onTrack.TryGetValue(c, out int t);
+                inQueue.TryGetValue(c, out int q);
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.marginTop = 2;
+                var sw = new VisualElement();
+                sw.style.width = 12; sw.style.height = 12; sw.style.marginRight = 6;
+                sw.style.borderTopLeftRadius = sw.style.borderTopRightRadius = sw.style.borderBottomLeftRadius = sw.style.borderBottomRightRadius = 6;
+                sw.style.backgroundColor = PuzzleColorPalette.GetPrimaryColor(c);
+                row.Add(sw);
+                var lbl = new Label($"{PuzzleLevelSolver.ColorName(c)}: pistte {t} · kuyrukta {q}");
+                lbl.style.flexGrow = 1;
+                row.Add(lbl);
+                foreach (int step in new[] { -10, -1, 1, 10 })
+                {
+                    int st = step;
+                    var btn = new Button(() => MoveBallsToQueue(c, st)) { text = st > 0 ? $"+{st}" : st.ToString() };
+                    btn.tooltip = st > 0 ? $"{st} {PuzzleLevelSolver.ColorName(c)} topu pistten kuyruğun sonuna al" : $"Kuyruktaki son {-st} {PuzzleLevelSolver.ColorName(c)} topu piste geri koy";
+                    btn.SetEnabled(st > 0 ? t > 0 : q > 0);
+                    row.Add(btn);
+                }
+                m_Inspector.Add(row);
+            }
+
+            if (queued > 0)
+            {
+                var clear = new Button(() =>
+                {
+                    Record("Kuyruğu boşalt");
+                    foreach (var b in m_Level.manualBalls) if (b != null) b.queued = false;
+                    OnEdited(syncScene: true);
+                }) { text = "Kuyruğu boşalt (hepsi piste)" };
+                clear.AddToClassList("inspector__action");
+                m_Inspector.Add(clear);
+            }
+        }
+
+        /// <summary>
+        /// count &gt; 0: o renkten çıkışa en uzak count topu pistten alıp kuyruğun sonuna ekler.
+        /// count &lt; 0: kuyruktaki o renkten son |count| topu piste geri koyar (kayıtlı konumlarına döner).
+        /// </summary>
+        private void MoveBallsToQueue(PuzzleColor color, int count)
+        {
+            var list = m_Level?.manualBalls;
+            if (list == null || count == 0) return;
+            Record(count > 0 ? "Kuyruğa top al" : "Kuyruktan top çıkar");
+            if (count > 0)
+            {
+                var cand = new List<ManualPoolBallEntry>();
+                foreach (var b in list) if (b != null && !b.queued && b.color == color) cand.Add(b);
+                cand.Sort((a, b) => a.row != b.row ? b.row.CompareTo(a.row) : b.column.CompareTo(a.column));
+                int n = Mathf.Min(count, cand.Count);
+                for (int k = 0; k < n; k++)
+                {
+                    var b = cand[k];
+                    b.queued = true;
+                    list.Remove(b);
+                    list.Add(b); // liste sırası = kuyruğa giriş sırası
+                }
+            }
+            else
+            {
+                int n = -count;
+                for (int i = list.Count - 1; i >= 0 && n > 0; i--)
+                {
+                    var b = list[i];
+                    if (b != null && b.queued && b.color == color) { b.queued = false; n--; }
+                }
+            }
+            OnEdited(syncScene: true);
+        }
+
         private void BuildLevelInspector()
         {
             var lvl = m_Level;
@@ -4825,6 +5010,8 @@ namespace PuzzleGlass.Editor.Studio
             iceMelt.tooltip = "PerBallCollected: herhangi bir kutuya her top indiğinde buz sayacı 1 düşer.\nPerBoxCompleted: her kutu tamamlandığında buz sayacı 1 düşer.";
             iceMelt.RegisterValueChangedCallback(e => { Record("Buz erime modu"); lvl.iceMeltMode = (IceMeltMode)e.newValue; OnEdited(syncScene: true); });
             m_Inspector.Add(iceMelt);
+
+            BuildQueueSection(lvl);
 
             // ---- Öğretici: oyunda bir el, hangi bloğun nereye sürükleneceğini gösterir ----
             var tutTitle = new Label("Öğretici");

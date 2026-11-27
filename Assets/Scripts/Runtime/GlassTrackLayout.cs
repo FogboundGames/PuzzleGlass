@@ -97,6 +97,11 @@ namespace PuzzleGlass
             /// yerleştirmek ve slotları hizalamak için kullanılır (yol hesaba katılırsa halka aşağı itiliyordu).
             /// </summary>
             public Rect bodyOuterBounds;
+            /// <summary>
+            /// Elle dizilen topların konum kaydı (NormalizeTrackPos) için sınır: otomatik giriş yolu hariç dış sınır.
+            /// Yol eklense de (kuyruklu level) halkadaki topların kayıtlı konumları kaymaz. Yol yoksa outerBounds ile aynı.
+            /// </summary>
+            public Rect positionBounds;
 
             // 2D grid field over fieldRect for O(1) physics flow, wall containment, and collider extraction
             public Rect fieldRect;
@@ -490,7 +495,12 @@ namespace PuzzleGlass
                 sourceBranches = BuildPresetBranches(GlassTrackPreset.ArchLoop);
             }
 
-            bool addEntryRoad = useHidden && !isCustom && sourceBranches.Count > 0 && IsClosedPolyline(sourceBranches[0].points);
+            // Elle dizimde kuyrukta başlayan top varsa da giriş yolu eklenir: bekleyen toplar ekranın üstünden yolda
+            // sıra halinde iner ve halkada yer açıldıkça banda katılır (hiçlikten belirmez).
+            bool manualQueued = false;
+            if (useManualLayout && manualBalls != null)
+                foreach (var mb in manualBalls) if (mb != null && mb.queued) { manualQueued = true; break; }
+            bool addEntryRoad = (useHidden || manualQueued) && !isCustom && sourceBranches.Count > 0 && IsClosedPolyline(sourceBranches[0].points);
 
             int lanes = lanesAcrossSetting > 0
                 ? Mathf.Clamp(lanesAcrossSetting, 2, 6)
@@ -753,15 +763,18 @@ namespace PuzzleGlass
         }
 
         /// <summary>Pist yerel konumunu pist dış sınırlarına göre 0..1 aralığına çevirir (pist ölçeklense de değişmez).</summary>
+        private static Rect PositionBounds(CompiledTrack track) =>
+            track.positionBounds.width > 1e-4f ? track.positionBounds : track.outerBounds;
+
         public static Vector2 NormalizeTrackPos(CompiledTrack track, Vector2 local)
         {
-            Rect b = track.outerBounds;
+            Rect b = PositionBounds(track);
             return new Vector2((local.x - b.xMin) / Mathf.Max(1e-4f, b.width), (local.y - b.yMin) / Mathf.Max(1e-4f, b.height));
         }
 
         public static Vector2 DenormalizeTrackPos(CompiledTrack track, Vector2 norm)
         {
-            Rect b = track.outerBounds;
+            Rect b = PositionBounds(track);
             return new Vector2(b.xMin + norm.x * b.width, b.yMin + norm.y * b.height);
         }
 
@@ -791,7 +804,7 @@ namespace PuzzleGlass
             for (int i = 0; i < n; i++)
             {
                 var mb = manualBalls[i];
-                if (mb == null) continue;
+                if (mb == null || mb.queued) continue; // kuyruktaki top pistte yer tutmaz
                 if (mb.hasTrackPos && track != null) wanted[i] = DenormalizeTrackPos(track, mb.trackPos);
                 if (!index.TryGetValue((mb.column, mb.row), out int si) || taken[si]) continue;
                 if (mb.hasTrackPos && track != null && (slots[si].localPos - wanted[i]).sqrMagnitude > snapTolSq) continue;
@@ -804,7 +817,7 @@ namespace PuzzleGlass
             for (int i = 0; i < n; i++)
             {
                 var mb = manualBalls[i];
-                if (result[i] >= 0 || mb == null || !mb.hasTrackPos || track == null) continue;
+                if (result[i] >= 0 || mb == null || mb.queued || !mb.hasTrackPos || track == null) continue;
                 for (int s = 0; s < slots.Count; s++)
                     if (!taken[s]) pairs.Add(((slots[s].localPos - wanted[i]).sqrMagnitude, i, s));
             }
@@ -823,7 +836,7 @@ namespace PuzzleGlass
             int next = 0;
             for (int i = 0; i < n; i++)
             {
-                if (result[i] >= 0 || manualBalls[i] == null) continue;
+                if (result[i] >= 0 || manualBalls[i] == null || manualBalls[i].queued) continue;
                 while (next < slots.Count && taken[next]) next++;
                 if (next >= slots.Count) break;
                 taken[next] = true;
@@ -847,16 +860,34 @@ namespace PuzzleGlass
             if (slots == null || slots.Count == 0 || manualBalls == null || manualBalls.Count == 0) return res;
 
             int[] assign = ResolveManualAssignments(track, slots, manualBalls);
+            // Kuyrukta başlayan toplar (listedeki sırasıyla) önce, piste sığmayanlar sonra beklemeye girer
+            int queuedCount = 0;
             for (int i = 0; i < manualBalls.Count; i++)
             {
                 var mb = manualBalls[i];
-                if (mb == null) continue;
+                if (mb != null && mb.queued) { res.overflowColors.Add(mb.color); queuedCount++; }
+            }
+            for (int i = 0; i < manualBalls.Count; i++)
+            {
+                var mb = manualBalls[i];
+                if (mb == null || mb.queued) continue;
                 if (assign[i] < 0) { res.overflowColors.Add(mb.color); continue; }
                 var s = slots[assign[i]];
                 res.balls.Add(new OrderedPoolLayout.PoolBall { color = mb.color, ballColumn = s.column, row = s.row, localPos = s.localPos });
             }
+            // Kuyruk varsa bant kapasitesi = başta halkada olan top sayısı: kuyruktaki top ancak banttan top ayrılınca girer
+            if (queuedCount > 0 && track != null && track.closedLoopBranch >= 0)
+            {
+                int onRing = 0;
+                for (int i = 0; i < res.balls.Count; i++)
+                    if (track.SampleDistToRingCenter(res.balls[i].localPos) < track.innerHalfWidth) onRing++;
+                res.beltCount = onRing;
+            }
             return res;
         }
+
+        /// <summary>Otomatik eklenen giriş yolu kolunun adı (konum sınırı hesabında hariç tutulur).</summary>
+        public const string EntryRoadName = "Giriş Yolu";
 
         /// <summary>Giriş yolunun boyu (pist ölçeği öncesi birim).</summary>
         private const float EntryRoadLength = 0.78f;
@@ -869,7 +900,7 @@ namespace PuzzleGlass
                 if (ringPts[i].y > ringPts[top].y + 1e-4f || (Mathf.Abs(ringPts[i].y - ringPts[top].y) <= 1e-4f && ringPts[i].x < ringPts[top].x))
                     top = i;
             Vector2 j = ringPts[top];
-            return new GlassTrackBranch("Giriş Yolu", false,
+            return new GlassTrackBranch(EntryRoadName, false,
                 j, j + new Vector2(0f, EntryRoadLength * 0.5f), j + new Vector2(0f, EntryRoadLength));
         }
 
@@ -1188,11 +1219,13 @@ namespace PuzzleGlass
 
             float minX = float.MaxValue, maxX = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
+            int entryRoadPoly = -1;
 
             for (int b = 0; b < branchCount; b++)
             {
                 var br = branches[b];
                 if (br == null || br.points == null || br.points.Count < 2) continue;
+                if (br.name == EntryRoadName && !br.isBridge) entryRoadPoly = track.polylines.Count;
 
                 bool closed = IsClosedPolyline(br.points);
                 List<Vector2> smooth = closed
@@ -1360,6 +1393,21 @@ namespace PuzzleGlass
             float padOut = track.innerHalfWidth + track.wallThickness;
             track.innerBounds = Rect.MinMaxRect(minX - padIn, minY - padIn, maxX + padIn, maxY + padIn);
             track.outerBounds = Rect.MinMaxRect(minX - padOut, minY - padOut, maxX + padOut, maxY + padOut);
+            track.positionBounds = track.outerBounds;
+            if (entryRoadPoly >= 0)
+            {
+                float px0 = float.MaxValue, px1 = float.MinValue, py0 = float.MaxValue, py1 = float.MinValue;
+                for (int b = 0; b < track.polylines.Count; b++)
+                {
+                    if (b == entryRoadPoly) continue;
+                    foreach (var p in track.polylines[b])
+                    {
+                        px0 = Mathf.Min(px0, p.x); px1 = Mathf.Max(px1, p.x);
+                        py0 = Mathf.Min(py0, p.y); py1 = Mathf.Max(py1, p.y);
+                    }
+                }
+                if (px0 <= px1) track.positionBounds = Rect.MinMaxRect(px0 - padOut, py0 - padOut, px1 + padOut, py1 + padOut);
+            }
 
             // Gövde sınırı: halka varsa ona bağlı açık kollar (giriş yolu) hariç
             track.bodyOuterBounds = track.outerBounds;

@@ -402,7 +402,12 @@ namespace PuzzleGlass
             }
 
             // Katman kilidini başlat (kilit kapalı levelde önceki levelin kilidi sıfırlanır)
-            if (Application.isPlaying) TrackCrowdQueue.SetLayerLock(useLayerLock);
+            if (Application.isPlaying)
+            {
+                TrackCrowdQueue.SetLayerLock(useLayerLock);
+                var keepLvl = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.currentLevel : null;
+                TrackCrowdQueue.SetKeepLayers(keepLvl != null && keepLvl.trackKeepLayers && !useLayerLock);
+            }
 
             // Pist: banda sığmayan toplar (gizli kuyruk) girişte bekler, bantta boşluk açıldıkça girer
             if (Application.isPlaying)
