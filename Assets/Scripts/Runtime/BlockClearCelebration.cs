@@ -46,46 +46,50 @@ namespace PuzzleGlass
         };
 
         /// <summary>
-        /// Smooth balloon-pop celebration: crisp expanding shockwave + glow flash + glossy 3D ball-confetti fountain.
+        /// Smooth balloon-pop celebration: crisp expanding shockwaves + soft glow + glossy 3D balls scattering outward.
         /// </summary>
-        public static void PlayBalloonPop(Vector3 worldPos, Color boxColor, PuzzleColor puzzleColor, float size = 1f)
+        public static void PlayBalloonPop(Vector3 worldPos, Color boxColor, PuzzleColor puzzleColor, float size = 1f, int scatterBallCount = 16)
         {
             if (!Application.isPlaying) return;
             EnsureResources();
             EnsureConfettiRunner();
 
             Vector3 pos = new Vector3(worldPos.x, worldPos.y, worldPos.z - 0.58f);
-            PlayFlash(pos, Color.Lerp(boxColor, Color.white, 0.55f), size * 1.18f);
-            PlayRing(pos, boxColor, size, duration: 0.34f, endScale: 2.35f);
-            PlayRing(pos, Color.white, size * 0.72f, duration: 0.24f, endScale: 1.65f);
+            PlayFlash(pos, Color.Lerp(boxColor, Color.white, 0.58f), size * 1.24f);
+            PlayRing(pos, boxColor, size * 1.04f, duration: 0.36f, endScale: 2.50f);
+            PlayRing(pos, Color.white, size * 0.78f, duration: 0.25f, endScale: 1.75f);
 
             if (s_ConfettiRunner != null)
             {
-                // Soft fluffy 4-lobe white cloud puff around the popped box
+                // Soft fluffy 6-lobe cloud puff around the popped box
                 if (s_SoftDot != null)
                 {
-                    Color puffCol = Color.Lerp(Color.white, boxColor, 0.14f);
-                    for (int p = 0; p < 4; p++)
+                    Color puffCol = Color.Lerp(Color.white, boxColor, 0.16f);
+                    const int puffCount = 6;
+                    for (int p = 0; p < puffCount; p++)
                     {
-                        float ang = p * (Mathf.PI * 0.5f) + 0.45f;
-                        Vector3 puffPos = pos + new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), -0.02f) * (0.13f * size);
+                        float ang = (p / (float)puffCount) * Mathf.PI * 2f + 0.35f;
+                        Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+                        Vector3 puffPos = pos + (Vector3)(dir * (0.14f * size)) + new Vector3(0f, 0f, -0.02f);
                         s_ConfettiRunner.SpawnSpriteFx(
                             s_SoftDot,
                             puffPos,
                             puffCol,
-                            startAlpha: 0.72f,
-                            startScale: 0.22f * size,
-                            endScale: Random.Range(0.76f, 0.96f) * size,
+                            startAlpha: 0.68f,
+                            startScale: 0.24f * size,
+                            endScale: Random.Range(0.74f, 0.96f) * size,
                             duration: Random.Range(0.24f, 0.32f),
-                            sortingOrder: 501);
+                            sortingOrder: 501,
+                            velocity: (Vector3)(dir * (0.55f * size)),
+                            drag: 4.5f);
                     }
                 }
 
-                s_ConfettiRunner.SpawnBurst(pos, puzzleColor, size, count: 12);
-                s_ConfettiRunner.SpawnRibbonBurst(pos, puzzleColor, size, count: 14);
+                s_ConfettiRunner.SpawnBurst(pos, puzzleColor, size, count: Mathf.Clamp(scatterBallCount, 12, 24));
+                s_ConfettiRunner.SpawnRibbonBurst(pos, puzzleColor, size, count: 8);
             }
 
-            Vibrate(26);
+            VibrateBoxClear();
         }
 
         public static void Play(Vector3 worldPos, Color color, float size = 1f)
@@ -831,25 +835,35 @@ namespace PuzzleGlass
                     int idx = AcquireIndex();
                     ConfettiBall cb = _pool[idx];
 
-                    float baseAngle = (i / (float)count) * Mathf.PI * 2f + Random.Range(-0.22f, 0.22f);
-                    float speed = Random.Range(1.9f, 3.65f) * size;
-                    Vector2 offset = new Vector2(Mathf.Cos(baseAngle), Mathf.Sin(baseAngle)) * Random.Range(0.05f, 0.16f);
+                    float baseAngle = (i / (float)count) * Mathf.PI * 2f + Random.Range(-0.18f, 0.18f);
+                    bool isHighArcTier = (i % 3 == 0);
+                    float speed = isHighArcTier
+                        ? Random.Range(1.55f, 2.70f) * size
+                        : Random.Range(2.35f, 3.95f) * size;
+                    float upLift = isHighArcTier
+                        ? Random.Range(1.05f, 1.70f) * size
+                        : Random.Range(0.55f, 1.15f) * size;
+                    float zVel = isHighArcTier
+                        ? Random.Range(-0.52f, -0.15f)
+                        : Random.Range(-0.30f, 0.12f);
+
+                    Vector2 offset = new Vector2(Mathf.Cos(baseAngle), Mathf.Sin(baseAngle)) * Random.Range(0.05f, 0.17f);
 
                     cb.tr.position = new Vector3(center.x + offset.x, center.y + offset.y, center.z + Random.Range(-0.18f, 0.04f));
                     cb.tr.rotation = Random.rotation;
-                    cb.vel = new Vector3(Mathf.Cos(baseAngle) * speed, Mathf.Sin(baseAngle) * speed + Random.Range(0.55f, 1.15f) * size, Random.Range(-0.35f, 0.15f));
+                    cb.vel = new Vector3(Mathf.Cos(baseAngle) * speed, Mathf.Sin(baseAngle) * speed + upLift, zVel);
                     cb.spinAxis = Random.onUnitSphere;
-                    cb.spinSpeed = Random.Range(90f, 220f);
-                    cb.baseScale = Random.Range(0.056f, 0.108f) * size;
+                    cb.spinSpeed = Random.Range(95f, 230f);
+                    cb.baseScale = Random.Range(0.078f, 0.132f) * size;
                     cb.age = 0f;
-                    cb.lifetime = Random.Range(0.58f, 0.84f);
-                    cb.drag = Random.Range(2.2f, 3.0f);
-                    cb.gravity = Random.Range(4.2f, 5.8f) * size;
+                    cb.lifetime = Random.Range(0.64f, 0.92f);
+                    cb.drag = Random.Range(2.5f, 3.3f);
+                    cb.gravity = Random.Range(3.6f, 4.9f) * size;
                     cb.active = true;
 
-                    PuzzleColor chosenCol = (i % 2 == 0 || i < 4)
-                        ? mainColor
-                        : s_PartyConfettiColors[Random.Range(0, s_PartyConfettiColors.Length)];
+                    PuzzleColor chosenCol = (i % 6 == 5)
+                        ? PuzzleColor.White
+                        : mainColor;
                     int variant = i % 3;
                     BallObjectPool.ApplyBallPropertyBlock(cb.mr, chosenCol, variant, wobblePhase: i * 0.45f);
 
@@ -910,17 +924,19 @@ namespace PuzzleGlass
                     cb.tr.Rotate(cb.spinAxis, cb.spinSpeed * dt, Space.World);
 
                     float scaleEnv;
-                    const float fadeInDur = 0.055f;
-                    float fadeOutDur = Mathf.Min(0.28f, cb.lifetime * 0.42f);
+                    const float fadeInDur = 0.085f;
+                    float fadeOutDur = Mathf.Min(0.30f, cb.lifetime * 0.42f);
                     if (cb.age < fadeInDur)
                     {
                         float u = cb.age / fadeInDur;
-                        scaleEnv = u * u * (3f - 2f * u);
+                        float inv = 1f - u;
+                        // Smooth overshoot pop-in (0 -> ~1.12 -> 1.0)
+                        scaleEnv = Mathf.Max(0f, 1f + Mathf.Sin(u * Mathf.PI) * 0.18f - inv * inv * inv);
                     }
                     else if (cb.age > cb.lifetime - fadeOutDur)
                     {
                         float u = Mathf.Clamp01((cb.lifetime - cb.age) / fadeOutDur);
-                        scaleEnv = u * u;
+                        scaleEnv = u * u * (3f - 2f * u);
                     }
                     else
                     {
@@ -1074,30 +1090,107 @@ namespace PuzzleGlass
 
         // ---------- Titreşim ----------
 
-        /// <summary>Kısa titreşim. Android'de milisaniye ayarlı; iOS'ta sistem titreşimi.</summary>
-        public static void Vibrate(long milliseconds)
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetHapticTimers()
+        {
+            s_LastTickTime = -1f;
+            s_LastSlotPlaceTime = -1f;
+            s_LastBoxClearTime = -1f;
+        }
+
+        /// <summary>Art arda iki tık arasındaki en kısa süre (sn): hızlı akışta telefon sürekli vızıldamasın.</summary>
+        public static float TickMinInterval = 0.09f;
+        private static float s_LastTickTime = -1f;
+        private static float s_LastSlotPlaceTime = -1f;
+        private static float s_LastBoxClearTime = -1f;
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static AndroidJavaObject s_Vibrator;
+        private static AndroidJavaClass s_EffectClass;
+        private static AndroidJavaObject s_TickEffect;
+        private static AndroidJavaObject s_SlotPlaceEffect;
+        private static AndroidJavaObject s_BoxClearEffect;
+        private static int s_AndroidSdk = -1;
+        private static bool s_VibratorInitDone;
+
+        private static bool EnsureAndroidVibrator()
+        {
+            if (s_VibratorInitDone) return s_Vibrator != null;
+            s_VibratorInitDone = true;
+            try
+            {
+                using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
+                    s_AndroidSdk = version.GetStatic<int>("SDK_INT");
+
+                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                    s_Vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
+
+                if (s_Vibrator != null && s_AndroidSdk >= 26)
+                {
+                    s_EffectClass = new AndroidJavaClass("android.os.VibrationEffect");
+                    s_TickEffect = s_AndroidSdk >= 29
+                        ? s_EffectClass.CallStatic<AndroidJavaObject>("createPredefined", 2) // EFFECT_TICK
+                        : s_EffectClass.CallStatic<AndroidJavaObject>("createOneShot", 12L, 70);
+                    s_SlotPlaceEffect = s_EffectClass.CallStatic<AndroidJavaObject>("createOneShot", 14L, 90);
+                    s_BoxClearEffect = s_EffectClass.CallStatic<AndroidJavaObject>("createOneShot", 20L, 118);
+                }
+            }
+            catch (System.Exception)
+            {
+                ResetAndroidVibratorCache();
+            }
+            return s_Vibrator != null;
+        }
+
+        private static void ResetAndroidVibratorCache()
+        {
+            s_Vibrator = null;
+            s_EffectClass = null;
+            s_TickEffect = null;
+            s_SlotPlaceEffect = null;
+            s_BoxClearEffect = null;
+            s_VibratorInitDone = false;
+        }
+
+        private static void PlayCachedAndroidEffect(AndroidJavaObject cachedEffect, long legacyMilliseconds)
+        {
+            try
+            {
+                if (!EnsureAndroidVibrator()) return;
+                if (s_AndroidSdk >= 26)
+                {
+                    if (cachedEffect != null) s_Vibrator.Call("vibrate", cachedEffect);
+                }
+                else if (legacyMilliseconds > 0)
+                {
+                    s_Vibrator.Call("vibrate", legacyMilliseconds);
+                }
+            }
+            catch (System.Exception)
+            {
+                ResetAndroidVibratorCache();
+            }
+        }
+#endif
+
+        /// <summary>Kısa ve hafif titreşim. Android'de milisaniye ve genlik (1..255) ayarlıdır.</summary>
+        public static void Vibrate(long milliseconds, int amplitude = 115)
         {
             if (!HapticsEnabled) return;
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
-                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
-                using (var vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator"))
+                if (!EnsureAndroidVibrator()) return;
+                if (s_AndroidSdk >= 26 && s_EffectClass != null)
                 {
-                    if (vibrator == null) return;
-                    int sdk;
-                    using (var version = new AndroidJavaClass("android.os.Build$VERSION")) sdk = version.GetStatic<int>("SDK_INT");
-                    if (sdk >= 26)
-                    {
-                        using (var effectClass = new AndroidJavaClass("android.os.VibrationEffect"))
-                        using (var effect = effectClass.CallStatic<AndroidJavaObject>("createOneShot", milliseconds, -1))
-                            vibrator.Call("vibrate", effect);
-                    }
-                    else
-                    {
-                        vibrator.Call("vibrate", milliseconds);
-                    }
+                    int amp = amplitude < 0 ? -1 : Mathf.Clamp(amplitude, 1, 255);
+                    using (var effect = s_EffectClass.CallStatic<AndroidJavaObject>("createOneShot", milliseconds, amp))
+                        s_Vibrator.Call("vibrate", effect);
+                }
+                else
+                {
+                    s_Vibrator.Call("vibrate", milliseconds);
                 }
             }
             catch (System.Exception)
@@ -1109,17 +1202,39 @@ namespace PuzzleGlass
 #endif
         }
 
-        /// <summary>Art arda iki tık arasındaki en kısa süre (sn): hızlı akışta telefon sürekli vızıldamasın.</summary>
-        public static float TickMinInterval = 0.09f;
-        private static float s_LastTickTime = -1f;
+        /// <summary>
+        /// Kutu slota yerleştiğinde kısa, hafif ve net dokunsal geri bildirim.
+        /// Top toplama tiklerinden bağımsız zamanlayıcı kullanır; böylece top akışı sırasında yutulmaz.
+        /// </summary>
+        public static void VibrateSlotPlace()
+        {
+            if (!HapticsEnabled) return;
+            float now = Time.unscaledTime;
+            if (now - s_LastSlotPlaceTime < 0.04f) return;
+            s_LastSlotPlaceTime = now;
 #if UNITY_ANDROID && !UNITY_EDITOR
-        private static AndroidJavaObject s_Vibrator;
-        private static AndroidJavaObject s_TickEffect;
-        private static bool s_TickInitDone;
+            PlayCachedAndroidEffect(s_SlotPlaceEffect, 14L);
 #endif
+        }
 
         /// <summary>
-        /// Top kutuya girdiğinde çok kısa, hafif "tık" titreşimi (kutu kapanışındaki titreşimden çok daha yumuşak).
+        /// Kutu dolup patlayarak yok olurken hafif ama hissedilir kutlama titreşimi.
+        /// </summary>
+        public static void VibrateBoxClear()
+        {
+            if (!HapticsEnabled) return;
+            float now = Time.unscaledTime;
+            if (now - s_LastBoxClearTime < 0.05f) return;
+            s_LastBoxClearTime = now;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            PlayCachedAndroidEffect(s_BoxClearEffect, 18L);
+#elif UNITY_IOS && !UNITY_EDITOR
+            Handheld.Vibrate();
+#endif
+        }
+
+        /// <summary>
+        /// Top kutuya girdiğinde çok kısa, hafif "tık" titreşimi (slot/kutu kapanışından daha yumuşak).
         /// Android 10+ sistemin hazır EFFECT_TICK'ini, daha eskilerde 12 ms'lik düşük genlikli titreşimi kullanır.
         /// Titreşim nesneleri bir kez alınıp saklanır (her topta JNI ile yeniden aranmaz). iOS'ta uzun sistem
         /// titreşimi olduğu için kullanılmaz.
@@ -1131,31 +1246,7 @@ namespace PuzzleGlass
             if (now - s_LastTickTime < TickMinInterval) return;
             s_LastTickTime = now;
 #if UNITY_ANDROID && !UNITY_EDITOR
-            try
-            {
-                if (!s_TickInitDone)
-                {
-                    s_TickInitDone = true;
-                    int sdk;
-                    using (var version = new AndroidJavaClass("android.os.Build$VERSION")) sdk = version.GetStatic<int>("SDK_INT");
-                    if (sdk < 26) return; // eski cihazlarda genlik ayarı yok: tık yerine titreşim vermeyelim
-                    using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                    using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
-                        s_Vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
-                    using (var effectClass = new AndroidJavaClass("android.os.VibrationEffect"))
-                    {
-                        s_TickEffect = sdk >= 29
-                            ? effectClass.CallStatic<AndroidJavaObject>("createPredefined", 2) // EFFECT_TICK
-                            : effectClass.CallStatic<AndroidJavaObject>("createOneShot", 12L, 70);
-                    }
-                }
-                if (s_Vibrator != null && s_TickEffect != null) s_Vibrator.Call("vibrate", s_TickEffect);
-            }
-            catch (System.Exception)
-            {
-                s_Vibrator = null;
-                s_TickEffect = null;
-            }
+            PlayCachedAndroidEffect(s_TickEffect, 0L);
 #endif
         }
     }

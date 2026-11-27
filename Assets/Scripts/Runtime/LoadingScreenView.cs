@@ -1,4 +1,5 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
@@ -25,8 +26,11 @@ namespace PuzzleGlass
         private static readonly Color LogoDepth = new Color(0.19f, 0.10f, 0.47f, 1f);
         private static readonly Color FillLeft = new Color(0.56f, 0.24f, 0.98f, 1f);
         private static readonly Color FillRight = new Color(0.36f, 0.12f, 0.80f, 1f);
-        private static readonly Color LabelColor = new Color(0.36f, 0.18f, 0.72f, 1f);
-        private static readonly Color PercentColor = new Color(0.28f, 0.12f, 0.64f, 1f);
+        private static readonly Color StatusBottomNormal = new Color(0.86f, 0.82f, 1.00f, 1f);
+        private static readonly Color StatusOutlineNormal = new Color(0.20f, 0.10f, 0.46f, 1f);
+        private static readonly Color StatusTopFail = new Color(1.00f, 0.93f, 0.94f, 1f);
+        private static readonly Color StatusBottomFail = new Color(1.00f, 0.44f, 0.54f, 1f);
+        private static readonly Color StatusOutlineFail = new Color(0.34f, 0.05f, 0.14f, 1f);
 
         private const float BarW = 660f;
         private const float BarH = 60f;
@@ -50,7 +54,10 @@ namespace PuzzleGlass
         private RectTransform _shine;
         private Image _fillGloss;
         private RectTransform _percentRect;
-        private Text _percentText;
+        private TextMeshProUGUI _statusLabel;
+        private Material _statusMat;
+        private TextMeshProUGUI _percentText;
+        private Material _percentMat;
         private RectTransform _completeRing;
         private Image _completeRingImg;
         private float _fillFullWidth;
@@ -175,15 +182,14 @@ namespace PuzzleGlass
             _barRoot = (RectTransform)barGo.transform;
             Anchor(_barRoot, new Vector2(0.5f, 0.37f), new Vector2(BarW, BarH), Vector2.zero);
 
-            // Üst satır: solda "LOADING", sağda gerçek yüzde
-            var label = NewText("Label", _barRoot, font, "LOADING", 30, LabelColor);
-            label.alignment = TextAnchor.MiddleLeft;
-            Anchor(label.rectTransform, new Vector2(0f, 1f), new Vector2(360f, 50f), new Vector2(190f, 42f));
-            _percentText = NewText("Percent", _barRoot, font, "0%", 46, PercentColor);
-            _percentText.alignment = TextAnchor.MiddleRight;
+            // Bar üstünde ortalanmış kalın konturlu durum yazısı ("LOADING" veya "LEVEL FAILED")
+            _statusLabel = CreateStyledTmp("Label", _barRoot, "LOADING", 54f, out _statusMat);
+            Anchor(_statusLabel.rectTransform, new Vector2(0.5f, 1f), new Vector2(680f, 76f), new Vector2(0f, 58f));
+
+            // Bar altında ortalanmış kalın konturlu yüzde ("0%" .. "100%")
+            _percentText = CreateStyledTmp("Percent", _barRoot, "0%", 42f, out _percentMat);
             _percentRect = _percentText.rectTransform;
-            _percentRect.pivot = new Vector2(1f, 0.5f);
-            Anchor(_percentRect, new Vector2(1f, 1f), new Vector2(240f, 60f), new Vector2(-12f, 44f));
+            Anchor(_percentRect, new Vector2(0.5f, 0f), new Vector2(260f, 60f), new Vector2(0f, -46f));
 
             // Yumuşak gölge + ince lavanta kenar + beyaz kapsül zemin (pill sprite yüksekliğe göre tam yuvarlak)
             var shadow = NewPill("Shadow", _barRoot, pill, new Color(0.42f, 0.33f, 0.86f, 0.22f), BarH + 14f);
@@ -227,7 +233,23 @@ namespace PuzzleGlass
 
         // ------------------------------------------------------------------ dış API
 
-        /// <summary>Ekran gösterilirken: bar sıfırlanır, logo pop ile girer.</summary>
+        public void SetStatus(string labelText, bool isFailed = false)
+        {
+            if (_statusLabel == null) return;
+            _statusLabel.text = string.IsNullOrEmpty(labelText) ? "LOADING" : labelText;
+            if (isFailed)
+            {
+                _statusLabel.colorGradient = new VertexGradient(StatusTopFail, StatusTopFail, StatusBottomFail, StatusBottomFail);
+                ApplyTmpOutlineColors(_statusMat, StatusOutlineFail);
+            }
+            else
+            {
+                _statusLabel.colorGradient = new VertexGradient(Color.white, Color.white, StatusBottomNormal, StatusBottomNormal);
+                ApplyTmpOutlineColors(_statusMat, StatusOutlineNormal);
+            }
+        }
+
+        /// <summary>Ekran gösterilirken: bar sıfırlanır, logo ve başlık pop ile girer.</summary>
         public void PlayIntro()
         {
             _time = 0f;
@@ -236,6 +258,12 @@ namespace PuzzleGlass
             SetProgress(0f);
             _barRoot.DOKill(true);
             _barRoot.localScale = Vector3.one;
+            if (_statusLabel != null)
+            {
+                _statusLabel.rectTransform.DOKill(true);
+                _statusLabel.rectTransform.localScale = Vector3.one * 0.80f;
+                _statusLabel.rectTransform.DOScale(1f, 0.36f).SetEase(Ease.OutBack).SetUpdate(true);
+            }
             _logo.DOKill(true);
             _logoGroup.DOKill(true);
             _logo.localScale = Vector3.one * 0.72f;
@@ -348,6 +376,64 @@ namespace PuzzleGlass
             float border = pill != null ? pill.border.x : 22f;
             img.pixelsPerUnitMultiplier = Mathf.Max(0.05f, border / Mathf.Max(1f, height * 0.5f));
             return img;
+        }
+
+        private static TextMeshProUGUI CreateStyledTmp(string name, Transform parent, string text, float fontSize, out Material matOut)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = fontSize;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.color = Color.white;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.textWrappingMode = TextWrappingModes.NoWrap;
+            tmp.overflowMode = TextOverflowModes.Overflow;
+            tmp.characterSpacing = 3f;
+            tmp.extraPadding = true;
+            tmp.raycastTarget = false;
+            tmp.enableVertexGradient = true;
+            tmp.colorGradient = new VertexGradient(Color.white, Color.white, StatusBottomNormal, StatusBottomNormal);
+
+            matOut = null;
+            if (tmp.fontSharedMaterial != null)
+            {
+                var mat = new Material(tmp.fontSharedMaterial) { name = $"Loading_{name}" };
+                if (mat.HasProperty("_FaceDilate")) mat.SetFloat("_FaceDilate", 0.6f);
+                mat.EnableKeyword("OUTLINE_ON");
+                if (mat.HasProperty("_OutlineWidth")) mat.SetFloat("_OutlineWidth", 0.24f);
+                if (mat.HasProperty("_OutlineSoftness")) mat.SetFloat("_OutlineSoftness", 0f);
+                if (mat.HasProperty("_UnderlayColor"))
+                {
+                    mat.EnableKeyword("UNDERLAY_ON");
+                    mat.SetFloat("_UnderlayOffsetX", 0f);
+                    mat.SetFloat("_UnderlayOffsetY", -0.9f);
+                    mat.SetFloat("_UnderlayDilate", 0.5f);
+                    mat.SetFloat("_UnderlaySoftness", 0.1f);
+                }
+                ApplyTmpOutlineColors(mat, StatusOutlineNormal);
+                tmp.fontSharedMaterial = mat;
+                tmp.UpdateMeshPadding();
+                matOut = mat;
+            }
+            return tmp;
+        }
+
+        private static void ApplyTmpOutlineColors(Material mat, Color outline)
+        {
+            if (mat == null) return;
+            if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", outline);
+            if (mat.HasProperty("_UnderlayColor"))
+            {
+                mat.SetColor("_UnderlayColor", new Color(outline.r * 0.6f, outline.g * 0.6f, outline.b * 0.6f, 0.72f));
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_statusMat != null) Destroy(_statusMat);
+            if (_percentMat != null) Destroy(_percentMat);
         }
 
         private static Text NewText(string name, Transform parent, Font font, string text, int size, Color color)

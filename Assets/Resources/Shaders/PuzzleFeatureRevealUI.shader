@@ -7,9 +7,13 @@ Shader "PuzzleGlass/FeatureRevealUI"
 
         _RevealProgress ("Reveal Progress (0..1)", Range(0, 1)) = 0.6
         _ContentBounds ("Content V Bounds (minV, maxV, 0, 0)", Vector) = (0.12, 0.88, 0, 0)
-        _SilhouetteColor ("Locked Silhouette Color", Color) = (0.04, 0.04, 0.07, 1.0)
-        _EdgeGlowColor ("Reveal Edge Glow Color", Color) = (0.72, 0.92, 1.0, 0.9)
-        _EdgeSoftness ("Edge Softness", Range(0.001, 0.05)) = 0.009
+        _SilhouetteColor ("Locked Silhouette Color", Color) = (0.06, 0.11, 0.26, 1.0)
+        _SilhouetteRim ("Silhouette Detail Boost", Range(0, 0.35)) = 0.16
+        _EdgeGlowColor ("Reveal Edge Glow Color", Color) = (0.76, 0.95, 1.0, 1.0)
+        _EdgeSoftness ("Edge Softness", Range(0.001, 0.05)) = 0.011
+        _WaveAmp ("Wave Amplitude", Range(0, 0.04)) = 0.014
+        _WaveFreq ("Wave Frequency", Range(1, 24)) = 10.0
+        _WaveSpeed ("Wave Speed", Range(0, 12)) = 4.6
 
         _StencilComp ("Stencil Comparison", Float) = 8
         _Stencil ("Stencil ID", Float) = 0
@@ -64,8 +68,12 @@ Shader "PuzzleGlass/FeatureRevealUI"
                 float _RevealProgress;
                 float4 _ContentBounds;
                 float4 _SilhouetteColor;
+                float _SilhouetteRim;
                 float4 _EdgeGlowColor;
                 float _EdgeSoftness;
+                float _WaveAmp;
+                float _WaveFreq;
+                float _WaveSpeed;
             CBUFFER_END
 
             struct Attributes
@@ -103,7 +111,8 @@ Shader "PuzzleGlass/FeatureRevealUI"
                 float vNorm = saturate((IN.uv.y - minV) / (maxV - minV));
 
                 half3 unlockedRgb = tex.rgb * IN.color.rgb;
-                half3 lockedRgb = _SilhouetteColor.rgb * IN.color.rgb;
+                half lum = dot(unlockedRgb, half3(0.299h, 0.587h, 0.114h));
+                half3 lockedRgb = (_SilhouetteColor.rgb + unlockedRgb * (half)_SilhouetteRim + lum * (half)(_SilhouetteRim * 0.35)) * IN.color.rgb;
 
                 if (progress >= 0.999)
                 {
@@ -114,14 +123,21 @@ Shader "PuzzleGlass/FeatureRevealUI"
                     return half4(lockedRgb, alpha);
                 }
 
+                // Gentle liquid wave along the rising reveal line (smoothly flattens near 0% and 100%)
+                float waveEnvelope = sin(progress * 3.14159265);
+                float wave = sin(IN.uv.x * _WaveFreq + _Time.y * _WaveSpeed) * _WaveAmp * waveEnvelope;
+                float fillLevel = saturate(progress + wave);
+
                 float soft = max(0.001, _EdgeSoftness);
-                float revealMask = 1.0 - smoothstep(progress - soft, progress + soft, vNorm);
+                float revealMask = 1.0 - smoothstep(fillLevel - soft, fillLevel + soft, vNorm);
                 half3 baseRgb = lerp(lockedRgb, unlockedRgb, (half)revealMask);
 
-                // Crisp subtle glow right along the rising fill line
-                float distToLine = abs(vNorm - progress);
-                float edgeGlow = exp(-pow(distToLine / 0.009, 2.0)) * _EdgeGlowColor.a;
-                half3 finalRgb = lerp(baseRgb, _EdgeGlowColor.rgb, (half)saturate(edgeGlow * 0.42));
+                // Crisp luminous horizon + soft upper sheen right along the rising fill line
+                float distToLine = abs(vNorm - fillLevel);
+                float edgeCore = exp(-pow(distToLine / 0.011, 2.0));
+                float edgeHalo = exp(-pow(distToLine / 0.036, 2.0));
+                half glowStrength = (half)saturate((edgeCore * 0.72 + edgeHalo * 0.24) * _EdgeGlowColor.a);
+                half3 finalRgb = lerp(baseRgb, _EdgeGlowColor.rgb, glowStrength);
 
                 return half4(finalRgb, alpha);
             }

@@ -1484,8 +1484,12 @@ namespace PuzzleGlass
             ApplyBoxPropertyBlock();
         }
 
-        public int ClaimNextSocketIndex()
+        public int ClaimNextSocketIndex() => ClaimNextSocketIndex(out _);
+
+        public int ClaimNextSocketIndex(out bool isFinalBall)
         {
+            int targetTotal = Mathf.Max(1, initialCount);
+            isFinalBall = (_nextIncomingSocketCounter + 1 >= targetTotal) || (remainingCount <= 1);
             int modCount = Mathf.Max(1, GetSocketModCount());
             int idx;
             if (IsHollowPitStyle && initialCount > modCount && initialCount > 0)
@@ -2172,18 +2176,43 @@ namespace PuzzleGlass
                 }
             }
 
-            if (Application.isPlaying && Time.unscaledTime - _lastLandingPopVfxTime >= 0.045f)
+            bool isFinalBall = !isFilledBox && remainingCount <= 1;
+
+            if (Application.isPlaying && (isFinalBall || Time.unscaledTime - _lastLandingPopVfxTime >= 0.045f))
             {
                 _lastLandingPopVfxTime = Time.unscaledTime;
                 Vector3 popPos = (ball != null)
                     ? ball.transform.position
                     : GetSocketWorldPosition(socketIndex);
                 float boxScale = (bodyPivot != null) ? bodyPivot.lossyScale.x : transform.lossyScale.x;
-                BlockClearCelebration.PlayBoxBallLandingPop(popPos, PuzzleColorPalette.GetPrimaryColor(colorType), boxScale);
+                Color boxCol = PuzzleColorPalette.GetPrimaryColor(colorType);
+                BlockClearCelebration.PlayBoxBallLandingPop(popPos, boxCol, isFinalBall ? boxScale * 1.35f : boxScale);
+                if (isFinalBall)
+                {
+                    BlockClearCelebration.PlaySocketSeatRing(popPos, Color.Lerp(boxCol, Color.white, 0.6f), Mathf.Max(0.14f, 0.28f * boxScale), 0.90f);
+                }
+            }
+
+            if (isFinalBall && IsHollowPitStyle && ShowsCavityBalls && Application.isPlaying)
+            {
+                TriggerPitCompletionRipple();
             }
 
             PlaySmoothGulpWave();
             DecrementCounterAndCheckComplete();
+        }
+
+        private void TriggerPitCompletionRipple()
+        {
+            if (_pitSim == null) return;
+            JostlePitBalls(new Vector2(0f, 1.35f), wakeAll: true);
+            for (int i = 0; i < _pitSim.Length; i++)
+            {
+                if (_pitSim[i].active)
+                {
+                    _pitSim[i].impactSquash = Mathf.Max(_pitSim[i].impactSquash, 0.20f);
+                }
+            }
         }
 
         private void PlaySmoothGulpWave()
@@ -2524,6 +2553,16 @@ namespace PuzzleGlass
                 if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
                 _isCompleted = true;
                 StagingGridBoard.Instance?.MarkGridDirty();
+
+                if (!isFilledBox && Application.isPlaying && badgeTransform != null && counterText != null)
+                {
+                    badgeTransform.gameObject.SetActive(true);
+                    counterText.text = "0";
+                    counterText.transform.DOKill(true);
+                    counterText.transform.localScale = Vector3.one;
+                    counterText.transform.DOPunchScale(Vector3.one * 0.50f, 0.22f, 6, 0.55f);
+                }
+
                 if (ShowsCavityBalls && !isFilledBox)
                 {
                     // Ensure all sockets / pit balls visibly hold settled balls on completion
@@ -2599,24 +2638,41 @@ namespace PuzzleGlass
                 transparentLidTransform.gameObject.SetActive(false);
             }
 
-            // Direkt balon patlaması: bekleme / eğilip sallanma olmadan anlık şişme ve patlayarak yok olma
-            _mpbDragHighlight = 1.85f;
-            ApplyBoxPropertyBlock();
+            // Smooth patlama animasyonu: aniden yok olmadan önce yumuşakça küçülür, gerilerek büyür, kısa bir tepe anından sonra patlar
             if (_shadowRenderer != null) _shadowRenderer.enabled = false;
 
+            if (ShowsCavityBalls && !isFilledBox && !IsHollowPitStyle)
+            {
+                StartCoroutine(PlaySocketCompletionWaveRoutine());
+            }
+
+            Transform animTarget = bodyPivot != null ? bodyPivot : transform;
+            Vector3 baseS = bodyPivot != null ? _originalBodyScale : transform.localScale;
+            animTarget.DOKill(false);
+
+            const float shrinkDur = 0.19f;
+            const float swellDur = 0.23f;
+            const float peakHoldDur = 0.045f;
+
+            Sequence popSeq = DOTween.Sequence();
+            popSeq.Append(animTarget.DOScale(new Vector3(baseS.x * 0.80f, baseS.y * 0.76f, baseS.z * 0.88f), shrinkDur).SetEase(Ease.InOutQuad));
             if (bodyPivot != null)
             {
-                bodyPivot.DOKill(false);
-                bodyPivot.localPosition = Vector3.zero;
-                bodyPivot.localRotation = Quaternion.identity;
-                bodyPivot.localScale = _originalBodyScale;
-                yield return bodyPivot.DOScale(_originalBodyScale * 1.24f, 0.045f).SetEase(Ease.OutQuad).WaitForCompletion();
+                popSeq.Join(bodyPivot.DOLocalMove(new Vector3(0f, -0.024f, 0f), shrinkDur).SetEase(Ease.InOutQuad));
+                popSeq.Join(bodyPivot.DOLocalRotate(Vector3.zero, shrinkDur * 0.65f).SetEase(Ease.OutSine));
             }
-            else
+            popSeq.Join(DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, 0.55f, shrinkDur).SetEase(Ease.InOutSine));
+
+            popSeq.Append(animTarget.DOScale(new Vector3(baseS.x * 1.30f, baseS.y * 1.26f, baseS.z * 1.16f), swellDur).SetEase(Ease.InOutSine));
+            if (bodyPivot != null)
             {
-                Vector3 baseS = transform.localScale;
-                yield return transform.DOScale(baseS * 1.24f, 0.045f).SetEase(Ease.OutQuad).WaitForCompletion();
+                popSeq.Join(bodyPivot.DOLocalMoveY(0.030f, swellDur).SetEase(Ease.InOutSine));
             }
+            popSeq.Join(DOTween.To(() => _mpbDragHighlight, v => { _mpbDragHighlight = v; ApplyBoxPropertyBlock(); }, 1.85f, swellDur).SetEase(Ease.InQuad));
+
+            popSeq.Append(animTarget.DOScale(new Vector3(baseS.x * 1.34f, baseS.y * 1.30f, baseS.z * 1.18f), peakHoldDur).SetEase(Ease.OutQuad));
+            popSeq.SetLink(gameObject, LinkBehaviour.KillOnDisable);
+            yield return popSeq.WaitForCompletion();
 
             PuzzleSoundManager.Instance?.PlayBoxComplete();
 
@@ -2629,14 +2685,15 @@ namespace PuzzleGlass
                 SlotPlatform freedSlot = assignedSlot;
                 assignedSlot.DetachMonster();
                 assignedSlot = null;
-                freedSlot.PlayFreedPulse();
+                freedSlot.PlayFreedPulse(0.24f);
                 PlayReadyHopOnPlayableGridBoxes(this);
             }
             OnTargetReached?.Invoke(this);
 
             _pitAnyActive = false;
             Vector3 popCenter = (bodyPivot != null) ? bodyPivot.position : transform.position;
-            BlockClearCelebration.PlayBalloonPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), colorType, 1.18f);
+            int scatterCount = Mathf.Clamp(initialCount > 0 ? initialCount : 14, 14, 22);
+            BlockClearCelebration.PlayBalloonPop(popCenter, PuzzleColorPalette.GetPrimaryColor(colorType), colorType, 1.20f, scatterCount);
 
             transform.DOKill(false);
             if (bodyPivot != null) bodyPivot.DOKill(false);
@@ -2656,6 +2713,11 @@ namespace PuzzleGlass
                 bodyPivot.localPosition = Vector3.zero;
                 bodyPivot.localRotation = Quaternion.identity;
                 bodyPivot.localScale = _originalBodyScale;
+            }
+
+            if (badgeTransform != null)
+            {
+                badgeTransform.gameObject.SetActive(false);
             }
 
             isCollectingInGrid = false;
@@ -2838,6 +2900,7 @@ namespace PuzzleGlass
 
             // 3. Attach to slot (locked in place!) & start collecting bottom-most available balls
             slot.AttachMonster(this);
+            BlockClearCelebration.VibrateSlotPlace();
 
             if (BallCollectionController.Instance != null)
             {
@@ -3215,14 +3278,20 @@ namespace PuzzleGlass
             textObj.transform.localPosition = new Vector3(0.17f, -0.17f, -0.05f);
 
             countLabel = textObj.AddComponent<TextMeshPro>();
+            if (counterText != null && counterText.font != null)
+            {
+                countLabel.font = counterText.font;
+            }
             countLabel.alignment = TextAlignmentOptions.Center;
-            countLabel.fontSize = 2.8f;
+            countLabel.fontSize = 2.9f;
             countLabel.fontStyle = FontStyles.Bold;
             countLabel.color = Color.white;
             countLabel.text = remainingLockKeys.ToString();
             countLabel.rectTransform.sizeDelta = new Vector2(0.5f, 0.5f);
             countLabel.sortingOrder = 16;
-            ApplyTmpOutline(countLabel, GetCarrierDarkColor(colorType), 0.30f);
+            countLabel.extraPadding = true;
+            countLabel.characterSpacing = -4f;
+            ApplyBoxNumberStyle(countLabel, new Color(0.04f, 0.05f, 0.10f, 1f));
             textObj.SetActive(lockKeyCount > 1);
 
             return root;

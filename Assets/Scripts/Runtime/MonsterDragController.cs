@@ -531,7 +531,7 @@ namespace PuzzleGlass
                 placedMonster.PlaySlotLandingSquash();
                 BlockClearCelebration.PlaySlotLandingBackFx(slotPlacePos, boxColor, fxScale);
                 PuzzleSoundManager.Instance?.PlayBallTap(0.45f);
-                BlockClearCelebration.VibrateTick();
+                BlockClearCelebration.VibrateSlotPlace();
 
                 TutorialOverlay.Instance?.NotifySpotlightBlockPlaced(placedMonster);
                 OnMonsterPlaced?.Invoke(placedMonster, targetSlot);

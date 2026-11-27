@@ -201,7 +201,7 @@ namespace PuzzleGlass
         public void PlayBallTransfer(bool isFinalBallInPiece)
         {
             if (isMuted || !Application.isPlaying) return;
-            if (Time.unscaledTime - _lastPopTime < 0.036f) return;
+            if (!isFinalBallInPiece && Time.unscaledTime - _lastPopTime < 0.036f) return;
 
             if (Time.unscaledTime - _lastPopTime > 0.52f)
             {
@@ -216,8 +216,12 @@ namespace PuzzleGlass
             float popPitch = 0.94f + _popChainCount * 0.038f;
             float musicalRatio = PentatonicPitchScale[_popChainCount];
 
-            PlayClipWithPitch(_clipBallPop, 0.44f, popPitch);
-            PlayClipWithPitch(_clipTransferBead, isFinalBallInPiece ? 0.38f : 0.30f, isFinalBallInPiece ? musicalRatio * 1.125f : musicalRatio);
+            PlayClipWithPitch(_clipBallPop, isFinalBallInPiece ? 0.50f : 0.44f, popPitch);
+            PlayClipWithPitch(_clipTransferBead, isFinalBallInPiece ? 0.42f : 0.30f, isFinalBallInPiece ? musicalRatio * 1.125f : musicalRatio);
+            if (isFinalBallInPiece)
+            {
+                PlayClipWithPitch(_clipTransferBead, 0.24f, musicalRatio * 1.5f);
+            }
         }
 
         public void PlayGridSlide()

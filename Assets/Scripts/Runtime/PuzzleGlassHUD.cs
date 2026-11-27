@@ -608,7 +608,7 @@ namespace PuzzleGlass
 
             if (_featureShowcase != null) _featureShowcase.Hide();
 
-            bool show = (completed && !pourTransition) || failed;
+            bool show = completed && !pourTransition;
             _resultOverlay.SetActive(show);
 
             if (!show)

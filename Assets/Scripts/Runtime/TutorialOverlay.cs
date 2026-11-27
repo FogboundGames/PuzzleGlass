@@ -234,40 +234,8 @@ namespace PuzzleGlass
                 }
             }
 
-            // 2) Mekanik tanıtım kartı: level tasarımında seçilen (oyuncu başına bir kez)
-            bool hasIce = lvl.tutorial == LevelTutorial.FrozenBlock;
-            bool hasLock = lvl.tutorial == LevelTutorial.LockAndKey, hasKey = false;
-            bool hasFilled = lvl.tutorial == LevelTutorial.FilledBox;
-            // "Görüldü" kaydı kart kapanınca yapılır (CloseCard): okunmadan level yeniden başlarsa kart tekrar çıkar
-            if (hasIce && PlayerPrefs.GetInt(PrefIce, 0) == 0)
-            {
-                string how = lvl.iceMeltMode == IceMeltMode.PerBallCollected ? "a ball is collected" : "a box is filled";
-                _cards.Enqueue(new IntroCard
-                {
-                    kind = IntroMechanic.Ice, prefKey = PrefIce, title = "FROZEN BLOCK",
-                    body = $"A <color=#1E8FE0><b>frozen block</b></color> can't be sent up yet. Its counter drops each time {how}. At zero, the <color=#1E8FE0><b>ice melts</b></color>.",
-                    target = FindMechanicBlock(blocks, b => b.iceCount > 0)
-                });
-            }
-            if ((hasLock || hasKey) && PlayerPrefs.GetInt(PrefLock, 0) == 0)
-            {
-                _cards.Enqueue(new IntroCard
-                {
-                    kind = IntroMechanic.Lock, prefKey = PrefLock, title = "LOCK & KEY",
-                    body = "A <color=#D99A0B><b>locked block</b></color> stays shut until boxes carrying keys are filled and bring their keys. <color=#D99A0B><b>Fill key boxes first!</b></color>",
-                    target = FindMechanicBlock(blocks, b => b.lockKeyCount > 0) ?? FindMechanicBlock(blocks, b => b.hasKey)
-                });
-            }
-            if (hasFilled && PlayerPrefs.GetInt(PrefFilledBox, 0) == 0)
-            {
-                _cards.Enqueue(new IntroCard
-                {
-                    kind = IntroMechanic.FilledBox, prefKey = PrefFilledBox, title = "FILLED BOX",
-                    body = "This box starts <color=#7B4FE8><b>full</b></color>! Send it up to <color=#7B4FE8><b>pour its balls</b></color> into the glass, then it stays to collect its own color.",
-                    target = FindMechanicBlock(blocks, b => b.isFilledBox)
-                });
-            }
-            ShowNextCard();
+            // Mekanik tanıtım kartları (FROZEN BLOCK, LOCK & KEY, FILLED BOX) devre dışı:
+            // öğretici olarak yalnızca parmakla gösterim (spotlight + el ipucu) kullanılır.
         }
 
         private static MonsterCharacter FindMechanicBlock(List<MonsterCharacter> blocks, System.Func<MonsterCharacter, bool> match)

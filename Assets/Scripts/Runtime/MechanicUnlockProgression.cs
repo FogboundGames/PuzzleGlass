@@ -26,6 +26,8 @@ namespace PuzzleGlass
         public int unlockLevel;
         public int prevPercent;
         public int newPercent;
+        public int currentStep;
+        public int totalSteps;
         public bool isJustUnlocked;
         public LevelMonsterEntry sampleEntry;
     }
@@ -139,6 +141,8 @@ namespace PuzzleGlass
                 unlockLevel = target.unlockLevel,
                 prevPercent = prevPct,
                 newPercent = newPct,
+                currentStep = newSteps,
+                totalSteps = span,
                 isJustUnlocked = (completedLevelNumber + 1 >= target.unlockLevel) || newPct >= 100,
                 sampleEntry = target.sampleEntry
             };

@@ -46,7 +46,8 @@ namespace PuzzleGlass
         [Header("İlerleme Kaydı")]
         [Tooltip("Açıkken Editor'de Play'e basınca da kayıtlı levelden devam edilir. Kapalıyken Editor 'currentLevel' ile başlar " +
                  "(build'de her zaman kayıtlı levelden devam edilir).")]
-        public bool resumeSavedProgressInEditor = false;
+        public bool resumeSavedProgressInEditor = true;
+        [SerializeField, HideInInspector] private bool _resumeProgressDefaultMigrated = false;
 
         /// <summary>Oyuncunun devam edeceği level numarası (PlayerPrefs). Level yüklenince ve bitince güncellenir.</summary>
         public const string SavedLevelPrefKey = "PG_SavedLevelNumber";
@@ -76,6 +77,15 @@ namespace PuzzleGlass
             {
                 _hollowBlockStyleMigrated = 2;
                 blockVisualStyle = BlockVisualStyle.PuzzleWithNumber;
+            }
+        }
+
+        private void EnsureProgressResumeMigrated()
+        {
+            if (!_resumeProgressDefaultMigrated)
+            {
+                _resumeProgressDefaultMigrated = true;
+                resumeSavedProgressInEditor = true;
             }
         }
 
@@ -140,6 +150,7 @@ namespace PuzzleGlass
         {
             Instance = this;
             EnsureHollowBlockStyleMigrated();
+            EnsureProgressResumeMigrated();
             SetupCamera();
             EnsureGameplayControllers();
         }
@@ -148,6 +159,7 @@ namespace PuzzleGlass
         {
             Instance = this;
             EnsureHollowBlockStyleMigrated();
+            EnsureProgressResumeMigrated();
             EnsureGameplayControllers();
             ApplyBlockVisualStyle(blockVisualStyle);
             if (glassContainer != null && (BallObjectPool.Instance == null || BallObjectPool.Instance.ActiveBalls.Count == 0))
@@ -1430,6 +1442,8 @@ namespace PuzzleGlass
             if (saved < 1) return false;
 
             int maxListed = 0;
+            int nearestAboveIdx = -1;
+            int nearestAboveNum = int.MaxValue;
             if (levels != null)
             {
                 for (int i = 0; i < levels.Count; i++)
@@ -1441,6 +1455,11 @@ namespace PuzzleGlass
                         LoadLevelByIndex(i);
                         return true;
                     }
+                    if (lvl.levelNumber > saved && lvl.levelNumber < nearestAboveNum)
+                    {
+                        nearestAboveNum = lvl.levelNumber;
+                        nearestAboveIdx = i;
+                    }
                     maxListed = Mathf.Max(maxListed, lvl.levelNumber);
                 }
             }
@@ -1448,6 +1467,11 @@ namespace PuzzleGlass
             if (saved > maxListed)
             {
                 GenerateAndLoadProceduralLevel(saved, PuzzleLevelGenerator.GetProgressiveDifficulty(saved));
+                return true;
+            }
+            if (nearestAboveIdx >= 0)
+            {
+                LoadLevelByIndex(nearestAboveIdx);
                 return true;
             }
             return false;
@@ -1838,6 +1862,11 @@ namespace PuzzleGlass
                         slot.currentMonster.PlayLockedInSlotFeedback();
                     }
                 }
+            }
+
+            if (Application.isPlaying)
+            {
+                LevelTransitionController.GetOrCreate().PlayLevelFailedTransition();
             }
         }
 

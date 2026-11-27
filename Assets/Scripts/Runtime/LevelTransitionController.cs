@@ -78,7 +78,7 @@ namespace PuzzleGlass
 
         [Header("Loading Ekranı")]
         [Tooltip("Level geçişlerinde kutlamadan sonra perde + LOADING barı gösterilsin")]
-        public bool showLoadingBetweenLevels = true;
+        public bool showLoadingBetweenLevels = false;
         [Tooltip("Oyun açılırken perde + LOADING barı gösterilsin")]
         public bool showStartupLoading = true;
         [Tooltip("Açılışta barın gerçek ilerlemeye yetişme hızı: bar en erken bu sürede dolar (ilerlemenin önüne geçmez)")]
@@ -173,6 +173,17 @@ namespace PuzzleGlass
         {
             if (_isPlaying) return;
             _routine = StartCoroutine(useGlassSwapTransition ? GlassSwapRoutine() : TransitionRoutine(colors));
+        }
+
+        /// <summary>
+        /// Level başarısız olduğunda çağrılır:
+        /// Kısa uyarı anının ardından LOADING yerine "LEVEL FAILED" yazan yükleme perdesi açılır,
+        /// aynı level yeniden yüklenir ve cam giriş animasyonuyla tekrar başlar.
+        /// </summary>
+        public void PlayLevelFailedTransition()
+        {
+            if (_isPlaying) return;
+            _routine = StartCoroutine(LevelFailedRoutine());
         }
 
         /// <summary>Geçişi anında iptal eder ve tüm geçiş objelerini gizler.</summary>
@@ -451,7 +462,7 @@ namespace PuzzleGlass
             if (showLoadingBetweenLevels)
             {
                 // 2a. Perde + oyun adı + LOADING barı; bar dolarken perde arkasında sonraki level yüklenir
-                yield return CurtainLoadingRoutine(curtainFadeIn, loadingBarDuration, NextLevelLoadWork(gm, screenH));
+                yield return CurtainLoadingRoutine(curtainFadeIn, loadingBarDuration, ReloadLevelLoadWork(gm, screenH, advanceToNext: true));
             }
             else
             {
@@ -479,6 +490,41 @@ namespace PuzzleGlass
 
             // 3. Perde kalkarken yeni level girer
             yield return EntranceRoutine(fadeCurtainOut: showLoadingBetweenLevels);
+            _isPlaying = false;
+            _routine = null;
+        }
+
+        private IEnumerator LevelFailedRoutine()
+        {
+            _isPlaying = true;
+            var gm = PuzzleGlassGameManager.Instance;
+            Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
+            if (gm == null || cam == null)
+            {
+                _isPlaying = false;
+                if (gm != null) gm.RestartCurrentPattern();
+                yield break;
+            }
+            float screenH = cam.orthographicSize * 2f;
+
+            // Oyuncunun kilitlenme geri bildirimini (sallanma + ses) görebilmesi için kısa bekleme
+            yield return new WaitForSeconds(0.55f);
+            if (!gm.isLevelFailed)
+            {
+                _isPlaying = false;
+                _routine = null;
+                yield break;
+            }
+
+            // "LOADING" yerine "LEVEL FAILED" belirten yükleme ekranı açılır, arka planda aynı level yeniden yüklenir
+            yield return CurtainLoadingRoutine(
+                curtainFadeIn,
+                Mathf.Max(0.90f, loadingBarDuration),
+                ReloadLevelLoadWork(gm, screenH, advanceToNext: false),
+                statusText: "LEVEL FAILED",
+                isFailed: true);
+
+            yield return EntranceRoutine(fadeCurtainOut: true);
             _isPlaying = false;
             _routine = null;
         }
@@ -526,13 +572,16 @@ namespace PuzzleGlass
             _loadTarget = 1f;
         }
 
-        /// <summary>Level geçişindeki gerçek yükleme adımları.</summary>
-        private IEnumerator NextLevelLoadWork(PuzzleGlassGameManager gm, float screenH)
+        /// <summary>Level geçişindeki veya fail sonrası yeniden başlatmadaki gerçek yükleme adımları.</summary>
+        private IEnumerator ReloadLevelLoadWork(PuzzleGlassGameManager gm, float screenH, bool advanceToNext)
         {
             const float steps = 3f;
-            // 1) Sonraki level üretildi/yüklendi ve sahnede kuruldu
+            // 1) Hedef level üretildi/yüklendi ve sahnede kuruldu
             gm.CancelInvoke(nameof(PuzzleGlassGameManager.LoadNextLevel));
-            gm.LoadNextLevel();
+            if (advanceToNext)
+                gm.LoadNextLevel();
+            else
+                gm.RestartCurrentPattern();
             PrepareEntrance(gm, screenH);
             _loadTarget = 1f / steps;
             // 2) Yeni level'ın ilk karesi çizildi (yeni şekil, mesafe dokusu, malzemeler GPU'da)
@@ -548,12 +597,12 @@ namespace PuzzleGlass
         /// gösterilen değer _loadTarget'a (tamamlanan adım / toplam adım) doğru akıcı ilerler ama onu asla geçmez.
         /// minFillTime yalnızca barın en hızlı dolma süresidir. %100'de kısa tamamlanma animasyonu oynar; perde açık kalır.
         /// </summary>
-        private IEnumerator CurtainLoadingRoutine(float fadeIn, float minFillTime, IEnumerator work)
+        private IEnumerator CurtainLoadingRoutine(float fadeIn, float minFillTime, IEnumerator work, string statusText = "LOADING", bool isFailed = false)
         {
             _loadTarget = 0f;
             if (fadeIn > 0f)
             {
-                ShowCurtain(0f);
+                ShowCurtain(0f, statusText, isFailed);
                 float ft = 0f;
                 while (ft < fadeIn)
                 {
@@ -562,7 +611,7 @@ namespace PuzzleGlass
                     yield return null;
                 }
             }
-            ShowCurtain(1f);
+            ShowCurtain(1f, statusText, isFailed);
             SetLoadingProgress(0f);
 
             bool workDone = false;
@@ -589,14 +638,18 @@ namespace PuzzleGlass
         }
 
         /// <summary>Sadece tema perdesi (başlık + bar). Eski geçişin kamera/RenderTexture'ı kurulmaz.</summary>
-        private void ShowCurtain(float alpha)
+        private void ShowCurtain(float alpha, string statusText = "LOADING", bool isFailed = false)
         {
             EnsureResources();
             if (_overlayCanvas == null) BuildTransitionCanvas();
             if (_overlayImage != null) _overlayImage.enabled = false;
             _overlayCanvas.sortingOrder = overlaySortingOrder;
             if (_curtainBg != null) _curtainBg.color = themeBackdropColor;
-            if (_loadingView != null) _loadingView.SetBackdropColor(themeBackdropColor);
+            if (_loadingView != null)
+            {
+                _loadingView.SetBackdropColor(themeBackdropColor);
+                _loadingView.SetStatus(statusText, isFailed);
+            }
             if (_titleText != null) { _titleText.text = gameTitle; _titleText.color = titleColor; }
             bool wasHidden = !_overlayCanvas.gameObject.activeSelf || (_curtainGroup != null && _curtainGroup.alpha <= 0.001f);
             if (_curtainGroup != null)

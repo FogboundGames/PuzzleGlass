@@ -848,7 +848,8 @@ namespace PuzzleGlass
             startPos.z = -0.22f;
             transform.position = startPos;
 
-            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex() : 0;
+            bool isFinalBall = false;
+            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex(out isFinalBall) : 0;
             Vector3 socketPos = (targetMonster != null)
                 ? targetMonster.GetSocketWorldPosition(socketIndex)
                 : spoutExitPos;
@@ -866,11 +867,17 @@ namespace PuzzleGlass
             {
                 duration *= 0.60f;
             }
+            if (isFinalBall)
+            {
+                duration *= 1.20f;
+            }
 
             // Tactile pop-scale + parabolic jump arc directly into the socket or deep hollow pit!
             bool isHollowPit = targetMonster != null && targetMonster.IsHollowPitBox;
             Vector3 dropTarget = isHollowPit ? targetMonster.GetPitPlungeWorldTarget(socketPos) : socketPos;
             Vector3 finalDropScale = isHollowPit ? (settledScale * 0.76f) : settledScale;
+            float peakScaleMult = isFinalBall ? 1.24f : 1.10f;
+            float arcLift = isFinalBall ? 0.46f : 0.34f;
 
             SetFlightTrailActive(true);
             Sequence flightSeq = DOTween.Sequence();
@@ -880,16 +887,16 @@ namespace PuzzleGlass
                 float boxWorldZ = (targetMonster.bodyPivot != null) ? targetMonster.bodyPivot.position.z : targetMonster.transform.position.z;
                 Vector3 apexPos = new Vector3(
                     Mathf.Lerp(startPos.x, dropTarget.x, 0.55f),
-                    Mathf.Max(startPos.y, dropTarget.y) + 0.34f,
+                    Mathf.Max(startPos.y, dropTarget.y) + arcLift,
                     Mathf.Min(startPos.z, boxWorldZ - 0.28f * Mathf.Max(0.25f, boxScale)) - 0.05f);
                 flightSeq.Join(transform.DOPath(new[] { apexPos, dropTarget }, duration, PathType.CatmullRom).SetEase(Ease.InOutQuad));
             }
             else
             {
-                flightSeq.Join(transform.DOJump(dropTarget, jumpPower: 0.34f, numJumps: 1, duration: duration).SetEase(Ease.Linear));
+                flightSeq.Join(transform.DOJump(dropTarget, jumpPower: arcLift, numJumps: 1, duration: duration).SetEase(Ease.Linear));
             }
             flightSeq.Join(transform.DORotate(new Vector3(180f, 0f, 90f), duration, RotateMode.FastBeyond360));
-            flightSeq.Insert(0f, transform.DOScale(_originalScale * 1.10f, duration * 0.35f).SetEase(Ease.OutQuad));
+            flightSeq.Insert(0f, transform.DOScale(_originalScale * peakScaleMult, duration * 0.35f).SetEase(Ease.OutQuad));
             flightSeq.Insert(duration * 0.35f, transform.DOScale(finalDropScale, duration * 0.65f).SetEase(Ease.InQuad));
 
             flightSeq.OnComplete(() =>
@@ -940,7 +947,8 @@ namespace PuzzleGlass
             startPos.z = -0.16f;
             transform.position = startPos;
 
-            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex() : 0;
+            bool isFinalBall = false;
+            int socketIndex = (targetMonster != null) ? targetMonster.ClaimNextSocketIndex(out isFinalBall) : 0;
             Vector3 mouthPos = channelPts[channelPts.Length - 1];
             Vector3 socketPos = (targetMonster != null)
                 ? targetMonster.GetSocketWorldPosition(socketIndex)
@@ -990,16 +998,22 @@ namespace PuzzleGlass
             flightSeq.Join(transform.DORotate(new Vector3(260f, 0f, 45f), channelDur, RotateMode.FastBeyond360));
             flightSeq.Join(transform.DOScale(_originalScale * 1.02f, channelDur).SetEase(Ease.OutQuad));
 
-            // Kanal ucundan çıkınca kısa bir tepe yükselişi (mini yay) + anlık %12 büyüme pop'u, sonra derin çukurun içine dalış
+            // Kanal ucundan çıkınca kısa bir tepe yükselişi (mini yay) + anlık büyüme pop'u, sonra derin çukurun içine dalış
+            // Son topta "kahraman yayı": biraz daha yüksek yay, daha vurgulu şişme ve azıcık daha okunaklı iniş
+            if (isFinalBall)
+            {
+                dropDur *= 1.24f;
+            }
             bool isHollowPit = targetMonster != null && targetMonster.IsHollowPitBox;
             Vector3 dropTarget = isHollowPit
                 ? targetMonster.GetPitPlungeWorldTarget(socketPos)
                 : new Vector3(socketPos.x, socketPos.y, -0.22f);
             Vector3 finalDropScale = isHollowPit ? (settledScale * 0.76f) : settledScale;
 
-            float apexJump = Mathf.Clamp(mouthToSocketDist * 0.34f, 0.14f, 0.24f);
+            float apexJump = Mathf.Clamp(mouthToSocketDist * 0.34f, 0.14f, 0.24f) * (isFinalBall ? 1.38f : 1f);
+            float peakScaleMult = isFinalBall ? 1.26f : 1.12f;
             Sequence dropScaleSeq = DOTween.Sequence();
-            dropScaleSeq.Append(transform.DOScale(_originalScale * 1.12f, dropDur * 0.38f).SetEase(Ease.OutQuad));
+            dropScaleSeq.Append(transform.DOScale(_originalScale * peakScaleMult, dropDur * 0.38f).SetEase(Ease.OutQuad));
             dropScaleSeq.Append(transform.DOScale(finalDropScale, dropDur * 0.62f).SetEase(Ease.InQuad));
 
             if (isHollowPit)
