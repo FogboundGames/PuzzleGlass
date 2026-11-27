@@ -20,7 +20,7 @@ MonoBehaviour:
   slotSpacing: 0.59
   useCustomGlassShape: 1
   glassIsBottle: 0
-  glassPreset: 9
+  glassPreset: 13
   colorTheme: 1
   layerPattern: 2
   symmetricMode: 1
@@ -61,35 +61,7 @@ MonoBehaviour:
   fillEmptyWithColor: 0
   emptyCellColor: 0
   lockedSectionRatio: 0.3
-  contourPoints:
-  - y: -0.560000002
-    halfWidth: 1.62
-    centerX: 0
-    cornerTension: 0.300000012
-  - y: -0.219999999
-    halfWidth: 1.55999994
-    centerX: 0
-    cornerTension: 0.150000006
-  - y: 0.159999996
-    halfWidth: 1.15999997
-    centerX: 0
-    cornerTension: 0.119999997
-  - y: 0.574999988
-    halfWidth: 0.779999971
-    centerX: 0
-    cornerTension: 0.119999997
-  - y: 0.99000001
-    halfWidth: 1.15999997
-    centerX: 0
-    cornerTension: 0.119999997
-  - y: 1.37
-    halfWidth: 1.55999994
-    centerX: 0
-    cornerTension: 0.150000006
-  - y: 1.71000004
-    halfWidth: 1.62
-    centerX: 0
-    cornerTension: 0.300000012
+  contourPoints: []
   trackPreset: 0
   trackLanesAcross: 0
   trackAutoFitToBalls: 1
@@ -97,6 +69,11 @@ MonoBehaviour:
   trackWallThickness: 0.082
   trackHiddenRatio: 0
   trackBranches: []
+  trackPainterZones: []
+  trackThroatEnabled: 0
+  trackThroatNormalizedCenter: {x: 0.07, y: 0.52}
+  trackThroatRadius: 0.22
+  trackThroatWidthRatio: 0.42
   compartmentPreset: 7
   dividers: []
   compartmentZones: []
