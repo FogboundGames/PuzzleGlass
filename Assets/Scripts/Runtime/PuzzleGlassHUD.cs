@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using DG.Tweening;
+using TMPro;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #endif
@@ -24,7 +25,8 @@ namespace PuzzleGlass
 
         private PuzzleGlassUITheme _theme;
         private Canvas _canvas;
-        private Text _levelTitleText;
+        private TextMeshProUGUI _levelTitleText;
+        private Material _levelTitleMat;
         private RectTransform _soundIconRoot;
         private RectTransform _hapticIconRoot;
 
@@ -101,6 +103,7 @@ namespace PuzzleGlass
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
+            if (_levelTitleMat != null) Destroy(_levelTitleMat);
         }
 
         private void EnsureEventSystem()
@@ -242,9 +245,7 @@ namespace PuzzleGlass
             levelHeader.anchoredPosition = new Vector2(0f, 0f);
             levelHeader.sizeDelta = new Vector2(260f, 96f);
 
-            _levelTitleText = CreateText("LevelTitle", levelHeader, "Level 1", 50, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFill(_levelTitleText.rectTransform);
-            AddSoftTextShadow(_levelTitleText.gameObject, new Color(0.05f, 0.05f, 0.14f, 0.65f), new Vector2(0f, -3f));
+            _levelTitleText = CreateLevelTitle(levelHeader);
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             CreateMiniStepButton("Btn_NextLevel", topBar, new Vector2(176f, 0f), null, shadowSpr, rightIcon, ">", () =>
@@ -882,6 +883,51 @@ namespace PuzzleGlass
                 Text txt = CreateText("Label", rect, fallbackSymbol, 24, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
                 StretchFill(txt.rectTransform);
             }
+        }
+
+        // Tutorial kart başlıklarıyla aynı stil: TMP kalın yazı, koyu mor kontur + alt gölge, beyaz→lila dikey geçiş.
+        private TextMeshProUGUI CreateLevelTitle(Transform parent)
+        {
+            RectTransform rect = CreateRect("LevelTitle", parent);
+            StretchFill(rect);
+            var tmp = rect.gameObject.AddComponent<TextMeshProUGUI>();
+            tmp.text = "Level 1";
+            tmp.fontSize = 54f;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.color = Color.white;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.textWrappingMode = TextWrappingModes.NoWrap;
+            tmp.overflowMode = TextOverflowModes.Overflow;
+            tmp.characterSpacing = 3f;
+            tmp.extraPadding = true;
+            tmp.raycastTarget = false;
+            tmp.enableVertexGradient = true;
+            tmp.colorGradient = new VertexGradient(Color.white, Color.white,
+                new Color(0.86f, 0.82f, 1f, 1f), new Color(0.86f, 0.82f, 1f, 1f));
+
+            if (tmp.fontSharedMaterial != null)
+            {
+                var outline = new Color(0.20f, 0.10f, 0.46f, 1f);
+                var mat = new Material(tmp.fontSharedMaterial) { name = "HUD_LevelTitle" };
+                if (mat.HasProperty("_FaceDilate")) mat.SetFloat("_FaceDilate", 0.6f);
+                mat.EnableKeyword("OUTLINE_ON");
+                if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", outline);
+                if (mat.HasProperty("_OutlineWidth")) mat.SetFloat("_OutlineWidth", 0.24f);
+                if (mat.HasProperty("_OutlineSoftness")) mat.SetFloat("_OutlineSoftness", 0f);
+                if (mat.HasProperty("_UnderlayColor"))
+                {
+                    mat.EnableKeyword("UNDERLAY_ON");
+                    mat.SetColor("_UnderlayColor", new Color(outline.r * 0.6f, outline.g * 0.6f, outline.b * 0.6f, 0.72f));
+                    mat.SetFloat("_UnderlayOffsetX", 0f);
+                    mat.SetFloat("_UnderlayOffsetY", -0.9f);
+                    mat.SetFloat("_UnderlayDilate", 0.5f);
+                    mat.SetFloat("_UnderlaySoftness", 0.1f);
+                }
+                tmp.fontSharedMaterial = mat;
+                tmp.UpdateMeshPadding();
+                _levelTitleMat = mat;
+            }
+            return tmp;
         }
 
         private Text CreateText(string name, Transform parent, string content, int fontSize, FontStyle style, Color col, TextAnchor anchor)

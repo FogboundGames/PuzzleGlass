@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
+using TMPro;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -76,6 +77,12 @@ namespace PuzzleGlass
         private readonly Queue<IntroCard> _cards = new Queue<IntroCard>();
         private GameObject _cardObj;
         private float _cardTime;
+        // Kart yazı efektleri (UpdateCard'da canlandırılır)
+        private TextMeshProUGUI _cardTitle, _cardBody, _cardTap;
+        private RectTransform _cardBadge;
+        private Vector2 _cardBodyPos;
+        private readonly List<Material> _cardMats = new List<Material>();
+        private static readonly Color ColCardTitleOutline = new Color(0.20f, 0.10f, 0.46f, 1f);
         private IntroCard _currentCard;
 
         private PuzzleGlassLevelData _level;
@@ -238,7 +245,7 @@ namespace PuzzleGlass
                 _cards.Enqueue(new IntroCard
                 {
                     kind = IntroMechanic.Ice, prefKey = PrefIce, title = "FROZEN BLOCK",
-                    body = $"A frozen block can't be sent up yet. Its counter drops each time {how}. At zero, the ice melts.",
+                    body = $"A <color=#1E8FE0><b>frozen block</b></color> can't be sent up yet. Its counter drops each time {how}. At zero, the <color=#1E8FE0><b>ice melts</b></color>.",
                     target = FindMechanicBlock(blocks, b => b.iceCount > 0)
                 });
             }
@@ -247,7 +254,7 @@ namespace PuzzleGlass
                 _cards.Enqueue(new IntroCard
                 {
                     kind = IntroMechanic.Lock, prefKey = PrefLock, title = "LOCK & KEY",
-                    body = "A locked block stays shut until boxes carrying keys are filled and bring their keys. Fill key boxes first!",
+                    body = "A <color=#D99A0B><b>locked block</b></color> stays shut until boxes carrying keys are filled and bring their keys. <color=#D99A0B><b>Fill key boxes first!</b></color>",
                     target = FindMechanicBlock(blocks, b => b.lockKeyCount > 0) ?? FindMechanicBlock(blocks, b => b.hasKey)
                 });
             }
@@ -256,7 +263,7 @@ namespace PuzzleGlass
                 _cards.Enqueue(new IntroCard
                 {
                     kind = IntroMechanic.FilledBox, prefKey = PrefFilledBox, title = "FILLED BOX",
-                    body = "This box starts full! Send it up to pour its balls into the glass, then it stays to collect its own color.",
+                    body = "This box starts <color=#7B4FE8><b>full</b></color>! Send it up to <color=#7B4FE8><b>pour its balls</b></color> into the glass, then it stays to collect its own color.",
                     target = FindMechanicBlock(blocks, b => b.isFilledBox)
                 });
             }
@@ -345,13 +352,15 @@ namespace PuzzleGlass
             UpdateSpotlight();
             if (_cardObj != null)
             {
-                // Kart açıkken el gösterilmez (rastgele bir bloğu işaretlemesi kafa karıştırıyordu);
-                // el ipucu kart kapandıktan sonra başlar.
+                // Kart açıkken el ipucu da çalışır: el, tasarımcının seçtiği ipucu kutusunu (yoksa otomatik seçimi) gösterir.
+                // Eskiden kartın anlattığı ilk mekanik bloğu (ör. rastgele bir buzlu blok) gösteriyordu; o kaldırıldı.
                 UpdateCard();
+                UpdateHint();
                 if (_handGroup != null && !_hintActive) _handGroup.alpha = 0f;
             }
             else
             {
+                if (_cards.Count > 0) ShowNextCard();
                 UpdateIdleHint();
                 UpdateHint();
             }
@@ -657,9 +666,15 @@ namespace PuzzleGlass
             var cam = Camera.main;
             if (_hintBlock == null || grid == null || cam == null || (gm != null && (gm.isLevelCompleted || gm.isLevelFailed))
                 || _hintBlock.gridAnchor != _hintFrom || _hintBlock.isCollectingInGrid || _hintBlock.assignedSlot != null
-                || _hintBlock.IsMovingToSlot || LevelTransitionController.IsTransitioning)
+                || _hintBlock.IsMovingToSlot)
             {
                 StopHint();
+                return;
+            }
+            // Yükleme/geçiş perdesi açıkken el beklesin (durdurulursa kart açıkken ve perde kalkınca el hiç gelmiyordu)
+            if (LevelTransitionController.IsTransitioning)
+            {
+                _handGroup.alpha = 0f;
                 return;
             }
 
@@ -736,6 +751,8 @@ namespace PuzzleGlass
         private void ShowNextCard()
         {
             if (_cardObj != null || _cards.Count == 0) return;
+            // Level yükleme perdesinin arkasında açılmasın: perde kalkınca Update tekrar çağırır
+            if (LevelTransitionController.IsTransitioning) return;
             _currentCard = _cards.Dequeue();
             var kind = _currentCard.kind;
             string title = _currentCard.title, body = _currentCard.body;
@@ -808,77 +825,129 @@ namespace PuzzleGlass
             cardGo.GetComponent<Button>().onClick.AddListener(CloseCard);
 
             // Başlık (mor üst şeridin içinde)
-            Text titleTxt = AddText(
-                faceRt, title, 40, FontStyle.Bold, Color.white,
-                new Vector2(-16f, -18f), new Vector2(720f, 64f), TextAnchor.MiddleCenter);
-            var titleShadow = titleTxt.gameObject.AddComponent<Shadow>();
-            titleShadow.effectColor = new Color(0.14f, 0.08f, 0.38f, 0.50f);
-            titleShadow.effectDistance = new Vector2(0f, -2.5f);
+            // Kutu sayaçlarıyla aynı yazı ailesi (TMP): kalın, koyu mor kontur + alt gölge, üstten alta beyaz→lila geçiş.
+            // Harfler sırayla zıplayarak gelir, sonra hafif dalgalanır (UpdateCard → AnimateCardTitle).
+            _cardTitle = AddTmp(faceRt, "Title", title, 50f, Color.white,
+                new Vector2(0f, -12f), new Vector2(760f, 76f), TextAlignmentOptions.Center,
+                ColCardTitleOutline, 0.24f, 0.18f, 0.9f);
+            _cardTitle.characterSpacing = 4f;
+            _cardTitle.enableVertexGradient = true;
+            _cardTitle.colorGradient = new VertexGradient(Color.white, Color.white,
+                new Color(0.86f, 0.82f, 1f, 1f), new Color(0.86f, 0.82f, 1f, 1f));
 
-            // Sağ üst X kapat ikonu
-            if (_theme != null && _theme.iconClose != null)
-            {
-                var closeGo = new GameObject("CloseHint", typeof(RectTransform), typeof(Image));
-                closeGo.transform.SetParent(faceRt, false);
-                var cRt = (RectTransform)closeGo.transform;
-                cRt.anchorMin = cRt.anchorMax = new Vector2(1f, 1f);
-                cRt.anchoredPosition = new Vector2(-46f, -46f);
-                cRt.sizeDelta = new Vector2(34f, 34f);
-                var cImg = closeGo.GetComponent<Image>();
-                cImg.sprite = _theme.iconClose;
-                cImg.preserveAspect = true;
-                cImg.color = new Color(1f, 1f, 1f, 0.88f);
-                cImg.raycastTarget = false;
-            }
-
-            // Sol mekanik ikon rozeti
+            // Sol: oyundaki gerçek mekanik kutusunun görüntüsü (Ezgi'nin yeni özellik ekranındaki yakalayıcı),
+            // arkasında mekanik renginde yumuşak bir ışıma. Yakalanamazsa eski ikon rozeti.
             GetMechanicVisual(kind, out Sprite mechIcon, out Color badgeColor, out bool tintIconWhite);
-            var badgeGo = new GameObject("MechanicBadge", typeof(RectTransform), typeof(Image));
-            badgeGo.transform.SetParent(faceRt, false);
-            var bRt = (RectTransform)badgeGo.transform;
-            bRt.anchorMin = bRt.anchorMax = new Vector2(0f, 0.5f);
-            bRt.anchoredPosition = new Vector2(106f, -34f);
-            bRt.sizeDelta = new Vector2(126f, 126f);
-            var bImg = badgeGo.GetComponent<Image>();
-            bImg.sprite = pillSprite;
-            bImg.type = Image.Type.Sliced;
-            bImg.color = badgeColor;
-            bImg.raycastTarget = false;
-
-            var bShadow = badgeGo.AddComponent<Shadow>();
-            bShadow.effectColor = new Color(0.14f, 0.12f, 0.36f, 0.25f);
-            bShadow.effectDistance = new Vector2(0f, -5f);
-
-            if (mechIcon != null)
+            if (!TryAddMechanicPreview(faceRt, kind, badgeColor))
             {
-                var mGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
-                mGo.transform.SetParent(bRt, false);
-                var mRt = (RectTransform)mGo.transform;
-                mRt.anchorMin = mRt.anchorMax = new Vector2(0.5f, 0.5f);
-                mRt.anchoredPosition = Vector2.zero;
-                mRt.sizeDelta = new Vector2(78f, 78f);
-                var mImg = mGo.GetComponent<Image>();
-                mImg.sprite = mechIcon;
-                mImg.preserveAspect = true;
-                mImg.color = tintIconWhite ? Color.white : Color.white;
-                mImg.raycastTarget = false;
+                var badgeGo = new GameObject("MechanicBadge", typeof(RectTransform), typeof(Image));
+                badgeGo.transform.SetParent(faceRt, false);
+                var bRt = (RectTransform)badgeGo.transform;
+                bRt.anchorMin = bRt.anchorMax = new Vector2(0f, 0.5f);
+                bRt.anchoredPosition = new Vector2(106f, -34f);
+                bRt.sizeDelta = new Vector2(126f, 126f);
+                var bImg = badgeGo.GetComponent<Image>();
+                bImg.sprite = pillSprite;
+                bImg.type = Image.Type.Sliced;
+                bImg.color = badgeColor;
+                bImg.raycastTarget = false;
+                _cardBadge = bRt;
+                bRt.localScale = Vector3.zero;
+
+                var bShadow = badgeGo.AddComponent<Shadow>();
+                bShadow.effectColor = new Color(0.14f, 0.12f, 0.36f, 0.25f);
+                bShadow.effectDistance = new Vector2(0f, -5f);
+
+                if (mechIcon != null)
+                {
+                    var mGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+                    mGo.transform.SetParent(bRt, false);
+                    var mRt = (RectTransform)mGo.transform;
+                    mRt.anchorMin = mRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    mRt.anchoredPosition = Vector2.zero;
+                    mRt.sizeDelta = new Vector2(78f, 78f);
+                    var mImg = mGo.GetComponent<Image>();
+                    mImg.sprite = mechIcon;
+                    mImg.preserveAspect = true;
+                    mImg.color = tintIconWhite ? Color.white : Color.white;
+                    mImg.raycastTarget = false;
+                }
             }
 
             // Açıklama metni (sağda)
+            // Anahtar kelimeler mekanik renginde vurgulu (kart metnindeki <color> etiketleri); yazı kısa gecikmeyle süzülerek gelir
             Color bodyColor = panelSprite != null ? ColCardBody : Color.white;
-            Text bodyTxt = AddText(
-                faceRt, body, 28, FontStyle.Bold, bodyColor,
-                new Vector2(84f, -112f), new Vector2(620f, 168f), TextAnchor.MiddleLeft);
-            bodyTxt.lineSpacing = 1.12f;
+            _cardBody = AddTmp(faceRt, "Body", body, 31f, bodyColor,
+                new Vector2(84f, -108f), new Vector2(620f, 176f), TextAlignmentOptions.Left,
+                default, 0f, 0f, 0.12f);
+            _cardBody.textWrappingMode = TextWrappingModes.Normal;
+            _cardBody.lineSpacing = 6f;
+            _cardBody.verticalAlignment = VerticalAlignmentOptions.Middle;
+            _cardBody.alpha = 0f;
+            _cardBodyPos = _cardBody.rectTransform.anchoredPosition;
 
-            // Alt devam ipucu
-            Color tapColor = panelSprite != null ? new Color(0.45f, 0.46f, 0.70f, 0.88f) : new Color(1f, 1f, 1f, 0.65f);
-            AddText(faceRt, "TAP TO CONTINUE", 22, FontStyle.Bold, tapColor, new Vector2(0f, -304f), new Vector2(780f, 36f), TextAnchor.MiddleCenter);
+            // Alt devam ipucu: nabız gibi yanıp söner
+            Color tapColor = panelSprite != null ? new Color(0.45f, 0.42f, 0.78f, 1f) : Color.white;
+            _cardTap = AddTmp(faceRt, "Tap", "TAP TO CONTINUE", 24f, tapColor,
+                new Vector2(0f, -300f), new Vector2(780f, 40f), TextAlignmentOptions.Center,
+                default, 0f, 0f, 0.1f);
+            _cardTap.characterSpacing = 6f;
+            _cardTap.alpha = 0f;
 
             rt.localScale = Vector3.one * 0.86f;
             rt.DOScale(1f, 0.26f).SetEase(Ease.OutBack).SetUpdate(true);
 
             _cardTime = 0f;
+        }
+
+        private bool TryAddMechanicPreview(RectTransform faceRt, IntroMechanic kind, Color glowColor)
+        {
+            if (_level == null || _level.monsters == null) return false;
+            GameFeatureKind fk;
+            System.Predicate<LevelMonsterEntry> match;
+            switch (kind)
+            {
+                case IntroMechanic.Ice: fk = GameFeatureKind.FrozenBlock; match = e => e.iceCount > 0; break;
+                case IntroMechanic.Lock: fk = GameFeatureKind.LockAndKey; match = e => e.lockKeyCount > 0; break;
+                default: fk = GameFeatureKind.FilledBox; match = e => e.isFilledBox; break;
+            }
+            var entry = _level.monsters.Find(match);
+            if (entry == null) return false;
+
+            MechanicFeaturePreviewRenderer.PreviewSnapshot snap;
+            try { snap = MechanicFeaturePreviewRenderer.GetOrCapturePreview(fk, entry); }
+            catch (System.Exception ex) { Debug.LogWarning("Intro card preview failed: " + ex.Message); return false; }
+            if (snap.texture == null) return false;
+
+            var holder = new GameObject("MechanicPreview", typeof(RectTransform));
+            holder.transform.SetParent(faceRt, false);
+            var hRt = (RectTransform)holder.transform;
+            hRt.anchorMin = hRt.anchorMax = new Vector2(0f, 0.5f);
+            hRt.anchoredPosition = new Vector2(112f, -36f);
+            hRt.sizeDelta = new Vector2(170f, 170f);
+
+            var glowGo = new GameObject("Glow", typeof(RectTransform), typeof(Image));
+            glowGo.transform.SetParent(hRt, false);
+            var gRt = (RectTransform)glowGo.transform;
+            gRt.anchorMin = gRt.anchorMax = new Vector2(0.5f, 0.5f);
+            gRt.sizeDelta = new Vector2(230f, 230f);
+            var gImg = glowGo.GetComponent<Image>();
+            gImg.sprite = MechanicFeaturePreviewRenderer.GetOrCreateRadialGlowSprite();
+            gImg.color = new Color(glowColor.r, glowColor.g, glowColor.b, 0.55f);
+            gImg.raycastTarget = false;
+
+            var imgGo = new GameObject("Box", typeof(RectTransform), typeof(RawImage));
+            imgGo.transform.SetParent(hRt, false);
+            var iRt = (RectTransform)imgGo.transform;
+            iRt.anchorMin = iRt.anchorMax = new Vector2(0.5f, 0.5f);
+            iRt.sizeDelta = new Vector2(170f, 170f);
+            var raw = imgGo.GetComponent<RawImage>();
+            raw.texture = snap.texture;
+            raw.raycastTarget = false;
+
+            _cardBadge = hRt;
+            hRt.localScale = Vector3.zero;
+            return true;
         }
 
         private void GetMechanicVisual(IntroMechanic kind, out Sprite sprite, out Color badgeColor, out bool tintWhite)
@@ -915,6 +984,61 @@ namespace PuzzleGlass
             if (_cardObj == null) return;
             _cardTime += Time.unscaledDeltaTime;
             // Kendiliğinden kapanmaz: oyuncu okuyup dokununca kapanır
+            float t = _cardTime;
+
+            if (_cardTitle != null) AnimateCardTitle(_cardTitle, t);
+
+            if (_cardBadge != null)
+            {
+                float pop = EaseOutBack(Mathf.Clamp01((t - 0.12f) / 0.34f));
+                float bob = t > 0.46f ? Mathf.Sin((t - 0.46f) * 2.4f) : 0f;
+                _cardBadge.localScale = Vector3.one * (pop * (1f + 0.035f * bob));
+                _cardBadge.localRotation = Quaternion.Euler(0f, 0f, 5f * bob);
+            }
+
+            if (_cardBody != null)
+            {
+                float a = Mathf.Clamp01((t - 0.22f) / 0.32f);
+                _cardBody.alpha = a;
+                float e = 1f - (1f - a) * (1f - a);
+                _cardBody.rectTransform.anchoredPosition = _cardBodyPos + new Vector2(0f, -16f * (1f - e));
+            }
+
+            if (_cardTap != null)
+            {
+                float a = Mathf.Clamp01((t - CardMinSeconds) / 0.25f);
+                _cardTap.alpha = a * (0.55f + 0.45f * (0.5f + 0.5f * Mathf.Cos((t - CardMinSeconds) * 4.2f)));
+            }
+        }
+
+        /// <summary>Başlık harfleri sırayla büyüyerek gelir (hafif taşmalı), sonra yavaşça dalgalanır.</summary>
+        private static void AnimateCardTitle(TextMeshProUGUI tmp, float t)
+        {
+            tmp.ForceMeshUpdate();
+            var info = tmp.textInfo;
+            for (int i = 0; i < info.characterCount; i++)
+            {
+                var ci = info.characterInfo[i];
+                if (!ci.isVisible) continue;
+                float appear = Mathf.Clamp01((t - 0.06f - i * 0.035f) / 0.26f);
+                float scale = EaseOutBack(appear);
+                float settle = Mathf.Clamp01((t - 0.06f - i * 0.035f - 0.26f) / 0.3f);
+                float wave = Mathf.Sin(t * 3.0f - i * 0.5f) * 3.5f * settle;
+
+                var verts = info.meshInfo[ci.materialReferenceIndex].vertices;
+                int vi = ci.vertexIndex;
+                Vector3 mid = (verts[vi] + verts[vi + 2]) * 0.5f;
+                for (int j = 0; j < 4; j++)
+                    verts[vi + j] = (verts[vi + j] - mid) * scale + mid + new Vector3(0f, wave + (1f - appear) * 18f, 0f);
+            }
+            tmp.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices);
+        }
+
+        private static float EaseOutBack(float x)
+        {
+            const float c1 = 1.70158f, c3 = c1 + 1f;
+            float k = x - 1f;
+            return 1f + c3 * k * k * k + c1 * k * k;
         }
 
         private void CloseCard()
@@ -946,6 +1070,10 @@ namespace PuzzleGlass
             }
             _cardObj = null;
             _currentCard = default;
+            _cardTitle = _cardBody = _cardTap = null;
+            _cardBadge = null;
+            foreach (var m in _cardMats) if (m != null) Destroy(m);
+            _cardMats.Clear();
             if (_handGroup != null && !_hintActive) _handGroup.alpha = 0f;
         }
 
@@ -1077,6 +1205,59 @@ namespace PuzzleGlass
             img.color = color;
             img.raycastTarget = false;
             return rt;
+        }
+
+        /// <summary>
+        /// Kart için TMP yazı. outlineWidth > 0 ise kontur + alt gölge (kutu sayaçlarındaki gibi) için yazıya özel malzeme kopyalanır.
+        /// </summary>
+        private TextMeshProUGUI AddTmp(RectTransform parent, string name, string text, float size, Color color,
+            Vector2 pos, Vector2 box, TextAlignmentOptions align, Color outline, float outlineWidth, float underlayAlpha, float dilate)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = box;
+
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = size;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.color = color;
+            tmp.alignment = align;
+            tmp.textWrappingMode = TextWrappingModes.NoWrap;
+            tmp.overflowMode = TextOverflowModes.Overflow;
+            tmp.richText = true;
+            tmp.extraPadding = true;
+            tmp.raycastTarget = false;
+
+            if (tmp.fontSharedMaterial != null && (outlineWidth > 0f || dilate > 0f))
+            {
+                var mat = new Material(tmp.fontSharedMaterial) { name = "IntroCard_" + name };
+                if (mat.HasProperty("_FaceDilate")) mat.SetFloat("_FaceDilate", dilate);
+                if (outlineWidth > 0f)
+                {
+                    mat.EnableKeyword("OUTLINE_ON");
+                    if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", outline);
+                    if (mat.HasProperty("_OutlineWidth")) mat.SetFloat("_OutlineWidth", outlineWidth);
+                    if (mat.HasProperty("_OutlineSoftness")) mat.SetFloat("_OutlineSoftness", 0f);
+                }
+                if (underlayAlpha > 0f && mat.HasProperty("_UnderlayColor"))
+                {
+                    mat.EnableKeyword("UNDERLAY_ON");
+                    mat.SetColor("_UnderlayColor", new Color(outline.r * 0.6f, outline.g * 0.6f, outline.b * 0.6f, underlayAlpha * 4f));
+                    mat.SetFloat("_UnderlayOffsetX", 0f);
+                    mat.SetFloat("_UnderlayOffsetY", -0.9f);
+                    mat.SetFloat("_UnderlayDilate", 0.5f);
+                    mat.SetFloat("_UnderlaySoftness", 0.1f);
+                }
+                tmp.fontSharedMaterial = mat;
+                tmp.UpdateMeshPadding();
+                _cardMats.Add(mat);
+            }
+            return tmp;
         }
 
         private Text AddText(RectTransform parent, string text, int size, FontStyle style, Color color, Vector2 pos, Vector2 box, TextAnchor anchor)
