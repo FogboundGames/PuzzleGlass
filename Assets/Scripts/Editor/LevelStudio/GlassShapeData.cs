@@ -92,7 +92,11 @@ namespace PuzzleGlass.Editor.Studio
                 float.NaN,
                 out compiled,
                 out layout,
-                lvl != null ? lvl.manualTrackCapacity : 0);
+                lvl != null ? lvl.manualTrackCapacity : 0,
+                throatEnabled: lvl != null && lvl.trackThroatEnabled,
+                throatNormalizedCenter: lvl != null ? lvl.trackThroatNormalizedCenter : Vector2.zero,
+                throatRadius: lvl != null ? lvl.trackThroatRadius : 0.22f,
+                throatWidthRatio: lvl != null ? lvl.trackThroatWidthRatio : 1f);
 
             if (s_TrackCache.Count >= TrackCacheMax) s_TrackCache.Clear();
             s_TrackCache[key] = (compiled, layout);
@@ -112,7 +116,15 @@ namespace PuzzleGlass.Editor.Studio
             sb.Append((int)preset).Append('|').Append(lanes).Append('|').Append(autoFit).Append('|')
               .Append(scale.ToString("R")).Append('|').Append(wallThick.ToString("R")).Append('|');
             if (lvl != null)
+            {
                 sb.Append(lvl.useManualBallLayout).Append('|').Append(lvl.manualTrackCapacity).Append('|');
+                // Boğaz pistin kesitini (ve dolayısıyla slot sayısını) değiştirir: önbellek anahtarına girmeli
+                sb.Append(lvl.trackThroatEnabled).Append('|')
+                  .Append(lvl.trackThroatNormalizedCenter.x.ToString("R")).Append(',')
+                  .Append(lvl.trackThroatNormalizedCenter.y.ToString("R")).Append('|')
+                  .Append(lvl.trackThroatRadius.ToString("R")).Append('|')
+                  .Append(lvl.trackThroatWidthRatio.ToString("R")).Append('|');
+            }
             if (branches != null) foreach (var b in branches) sb.Append(JsonUtility.ToJson(b)).Append(';');
             sb.Append('#');
             if (groups != null) foreach (var g in groups) if (g != null) sb.Append(JsonUtility.ToJson(g)).Append(';');

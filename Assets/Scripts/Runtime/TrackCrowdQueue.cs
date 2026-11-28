@@ -106,7 +106,74 @@ namespace PuzzleGlass
         private static BeltLoop s_Loop;
         private static GlassTrackLayout.CompiledTrack s_LoopFailedFor;
 
-        /// <summary>Bu camın pistinde boşluğun etrafında dönen bir bant var mı?</summary>
+        // ---------------------------------------------------------------- Yapışık küme erişimi
+        // Canlı bant (Burst) yuva değil serbest parçacık simülasyonu olduğu için yapışık küme, halka orta
+        // çizgisine izdüşümü alınan bir çapa + sabit (enine, akış yönünde) ofsetlerle rijit tutulur.
+
+        /// <summary>Halkanın orta çizgisi hazır mı, top çapı ve kanal yarı genişliği ne.</summary>
+        public static bool TryGetRingInfo(ShapedGlassContainer container, out float ballDiameter, out float innerHalfWidth)
+        {
+            ballDiameter = 0f; innerHalfWidth = 0f;
+            var loop = GetLoop(container);
+            if (loop == null || loop.centerPts == null || loop.centerPts.Length < 2) return false;
+            ballDiameter = loop.source.ballDiameter;
+            innerHalfWidth = loop.source.innerHalfWidth;
+            return true;
+        }
+
+        /// <summary>Halka boyunca 0..1 oranındaki nokta ve oradaki akış/enine yönler.</summary>
+        public static bool TryGetRingPointAt(ShapedGlassContainer container, float u,
+                                             out Vector2 pos, out Vector2 tang, out Vector2 nrm)
+        {
+            pos = tang = nrm = Vector2.zero;
+            var loop = GetLoop(container);
+            if (loop == null || loop.centerPts == null || loop.centerPts.Length < 2) return false;
+            int n = loop.centerPts.Length;
+            int i = Mathf.Clamp(Mathf.RoundToInt(Mathf.Repeat(u, 1f) * n), 0, n - 1);
+            pos = loop.centerPts[i];
+            tang = loop.centerTang[i];
+            nrm = loop.centerNorm[i];
+            return true;
+        }
+
+        /// <summary>Halka orta çizgisinin uzunluğu (küme fazını bant hızıyla ilerletmek için).</summary>
+        public static float RingCenterLength => s_Loop != null ? s_Loop.centerLen : 0f;
+
+        /// <summary>Halka boyunca 0..1 fazındaki nokta ve yönler (s_Loop üzerinden, Burst adımı içinden).</summary>
+        public static bool TryGetRingPointAtPhase(float u, out Vector2 pos, out Vector2 tang, out Vector2 nrm)
+        {
+            pos = tang = nrm = Vector2.zero;
+            var loop = s_Loop;
+            if (loop == null || loop.centerPts == null || loop.centerPts.Length < 2) return false;
+            int n = loop.centerPts.Length;
+            int i = Mathf.Clamp(Mathf.FloorToInt(Mathf.Repeat(u, 1f) * n), 0, n - 1);
+            pos = loop.centerPts[i];
+            tang = loop.centerTang[i];
+            nrm = loop.centerNorm[i];
+            return true;
+        }
+
+        /// <summary>Bir noktayı halka orta çizgisine izdüşürür (küme çapasını kanalda ortalar).</summary>
+        public static bool TryProjectToRing(Vector2 p, out Vector2 pos, out Vector2 tang, out Vector2 nrm)
+        {
+            pos = tang = nrm = Vector2.zero;
+            var loop = s_Loop;
+            if (loop == null || loop.centerPts == null || loop.centerPts.Length < 2) return false;
+
+            int best = 0;
+            float bestSq = float.MaxValue;
+            for (int i = 0; i < loop.centerPts.Length; i++)
+            {
+                float sq = (loop.centerPts[i] - p).sqrMagnitude;
+                if (sq < bestSq) { bestSq = sq; best = i; }
+            }
+            pos = loop.centerPts[best];
+            tang = loop.centerTang[best];
+            nrm = loop.centerNorm[best];
+            return true;
+        }
+
+        /// <summary>Bu camın pistinde boşluğun etrafında dönen bir bant var mı?</summary>        /// <summary>Bu camın pistinde boşluğun etrafında dönen bir bant var mı?</summary>
         public static bool HasLoop(ShapedGlassContainer container)
         {
             return GetLoop(container) != null;
@@ -323,6 +390,10 @@ namespace PuzzleGlass
             var loop = BuildLoop(track);
             if (loop == null) return 0;
             int added = 0;
+            int firstIdx = slots.Count;
+            float clear = track.ballDiameter * 0.56f;
+            float minSep = track.ballDiameter * 0.95f;
+            float minSepSq = minSep * minSep;
             for (int l = 0; l < loop.lanes; l++)
             {
                 int rows = loop.laneRows[l];
@@ -330,9 +401,25 @@ namespace PuzzleGlass
                 {
                     // Aynı satırdaki tüm şeritler aynı kesit mesafesini paylaşır ki renk blokları tüm kanal genişliğini eşit doldursun
                     float uCrossSection = (float)row / rows;
+                    Vector2 pos = SafeSpawnPosition(track, SlotPosition(loop, l, row) + ((UseGranularFlow || UseRigidbodyPhysics) ? GranularSpawnJitter(l, row, track.ballDiameter) : Vector2.zero));
+
+                    // Boğaz: daralan kesitte şeritlerin bir kısmı duvarın içine düşer. O yuvalar atlanır; bandın
+                    // kapasitesi boğaz kadar azalır (mekaniğin asıl etkisi bu).
+                    if (track.throatEnabled)
+                    {
+                        track.SampleField(pos, out float sd, out _, out _, out _);
+                        if (sd + clear > 1e-4f) continue;
+                        bool tooClose = false;
+                        for (int k = firstIdx; k < slots.Count; k++)
+                        {
+                            if ((slots[k].localPos - pos).sqrMagnitude < minSepSq) { tooClose = true; break; }
+                        }
+                        if (tooClose) continue;
+                    }
+
                     slots.Add(new GlassTrackLayout.TrackSlot
                     {
-                        localPos = SafeSpawnPosition(track, SlotPosition(loop, l, row) + ((UseGranularFlow || UseRigidbodyPhysics) ? GranularSpawnJitter(l, row, track.ballDiameter) : Vector2.zero)),
+                        localPos = pos,
                         branchId = track.closedLoopBranch,
                         rowIndex = row,
                         laneIndex = l,
@@ -1090,6 +1177,10 @@ namespace PuzzleGlass
                     var b0 = loop.occupant[s0];
                     var b1 = loop.occupant[s1];
 
+                    // Yapışık küme: yuvası sabit kalır, yoksa şekil dağılır
+                    if (b0 != null && b0.IsStuckInCluster) continue;
+                    if (b1 != null && b1.IsStuckInCluster) continue;
+
                     if (b0 != null && b1 == null && b0.trackQueuePosValid)
                     {
                         float d0 = (b0.trackQueueLocalPos - s_SlotPos[s0]).sqrMagnitude;
@@ -1216,6 +1307,7 @@ namespace PuzzleGlass
                     {
                         int frontSlot = loop.slotBase[l] + frontRow;
                         var fb = loop.occupant[frontSlot];
+                        if (fb != null && fb.IsStuckInCluster) continue;
                         if (!IsBallLongitudinallySettled(fb, frontSlot, maxTangSettled, maxTotalSettledSq)) continue;
 
                         for (int dl = -1; dl <= 1; dl += 2)
@@ -1256,6 +1348,7 @@ namespace PuzzleGlass
                 {
                     int slot = loop.slotBase[l] + row;
                     var b = loop.occupant[slot];
+                    if (b != null && b.IsStuckInCluster) continue;
                     if (!IsBallLongitudinallySettled(b, slot, maxTangSettled, maxTotalSettledSq)) continue;
 
                     // Öncelik 1: Kendi şeridinde bir ön yuva boşsa ve öndeki top fiziksel olarak yer açtıysa düz ilerle

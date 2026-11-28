@@ -26,7 +26,7 @@ namespace PuzzleGlass.Editor.Studio
         private const string LiveKey = "PuzzleGlass_Studio_LiveSync";
         private const float HandleRadius = 7f;
 
-        private enum Handle { None, Width, Height, Corner, Point, TrackPoint }
+        private enum Handle { None, Width, Height, Corner, Point, TrackPoint, Gate, GateEnd, Throat }
 
         private readonly List<PuzzleGlassLevelData> m_All = new List<PuzzleGlassLevelData>();
         private readonly List<PuzzleGlassLevelData> m_Visible = new List<PuzzleGlassLevelData>();
@@ -48,10 +48,26 @@ namespace PuzzleGlass.Editor.Studio
         private int m_HoverBranch = -1;
         private bool m_TrackSymmetricEdit = true;
 
+        // Önizleme yakınlaştırma / kaydırma
+        private float m_Zoom = 1f;
+        private Vector2 m_Pan;
+        private float m_BaseScale = 100f;
+        private float m_ViewCenterY;
+        private Vector2 m_ViewSize = new Vector2(600f, 600f);
+        private bool m_Panning;
+        private Vector2 m_PanStartMouse;
+        private Vector2 m_PanStartValue;
+        /// <summary>Son çizimde kullanılan derlenmiş pist; tutamaç isabet testi bunu kullanır.</summary>
+        private GlassTrackLayout.CompiledTrack m_HitTrack;
+
         private ListView m_List;
         private Label m_Title, m_State, m_Readout;
         private Button m_SaveButton;
         private VisualElement m_Canvas, m_Inspector;
+        /// <summary>Sağ paneldeki kontrollerin eklendiği yer: Section() her çağrıldığında yeni katlanır bölüme döner.</summary>
+        private VisualElement m_Target;
+        private Label m_Legend;
+        private Label m_ZoomLabel;
         private ScrollView m_Issues;
 
         private static readonly (string name, float w, float h, float corner, float frame)[] BoxPresets =
@@ -145,6 +161,13 @@ namespace PuzzleGlass.Editor.Studio
             m_Readout = new Label();
             m_Readout.AddToClassList("glass-readout");
             bar.Add(m_Readout);
+            var barSpacer = new VisualElement();
+            barSpacer.style.flexGrow = 1f;
+            bar.Add(barSpacer);
+            m_ZoomLabel = new Label();
+            m_ZoomLabel.AddToClassList("glass-readout");
+            bar.Add(m_ZoomLabel);
+            bar.Add(new Button(ResetView) { text = "Sığdır", tooltip = "Yakınlaştırmayı ve kaydırmayı sıfırla." });
             center.Add(bar);
 
             m_Canvas = new VisualElement();
@@ -153,12 +176,13 @@ namespace PuzzleGlass.Editor.Studio
             m_Canvas.RegisterCallback<PointerDownEvent>(OnPointerDown);
             m_Canvas.RegisterCallback<PointerMoveEvent>(OnPointerMove);
             m_Canvas.RegisterCallback<PointerUpEvent>(OnPointerUp);
+            m_Canvas.RegisterCallback<WheelEvent>(OnCanvasWheel);
             m_Canvas.RegisterCallback<GeometryChangedEvent>(_ => { if (!m_ViewFrozen) m_Canvas.MarkDirtyRepaint(); });
             center.Add(m_Canvas);
 
-            var legend = new Label("Havuzda tutamaçlar: sağ kenar = genişlik · üst kenar = yükseklik · üst köşe = köşe yuvarlaklığı.   Özel şekilde: noktayı sürükle, çift tıkla ekle, sağ tıkla sil.");
-            legend.AddToClassList("board__caption");
-            center.Add(legend);
+            m_Legend = new Label();
+            m_Legend.AddToClassList("board__caption");
+            center.Add(m_Legend);
             body.Add(center);
 
             var side = new ScrollView();
@@ -552,10 +576,13 @@ namespace PuzzleGlass.Editor.Studio
                 m_Title.text = "Level yok";
                 m_State.text = "";
                 m_Readout.text = "";
+                if (m_Legend != null) m_Legend.text = "";
+                if (m_ZoomLabel != null) m_ZoomLabel.text = "";
                 m_SaveButton.SetEnabled(false);
                 return;
             }
             m_Title.text = $"Level {m_Level.levelNumber}  ·  Cam";
+            UpdateLegend();
             bool dirty = EditorUtility.IsDirty(m_Level);
             m_State.text = dirty ? "● Kaydedilmedi" : "Kaydedildi";
             m_State.EnableInClassList("toolbar__state--dirty", dirty);
@@ -586,6 +613,37 @@ namespace PuzzleGlass.Editor.Studio
         }
 
         // ---------- Sağ panel ----------
+
+        /// <summary>Önizlemenin altındaki ipucu şeridi: seçili cam türüne göre değişir.</summary>
+        private void UpdateLegend()
+        {
+            if (m_ZoomLabel != null)
+                m_ZoomLabel.text = Mathf.Abs(m_Zoom - 1f) < 0.01f && m_Pan == Vector2.zero ? "" : $"%{m_Zoom * 100f:0}";
+            if (m_Legend == null || m_Level == null) return;
+
+            const string view = "   ·   Tekerlek: yakınlaştır · Orta tuş (ya da Alt+sol): kaydır";
+            if (GlassShapeData.IsTrack(m_Level))
+            {
+                string mech = "";
+                bool hasGate = m_Level.trackColorGates != null && m_Level.trackColorGates.Count > 0;
+                if (hasGate && m_Level.trackThroatEnabled) mech = "   ·   Kapı: çubuktan sürükle, uçlarından boyunu çek · Turuncu tutamaç: boğaz";
+                else if (hasGate) mech = "   ·   Kapı: çubuktan sürükle, uçlarından boyunu çek";
+                else if (m_Level.trackThroatEnabled) mech = "   ·   Turuncu tutamaç: boğaz";
+                m_Legend.text = "Pist: noktayı sürükle · kanala çift tıkla nokta ekle · noktaya sağ tıkla sil." + mech + view;
+            }
+            else if (GlassShapeData.IsBottle(m_Level))
+            {
+                m_Legend.text = "Şişe: sağ kenar tutamacı = genişlik · üst kenar tutamacı = yükseklik." + view;
+            }
+            else if (GlassShapeData.IsBox(m_Level))
+            {
+                m_Legend.text = "Havuz: sağ kenar = genişlik · üst kenar = yükseklik · üst köşe = köşe yuvarlaklığı." + view;
+            }
+            else
+            {
+                m_Legend.text = "Özel şekil: noktayı sürükle · boş alana çift tıkla nokta ekle · noktaya sağ tıkla sil." + view;
+            }
+        }
 
         private void RefreshInspector()
         {
@@ -631,7 +689,7 @@ namespace PuzzleGlass.Editor.Studio
             freeBtn.AddToClassList("segmented__item");
             freeBtn.EnableInClassList("segmented__item--active", !track && !box && !bottle);
             kinds.Add(freeBtn);
-            m_Inspector.Add(kinds);
+            m_Target.Add(kinds);
 
             if (track) BuildTrackInspector();
             else if (bottle) BuildBottleInspector();
@@ -662,7 +720,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.Add(new Label(name));
                 themes.Add(chip);
             }
-            m_Inspector.Add(themes);
+            m_Target.Add(themes);
 
             Section("Cam vurgu / Yaka rengi");
             var frames = new VisualElement();
@@ -687,7 +745,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.Add(new Label(name));
                 frames.Add(chip);
             }
-            m_Inspector.Add(frames);
+            m_Target.Add(frames);
 
             var frameColor = new ColorField("Yaka / Vurgu") { value = m_Level.boxFrameColor, showAlpha = false };
             frameColor.RegisterValueChangedCallback(e =>
@@ -698,7 +756,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.boxFrameEdgeShadeColor = Color.Lerp(e.newValue, Color.black, 0.24f);
                 OnEdited();
             });
-            m_Inspector.Add(frameColor);
+            m_Target.Add(frameColor);
             var bodyColor = new ColorField("Cam tonu") { value = m_Level.glassBodyColor, showAlpha = true };
             bodyColor.RegisterValueChangedCallback(e =>
             {
@@ -707,12 +765,12 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.glassBodyColor = e.newValue;
                 OnEdited();
             });
-            m_Inspector.Add(bodyColor);
+            m_Target.Add(bodyColor);
 
             Section("");
             var reset = new Button(ResetToDefault) { text = "Varsayılan cama dön", tooltip = "Level özel cam kullanmaz; oyunun varsayılan kristal havuzu (2.64 × 1.18) yüklenir." };
             reset.AddToClassList("inspector__action");
-            m_Inspector.Add(reset);
+            m_Target.Add(reset);
         }
 
         private void BuildFeedTubesInspector()
@@ -736,13 +794,13 @@ namespace PuzzleGlass.Editor.Studio
             AddTubeModeBtn(modes, "İki Yan", BallFeedTubeMode.BothLeftAndRight);
             AddTubeModeBtn(modes, "Sol", BallFeedTubeMode.LeftOnly);
             AddTubeModeBtn(modes, "Sağ", BallFeedTubeMode.RightOnly);
-            m_Inspector.Add(modes);
+            m_Target.Add(modes);
 
             if (!m_Level.useBallFeedTubes)
             {
                 var offHint = new Label("İki Yan, Sol veya Sağ seçtiğinde yalnızca bu levele özel kıvrımlı üst cam borular açılır; toplar sırayla hazneye akar.");
                 offHint.AddToClassList("inspector__hint");
-                m_Inspector.Add(offHint);
+                m_Target.Add(offHint);
                 return;
             }
 
@@ -783,11 +841,11 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.feedTubeContainerLimit = 0;
                 OnEdited();
             }) { text = "Oto", tooltip = "0 = toplam topların yaklaşık yarısı haznede, kalanı tüplerde başlar." });
-            m_Inspector.Add(limitRow);
+            m_Target.Add(limitRow);
 
             var splitInfo = new Label($"Başlangıç: {effLimit} top haznede  ·  {queued} top üst tüplerde");
             splitInfo.AddToClassList("inspector__hint");
-            m_Inspector.Add(splitInfo);
+            m_Target.Add(splitInfo);
 
             var visRow = new VisualElement();
             visRow.AddToClassList("inspector__row");
@@ -810,7 +868,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.feedTubeQueueVisibleCount = Mathf.Clamp(m_Level.feedTubeQueueVisibleCount + 1, 2, 14);
                 OnEdited();
             }) { text = "+" });
-            m_Inspector.Add(visRow);
+            m_Target.Add(visRow);
 
             AddSlider("Tüp genişliği", m_Level.feedTubeWidthMultiplier, 1.05f, 1.65f, v =>
             {
@@ -853,7 +911,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.EnableInClassList("chip--active", m_Level.stagingGridCols == cc && m_Level.stagingGridRows == rr);
                 presets.Add(chip);
             }
-            m_Inspector.Add(presets);
+            m_Target.Add(presets);
 
             var colsSlider = new SliderInt("Tepsi sütun", 2, 9) { value = m_Level.stagingGridCols, showInputField = true };
             colsSlider.RegisterValueChangedCallback(e =>
@@ -863,7 +921,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.EnsureCarrierBoxPuzzleFormat();
                 OnEdited();
             });
-            m_Inspector.Add(colsSlider);
+            m_Target.Add(colsSlider);
 
             var rowsSlider = new SliderInt("Tepsi satır", 2, 10) { value = m_Level.stagingGridRows, showInputField = true };
             rowsSlider.RegisterValueChangedCallback(e =>
@@ -873,7 +931,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.EnsureCarrierBoxPuzzleFormat();
                 OnEdited();
             });
-            m_Inspector.Add(rowsSlider);
+            m_Target.Add(rowsSlider);
 
             var customToggle = new Toggle("Özel tepsi ölçüleri")
             {
@@ -886,17 +944,17 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.useCustomTraySettings = e.newValue;
                 OnEdited();
             });
-            m_Inspector.Add(customToggle);
+            m_Target.Add(customToggle);
 
             if (!m_Level.useCustomTraySettings) return;
 
             var matchGlass = new Toggle("Cama göre genişlik") { value = m_Level.trayMatchGlassWidth };
             matchGlass.RegisterValueChangedCallback(e => { Record("Tepsi genişlik hizası"); m_Level.trayMatchGlassWidth = e.newValue; OnEdited(); });
-            m_Inspector.Add(matchGlass);
+            m_Target.Add(matchGlass);
 
             var showJar = new Toggle("Dış cam kavanoz") { value = m_Level.trayShowOuterGlassJar };
             showJar.RegisterValueChangedCallback(e => { Record("Tepsi dış cam kavanoz"); m_Level.trayShowOuterGlassJar = e.newValue; OnEdited(); });
-            m_Inspector.Add(showJar);
+            m_Target.Add(showJar);
 
             AddSlider("Maks. genişlik", m_Level.trayMaxBoardWidth, 1.20f, 4.00f, v => { Record("Tepsi maks. genişlik"); m_Level.trayMaxBoardWidth = v; OnEdited(); });
             AddSlider("Maks. yükseklik", m_Level.trayMaxBoardHeight, 1.20f, 5.20f, v => { Record("Tepsi maks. yükseklik"); m_Level.trayMaxBoardHeight = v; OnEdited(); });
@@ -904,7 +962,7 @@ namespace PuzzleGlass.Editor.Studio
 
             var manualCell = new Toggle("Elle hücre boyutu") { value = m_Level.trayUseManualCellSize };
             manualCell.RegisterValueChangedCallback(e => { Record("Elle hücre boyutu"); m_Level.trayUseManualCellSize = e.newValue; OnEdited(); });
-            m_Inspector.Add(manualCell);
+            m_Target.Add(manualCell);
 
             if (m_Level.trayUseManualCellSize)
             {
@@ -932,7 +990,7 @@ namespace PuzzleGlass.Editor.Studio
                 OnEdited();
             }) { text = "Tepsiyi varsayılana sıfırla" };
             resetTray.AddToClassList("inspector__action");
-            m_Inspector.Add(resetTray);
+            m_Target.Add(resetTray);
         }
 
         private void AddTubeModeBtn(VisualElement parent, string label, BallFeedTubeMode mode)
@@ -977,7 +1035,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.EnableInClassList("chip--active", m_Level.useCustomGlassShape && activePreset == pp);
                 presets.Add(chip);
             }
-            m_Inspector.Add(presets);
+            m_Target.Add(presets);
 
             Section("Top Sıklığı & Ölçü");
             var laneRow = new VisualElement();
@@ -996,7 +1054,7 @@ namespace PuzzleGlass.Editor.Studio
                 btn.EnableInClassList("segmented__item--active", (m_Level.useCustomGlassShape ? m_Level.trackLanesAcross : 0) == val);
                 laneRow.Add(btn);
             }
-            m_Inspector.Add(laneRow);
+            m_Target.Add(laneRow);
 
             var autoFit = new Toggle("Topların miktarına göre otomatik sığdır")
             {
@@ -1010,7 +1068,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Level.trackAutoFitToBalls = e.newValue;
                 OnEdited();
             });
-            m_Inspector.Add(autoFit);
+            m_Target.Add(autoFit);
 
             if (m_Level.useCustomGlassShape && !m_Level.trackAutoFitToBalls)
             {
@@ -1031,13 +1089,15 @@ namespace PuzzleGlass.Editor.Studio
                 OnEdited();
             });
 
+            BuildTrackMechanicsInspector();
+
             var symToggle = new Toggle("Simetrik düzenle (Sol ↔ Sağ)")
             {
                 value = m_TrackSymmetricEdit,
                 tooltip = "Açıkken bir kolun noktasını sürüklediğinde karşı kolun simetrik noktası da birlikte hareket eder."
             };
             symToggle.RegisterValueChangedCallback(e => m_TrackSymmetricEdit = e.newValue);
-            m_Inspector.Add(symToggle);
+            m_Target.Add(symToggle);
 
             Section("Pist Kolları / Şekillendirme");
             var branchActions = new VisualElement();
@@ -1060,7 +1120,7 @@ namespace PuzzleGlass.Editor.Studio
                     new Vector2(0f, -0.54f), new Vector2(0.45f, 0.0f), new Vector2(0.55f, 0.65f)));
                 OnEdited();
             }) { text = "+ Kol Ekle" });
-            m_Inspector.Add(branchActions);
+            m_Target.Add(branchActions);
 
             var branches = (m_Level.useCustomGlassShape && m_Level.trackBranches != null && m_Level.trackBranches.Count > 0)
                 ? m_Level.trackBranches
@@ -1098,12 +1158,12 @@ namespace PuzzleGlass.Editor.Studio
                     }) { text = "×", tooltip = "Bu kolu sil" };
                     row.Add(del);
                 }
-                m_Inspector.Add(row);
+                m_Target.Add(row);
             }
 
             var hint = new Label("Önizlemedeki beyaz noktaları sürükleyerek pisti istediğin gibi eğip bükebilirsin. Kol çizgisine çift tıkla = nokta ekle, noktaya sağ tıkla = sil.");
             hint.AddToClassList("inspector__hint");
-            m_Inspector.Add(hint);
+            m_Target.Add(hint);
         }
 
         private void BuildBottleInspector()
@@ -1135,7 +1195,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.tooltip = $"{pr.w:0.00} × {pr.h:0.00}";
                 presets.Add(chip);
             }
-            m_Inspector.Add(presets);
+            m_Target.Add(presets);
 
             Section("Ölçüler");
             AddSlider("Genişlik", w, BottleMinW, BottleMaxW, v => { GlassShapeData.GetBottle(m_Level, out _, out float hh); SetBottle(v, hh); });
@@ -1145,7 +1205,7 @@ namespace PuzzleGlass.Editor.Studio
 
             var hint = new Label("Taban şekli sabit: yuvarlak omuzlarla alttaki çıkış yakasına iner. Tutamaçlar: sağ kenar = genişlik, üst kenar = yükseklik.");
             hint.AddToClassList("inspector__hint");
-            m_Inspector.Add(hint);
+            m_Target.Add(hint);
         }
 
         private void BuildBoxInspector()
@@ -1167,7 +1227,7 @@ namespace PuzzleGlass.Editor.Studio
                 chip.tooltip = $"{p.w:0.00} × {p.h:0.00}, köşe {p.corner:0.00}";
                 presets.Add(chip);
             }
-            m_Inspector.Add(presets);
+            m_Target.Add(presets);
 
             Section("Ölçüler");
             AddSlider("Genişlik", w, GlassShapeData.MinWidth, GlassShapeData.MaxWidth, v => { GlassShapeData.GetBox(m_Level, out _, out float hh, out _); SetBox(v, hh); });
@@ -1177,7 +1237,7 @@ namespace PuzzleGlass.Editor.Studio
 
             var hint = new Label("Tepsi alttaki cam kavanozun içinde, üst camın genişliğine göre hizalanır.");
             hint.AddToClassList("inspector__hint");
-            m_Inspector.Add(hint);
+            m_Target.Add(hint);
         }
 
         private void BuildContourInspector()
@@ -1186,13 +1246,13 @@ namespace PuzzleGlass.Editor.Studio
             {
                 var warn = new Label("Taban çok dar (genişlik 0.60'tan az): oyun bu camı huni ağızlı şişe gibi işler, toplar deliğin üstünden dümdüz inmez. En alttaki noktayı genişlet.");
                 warn.AddToClassList("glass-warning");
-                m_Inspector.Add(warn);
+                m_Target.Add(warn);
             }
             else
             {
                 var ok = new Label("Taban düz ve geniş: yeni parlak kristal cam temasıyla ve alt çıkış yakasıyla havuz gibi oynanır.");
                 ok.AddToClassList("inspector__hint");
-                m_Inspector.Add(ok);
+                m_Target.Add(ok);
             }
 
             Section("Cam Şekilleri");
@@ -1206,7 +1266,7 @@ namespace PuzzleGlass.Editor.Studio
             presets.Add(ContourChip("Yamuk", Trapezoid()));
             presets.Add(ContourChip("Altıgen", Hexagon()));
             presets.Add(ContourChip("Dar tüp", SlimTube()));
-            m_Inspector.Add(presets);
+            m_Target.Add(presets);
 
             Section($"Noktalar ({m_Level.contourPoints.Count})");
             var pts = m_Level.contourPoints;
@@ -1234,7 +1294,7 @@ namespace PuzzleGlass.Editor.Studio
                     var del = new Button(() => RemovePoint(idx)) { text = "×", tooltip = "Noktayı sil" };
                     row.Add(del);
                 }
-                m_Inspector.Add(row);
+                m_Target.Add(row);
             }
         }
 
@@ -1266,18 +1326,438 @@ namespace PuzzleGlass.Editor.Studio
             SetContour(pts, "Nokta sil");
         }
 
+        /// <summary>Pist içi mekanikler: boğaz (kanal daralması) ve renk kapıları (kanalı kesen kapılar).</summary>
+        private void BuildTrackMechanicsInspector()
+        {
+            Section("Pist İçi Mekanikler");
+
+            var tip = new Label("Kapıyı önizlemede çubuğundan tutup sürükle; uçlarından çekerek boyunu ayarla. " +
+                                "Boğazın yerini turuncu tutamaçtan sürükle.");
+            tip.style.whiteSpace = WhiteSpace.Normal;
+            tip.style.opacity = 0.7f;
+            m_Target.Add(tip);
+
+            // ---------- Boğaz ----------
+            var throat = new Toggle("Boğaz (kanal daralması)")
+            {
+                value = m_Level.trackThroatEnabled,
+                tooltip = "Pistin bir noktasında kanal daralır. Toplar oradan sırayla geçmek zorunda kalır, " +
+                          "bandın kapasitesi düşer ve çıkışa varış sırası orada belirlenir."
+            };
+            throat.RegisterValueChangedCallback(e =>
+            {
+                Record("Boğaz");
+                m_Level.trackThroatEnabled = e.newValue;
+                if (e.newValue && m_Level.trackThroatWidthRatio >= 0.99f) m_Level.trackThroatWidthRatio = 0.42f;
+                if (e.newValue && m_Level.trackThroatRadius < 0.06f) m_Level.trackThroatRadius = 0.22f;
+                OnEdited();
+            });
+            m_Target.Add(throat);
+
+            if (m_Level.trackThroatEnabled)
+            {
+                AddSlider("  Boğaz uzunluğu", Mathf.Clamp(m_Level.trackThroatRadius, 0.06f, 0.7f), 0.06f, 0.7f, v =>
+                {
+                    Record("Boğaz uzunluğu");
+                    m_Level.trackThroatRadius = v;
+                    OnEdited();
+                });
+                AddSlider("  Darlık (1 = daralma yok)", Mathf.Clamp(m_Level.trackThroatWidthRatio, 0.22f, 1f), 0.22f, 1f, v =>
+                {
+                    Record("Boğaz darlığı");
+                    m_Level.trackThroatWidthRatio = v;
+                    OnEdited();
+                });
+
+                if (m_Level.trackKeepLayers)
+                    AddWarning("'Katmanları koru' açık: boğazda toplar şeritlerini koruyamaz, bant tıkanabilir.");
+            }
+
+            // ---------- Renk kapıları ----------
+            if (m_Level.trackColorGates == null) m_Level.trackColorGates = new List<TrackColorGate>();
+
+            for (int i = 0; i < m_Level.trackColorGates.Count; i++)
+            {
+                int gi = i;
+                var g = m_Level.trackColorGates[gi];
+                if (g == null) continue;
+
+                var head = new VisualElement();
+                head.style.flexDirection = FlexDirection.Row;
+                head.style.marginTop = 8;
+                var title = new Label($"Kapı {gi + 1}:  {ColorLabel(g.fromColor)} → {ColorLabel(g.toColor)}");
+                title.style.flexGrow = 1f;
+                title.style.unityFontStyleAndWeight = FontStyle.Bold;
+                head.Add(title);
+                head.Add(new Button(() =>
+                {
+                    Record("Renk kapısı sil");
+                    m_Level.trackColorGates.RemoveAt(gi);
+                    OnEdited();
+                }) { text = "Sil" });
+                m_Target.Add(head);
+
+                var fromField = new EnumField("  Kaynak renk", g.fromColor);
+                fromField.SetEnabled(!g.anySourceColor);
+                fromField.RegisterValueChangedCallback(e =>
+                {
+                    Record("Kapı kaynak rengi");
+                    g.fromColor = (PuzzleColor)e.newValue;
+                    m_Level.RebuildTripletsFromBoxes();
+                    OnEdited();
+                });
+                m_Target.Add(fromField);
+
+                var toField = new EnumField("  Hedef renk", g.toColor);
+                toField.RegisterValueChangedCallback(e =>
+                {
+                    Record("Kapı hedef rengi");
+                    g.toColor = (PuzzleColor)e.newValue;
+                    m_Level.RebuildTripletsFromBoxes();
+                    OnEdited();
+                });
+                m_Target.Add(toField);
+
+                var anyToggle = new Toggle("  Her rengi boya")
+                {
+                    value = g.anySourceColor,
+                    tooltip = "Açıkken kapıdan geçen her top hedef renge boyanır."
+                };
+                anyToggle.RegisterValueChangedCallback(e =>
+                {
+                    Record("Kapı kaynak modu");
+                    g.anySourceColor = e.newValue;
+                    OnEdited();
+                });
+                m_Target.Add(anyToggle);
+
+                AddSlider("  Kapı uzunluğu", Mathf.Clamp(g.length, 0.1f, 1.2f), 0.1f, 1.2f, v =>
+                {
+                    Record("Kapı uzunluğu");
+                    g.length = v;
+                    OnEdited();
+                });
+
+                var preload = new IntegerField("  Bantta kaynak renkte başlayan top")
+                {
+                    value = Mathf.Max(0, g.preloadCount),
+                    tooltip = "Motor banttaki renk toplamlarını kutuların talebine eşitler. Bu sayı o eşitliği kapıya " +
+                              "göre kaydırır: hedef rengin talebinden bu kadarı bantta kaynak renkte başlar ve ancak " +
+                              "kapıdan geçtikten sonra toplanabilir. 0 = kapı sadece dekor."
+                };
+                preload.RegisterValueChangedCallback(e =>
+                {
+                    Record("Kapı ön yükleme");
+                    g.preloadCount = Mathf.Max(0, e.newValue);
+                    m_Level.RebuildTripletsFromBoxes();
+                    OnEdited();
+                });
+                m_Target.Add(preload);
+
+                if (g.preloadCount <= 0)
+                    AddWarning("Bantta hiç " + ColorLabel(g.fromColor) + " top olmayacak; kapı dekor kalır.");
+
+                float channel = m_HitTrack != null ? m_HitTrack.innerHalfWidth * 2f : 0.53f;
+                if (g.length < channel + 0.04f)
+                    AddWarning($"Kapı kanaldan kısa (kanal {channel:0.00}): kenardan toplar boyanmadan geçebilir.");
+            }
+
+            // ---------- Yapışık toplar ----------
+            if (m_Level.ballClusters == null) m_Level.ballClusters = new List<BallClusterShape>();
+
+            var clHead = new Label("Yapışık Toplar");
+            clHead.style.unityFontStyleAndWeight = FontStyle.Bold;
+            clHead.style.marginTop = 14;
+            m_Target.Add(clHead);
+
+            var clTip = new Label("Izgaraya bir şekil çiz (gülen yüz, kalp, harf…). O şekildeki toplar banda tek " +
+                                  "parça olarak yerleşir, bozulmadan döner ve hiçbiri toplanamaz. Seçtiğin renkte " +
+                                  "kutu tamamlanınca yapışkanlık kalkar.");
+            clTip.style.whiteSpace = WhiteSpace.Normal;
+            clTip.style.opacity = 0.7f;
+            m_Target.Add(clTip);
+
+            var paint = new EnumField("Fırça rengi", m_ClusterPaintColor);
+            paint.tooltip = "Hücreye tıklayınca bu renk basılır; aynı renge tekrar tıklamak hücreyi boşaltır.";
+            paint.RegisterValueChangedCallback(e =>
+            {
+                m_ClusterPaintColor = (PuzzleColor)e.newValue;
+                RefreshInspector();
+            });
+            m_Target.Add(paint);
+
+            for (int i = 0; i < m_Level.ballClusters.Count; i++)
+            {
+                int ki = i;
+                var cl = m_Level.ballClusters[ki];
+                if (cl == null) continue;
+                cl.EnsureCellBuffer();
+
+                var khead = new VisualElement();
+                khead.style.flexDirection = FlexDirection.Row;
+                khead.style.marginTop = 10;
+                var ktitle = new Label($"Küme {ki + 1}: {cl.name}  ({cl.FilledCount} top)");
+                ktitle.style.flexGrow = 1f;
+                ktitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                khead.Add(ktitle);
+                khead.Add(new Button(() =>
+                {
+                    Record("Küme sil");
+                    m_Level.ballClusters.RemoveAt(ki);
+                    OnEdited();
+                }) { text = "Sil" });
+                m_Target.Add(khead);
+
+                m_Target.Add(BuildClusterGrid(cl));
+
+                var sizeRow = new VisualElement();
+                sizeRow.style.flexDirection = FlexDirection.Row;
+                var colsF = new SliderInt("  En", 1, BallClusterShape.MaxCols) { value = cl.cols };
+                colsF.style.flexGrow = 1f;
+                colsF.RegisterValueChangedCallback(e =>
+                {
+                    Record("Küme eni");
+                    cl.Resize(e.newValue, cl.rows);
+                    OnEdited();
+                });
+                var rowsF = new SliderInt("  Boy", 1, BallClusterShape.MaxRows) { value = cl.rows };
+                rowsF.style.flexGrow = 1f;
+                rowsF.RegisterValueChangedCallback(e =>
+                {
+                    Record("Küme boyu");
+                    cl.Resize(cl.cols, e.newValue);
+                    OnEdited();
+                });
+                sizeRow.Add(colsF);
+                sizeRow.Add(rowsF);
+                m_Target.Add(sizeRow);
+
+                AddSlider("  Bant üzerindeki yeri", Mathf.Clamp01(cl.positionAlongBelt), 0f, 1f, v =>
+                {
+                    Record("Küme yeri");
+                    cl.positionAlongBelt = v;
+                    OnEdited();
+                });
+
+                var unlockColor = new EnumField("  Çözen kutu rengi", cl.unlockBoxColor);
+                unlockColor.tooltip = "Bu renkte kutu tamamlanınca küme çözülür ve topları normal top olur.";
+                unlockColor.RegisterValueChangedCallback(e =>
+                {
+                    Record("Küme çözme rengi");
+                    cl.unlockBoxColor = (PuzzleColor)e.newValue;
+                    OnEdited();
+                });
+                m_Target.Add(unlockColor);
+
+                var unlockN = new IntegerField("  Kaç kutu tamamlanınca") { value = Mathf.Clamp(cl.unlockAfterBoxes, 1, 8) };
+                unlockN.RegisterValueChangedCallback(e =>
+                {
+                    Record("Küme çözme sayısı");
+                    cl.unlockAfterBoxes = Mathf.Clamp(e.newValue, 1, 8);
+                    OnEdited();
+                });
+                m_Target.Add(unlockN);
+
+                // Uyarılar
+                if (cl.FilledCount <= 0)
+                {
+                    AddWarning("Küme boş: hiçbir hücre çizilmemiş.");
+                    continue;
+                }
+
+                int lanes = 5;
+                if (cl.cols > lanes)
+                    AddWarning($"Küme bandın şerit sayısından geniş ({lanes}): taşan sütunlar yerleşemez.");
+
+                int unlockDemand = CountBoxDemand(cl.unlockBoxColor);
+                int unlockBoxes = CountBoxesOfColor(cl.unlockBoxColor);
+                if (unlockDemand <= 0)
+                    AddWarning($"{ColorLabel(cl.unlockBoxColor)} renginde hiç kutu yok: küme hiç çözülemez, level kilitlenir.");
+                else if (unlockBoxes < cl.unlockAfterBoxes)
+                    AddWarning($"{ColorLabel(cl.unlockBoxColor)} renginde sadece {unlockBoxes} kutu var: " +
+                               $"{cl.unlockAfterBoxes} tamamlanamaz, küme hiç çözülemez.");
+
+                var tally = new Dictionary<PuzzleColor, int>();
+                cl.CountByColor(tally);
+                foreach (var kv in tally)
+                {
+                    int beltHas = CountBeltBalls(kv.Key);
+                    if (beltHas < kv.Value)
+                        AddWarning($"Bantta {ColorLabel(kv.Key)} topu az ({beltHas} var, küme {kv.Value} istiyor): " +
+                                   "eksik hücreler başka renkte kalır.");
+                    if (CountBoxDemand(kv.Key) <= 0)
+                        AddWarning($"{ColorLabel(kv.Key)} rengi için kutu yok: küme çözülse bile o toplar toplanamaz.");
+                }
+            }
+
+            var addCluster = new Button(() =>
+            {
+                Record("Yapışık küme ekle");
+                m_Level.ballClusters.Add(BallClusterShape.CreateSmiley(m_ClusterPaintColor));
+                OnEdited();
+            })
+            { text = "+ Yapışık küme ekle (gülen yüz)" };
+            addCluster.tooltip = "Banda tek parça hareket eden bir şekil koyar; koşul sağlanana kadar çözülmez.";
+            addCluster.style.marginTop = 8;
+            m_Target.Add(addCluster);
+
+            var addGate = new Button(() =>
+            {
+                Record("Renk kapısı ekle");
+                float len = m_HitTrack != null ? m_HitTrack.innerHalfWidth * 2f + 0.10f : 0.62f;
+                m_Level.trackColorGates.Add(new TrackColorGate(
+                    new Vector2(0.10f, 0.50f), len, PuzzleColor.Red, PuzzleColor.Blue));
+                OnEdited();
+            })
+            { text = "+ Renk kapısı ekle" };
+            addGate.tooltip = "Kanalı enine kesen bir kapı koyar: kapıdan geçen topun rengi değişir.";
+            addGate.style.marginTop = 8;
+            m_Target.Add(addGate);
+        }
+
+        private PuzzleColor m_ClusterPaintColor = PuzzleColor.Blue;
+
+        /// <summary>Kümenin hücre ızgarası: tıklanan hücreye fırça rengi basılır, aynı renge tekrar tıklamak siler.</summary>
+        private VisualElement BuildClusterGrid(BallClusterShape cl)
+        {
+            var wrap = new VisualElement();
+            wrap.style.marginTop = 4;
+            wrap.style.marginBottom = 4;
+            wrap.style.alignItems = Align.FlexStart;
+
+            for (int r = 0; r < cl.rows; r++)
+            {
+                int rr = r;
+                var rowEl = new VisualElement();
+                rowEl.style.flexDirection = FlexDirection.Row;
+
+                for (int c = 0; c < cl.cols; c++)
+                {
+                    int cc = c;
+                    int v = cl.GetCell(cc, rr);
+                    var cell = new Button(() =>
+                    {
+                        Record("Küme hücresi");
+                        int cur = cl.GetCell(cc, rr);
+                        int paintVal = (int)m_ClusterPaintColor;
+                        cl.SetCell(cc, rr, cur == paintVal ? BallClusterShape.EmptyCell : paintVal);
+                        OnEdited();
+                    });
+                    cell.text = string.Empty;
+                    cell.style.width = 24;
+                    cell.style.height = 24;
+                    cell.style.marginLeft = 1;
+                    cell.style.marginRight = 1;
+                    cell.style.marginTop = 1;
+                    cell.style.marginBottom = 1;
+                    cell.style.borderTopLeftRadius = 12;
+                    cell.style.borderTopRightRadius = 12;
+                    cell.style.borderBottomLeftRadius = 12;
+                    cell.style.borderBottomRightRadius = 12;
+                    cell.style.backgroundColor = v >= 0
+                        ? PuzzleColorPalette.GetPrimaryColor((PuzzleColor)v)
+                        : new Color(0f, 0f, 0f, 0.18f);
+                    rowEl.Add(cell);
+                }
+                wrap.Add(rowEl);
+            }
+
+            var legend = new Label("↑ bandın akış yönü · yatay = kanal şeritleri");
+            legend.style.opacity = 0.55f;
+            legend.style.fontSize = 10;
+            wrap.Add(legend);
+            return wrap;
+        }
+
+        /// <summary>Bu renkte kaç kutu var.</summary>
+        private int CountBoxesOfColor(PuzzleColor color)
+        {
+            int n = 0;
+            if (m_Level.monsters == null) return 0;
+            for (int i = 0; i < m_Level.monsters.Count; i++)
+            {
+                var m = m_Level.monsters[i];
+                if (m != null && m.color == color) n++;
+            }
+            return n;
+        }
+
+        /// <summary>Bu renkten bantta kaç top var (bottomToTopGroups toplamı).</summary>
+        private int CountBeltBalls(PuzzleColor color)
+        {
+            int n = 0;
+            if (m_Level.bottomToTopGroups == null) return 0;
+            for (int i = 0; i < m_Level.bottomToTopGroups.Count; i++)
+            {
+                var g = m_Level.bottomToTopGroups[i];
+                if (g != null && g.color == color) n += Mathf.Max(1, g.count);
+            }
+            return n;
+        }
+
+        /// <summary>Bu renkten kutuların istediği toplam top sayısı.</summary>
+        private int CountBoxDemand(PuzzleColor color)
+        {
+            int n = 0;
+            if (m_Level.monsters == null) return 0;
+            for (int i = 0; i < m_Level.monsters.Count; i++)
+            {
+                var m = m_Level.monsters[i];
+                if (m != null && m.color == color) n += Mathf.Max(1, m.count);
+            }
+            return n;
+        }
+
+        private void AddWarning(string text)
+        {
+            var l = new Label("⚠ " + text);
+            l.style.whiteSpace = WhiteSpace.Normal;
+            l.style.color = new Color(0.85f, 0.45f, 0.10f);
+            m_Target.Add(l);
+        }
+
+        private static string ColorLabel(PuzzleColor c)
+        {
+            switch (c)
+            {
+                case PuzzleColor.Blue: return "Mavi";
+                case PuzzleColor.Yellow: return "Sarı";
+                case PuzzleColor.Red: return "Kırmızı";
+                case PuzzleColor.Green: return "Yeşil";
+                case PuzzleColor.Purple: return "Mor";
+                case PuzzleColor.Orange: return "Turuncu";
+                case PuzzleColor.Pink: return "Pembe";
+                case PuzzleColor.Black: return "Siyah";
+                case PuzzleColor.White: return "Beyaz";
+                case PuzzleColor.Cyan: return "Turkuaz";
+                default: return "Kahve";
+            }
+        }
+
         private void AddSlider(string label, float value, float min, float max, System.Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = value, showInputField = true };
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
-            m_Inspector.Add(s);
+            m_Target.Add(s);
         }
 
+        private const string FoldKeyPrefix = "PuzzleGlass.GlassStudio.Fold.";
+
+        /// <summary>
+        /// Katlanır bölüm açar. Bundan sonra eklenen kontroller bu bölümün içine gider; hangi bölümün açık
+        /// kaldığı editör tercihlerinde saklanır, böylece pencere her açıldığında aynı düzen gelir.
+        /// </summary>
         private void Section(string title)
         {
-            var l = new Label(title);
-            l.AddToClassList("inspector__section");
-            m_Inspector.Add(l);
+            string key = FoldKeyPrefix + title;
+            var fold = new Foldout { text = title, value = EditorPrefs.GetBool(key, true) };
+            fold.AddToClassList("inspector__fold");
+            fold.RegisterValueChangedCallback(e =>
+            {
+                if (e.target == fold) EditorPrefs.SetBool(key, e.newValue);
+            });
+            m_Inspector.Add(fold);
+            m_Target = fold.contentContainer;
         }
 
         private static VisualElement BoxIcon(float w, float h, float corner)
@@ -1372,7 +1852,7 @@ namespace PuzzleGlass.Editor.Studio
         /// <summary>Görünümü üst kristal cam + alt kavanoz tepsinin tamamı sığacak şekilde ayarlar.</summary>
         private void FitView(Rect rect, PuzzleGlassLevelData lvl)
         {
-            if (m_ViewFrozen) return;
+            if (m_ViewFrozen) { m_ViewSize = rect.size; ApplyView(); return; }
             float maxHw, top, bottom;
             float frame = lvl.boxFrameThickness;
             if (GlassShapeData.IsTrack(lvl))
@@ -1399,8 +1879,27 @@ namespace PuzzleGlass.Editor.Studio
             float viewHalfW = Mathf.Max(Mathf.Max(maxHw, trayHalfW) + frame + (lvl.useBallFeedTubes ? 0.58f : 0.42f), 1.30f);
             float sx = rect.width / (viewHalfW * 2f);
             float sy = rect.height / (viewTop - viewBottom);
-            m_Scale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.90f);
-            m_Origin = new Vector2(rect.width * 0.5f, rect.height * 0.5f + (viewTop + viewBottom) * 0.5f * m_Scale);
+            m_BaseScale = Mathf.Max(10f, Mathf.Min(sx, sy) * 0.90f);
+            m_ViewCenterY = (viewTop + viewBottom) * 0.5f;
+            m_ViewSize = rect.size;
+            ApplyView();
+        }
+
+        /// <summary>Temel sığdırma ölçüsüne yakınlaştırma ve kaydırmayı uygular.</summary>
+        private void ApplyView()
+        {
+            m_Scale = Mathf.Max(6f, m_BaseScale * m_Zoom);
+            m_Origin = new Vector2(m_ViewSize.x * 0.5f, m_ViewSize.y * 0.5f + m_ViewCenterY * m_Scale) + m_Pan;
+        }
+
+        /// <summary>Yakınlaştırmayı ve kaydırmayı sıfırlar (Sığdır).</summary>
+        private void ResetView()
+        {
+            m_Zoom = 1f;
+            m_Pan = Vector2.zero;
+            ApplyView();
+            m_Canvas.MarkDirtyRepaint();
+            RefreshState();
         }
 
         private static void ComputeTrayPreviewMetrics(
@@ -1730,6 +2229,7 @@ namespace PuzzleGlass.Editor.Studio
 
         private void DrawTrackPreview2D(Painter2D p, GlassTrackLayout.CompiledTrack track)
         {
+            m_HitTrack = track;
             if (track == null || track.polylines.Count == 0) return;
             float outerStroke = (track.innerHalfWidth + track.wallThickness) * 2f * m_Scale;
             float rimStroke = (track.innerHalfWidth + track.wallThickness * 0.85f) * 2f * m_Scale;
@@ -1741,6 +2241,28 @@ namespace PuzzleGlass.Editor.Studio
                 p.lineWidth = Mathf.Max(2f, widthPx);
                 p.lineCap = LineCap.Round;
                 p.lineJoin = LineJoin.Round;
+
+                // Boğaz: kanal genişliği yol boyunca değişir, her parça kendi kalınlığıyla çizilir
+                if (track.throatEnabled)
+                {
+                    float wallPx = widthPx - track.innerHalfWidth * 2f * m_Scale;
+                    for (int b = 0; b < track.polylines.Count; b++)
+                    {
+                        var poly = track.polylines[b];
+                        if (poly == null || poly.Count < 2) continue;
+                        for (int i = 1; i < poly.Count; i++)
+                        {
+                            Vector2 mid = (poly[i - 1] + poly[i]) * 0.5f;
+                            p.lineWidth = Mathf.Max(2f, track.HalfWidthAt(mid) * 2f * m_Scale + wallPx);
+                            p.BeginPath();
+                            p.MoveTo(ToPx(poly[i - 1].x + offsetWorld.x, poly[i - 1].y + offsetWorld.y));
+                            p.LineTo(ToPx(poly[i].x + offsetWorld.x, poly[i].y + offsetWorld.y));
+                            p.Stroke();
+                        }
+                    }
+                    return;
+                }
+
                 for (int b = 0; b < track.polylines.Count; b++)
                 {
                     var poly = track.polylines[b];
@@ -1763,6 +2285,105 @@ namespace PuzzleGlass.Editor.Studio
             StrokeAll(innerStroke + 3f, new Color(0.76f, 0.79f, 0.93f, 0.90f), Vector2.zero);
             // 5. Temiz buzlu kanal zemini
             StrokeAll(Mathf.Max(2f, innerStroke - 2f), new Color(0.94f, 0.95f, 0.99f, 0.94f), Vector2.zero);
+
+            // 6. Boğaz işareti: daralmanın merkezi (sürüklenebilir)
+            if (m_Level != null && m_Level.trackThroatEnabled)
+            {
+                Vector2 tc = GlassTrackLayout.DenormalizeTrackPos(track, m_Level.trackThroatNormalizedCenter);
+                Vector2 tpx = ToPx(tc.x, tc.y);
+                bool act = m_Drag == Handle.Throat;
+                bool hov = m_Hover == Handle.Throat;
+                p.fillColor = act ? new Color(0.98f, 0.62f, 0.22f) : (hov ? new Color(1f, 0.78f, 0.45f) : new Color(0.96f, 0.70f, 0.32f));
+                p.strokeColor = new Color(0.42f, 0.24f, 0.05f);
+                p.lineWidth = 2f;
+                p.BeginPath();
+                p.Arc(tpx, act || hov ? HandleRadius + 1.5f : HandleRadius - 0.5f, 0f, 360f);
+                p.Fill();
+                p.Stroke();
+            }
+
+            // 7. Renk kapıları: kanalı enine kesen çizgi + ortasında sürüklenecek tutamaç
+            if (m_Level != null && m_Level.trackColorGates != null)
+            {
+                for (int gi = 0; gi < m_Level.trackColorGates.Count; gi++)
+                {
+                    var g = m_Level.trackColorGates[gi];
+                    if (g == null || !g.enabled) continue;
+                    if (!TrackColorGates.TryGetGateSegment(track, g, out Vector2 wa, out Vector2 wb, out Vector2 wc)) continue;
+
+                    Vector2 pa = ToPx(wa.x, wa.y);
+                    Vector2 pb = ToPx(wb.x, wb.y);
+
+                    p.lineCap = LineCap.Round;
+                    p.lineWidth = 9f;
+                    p.strokeColor = PuzzleColorPalette.GetBodyColor(g.toColor);
+                    p.BeginPath(); p.MoveTo(pa); p.LineTo(pb); p.Stroke();
+
+                    if (!g.anySourceColor)
+                    {
+                        p.lineWidth = 3.5f;
+                        p.strokeColor = PuzzleColorPalette.GetBodyColor(g.fromColor);
+                        p.BeginPath(); p.MoveTo(pa); p.LineTo(pb); p.Stroke();
+                    }
+
+                    // Uç tutamaçları: kapının boyunu ayarlar
+                    for (int endIdx = 0; endIdx < 2; endIdx++)
+                    {
+                        Vector2 ep = endIdx == 0 ? pa : pb;
+                        bool ea = m_Drag == Handle.GateEnd && m_DragPoint == gi && m_DragBranch == endIdx;
+                        bool eh = m_Hover == Handle.GateEnd && m_HoverPoint == gi && m_HoverBranch == endIdx;
+                        p.fillColor = ea ? new Color(0.35f, 0.66f, 0.94f) : (eh ? Color.white : new Color(0.88f, 0.91f, 0.99f));
+                        p.strokeColor = new Color(0.24f, 0.28f, 0.62f);
+                        p.lineWidth = 2f;
+                        p.BeginPath();
+                        p.Arc(ep, ea || eh ? HandleRadius : HandleRadius - 2f, 0f, 360f);
+                        p.Fill();
+                        p.Stroke();
+                    }
+
+                    Vector2 pc = ToPx(wc.x, wc.y);
+                    bool act = m_Drag == Handle.Gate && m_DragPoint == gi;
+                    bool hov = m_Hover == Handle.Gate && m_HoverPoint == gi;
+                    p.fillColor = act ? new Color(0.35f, 0.66f, 0.94f) : (hov ? Color.white : new Color(0.96f, 0.97f, 1.00f));
+                    p.strokeColor = new Color(0.24f, 0.28f, 0.62f);
+                    p.lineWidth = 2f;
+                    p.BeginPath();
+                    p.Arc(pc, act || hov ? HandleRadius + 1.5f : HandleRadius - 0.5f, 0f, 360f);
+                    p.Fill();
+                    p.Stroke();
+                }
+            }
+        }
+
+        /// <summary>Bir noktanın ekran uzayındaki doğru parçasına uzaklığı (kapı çubuğuna tıklamak için).</summary>
+        private static float DistanceToSegmentPx(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float abSq = ab.sqrMagnitude;
+            float t = abSq > 1e-6f ? Mathf.Clamp01(Vector2.Dot(p - a, ab) / abSq) : 0f;
+            return Vector2.Distance(p, a + ab * t);
+        }
+
+        /// <summary>Verilen noktayı pistin en yakın merkez çizgisine taşır (kapı/boğaz hep kanalın üstünde dursun).</summary>
+        private static Vector2 SnapToTrackCenter(GlassTrackLayout.CompiledTrack track, Vector2 world)
+        {
+            Vector2 best = world;
+            float bestSq = float.MaxValue;
+            for (int b = 0; b < track.polylines.Count; b++)
+            {
+                var poly = track.polylines[b];
+                if (poly == null || poly.Count < 2) continue;
+                for (int i = 0; i < poly.Count - 1; i++)
+                {
+                    Vector2 ab = poly[i + 1] - poly[i];
+                    float abSq = ab.sqrMagnitude;
+                    float t = abSq > 1e-8f ? Mathf.Clamp01(Vector2.Dot(world - poly[i], ab) / abSq) : 0f;
+                    Vector2 proj = poly[i] + ab * t;
+                    float dSq = (world - proj).sqrMagnitude;
+                    if (dSq < bestSq) { bestSq = dSq; best = proj; }
+                }
+            }
+            return best;
         }
 
         private List<GlassTrackBranch> GetEditableTrackBranches(PuzzleGlassLevelData lvl)
@@ -1956,6 +2577,50 @@ namespace PuzzleGlass.Editor.Studio
             var result = (Handle.None, -1, -1);
             if (GlassShapeData.IsTrack(m_Level))
             {
+                // Kapı ve boğaz tutamaçları pist noktalarının önünde gelir: üstte duran kontrol önce yakalanır
+                if (m_HitTrack != null)
+                {
+                    if (m_Level.trackColorGates != null)
+                    {
+                        for (int gi = 0; gi < m_Level.trackColorGates.Count; gi++)
+                        {
+                            var g = m_Level.trackColorGates[gi];
+                            if (g == null || !g.enabled) continue;
+                            if (!TrackColorGates.TryGetGateSegment(m_HitTrack, g, out Vector2 wa, out Vector2 wb, out Vector2 c)) continue;
+
+                            // Uçlar: boyu ayarlar (merkezden önce bakılır ki kısa kapılarda uçlara erişilebilsin)
+                            float da = Vector2.Distance(local, ToPx(wa.x, wa.y));
+                            if (da < best) { best = da; result = (Handle.GateEnd, 0, gi); }
+                            float db = Vector2.Distance(local, ToPx(wb.x, wb.y));
+                            if (db < best) { best = db; result = (Handle.GateEnd, 1, gi); }
+
+                            float dc = Vector2.Distance(local, ToPx(c.x, c.y));
+                            if (dc < best) { best = dc; result = (Handle.Gate, -1, gi); }
+                        }
+
+                        // Tutamaçlardan hiçbiri yakalanmadıysa çubuğun gövdesine tıklamak da taşır
+                        if (result.Item1 == Handle.None)
+                        {
+                            float bestBar = 9f;
+                            for (int gi = 0; gi < m_Level.trackColorGates.Count; gi++)
+                            {
+                                var g = m_Level.trackColorGates[gi];
+                                if (g == null || !g.enabled) continue;
+                                if (!TrackColorGates.TryGetGateSegment(m_HitTrack, g, out Vector2 wa, out Vector2 wb, out _)) continue;
+                                float d = DistanceToSegmentPx(local, ToPx(wa.x, wa.y), ToPx(wb.x, wb.y));
+                                if (d < bestBar) { bestBar = d; result = (Handle.Gate, -1, gi); }
+                            }
+                        }
+                    }
+                    if (m_Level.trackThroatEnabled)
+                    {
+                        Vector2 tc = GlassTrackLayout.DenormalizeTrackPos(m_HitTrack, m_Level.trackThroatNormalizedCenter);
+                        float d = Vector2.Distance(local, ToPx(tc.x, tc.y));
+                        if (d < best) { best = d; result = (Handle.Throat, -1, -1); }
+                    }
+                    if (result.Item1 != Handle.None) return result;
+                }
+
                 var branches = GetEditableTrackBranches(m_Level);
                 for (int b = 0; b < branches.Count; b++)
                 {
@@ -1999,10 +2664,38 @@ namespace PuzzleGlass.Editor.Studio
 
         // ==================== Fare ====================
 
+        /// <summary>Fare tekerleği: imlecin altındaki noktayı sabit tutarak yakınlaştırır.</summary>
+        private void OnCanvasWheel(WheelEvent e)
+        {
+            if (m_Level == null) return;
+            Vector2 mouse = e.localMousePosition;
+            Vector2 before = ToWorld(mouse);
+            m_Zoom = Mathf.Clamp(m_Zoom * (e.delta.y > 0f ? 0.88f : 1.136f), 0.35f, 8f);
+            ApplyView();
+            Vector2 after = ToWorld(mouse);
+            m_Pan += new Vector2((after.x - before.x) * m_Scale, -(after.y - before.y) * m_Scale);
+            ApplyView();
+            m_Canvas.MarkDirtyRepaint();
+            RefreshState();
+            e.StopPropagation();
+        }
+
         private void OnPointerDown(PointerDownEvent e)
         {
             if (m_Level == null) return;
             Vector2 local = e.localPosition;
+
+            // Orta tuş (ya da Alt + sol tuş): önizlemeyi kaydır
+            if (e.button == 2 || (e.button == 0 && e.altKey))
+            {
+                m_Panning = true;
+                m_PanStartMouse = local;
+                m_PanStartValue = m_Pan;
+                m_ViewFrozen = true;
+                m_Canvas.CapturePointer(e.pointerId);
+                e.StopPropagation();
+                return;
+            }
             var (h, br, pt) = HitTest(local);
 
             if (e.button == 1 && h == Handle.TrackPoint)
@@ -2031,7 +2724,7 @@ namespace PuzzleGlass.Editor.Studio
             m_ViewFrozen = true;
             Record("Cam tutamacı");
             if (h == Handle.TrackPoint) EnsureEditableTrackBranches();
-            else EnsureCustom();
+            else if (h != Handle.Gate && h != Handle.GateEnd && h != Handle.Throat) EnsureCustom();
             m_Canvas.CapturePointer(e.pointerId);
             m_Canvas.MarkDirtyRepaint();
             e.StopPropagation();
@@ -2041,6 +2734,15 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_Level == null) return;
             Vector2 local = e.localPosition;
+
+            if (m_Panning)
+            {
+                m_Pan = m_PanStartValue + (local - m_PanStartMouse);
+                ApplyView();
+                m_Canvas.MarkDirtyRepaint();
+                e.StopPropagation();
+                return;
+            }
             if (m_Drag == Handle.None)
             {
                 var (h, br, pt) = HitTest(local);
@@ -2076,6 +2778,30 @@ namespace PuzzleGlass.Editor.Studio
                         m_Level.trackAutoFitToBalls = false;
                     }
                 }
+            }
+            else if (m_Drag == Handle.GateEnd)
+            {
+                if (m_HitTrack == null) return;
+                if (m_DragPoint < 0 || m_DragPoint >= m_Level.trackColorGates.Count) return;
+                var gate = m_Level.trackColorGates[m_DragPoint];
+                if (gate == null) return;
+                if (!TrackColorGates.TryGetGateSegment(m_HitTrack, gate, out Vector2 ga, out Vector2 gb, out Vector2 gc)) return;
+
+                Vector2 dir = (gb - ga).normalized;
+                // Kapı simetrik: çekilen ucun merkeze uzaklığı boyun yarısı olur
+                float half = Mathf.Abs(Vector2.Dot(w - gc, dir));
+                gate.length = Mathf.Clamp(Snap(half * 2f, e.shiftKey), 0.1f, 1.2f);
+            }
+            else if (m_Drag == Handle.Gate || m_Drag == Handle.Throat)
+            {
+                if (m_HitTrack == null) return;
+                // Tutamacı kanalın merkez çizgisine yapıştır: kapı her zaman kanalın üstünde kalır
+                Vector2 snapped = SnapToTrackCenter(m_HitTrack, w);
+                Vector2 norm = GlassTrackLayout.NormalizeTrackPos(m_HitTrack, snapped);
+                norm = new Vector2(Mathf.Clamp01(norm.x), Mathf.Clamp01(norm.y));
+                if (m_Drag == Handle.Throat) m_Level.trackThroatNormalizedCenter = norm;
+                else if (m_DragPoint >= 0 && m_DragPoint < m_Level.trackColorGates.Count)
+                    m_Level.trackColorGates[m_DragPoint].normalizedCenter = norm;
             }
             else if (m_Drag == Handle.Point)
             {
@@ -2126,6 +2852,15 @@ namespace PuzzleGlass.Editor.Studio
 
         private void OnPointerUp(PointerUpEvent e)
         {
+            if (m_Panning)
+            {
+                m_Panning = false;
+                m_ViewFrozen = false;
+                if (m_Canvas.HasPointerCapture(e.pointerId)) m_Canvas.ReleasePointer(e.pointerId);
+                RefreshState();
+                e.StopPropagation();
+                return;
+            }
             if (m_Drag == Handle.None) return;
             m_Drag = Handle.None;
             m_DragBranch = -1;

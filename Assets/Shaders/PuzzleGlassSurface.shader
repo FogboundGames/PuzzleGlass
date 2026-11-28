@@ -33,6 +33,7 @@ Shader "PuzzleGlass/GlassChamberLit"
         _TrackHalfWidth ("Track Inner Half Width (P-Space)", Float) = 0.25
         _TrackWallThick ("Track Wall Thickness (P-Space)", Float) = 0.06
         _TrackFillet ("Track Junction Fillet", Float) = 0.04
+        _TrackThroat ("Track Throat (cx, cy, radius, narrowHalfWidth) P-Space, radius 0 = off", Vector) = (0, 0, 0, 0)
         _TrackExitPos ("Track Exit (pX, pY, mouthHalfW, on)", Vector) = (0, -0.5, 0.16, 0)
         _TrackBake ("Bake Track SDF Into Render Texture", Float) = 0.0
         _TrackBoxMode ("Tube-Style Square Glass (box SDF instead of track)", Float) = 0.0
@@ -104,6 +105,7 @@ Shader "PuzzleGlass/GlassChamberLit"
                 float _TrackHalfWidth;
                 float _TrackWallThick;
                 float _TrackFillet;
+                float4 _TrackThroat;
                 float4 _TrackExitPos;
                 float _TrackBake;
                 float _TrackBoxMode;
@@ -760,6 +762,19 @@ Shader "PuzzleGlass/GlassChamberLit"
                 return length(pa - ba * h);
             }
 
+            // Boğaz: kanalın yarı genişliği, merkez çizgisi üzerindeki konuma göre daralır.
+            // GlassTrackLayout.CompiledTrack.HalfWidthAt ile birebir aynı formül (cam, duvar ve akış alanı aynı daralmayı görür).
+            float TrackHalfWidthAtSeg(float2 p, float2 a, float2 b)
+            {
+                if (_TrackThroat.z <= 1e-4) return _TrackHalfWidth;
+                float2 ba = b - a;
+                float h = clamp(dot(p - a, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+                float2 proj = a + ba * h;
+                float t = saturate(length(proj - _TrackThroat.xy) / _TrackThroat.z);
+                float w = 1.0 - smoothstep(0.0, 1.0, t);
+                return lerp(_TrackHalfWidth, _TrackThroat.w, w);
+            }
+
             // Çoklu-kollu pist için iç kanal işaretli mesafesi (içeride negatif, duvar sınırı = 0).
             // Tek geçişte hem mesafeyi hem de en yakın segmenti döndürür; gradyan ve gölge örnekleri
             // bu segment üzerinden analitik hesaplanır (eskiden 4-6 ek tam SDF geçişi vardı).
@@ -794,7 +809,7 @@ Shader "PuzzleGlass/GlassChamberLit"
                 {
                     if (i >= n) break;
                     float4 seg = _TrackSegs[i];
-                    float d = sdSegment2D(p, seg.xy, seg.zw) - _TrackHalfWidth;
+                    float d = sdSegment2D(p, seg.xy, seg.zw) - TrackHalfWidthAtSeg(p, seg.xy, seg.zw);
                     if (d < bestDist)
                     {
                         secondDist = bestDist; secondA = nearestA; secondB = nearestB;

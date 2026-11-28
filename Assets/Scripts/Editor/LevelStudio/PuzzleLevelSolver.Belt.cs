@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
@@ -25,6 +26,9 @@ namespace PuzzleGlass.Editor.Studio
         private const int FreeBucket = Layers;
         private const int Buckets = Layers + 1;
         private const int QueueIndex = Buckets * ColorSlots;
+        public const int TakenLength = QueueIndex + 1;
+        /// <summary>Bir levelde modellenen en fazla yapışık küme sayısı.</summary>
+        private const int MaxClusters = 4;
 
         private sealed class BeltModel
         {
@@ -33,12 +37,26 @@ namespace PuzzleGlass.Editor.Studio
             public List<PuzzleColor> queue = new List<PuzzleColor>(); // halka dışı, katılma sırasıyla
             public int[][] prefix;                        // prefix[k][c]: kuyruğun ilk k topunda c rengi sayısı
             public int capacity;                          // bandın taşıyabileceği en fazla top
+
+            // Yapışık kümeler: her küme bantta renk başına şu kadar topu dondurur; unlockColor renginde
+            // unlockBoxes kadar kutu tamamlanana dek o toplar alınamaz.
+            public int clusterN;
+            public readonly int[] clusterUnlockColor = new int[MaxClusters];
+            public readonly int[] clusterUnlockBoxes = new int[MaxClusters];
+            public readonly int[][] clusterFrozen = NewClusterFrozen();
         }
 
         // Çözücünün dalga dizisine (wave1Stacks) iliştirilir: böylece mevcut tüm çağrılar (çözüm, botlar, ölçüler,
         // oynatma analizi) imza değişmeden dönen pist modelini kullanır.
         private static readonly ConditionalWeakTable<List<PuzzleColor>[], BeltModel> s_Belts =
             new ConditionalWeakTable<List<PuzzleColor>[], BeltModel>();
+
+        private static int[][] NewClusterFrozen()
+        {
+            var a = new int[MaxClusters][];
+            for (int i = 0; i < MaxClusters; i++) a[i] = new int[ColorSlots];
+            return a;
+        }
 
         private static BeltModel GetBelt(List<PuzzleColor>[] wave1Stacks) =>
             wave1Stacks != null && s_Belts.TryGetValue(wave1Stacks, out var b) ? b : null;
@@ -81,6 +99,29 @@ namespace PuzzleGlass.Editor.Studio
                     if (compiled.SampleDistToRingCenter(s.localPos) < half) ringSlots++;
             belt.capacity = layout.beltCount > 0 ? layout.beltCount : Mathf.Max(onRing, ringSlots);
             if (belt.capacity <= 0) belt.capacity = int.MaxValue;
+
+            // Yapışık kümeler: çizilen her hücre o renkten bir topu dondurur
+            if (lvl.ballClusters != null)
+            {
+                var tally = new Dictionary<PuzzleColor, int>();
+                for (int i = 0; i < lvl.ballClusters.Count && belt.clusterN < MaxClusters; i++)
+                {
+                    var cl = lvl.ballClusters[i];
+                    if (cl == null || !cl.enabled) continue;
+                    cl.EnsureCellBuffer();
+                    if (cl.FilledCount <= 0) continue;
+
+                    tally.Clear();
+                    cl.CountByColor(tally);
+
+                    int k = belt.clusterN;
+                    belt.clusterUnlockColor[k] = (int)cl.unlockBoxColor;
+                    belt.clusterUnlockBoxes[k] = Mathf.Max(1, cl.unlockAfterBoxes);
+                    for (int c = 0; c < ColorSlots; c++) belt.clusterFrozen[k][c] = 0;
+                    foreach (var kv in tally) belt.clusterFrozen[k][(int)kv.Key] = kv.Value;
+                    belt.clusterN++;
+                }
+            }
 
             belt.prefix = new int[belt.queue.Count + 1][];
             belt.prefix[0] = new int[ColorSlots];
@@ -221,11 +262,14 @@ namespace PuzzleGlass.Editor.Studio
             return t;
         }
 
-        /// <summary>Şu an çıkıştan alınabilecek renkler (akıllı bot "gelecek renkler" olarak bunları görür).</summary>
-        private static void BeltColors(BeltModel belt, State s, HashSet<PuzzleColor> into)
+        /// <summary>
+        /// Şu an çıkıştan alınabilecek renkler (akıllı bot "gelecek renkler" olarak bunları görür).
+        /// Yapışık küme kuralı dahildir: çözülmemiş kümedeki toplar alınabilir sayılmaz.
+        /// </summary>
+        private static void BeltColors(BeltModel belt, State s, Block[] blocks, HashSet<PuzzleColor> into)
         {
             for (int c = 0; c < ColorSlots; c++)
-                if (BeltAvail(belt, s, c) > 0) into.Add((PuzzleColor)c);
+                if (BeltAvailFree(belt, s, blocks, c) > 0) into.Add((PuzzleColor)c);
         }
 
         /// <summary>c renginden n topu alınabilir kovalardan düşer (önce açık katman, sonra serbest).</summary>
@@ -239,6 +283,65 @@ namespace PuzzleGlass.Editor.Studio
                 n -= t;
             }
             if (n > 0) s.taken[FreeBucket * ColorSlots + c] += n;
+        }
+
+        /// <summary>
+        /// Teşhis: level için dönen bant modeli kurulabildi mi, kapasite ne, zincirler modele girdi mi.
+        /// Cam Stüdyosu uyarıları ve mekanik testleri bunu kullanır.
+        /// </summary>
+        public static string DescribeBelt(PuzzleGlassLevelData lvl, GlassDims dims)
+        {
+            if (!BuildRuntimeModel(lvl, dims, out _, out _, out _, out var w1, out _, out _, out _, out _))
+                return "model kurulamadı";
+            var belt = GetBelt(w1);
+            if (belt == null) return "bant modeli YOK (sabit sütun modeli kullanılıyor)";
+
+            var sb = new StringBuilder();
+            sb.Append($"bant kapasitesi={belt.capacity} kuyruk={belt.queue.Count} katmanKilidi={belt.layerLock} kume={belt.clusterN}");
+            for (int i = 0; i < belt.clusterN; i++)
+            {
+                int tot = 0;
+                for (int c = 0; c < ColorSlots; c++) tot += belt.clusterFrozen[i][c];
+                sb.Append($" [{tot} top, {(PuzzleColor)belt.clusterUnlockColor[i]} x{belt.clusterUnlockBoxes[i]} ile cozulur]");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Küme çözüldü mü: koşul rengindeki yeterli kutu tamamlandı mı.</summary>
+        private static bool IsClusterDissolved(BeltModel belt, State s, Block[] blocks, int k)
+        {
+            int want = belt.clusterUnlockBoxes[k];
+            int color = belt.clusterUnlockColor[k];
+            int done = 0;
+            for (int i = 0; i < blocks.Length; i++)
+            {
+                if (!s.removed[i] || blocks[i].isFilledBox) continue;
+                if ((int)blocks[i].color != color) continue;
+                done++;
+                if (done >= want) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Bu renkten şu an yapışık kümelerde donmuş (alınamaz) top sayısı.</summary>
+        private static int FrozenCount(BeltModel belt, State s, Block[] blocks, int c)
+        {
+            int n = 0;
+            for (int k = 0; k < belt.clusterN; k++)
+            {
+                if (belt.clusterFrozen[k][c] <= 0) continue;
+                if (IsClusterDissolved(belt, s, blocks, k)) continue;
+                n += belt.clusterFrozen[k][c];
+            }
+            return n;
+        }
+
+        /// <summary>Yapışık küme kuralıyla alınabilecek c rengi top sayısı.</summary>
+        private static int BeltAvailFree(BeltModel belt, State s, Block[] blocks, int c)
+        {
+            int avail = BeltAvail(belt, s, c);
+            if (belt.clusterN == 0 || avail <= 0) return avail;
+            return Mathf.Max(0, avail - FrozenCount(belt, s, blocks, c));
         }
 
         /// <summary>
@@ -277,7 +380,7 @@ namespace PuzzleGlass.Editor.Studio
 
                     int c = (int)blocks[i].color;
                     int need = blocks[i].count - s.fill[i];
-                    int take = Mathf.Min(need, BeltAvail(belt, s, c));
+                    int take = Mathf.Min(need, BeltAvailFree(belt, s, blocks, c));
                     if (take > 0)
                     {
                         BeltTake(belt, s, c, take);

@@ -450,7 +450,7 @@ namespace PuzzleGlass.Editor.Studio
                     var stacks = s.wave == 0 ? w1 : w2;
                     front.Clear();
                     var belt = GetBelt(w1);
-                    if (belt != null) BeltColors(belt, s, front);
+                    if (belt != null) BeltColors(belt, s, blocks, front);
                     else
                         for (int c = 0; c < stacks.Length; c++)
                             if (s.taken[c] < stacks[c].Count) front.Add(stacks[c][s.taken[c]]);
@@ -682,7 +682,7 @@ namespace PuzzleGlass.Editor.Studio
                 if (belt != null)
                 {
                     s_Belts.Add(localWave1, belt);
-                    bc = QueueIndex + 1;
+                    bc = TakenLength;
                 }
             }
             wave1Stacks = localWave1;

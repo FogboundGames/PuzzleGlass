@@ -937,6 +937,16 @@ namespace PuzzleGlass
                         glassContainer.trackWallThickness = levelData.trackWallThickness > 0.01f ? levelData.trackWallThickness : 0.082f;
                         glassContainer.trackHiddenRatio = Mathf.Clamp(levelData.trackHiddenRatio, 0f, 0.6f);
                         glassContainer.trackBranches = GlassTrackLayout.CloneBranches(levelData.trackBranches);
+
+                        // Pist içi mekanikler (renk kapıları / boğaz)
+                        glassContainer.trackColorGates = CloneColorGates(levelData.trackColorGates);
+                        glassContainer.ballClusters = CloneBallClusters(levelData.ballClusters);
+                        glassContainer.trackThroatEnabled = levelData.trackThroatEnabled;
+                        glassContainer.trackThroatNormalizedCenter = levelData.trackThroatNormalizedCenter;
+                        glassContainer.trackThroatRadius = Mathf.Clamp(levelData.trackThroatRadius, 0.06f, 0.7f);
+                        glassContainer.trackThroatWidthRatio = Mathf.Clamp(levelData.trackThroatWidthRatio, 0.22f, 1f);
+                        TrackColorGates.Invalidate();
+                        BallClusters.Invalidate();
                     }
                     else if (levelData.useManualBallLayout)
                     {
@@ -957,6 +967,11 @@ namespace PuzzleGlass
                         glassContainer.trackScale = 1.0f;
                         glassContainer.trackWallThickness = 0.082f;
                         glassContainer.trackHiddenRatio = 0f;
+                        glassContainer.trackColorGates = new List<TrackColorGate>();
+                        glassContainer.ballClusters = new List<BallClusterShape>();
+                        glassContainer.trackThroatEnabled = false;
+                        TrackColorGates.Invalidate();
+                        BallClusters.Invalidate();
                         glassContainer.trackBranches = GlassTrackLayout.BuildPresetBranches(GlassTrackPreset.ArchLoop);
                         glassContainer.symmetricMode = true;
                         glassContainer.curveSubdivisions = 14;
@@ -2213,5 +2228,30 @@ namespace PuzzleGlass
             GUILayout.EndArea();
             GUI.backgroundColor = oldBg;
         }
+
+        /// <summary>Yapışık küme tanımlarını kopyalar: level verisi oyun sırasında değişmesin.</summary>
+        private static List<BallClusterShape> CloneBallClusters(List<BallClusterShape> src)
+        {
+            var list = new List<BallClusterShape>(src != null ? src.Count : 0);
+            if (src == null) return list;
+            for (int i = 0; i < src.Count; i++)
+            {
+                if (src[i] != null) list.Add(src[i].Clone());
+            }
+            return list;
+        }
+
+        /// <summary>Renk kapılarını kopyalar: level verisi (ScriptableObject) oyun sırasında değişmesin.</summary>
+        private static List<TrackColorGate> CloneColorGates(List<TrackColorGate> src)
+        {
+            var list = new List<TrackColorGate>(src != null ? src.Count : 0);
+            if (src == null) return list;
+            for (int i = 0; i < src.Count; i++)
+            {
+                if (src[i] != null) list.Add(src[i].Clone());
+            }
+            return list;
+        }
+
     }
 }

@@ -2553,6 +2553,8 @@ namespace PuzzleGlass
                 if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
                 _isCompleted = true;
                 StagingGridBoard.Instance?.MarkGridDirty();
+                // Yapışık küme koşulu: bu renkte kutu tamamlandı
+                if (!isFilledBox) BallClusters.NotifyBoxCompleted(colorType);
 
                 if (!isFilledBox && Application.isPlaying && badgeTransform != null && counterText != null)
                 {

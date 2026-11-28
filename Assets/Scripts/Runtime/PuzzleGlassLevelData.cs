@@ -70,6 +70,202 @@ namespace PuzzleGlass
         }
     }
 
+    /// <summary>
+    /// Renk kapısı: cam pistin içinde kanalı enine kesen bir kapı. Kapıdan geçen topun rengi değişir
+    /// (kaynak renk -> hedef renk). Kapı, kanalın akışına dik durur; yeri kanal boyunca kaydırılır.
+    /// </summary>
+    /// <summary>
+    /// Yapışık top kümesi. Tasarımcı Cam Stüdyosu'nda bant ızgarasına bir şekil çizer (gülen yüz, kalp, harf…);
+    /// o şekildeki toplar banda tek parça halinde yerleşir ve <b>bozulmadan</b> döner: hiçbiri toplanamaz,
+    /// aralarına başka top giremez, şekil dağılmaz.
+    ///
+    /// Küme ancak koşul sağlanınca çözülür: seçilen renkte <see cref="unlockAfterBoxes"/> kadar kutu tamamlanınca
+    /// yapışkanlık kalkar ve toplar normal bant topu olur. Böylece oyuncuya net bir öncelik kararı doğar:
+    /// "önce hangi kutuyu bitirmeliyim".
+    ///
+    /// Izgara enine (cols) bandın şerit sayısı kadardır; rows bant boyunca uzunluğudur.
+    /// cells[row * cols + col]: -1 = boş hücre, 0.. = o hücredeki topun rengi (PuzzleColor).
+    /// </summary>
+    [Serializable]
+    public class BallClusterShape
+    {
+        public const int EmptyCell = -1;
+        public const int MaxCols = 5;
+        public const int MaxRows = 12;
+
+        public string name = "Yapışık Küme";
+        public bool enabled = true;
+
+        [Range(1, MaxCols)] public int cols = 5;
+        [Range(1, MaxRows)] public int rows = 5;
+        public List<int> cells = new List<int>();
+
+        [Tooltip("Kümenin bant üzerindeki başlangıç yeri (0..1, çıkıştan itibaren bant boyunca).")]
+        [Range(0f, 1f)] public float positionAlongBelt = 0.5f;
+
+        [Tooltip("Bu renkte kutu tamamlanınca küme çözülür.")]
+        public PuzzleColor unlockBoxColor = PuzzleColor.Blue;
+        [Tooltip("Kaç kutu tamamlanınca çözüleceği.")]
+        [Range(1, 8)] public int unlockAfterBoxes = 1;
+
+        public int CellCount => Mathf.Max(0, cols) * Mathf.Max(0, rows);
+
+        public int GetCell(int col, int row)
+        {
+            int i = row * cols + col;
+            if (col < 0 || col >= cols || row < 0 || row >= rows) return EmptyCell;
+            return i >= 0 && i < cells.Count ? cells[i] : EmptyCell;
+        }
+
+        public void SetCell(int col, int row, int value)
+        {
+            if (col < 0 || col >= cols || row < 0 || row >= rows) return;
+            EnsureCellBuffer();
+            cells[row * cols + col] = value;
+        }
+
+        public void EnsureCellBuffer()
+        {
+            if (cells == null) cells = new List<int>();
+            int need = CellCount;
+            while (cells.Count < need) cells.Add(EmptyCell);
+            while (cells.Count > need) cells.RemoveAt(cells.Count - 1);
+        }
+
+        /// <summary>Izgarayı yeniden boyutlandırır, çizilmiş hücreleri korur.</summary>
+        public void Resize(int newCols, int newRows)
+        {
+            newCols = Mathf.Clamp(newCols, 1, MaxCols);
+            newRows = Mathf.Clamp(newRows, 1, MaxRows);
+            if (newCols == cols && newRows == rows) { EnsureCellBuffer(); return; }
+
+            var old = new List<int>(cells ?? new List<int>());
+            int oldCols = cols, oldRows = rows;
+            cols = newCols; rows = newRows;
+            cells = new List<int>(CellCount);
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    int v = EmptyCell;
+                    if (c < oldCols && r < oldRows)
+                    {
+                        int i = r * oldCols + c;
+                        if (i >= 0 && i < old.Count) v = old[i];
+                    }
+                    cells.Add(v);
+                }
+            }
+        }
+
+        public int FilledCount
+        {
+            get
+            {
+                int n = 0;
+                if (cells == null) return 0;
+                for (int i = 0; i < cells.Count && i < CellCount; i++) if (cells[i] >= 0) n++;
+                return n;
+            }
+        }
+
+        /// <summary>Renk başına kaç hücre dolu.</summary>
+        public void CountByColor(Dictionary<PuzzleColor, int> into)
+        {
+            if (into == null || cells == null) return;
+            for (int i = 0; i < cells.Count && i < CellCount; i++)
+            {
+                int v = cells[i];
+                if (v < 0) continue;
+                var c = (PuzzleColor)v;
+                into.TryGetValue(c, out int n);
+                into[c] = n + 1;
+            }
+        }
+
+        public BallClusterShape Clone()
+        {
+            var c = new BallClusterShape
+            {
+                name = name,
+                enabled = enabled,
+                cols = cols,
+                rows = rows,
+                positionAlongBelt = positionAlongBelt,
+                unlockBoxColor = unlockBoxColor,
+                unlockAfterBoxes = unlockAfterBoxes,
+                cells = new List<int>(cells ?? new List<int>())
+            };
+            c.EnsureCellBuffer();
+            return c;
+        }
+
+        /// <summary>Varsayılan gülen yüz (5x5): gözler ve ağız boş hücre, yüz dolu.</summary>
+        public static BallClusterShape CreateSmiley(PuzzleColor face)
+        {
+            var s = new BallClusterShape { name = "Gülen Yüz", cols = 5, rows = 5 };
+            s.EnsureCellBuffer();
+            int f = (int)face;
+            string[] art =
+            {
+                ".###.",
+                "#.#.#",
+                "#####",
+                "##.##",
+                ".###."
+            };
+            for (int r = 0; r < 5; r++)
+                for (int c = 0; c < 5; c++)
+                    s.SetCell(c, r, art[r][c] == '#' ? f : EmptyCell);
+            return s;
+        }
+    }
+
+    [Serializable]
+    public class TrackColorGate
+    {
+        public string name = "Renk Kapısı";
+        public bool enabled = true;
+        [Tooltip("Pist dış sınırlarına göre 0..1 normalize edilmiş kapı merkezi (pist ölçeklense de kaymaz).")]
+        public Vector2 normalizedCenter = new Vector2(0.08f, 0.5f);
+        [Tooltip("Kapının enine uzunluğu (pist yerel birimi). Kanal genişliğini tam kesmeli, yoksa kenardan top kaçar.")]
+        [Range(0.1f, 1.2f)]
+        public float length = 0.62f;
+        [Tooltip("Açıkken kapıdan geçen her renk hedef renge boyanır. Kapalıyken yalnızca Kaynak Renk boyanır.")]
+        public bool anySourceColor = false;
+        public PuzzleColor fromColor = PuzzleColor.Red;
+        public PuzzleColor toColor = PuzzleColor.Blue;
+        [Tooltip("Bantta kaç top HEDEF renk yerine KAYNAK renkte başlasın. Motor normalde banttaki renk toplamlarını " +
+                 "kutuların talebine eşitler; bu sayı o eşitliği kapıya göre kaydırır. 0 = kapı sadece dekor " +
+                 "(bantta kaynak renkte top olmaz).")]
+        public int preloadCount = 0;
+
+        public TrackColorGate() { }
+
+        public TrackColorGate(Vector2 normalizedCenter, float length, PuzzleColor from, PuzzleColor to)
+        {
+            this.normalizedCenter = normalizedCenter;
+            this.length = length;
+            this.fromColor = from;
+            this.toColor = to;
+        }
+
+        public TrackColorGate Clone()
+        {
+            return new TrackColorGate
+            {
+                name = name,
+                enabled = enabled,
+                normalizedCenter = normalizedCenter,
+                length = length,
+                anySourceColor = anySourceColor,
+                fromColor = fromColor,
+                toColor = toColor,
+                preloadCount = preloadCount
+            };
+        }
+    }
+
     [Serializable]
     public class GlassDividerData
     {
@@ -386,6 +582,26 @@ namespace PuzzleGlass
         [Range(0f, 0.6f)]
         public float trackHiddenRatio = 0f;
         public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
+
+        [Header("Pist İçi Mekanikler (Boyacı / Boğaz)")]
+        [Tooltip("Renk kapıları: kanalı enine kesen kapılar; geçen topun rengi değişir.")]
+        public List<TrackColorGate> trackColorGates = new List<TrackColorGate>();
+        [Tooltip("Boğaz: pistin bir noktasında kanal daralır. Toplar oradan tek/iki şerit halinde geçmek zorunda kalır, " +
+                 "çıkışa varış sırası gerçekten orada belirlenir ve bandın kapasitesi düşer.")]
+        public bool trackThroatEnabled = false;
+        [Tooltip("Boğazın pist dış sınırlarına göre 0..1 normalize merkezi (varsayılan: halkanın sol kenarı).")]
+        public Vector2 trackThroatNormalizedCenter = new Vector2(0.07f, 0.52f);
+        [Tooltip("Daralmanın pist boyunca yayıldığı yarıçap (pist yerel birimi). Küçük = keskin boğaz.")]
+        [Range(0.06f, 0.7f)]
+        public float trackThroatRadius = 0.22f;
+        [Tooltip("Boğazın en dar yerindeki kanal genişliği, normal genişliğin oranı olarak. 1 = daralma yok, " +
+                 "0.3 ≈ tek şerit.")]
+        [Range(0.22f, 1f)]
+        public float trackThroatWidthRatio = 0.42f;
+
+        [Tooltip("Yapışık top kümeleri: banda çizilen şekil tek parça halinde döner, hiçbir topu toplanamaz; " +
+                 "seçilen renkte kutu tamamlanınca çözülür.")]
+        public List<BallClusterShape> ballClusters = new List<BallClusterShape>();
 
         [Header("Glass Compartments & Internal Dividers (Per-Level)")]
         public GlassCompartmentPreset compartmentPreset = GlassCompartmentPreset.None_OrderedPool;
@@ -757,6 +973,9 @@ namespace PuzzleGlass
                 actualGlass[g.color] = actualGlass.TryGetValue(g.color, out int cur) ? cur + cnt : cnt;
             }
 
+            // Renk kapısı ön yüklemesi: bantta kaynak renkte başlayan toplar, hedef rengin talebini karşılar sayılır
+            ApplyGatePreloadToTotals(actualGlass);
+
             foreach (var kv in expectedGlass)
             {
                 actualGlass.TryGetValue(kv.Key, out int ac);
@@ -856,7 +1075,64 @@ namespace PuzzleGlass
                 }
             }
 
+            ApplyGatePreloadToGroups();
             SyncTripletsFromGroups();
+        }
+
+        /// <summary>
+        /// Renk dengesi karşılaştırması için: bantta kaynak renkte başlayan toplar hedef renge sayılır.
+        /// (Boyacı bölgesinden geçince gerçekten o renge dönüşecekler.)
+        /// </summary>
+        private void ApplyGatePreloadToTotals(Dictionary<PuzzleColor, int> glassTotals)
+        {
+            if (trackColorGates == null || glassTotals == null) return;
+            for (int i = 0; i < trackColorGates.Count; i++)
+            {
+                var z = trackColorGates[i];
+                if (z == null || !z.enabled || z.anySourceColor || z.preloadCount <= 0) continue;
+                if (z.fromColor == z.toColor) continue;
+                if (!glassTotals.TryGetValue(z.fromColor, out int have) || have <= 0) continue;
+
+                int move = Mathf.Min(have, z.preloadCount);
+                glassTotals[z.fromColor] = have - move;
+                glassTotals[z.toColor] = (glassTotals.TryGetValue(z.toColor, out int cur) ? cur : 0) + move;
+            }
+        }
+
+        /// <summary>
+        /// Kutulardan üretilen bant listesinde, her renk kapısı için preloadCount kadar topu hedef renkten
+        /// kaynak renge çevirir. Böylece bant "kırmızı başlar, boyandıktan sonra mavi kutuya gider" olur.
+        /// </summary>
+        private void ApplyGatePreloadToGroups()
+        {
+            if (trackColorGates == null || bottomToTopGroups == null) return;
+
+            for (int zi = 0; zi < trackColorGates.Count; zi++)
+            {
+                var z = trackColorGates[zi];
+                if (z == null || !z.enabled || z.anySourceColor || z.preloadCount <= 0) continue;
+                if (z.fromColor == z.toColor) continue;
+
+                int remaining = z.preloadCount;
+                for (int i = 0; i < bottomToTopGroups.Count && remaining > 0; i++)
+                {
+                    var g = bottomToTopGroups[i];
+                    if (g == null || g.color != z.toColor) continue;
+
+                    int take = Mathf.Min(remaining, g.count);
+                    if (take >= g.count)
+                    {
+                        g.color = z.fromColor;
+                    }
+                    else
+                    {
+                        g.count -= take;
+                        bottomToTopGroups.Insert(i + 1, new LevelMonsterEntry(z.fromColor, take));
+                        i++; // yeni eklenen girdiyi tekrar işleme
+                    }
+                    remaining -= take;
+                }
+            }
         }
     }
 }

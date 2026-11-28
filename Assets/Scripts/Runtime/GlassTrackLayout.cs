@@ -88,6 +88,29 @@ namespace PuzzleGlass
             public float ballDiameter;
             public int lanesAcross;
             public Vector2 exitPoint;
+
+            // ---- Boğaz (kanal daralması) ----
+            /// <summary>Boğaz etkin mi? (PuzzleGlassLevelData.trackThroatEnabled)</summary>
+            public bool throatEnabled;
+            /// <summary>Boğazın merkezi (pist yerel koordinat).</summary>
+            public Vector2 throatCenter;
+            /// <summary>Daralmanın merkez çizgisi boyunca yayıldığı yarıçap (pist yerel).</summary>
+            public float throatRadius;
+            /// <summary>Boğazın en dar yerindeki yarı genişlik (pist yerel).</summary>
+            public float throatHalfWidth;
+
+            /// <summary>
+            /// Kanalın merkez çizgisindeki bir noktada yerel yarı genişlik; boğaz kapalıysa innerHalfWidth.
+            /// Aynı formül shader tarafında da var (PuzzleGlassSurface.shader / TrackHalfWidthAtSeg), böylece
+            /// camın görüntüsü, duvar collider'ları ve akış alanı aynı daralmayı kullanır.
+            /// </summary>
+            public float HalfWidthAt(Vector2 ptOnCenterline)
+            {
+                if (!throatEnabled || throatRadius <= 1e-4f) return innerHalfWidth;
+                float t = Mathf.Clamp01(Vector2.Distance(ptOnCenterline, throatCenter) / throatRadius);
+                float w = 1f - Mathf.SmoothStep(0f, 1f, t);
+                return Mathf.Lerp(innerHalfWidth, throatHalfWidth, w);
+            }
             /// <summary>Elle top dizimi için adreslenmiş slotlar (column = kol*şerit+şerit, row = çıkıştan uzaklık sırası).
             /// Level Design ve oyun aynı listeyi kullanır.</summary>
             public List<OrderedPoolLayout.Slot> manualSlots = new List<OrderedPoolLayout.Slot>();
@@ -516,7 +539,11 @@ namespace PuzzleGlass
             out OrderedPoolLayout.Result layout,
             int manualCapacity = 0,
             int manualRetry = 0,
-            int manualNeed = 0)
+            int manualNeed = 0,
+            bool throatEnabled = false,
+            Vector2 throatNormalizedCenter = default,
+            float throatRadius = 0.22f,
+            float throatWidthRatio = 1f)
         {
             // Hedef top listesi (alttan üste)
             List<PuzzleColor> orderedColors = ExpandBallColors(bottomToTopGroups, manualBalls, useManualLayout);
@@ -574,7 +601,12 @@ namespace PuzzleGlass
                 road.Add(new Vector2(j.x, Mathf.Lerp(j.y, topY, 0.5f)));
                 road.Add(new Vector2(j.x, topY));
             }
-            compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes, normalizeToFixedOuterSize: !isCustom);
+            compiled = CompileTrack(preset, fittedBranches, innerHalfW, clampedWall, chosenDiam, lanes,
+                normalizeToFixedOuterSize: !isCustom,
+                throatEnabled: throatEnabled,
+                throatNormalizedCenter: throatNormalizedCenter,
+                throatRadius: throatRadius,
+                throatWidthRatio: throatWidthRatio);
 
             List<TrackSlot> allSlots = GeneratePackedTrackSlots(compiled);
 
@@ -1235,7 +1267,11 @@ namespace PuzzleGlass
             float wallThickness,
             float ballDiameter,
             int lanesAcross,
-            bool normalizeToFixedOuterSize = false)
+            bool normalizeToFixedOuterSize = false,
+            bool throatEnabled = false,
+            Vector2 throatNormalizedCenter = default,
+            float throatRadius = 0.22f,
+            float throatWidthRatio = 1f)
         {
             var track = new CompiledTrack
             {
@@ -1477,6 +1513,17 @@ namespace PuzzleGlass
             float fieldPad = padOut + 0.16f;
             track.fieldRect = Rect.MinMaxRect(minX - fieldPad, minY - fieldPad, maxX + fieldPad, maxY + fieldPad);
 
+            // Boğaz, alan pişirilmeden önce çözülür: normalize merkez ancak positionBounds hazır olunca yerele çevrilebilir
+            if (throatEnabled && throatWidthRatio < 0.995f)
+            {
+                track.throatEnabled = true;
+                track.throatRadius = Mathf.Max(0.02f, throatRadius);
+                // En dar yer bile bir topu geçirmeli (aksi halde bant kalıcı tıkanır)
+                float minHalf = track.ballDiameter * 0.62f;
+                track.throatHalfWidth = Mathf.Max(minHalf, track.innerHalfWidth * Mathf.Clamp(throatWidthRatio, 0.2f, 1f));
+                track.throatCenter = DenormalizeTrackPos(track, throatNormalizedCenter);
+            }
+
             BuildTrackField2D(track);
             return track;
         }
@@ -1538,7 +1585,8 @@ namespace PuzzleGlass
                         float t = abSq > 1e-8f ? Mathf.Clamp01(Vector2.Dot(p - seg.a, ab) / abSq) : 0f;
                         Vector2 proj = seg.a + ab * t;
                         float dSq = (p - proj).sqrMagnitude;
-                        float d = Mathf.Sqrt(dSq) - track.innerHalfWidth;
+                        // Boğaz: kanalın yarı genişliği merkez çizgisi üzerindeki konuma göre daralır
+                        float d = Mathf.Sqrt(dSq) - (track.throatEnabled ? track.HalfWidthAt(proj) : track.innerHalfWidth);
 
                         if (d < branchMinDist[seg.branchId])
                         {

@@ -98,6 +98,19 @@ namespace PuzzleGlass
         private TrailRenderer _flightTrail;
 
         // Cached per-instance MPB visuals (Pillar 1 + Pillar 2: 0 DOTween sequences on balls, 1 instanced draw call)
+        /// <summary>Topun renk varyantı (SetupBall'da verilir); renk değişince aynı varyant korunur.</summary>
+        [NonSerialized] public int ballVariantIndex = 1;
+        /// <summary>Renk kapısı geçiş testi için bir önceki fizik adımındaki pist yerel konumu.</summary>
+        [NonSerialized] public Vector2 gatePrevLocalPos;
+        [NonSerialized] public bool gatePrevValid;
+        /// <summary>Yapışık küme kimliği: -1 = serbest top. >=0 ise top o kümeye yapışıktır.</summary>
+        [NonSerialized] public int clusterId = -1;
+        /// <summary>Kümedeki hücre indeksi (görsel ve yeniden kurulum için).</summary>
+        [NonSerialized] public int clusterCell = -1;
+        /// <summary>Kümedeki rijit konumu: x = kanal enine ofset, y = akış yönünde ofset (pist yerel birimi).</summary>
+        [NonSerialized] public Vector2 clusterOffset;
+        /// <summary>Top yapışık bir kümenin parçası mı? Öyleyse ne toplanabilir ne de yuvası değişir.</summary>
+        public bool IsStuckInCluster => clusterId >= 0;
         private Color _mpbBaseColor = Color.white;
         private Color _mpbShadowColor = Color.gray;
         private Color _mpbHighlightColor = Color.white;
@@ -437,6 +450,34 @@ namespace PuzzleGlass
         }
 
         /// <summary>
+        /// Topun rengini oyun sırasında değiştirir (renk kapısı). Malzeme varyantı, MPB renkleri ve uçuş izi
+        /// yeni renge göre tazelenir; fizik durumu ve pist konumu değişmez.
+        /// </summary>
+        public void RecolorTo(PuzzleColor newColor)
+        {
+            if (colorType == newColor) return;
+            colorType = newColor;
+
+            var pool = BallObjectPool.Instance;
+            if (meshRenderer != null && pool != null)
+            {
+                var mat = pool.GetBallMaterialVariant(newColor, ballVariantIndex);
+                if (mat != null) meshRenderer.sharedMaterial = mat;
+            }
+
+            BallObjectPool.ComputeBallVariantVisuals(
+                newColor,
+                ballVariantIndex,
+                out _mpbBaseColor,
+                out _mpbShadowColor,
+                out _mpbHighlightColor,
+                out _mpbSmoothness);
+            FlushPropertyBlock(_currentSquashAmount);
+
+            if (_flightTrail != null) _flightTrail.colorGradient = GetCachedTrailGradient(newColor);
+        }
+
+        /// <summary>
         /// Configures the ball with its visual sphere mesh, candy material, physics material, and color ID.
         /// </summary>
         public void SetupBall(
@@ -450,6 +491,11 @@ namespace PuzzleGlass
             EnsureComponents();
 
             colorType = color;
+            ballVariantIndex = variantIndex;
+            gatePrevValid = false;
+            clusterId = -1;
+            clusterCell = -1;
+            clusterOffset = Vector2.zero;
             ballRadius = Mathf.Max(0.025f, radius);
             state = BallState.InContainer;
             _attractionStartTime = -1f;

@@ -206,6 +206,55 @@ namespace PuzzleGlass
         }
 
         /// <summary>Topu Burst simülasyonuna teslim eder: PhysX'ten çıkar (kinematik, collider kapalı).</summary>
+        private static readonly List<int> s_ClusterIds = new List<int>(4);
+
+        /// <summary>
+        /// Yapışık küme: bandın içinde kinematik bir rijit gövde. Kümenin halka üzerindeki fazı her adımda
+        /// tam bant hızıyla ilerler, üyeleri de o fazdaki çapaya göre sabit (enine, akış yönünde) ofsetlerine
+        /// oturtulur. Böylece küme şeklini hiç bozmadan ve kalabalığı yavaşlatmadan bantla birlikte akar.
+        ///
+        /// Faz, kalabalığın ittiği ağırlık merkezinden türetilmez: türetilseydi küme duvarlara sürtüp yavaşlar,
+        /// bandın önünü keser ve arkasında yığılma (baraj) oluştururdu.
+        /// </summary>
+        private static void ApplyClusterRigidity(int n, float beltSpeed, float dt)
+        {
+            s_ClusterIds.Clear();
+            for (int i = 0; i < n; i++)
+            {
+                var b = s_All[i];
+                if (b == null || b.clusterId < 0) continue;
+                if (!s_ClusterIds.Contains(b.clusterId)) s_ClusterIds.Add(b.clusterId);
+            }
+            if (s_ClusterIds.Count == 0) return;
+
+            float len = Mathf.Max(0.01f, RingCenterLength);
+
+            for (int k = 0; k < s_ClusterIds.Count; k++)
+            {
+                int id = s_ClusterIds[k];
+                if (!BallClusters.TryGetClusterPhase(id, out float u)) continue;
+
+                u = Mathf.Repeat(u + beltSpeed * dt / len, 1f);
+                BallClusters.SetClusterPhase(id, u);
+
+                if (!TryGetRingPointAtPhase(u, out Vector2 anchor, out Vector2 tang, out Vector2 nrm)) continue;
+
+                float2 a2 = new float2(anchor.x, anchor.y);
+                float2 t2 = math.normalizesafe(new float2(tang.x, tang.y), new float2(1f, 0f));
+                float2 n2 = math.normalizesafe(new float2(nrm.x, nrm.y), new float2(0f, 1f));
+                float2 v2 = t2 * beltSpeed;
+
+                for (int i = 0; i < n; i++)
+                {
+                    var b = s_All[i];
+                    if (b == null || b.clusterId != id) continue;
+                    Vector2 off = b.clusterOffset;
+                    s_BPos[i] = a2 + n2 * off.x + t2 * off.y;
+                    s_BVel[i] = v2;
+                }
+            }
+        }
+
         internal static void ConfigureBurstTrackBall(BallPhysicsController b)
         {
             if (b == null) return;
@@ -377,6 +426,9 @@ namespace PuzzleGlass
                 }.Schedule(n, 32, h);
                 h.Complete();
                 s_MBurstJobs.End();
+
+                // 1b. Yapışık kümeler: simülasyon sonucunu rijit şekle geri oturt (şekil eşleme)
+                ApplyClusterRigidity(n, p.beltSpeed, dt);
 
                 // 2. Geri yaz (yönetilen): oyun kuralları bu alanları okur
                 s_MBurstWrite.Begin();

@@ -97,6 +97,19 @@ namespace PuzzleGlass
         public float trackHiddenRatio = 0f;
         public List<GlassTrackBranch> trackBranches = new List<GlassTrackBranch>();
 
+        [Header("Pist İçi Mekanikler (Renk Kapısı / Boğaz)")]
+        [Tooltip("Renk kapıları: kanalı enine kesen kapılar; geçen topun rengi değişir.")]
+        public List<TrackColorGate> trackColorGates = new List<TrackColorGate>();
+        [Tooltip("Yapışık top kümeleri: banda çizilen şekil tek parça döner; koşul sağlanınca çözülür.")]
+        public List<BallClusterShape> ballClusters = new List<BallClusterShape>();
+        [Tooltip("Boğaz: pistin bir noktasında kanal daralır; toplar oradan sırayla geçmek zorunda kalır.")]
+        public bool trackThroatEnabled = false;
+        public Vector2 trackThroatNormalizedCenter = new Vector2(0.07f, 0.52f);
+        [Range(0.06f, 0.7f)]
+        public float trackThroatRadius = 0.22f;
+        [Range(0.22f, 1f)]
+        public float trackThroatWidthRatio = 0.42f;
+
         [NonSerialized] public GlassTrackLayout.CompiledTrack compiledTrack;
         [NonSerialized] public OrderedPoolLayout.Result? cachedTrackLayout;
 
@@ -2011,7 +2024,11 @@ namespace PuzzleGlass
                 GetScreenTopLocalY(),
                 out compiledTrack,
                 out var layoutRes,
-                manualCapacity);
+                manualCapacity,
+                throatEnabled: trackThroatEnabled,
+                throatNormalizedCenter: trackThroatNormalizedCenter,
+                throatRadius: trackThroatRadius,
+                throatWidthRatio: trackThroatWidthRatio);
             cachedTrackLayout = layoutRes;
             if (compiledTrack != null)
             {
@@ -2371,6 +2388,19 @@ namespace PuzzleGlass
             mat.SetFloat("_TrackWallThick", compiledTrack.wallThickness / qh);
             mat.SetFloat("_TrackFillet", Mathf.Min(0.055f, compiledTrack.innerHalfWidth * 0.20f) / qh);
 
+            // Boğaz: cam görüntüsü (ve bu materyalle pişirilen SDF) aynı daralmayı kullanır.
+            // Formül GlassTrackLayout.CompiledTrack.HalfWidthAt ile birebir aynıdır.
+            if (mat.HasProperty("_TrackThroat"))
+            {
+                Vector4 throat = Vector4.zero;
+                if (compiledTrack.throatEnabled)
+                {
+                    Vector2 tc = (compiledTrack.throatCenter - quadCenter) / qh;
+                    throat = new Vector4(tc.x, tc.y, compiledTrack.throatRadius / qh, compiledTrack.throatHalfWidth / qh);
+                }
+                mat.SetVector("_TrackThroat", throat);
+            }
+
             Vector2 exitP = (compiledTrack.exitPoint - quadCenter) / qh;
             float exitMouthP = (compiledTrack.innerHalfWidth * 0.85f) / qh;
             mat.SetVector("_TrackExitPos", new Vector4(exitP.x, exitP.y - compiledTrack.innerHalfWidth / qh, exitMouthP, showBottomExitCollar ? 1f : 0f));
@@ -2674,6 +2704,7 @@ namespace PuzzleGlass
                 }
 
                 BuildGlassDividersGeometry();
+                BuildColorGateVisuals();
                 BuildBallFeedTubesGeometry();
                 return;
             }
@@ -2774,6 +2805,7 @@ namespace PuzzleGlass
 
             // 6. Internal Glass Compartment Dividers
             BuildGlassDividersGeometry();
+            BuildColorGateVisuals();
 
             // 7. Optional Per-Level Top Curved Glass Feed Tubes
             BuildBallFeedTubesGeometry();
@@ -3020,6 +3052,92 @@ namespace PuzzleGlass
         }
 
         private readonly List<Transform> _dividerVisualRoots = new List<Transform>();
+
+        private const string ColorGateRootName = "ColorGateVisuals";
+        private static readonly Dictionary<int, Material> s_GateMats = new Dictionary<int, Material>(12);
+
+        private static Material GetGateMaterial(PuzzleColor color)
+        {
+            int key = (int)color;
+            if (s_GateMats.TryGetValue(key, out Material cached) && cached != null) return cached;
+
+            var mat = PuzzleColorPalette.CreateToonyHypercasualMaterial(
+                color,
+                $"Mat_ColorGate_{color}",
+                glossyCandy: true,
+                indirectIntensity: 0.22f);
+            mat.renderQueue = 2016;
+            s_GateMats[key] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// Renk kapılarını yeniden kurar. Kapılar cam geometrisi kurulduktan SONRA atanabildiği için
+        /// (level yükleme sırası), TrackColorGates kapıları ilk kez çözdüğünde burayı çağırır.
+        /// </summary>
+        public void RefreshColorGateVisuals() => BuildColorGateVisuals();
+
+        /// <summary>
+        /// Renk kapısının görseli: kanalı enine kesen, hedef renkte kalın bir çubuk; giriş tarafında
+        /// kaynak renkte ince bir şerit. Toplar çubuğun içinden geçerken rengi değişir (mantık: TrackColorGates).
+        /// </summary>
+        private void BuildColorGateVisuals()
+        {
+            var old = transform.Find(ColorGateRootName);
+            if (old != null)
+            {
+                if (Application.isPlaying) Destroy(old.gameObject);
+                else DestroyImmediate(old.gameObject);
+            }
+
+            if (!IsTrackShape || compiledTrack == null || trackColorGates == null || trackColorGates.Count == 0) return;
+
+            GameObject root = null;
+            for (int i = 0; i < trackColorGates.Count; i++)
+            {
+                var g = trackColorGates[i];
+                if (g == null || !g.enabled) continue;
+                if (!TrackColorGates.TryGetGateSegment(compiledTrack, g, out Vector2 a, out Vector2 b, out Vector2 center)) continue;
+
+                if (root == null)
+                {
+                    root = new GameObject(ColorGateRootName);
+                    root.transform.SetParent(transform, false);
+                    root.transform.localPosition = Vector3.zero;
+                }
+
+                Vector2 dir = b - a;
+                float len = dir.magnitude;
+                if (len < 0.02f) continue;
+                float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+
+                var gateRoot = new GameObject($"ColorGate_{i + 1}_{g.fromColor}_to_{g.toColor}");
+                gateRoot.transform.SetParent(root.transform, false);
+                // Topların biraz önünde dursun: kapı net okunur, bant onu örtmez
+                gateRoot.transform.localPosition = new Vector3(center.x, center.y, 0.072f);
+                gateRoot.transform.localRotation = Quaternion.Euler(0f, 0f, angle);
+
+                AddGateBar(gateRoot.transform, len, 0.050f, g.toColor, 0f);
+                if (!g.anySourceColor)
+                {
+                    AddGateBar(gateRoot.transform, len * 0.96f, 0.018f, g.fromColor, -0.006f);
+                }
+            }
+        }
+
+        private void AddGateBar(Transform parent, float width, float height, PuzzleColor color, float zOffset)
+        {
+            var go = new GameObject($"Bar_{color}");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = new Vector3(0f, 0f, zOffset);
+
+            var mesh = ProceduralMeshUtils.CreatePillBadge(width, height, 0.085f, height * 0.48f);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = GetGateMaterial(color);
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
 
         /// <summary>
         /// Builds 3D glossy rounded glass divider bars inside the container.

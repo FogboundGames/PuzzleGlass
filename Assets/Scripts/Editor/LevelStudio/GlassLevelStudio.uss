@@ -214,6 +214,11 @@
 .level-row__glass { width: 18px; height: 12px; margin-left: 6px; border-radius: 4px; border-width: 3px; flex-shrink: 0; }
 
 .inspector__section { margin: 14px 0 4px 0; font-size: 11px; -unity-font-style: bold; color: var(--muted); }
+/* Katlanır bölüm: sağ panel tek uzun kaydırma olmaktan çıkar, bölümler aç/kapa edilir */
+.inspector__fold { margin: 10px 0 2px 0; border-top-width: 1px; border-color: var(--line); padding-top: 6px; }
+.inspector__fold > .unity-foldout__toggle { margin: 0; }
+.inspector__fold > .unity-foldout__toggle .unity-text-element { font-size: 11px; -unity-font-style: bold; color: var(--muted); }
+.inspector__fold > .unity-foldout__content { margin-left: 0; padding-left: 0; }
 .segmented { flex-direction: row; margin-top: 2px; }
 .segmented__item { flex-grow: 1; flex-basis: 0; height: 28px; margin: 0; border-radius: 0; background-color: var(--panel-2); border-width: 1px; border-color: var(--line); color: var(--muted); }
 .segmented__item--active { background-color: var(--accent); color: #101216; -unity-font-style: bold; border-color: var(--accent); }

@@ -510,6 +510,10 @@ namespace PuzzleGlass
             {
                 anyAwakeMoving = true;
             }
+            // Renk kapıları: bant hareket ettikten sonra, kapıyı kesen topları boya
+            TrackColorGates.Step(container, activeBalls);
+            // Yapışık kümeler: şekli banda oturtur, tutkal görselini sürer
+            BallClusters.Step(container, activeBalls);
             s_MTrack.End();
             using var perBallScope = s_MPerBall.Auto();
             for (int i = 0; i < activeBalls.Count; i++)
@@ -1143,6 +1147,8 @@ namespace PuzzleGlass
                 {
                     var cand = bottomCandidates[i];
                     if (cand.colorType != monster.colorType) continue;
+                    // Yapışık küme: küme çözülene kadar hiçbir topu banttan ayrılamaz
+                    if (cand.IsStuckInCluster) continue;
                     // Bant: sadece o an çıkışın önünden geçen top ayrılabilir; diğerleri tura devam eder
                     if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
@@ -1581,7 +1587,10 @@ namespace PuzzleGlass
                 {
                     var ball = balls[b];
                     if (ball == null || ball.state != BallState.InContainer || !ball.gameObject.activeInHierarchy) continue;
-                    if (ball.colorType != m.colorType) continue;
+                    // Renk kapısı: şu an farklı renkte olsa da kapıdan geçince bu kutunun rengine dönüşecek top da hamledir
+                    if (ball.colorType != m.colorType && !TrackColorGates.CanBecome(ball.colorType, m.colorType)) continue;
+                    // Yapışık küme: çözülmemiş kümedeki top hamle sayılmaz (gerçek kilitlenme)
+                    if (ball.IsStuckInCluster) continue;
                     // Katman kilidi: kilitli katmandaki top bu kutuya gelemez; sadece açık katman sayılır
                     if (!TrackCrowdQueue.IsLayerOpen(ball)) continue;
                     // Katmanları koru: dış tarafı başka topla kapalı top dönse de çıkamaz; toplanabilir sayılmaz
