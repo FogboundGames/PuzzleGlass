@@ -85,11 +85,13 @@ namespace PuzzleGlass
         private static NativeArray<int> s_BLayer, s_BCell, s_BSorted;
         private static NativeArray<quaternion> s_BRot;
         private static NativeArray<int> s_GridStart, s_GridCount;
+        private static NativeArray<int> s_BRingState; // [0] = ringCount, [1] = canJoin (0/1)
         private static int s_GridCap;
 
-        // Çizim (LateUpdate) için: son adımdaki top sırası
+        // Çizim (LateUpdate) için: artımlı O(1) TransformAccessArray (her top çıkışında dizi yeniden kurulmaz)
         private static BallPhysicsController[] s_RBalls = new BallPhysicsController[0];
         private static int s_RCount;
+        private static int s_RStepStamp;
         private static TransformAccessArray s_RTransforms;
         private static NativeArray<float3> s_RPrev, s_RCur;
         private static NativeArray<quaternion> s_RRotPrev, s_RRotCur;
@@ -113,6 +115,7 @@ namespace PuzzleGlass
 
         internal static void DisposeBurst()
         {
+            ClearRenderEntries();
             if (s_RTransforms.isCreated) s_RTransforms.Dispose();
             DisposeArr(ref s_FSdf); DisposeArr(ref s_FFlow); DisposeArr(ref s_FNrm);
             DisposeArr(ref s_CLookup); DisposeArr(ref s_CPts); DisposeArr(ref s_CTang); DisposeArr(ref s_CNorm);
@@ -121,9 +124,11 @@ namespace PuzzleGlass
             DisposeArr(ref s_BOffset); DisposeArr(ref s_BOutOff); DisposeArr(ref s_BImpact); DisposeArr(ref s_BPhase);
             DisposeArr(ref s_BOnRing); DisposeArr(ref s_BLayer); DisposeArr(ref s_BCell); DisposeArr(ref s_BSorted);
             DisposeArr(ref s_BRot); DisposeArr(ref s_GridStart); DisposeArr(ref s_GridCount);
+            DisposeArr(ref s_BRingState);
             DisposeArr(ref s_RPrev); DisposeArr(ref s_RCur); DisposeArr(ref s_RRotPrev); DisposeArr(ref s_RRotCur); DisposeArr(ref s_RSkip);
             s_BCap = 0; s_GridCap = 0; s_RCap = 0; s_RCount = 0;
             s_BTrack = null; s_BLoop = null;
+            s_RContainer = null;
             s_RDirty = true;
             s_Driver = null;
             BurstActive = false;
@@ -269,10 +274,10 @@ namespace PuzzleGlass
                 b.rb.interpolation = RigidbodyInterpolation.None;
             }
             if (b.sphereCollider != null) b.sphereCollider.enabled = false;
+            if (b.burstPhase < 0f) b.burstPhase = (b.GetInstanceID() & 1023) * 0.024f;
             b.burstRot = b.transform.rotation;
             b.burstPrevRot = b.burstRot;
             b.burstConfigured = true;
-            s_RDirty = true;
         }
 
         // ==================== Adım ====================
@@ -320,11 +325,10 @@ namespace PuzzleGlass
                 }
                 s_All[n] = b;
                 s_BPos0[n] = b.trackQueueLocalPos;
-                s_BPos[n] = b.trackQueueLocalPos;
                 s_BVel[n] = b.trackVel;
                 s_BLayer[n] = b.trackLayer;
                 s_BRot[n] = b.burstRot;
-                s_BPhase[n] = (b.GetInstanceID() & 1023) * 0.024f;
+                s_BPhase[n] = b.burstPhase >= 0f ? b.burstPhase : (b.burstPhase = (b.GetInstanceID() & 1023) * 0.024f);
                 n++;
             }
             s_MBurstGather.End();
@@ -333,6 +337,7 @@ namespace PuzzleGlass
             if (n > 0)
             {
                 s_MBurstJobs.Begin();
+                if (!s_BRingState.IsCreated) s_BRingState = new NativeArray<int>(2, Allocator.Persistent);
                 var p = new BurstParams
                 {
                     n = n,
@@ -386,29 +391,32 @@ namespace PuzzleGlass
                     spinRatio = BurstSpinReducedRatio,
                 };
 
-                // Kapasite kapısı (yol → halka) ilk sınıflandırmadan sonra belli olur; önce sınıflandır
-                var classify = new ClassifyJob
+                // Tek kesintisiz iş zinciri + tek Complete() bariyeri:
+                // ClassifyJob(s_BPos0) -> [CountRingJob || GridJob(s_BPos0)] -> ForceJob(s_BPos0 -> s_BPos)
+                // -> GridJob(s_BPos) -> iters × (ContactJob + ApplyJob) -> FinalizeJob
+                JobHandle classifyH = new ClassifyJob
                 {
-                    p = p, pos = s_BPos, tang = s_BTang, outDir = s_BOutDir, offset = s_BOffset, outOff = s_BOutOff, onRing = s_BOnRing,
+                    p = p, pos = s_BPos0, tang = s_BTang, outDir = s_BOutDir, offset = s_BOffset, outOff = s_BOutOff, onRing = s_BOnRing,
                     sdf = s_FSdf, flow = s_FFlow, nrm = s_FNrm, lookup = s_CLookup, cPts = s_CPts, cTang = s_CTang, cNorm = s_CNorm,
-                };
-                classify.Schedule(n, 32).Complete();
-                for (int i = 0; i < n; i++) if (s_BOnRing[i] != 0) ringCount++;
-                p.canJoin = CanJoinBelt(ringCount) ? 1 : 0;
+                }.Schedule(n, 32);
 
-                JobHandle h = new GridJob { p = p, pos = s_BPos, cell = s_BCell, sorted = s_BSorted, start = s_GridStart, count = s_GridCount }.Schedule();
+                JobHandle countH = new CountRingJob
+                {
+                    n = n, beltLimit = s_BeltLimit, onRing = s_BOnRing, ringState = s_BRingState,
+                }.Schedule(classifyH);
+
+                JobHandle h = new GridJob { p = p, pos = s_BPos0, cell = s_BCell, sorted = s_BSorted, start = s_GridStart, count = s_GridCount }.Schedule(classifyH);
                 h = new ForceJob
                 {
-                    p = p, pos = s_BPos, vel = s_BVel, tang = s_BTang, outDir = s_BOutDir, offset = s_BOffset, outOff = s_BOutOff,
+                    p = p, pos = s_BPos0, vel = s_BVel, tang = s_BTang, outDir = s_BOutDir, offset = s_BOffset, outOff = s_BOutOff,
                     onRing = s_BOnRing, layer = s_BLayer, sorted = s_BSorted, start = s_GridStart, count = s_GridCount,
-                    sdf = s_FSdf, nrm = s_FNrm, velPred = s_BVelPred, posOut = s_BPos0, impact = s_BImpact, impactN = s_BImpactN,
+                    sdf = s_FSdf, nrm = s_FNrm, velPred = s_BVelPred, posOut = s_BPos, impact = s_BImpact, impactN = s_BImpactN,
                     relVel = s_BRelVel,
                 }.Schedule(n, 32, h);
-                // posOut = tahmini konum (s_BPos0'a yazılır); s_BPos başlangıç konumu olarak kalır → yer değiştir
-                h.Complete();
-                var tmp = s_BPos; s_BPos = s_BPos0; s_BPos0 = tmp; // artık: s_BPos = tahmini, s_BPos0 = adım başı
 
-                h = new GridJob { p = p, pos = s_BPos, cell = s_BCell, sorted = s_BSorted, start = s_GridStart, count = s_GridCount }.Schedule();
+                h = new GridJob { p = p, pos = s_BPos, cell = s_BCell, sorted = s_BSorted, start = s_GridStart, count = s_GridCount }.Schedule(h);
+                h = JobHandle.CombineDependencies(h, countH);
+
                 int iters = Mathf.Clamp(BurstSolverIterations, 1, 12);
                 for (int it = 0; it < iters; it++)
                 {
@@ -416,7 +424,7 @@ namespace PuzzleGlass
                     h = new ApplyJob
                     {
                         p = p, pos = s_BPos, pos0 = s_BPos0, corr = s_BCorr, onRing = s_BOnRing, layer = s_BLayer, outDir = s_BOutDir, outOff = s_BOutOff,
-                        sdf = s_FSdf, nrm = s_FNrm,
+                        ringState = s_BRingState, sdf = s_FSdf, nrm = s_FNrm,
                     }.Schedule(n, 32, h);
                 }
                 h = new FinalizeJob
@@ -425,6 +433,7 @@ namespace PuzzleGlass
                     relVel = s_BRelVel,
                 }.Schedule(n, 32, h);
                 h.Complete();
+                ringCount = s_BRingState[0];
                 s_MBurstJobs.End();
 
                 // 1b. Yapışık kümeler: simülasyon sonucunu rijit şekle geri oturt (şekil eşleme)
@@ -459,8 +468,7 @@ namespace PuzzleGlass
             }
             else
             {
-                s_RCount = 0;
-                s_RDirty = true;
+                ClearRenderEntries();
             }
 
             s_RingCount = ringCount;
@@ -512,34 +520,84 @@ namespace PuzzleGlass
             s_RCap = cap;
         }
 
-        /// <summary>Bu adımın topları ve önceki/sonraki konumları; üye kümesi değiştiyse transform listesi yenilenir.</summary>
+        private static void ClearRenderEntries()
+        {
+            for (int i = 0; i < s_RCount; i++)
+            {
+                if (s_RBalls[i] != null) s_RBalls[i].burstRenderIdx = -1;
+                s_RBalls[i] = null;
+            }
+            s_RCount = 0;
+            if (s_RTransforms.isCreated)
+            {
+                for (int i = s_RTransforms.length - 1; i >= 0; i--)
+                    s_RTransforms.RemoveAtSwapBack(i);
+            }
+        }
+
+        /// <summary>Bu adımın topları ve önceki/sonraki konumları; yalnızca giren/çıkan top O(1) eklenir veya swap-remove edilir (0 GC).</summary>
         private static void UpdateRenderSet(int n, Transform ct)
         {
-            EnsureRenderCapacity(n);
-            bool changed = s_RDirty || n != s_RCount || s_RContainer != ct || !s_RTransforms.isCreated;
-            if (!changed)
+            if (!s_RTransforms.isCreated)
             {
-                for (int i = 0; i < n; i++) if (s_RBalls[i] != s_All[i]) { changed = true; break; }
+                s_RTransforms = new TransformAccessArray(Mathf.Max(512, n), 8);
             }
+            if (s_RDirty || s_RContainer != ct)
+            {
+                ClearRenderEntries();
+                s_RDirty = false;
+                s_RContainer = ct;
+            }
+
+            int stamp = ++s_RStepStamp;
+            if (stamp == 0) stamp = ++s_RStepStamp;
+
+            // 1. Yeni giren topları O(1) sona ekle, tüm aktifleri damgala
             for (int i = 0; i < n; i++)
             {
                 var b = s_All[i];
-                s_RBalls[i] = b;
-                s_RPrev[i] = new float3(b.burstPrevLocalPos.x, b.burstPrevLocalPos.y, b.trackQueueLocalZ);
-                s_RCur[i] = new float3(b.trackQueueLocalPos.x, b.trackQueueLocalPos.y, b.trackQueueLocalZ);
-                s_RRotPrev[i] = b.burstPrevRot;
-                s_RRotCur[i] = b.burstRot;
+                b.burstStepStamp = stamp;
+                int rIdx = b.burstRenderIdx;
+                if (rIdx < 0 || rIdx >= s_RCount || s_RBalls[rIdx] != b)
+                {
+                    int idx = s_RCount++;
+                    EnsureRenderCapacity(s_RCount);
+                    s_RBalls[idx] = b;
+                    b.burstRenderIdx = idx;
+                    s_RTransforms.Add(b.transform);
+                }
             }
-            for (int i = n; i < s_RCount; i++) s_RBalls[i] = null;
-            if (changed)
+
+            // 2. Pistten çıkan topları sondan başa O(1) swap-remove ile çıkar
+            for (int idx = s_RCount - 1; idx >= 0; idx--)
             {
-                var ts = new Transform[n];
-                for (int i = 0; i < n; i++) ts[i] = s_All[i].transform;
-                if (s_RTransforms.isCreated) s_RTransforms.SetTransforms(ts);
-                else s_RTransforms = new TransformAccessArray(ts, 8);
-                s_RDirty = false;
+                var b = s_RBalls[idx];
+                if (b != null && b.burstStepStamp == stamp) continue;
+
+                int last = s_RCount - 1;
+                if (b != null && b.burstRenderIdx == idx) b.burstRenderIdx = -1;
+                if (idx != last)
+                {
+                    var moved = s_RBalls[last];
+                    s_RBalls[idx] = moved;
+                    if (moved != null) moved.burstRenderIdx = idx;
+                }
+                s_RBalls[last] = null;
+                s_RTransforms.RemoveAtSwapBack(idx);
+                s_RCount--;
             }
-            s_RCount = n;
+
+            // 3. Interpolasyon tamponlarını her topun kendi render indeksine yaz
+            EnsureRenderCapacity(s_RCount);
+            for (int i = 0; i < n; i++)
+            {
+                var b = s_All[i];
+                int idx = b.burstRenderIdx;
+                s_RPrev[idx] = new float3(b.burstPrevLocalPos.x, b.burstPrevLocalPos.y, b.trackQueueLocalZ);
+                s_RCur[idx] = new float3(b.trackQueueLocalPos.x, b.trackQueueLocalPos.y, b.trackQueueLocalZ);
+                s_RRotPrev[idx] = b.burstPrevRot;
+                s_RRotCur[idx] = b.burstRot;
+            }
             s_RContainer = ct;
         }
 
@@ -571,7 +629,7 @@ namespace PuzzleGlass
         /// <summary>Simülasyon kapandığında (level/kip değişimi) çizim listesini bırak.</summary>
         internal static void ResetBurstRenderSet()
         {
-            s_RCount = 0;
+            ClearRenderEntries();
             s_RDirty = true;
             BurstActive = false;
         }
@@ -710,6 +768,24 @@ namespace PuzzleGlass
                     outDir[i] = new float2(0f, 1f);
                     outOff[i] = 0f;
                 }
+            }
+        }
+
+        /// <summary>Halkadaki top sayısını ve banda katılım kapısını işçi çekirdekte hesaplar (ana thread beklemesini kaldırır).</summary>
+        [BurstCompile]
+        private struct CountRingJob : IJob
+        {
+            public int n;
+            public int beltLimit;
+            [ReadOnly] public NativeArray<byte> onRing;
+            [WriteOnly] public NativeArray<int> ringState;
+
+            public void Execute()
+            {
+                int rc = 0;
+                for (int i = 0; i < n; i++) if (onRing[i] != 0) rc++;
+                ringState[0] = rc;
+                ringState[1] = (beltLimit <= 0 || rc < beltLimit) ? 1 : 0;
             }
         }
 
@@ -962,6 +1038,7 @@ namespace PuzzleGlass
             [ReadOnly] public NativeArray<byte> onRing;
             [ReadOnly] public NativeArray<int> layer;
             [ReadOnly] public NativeArray<float> outOff;
+            [ReadOnly] public NativeArray<int> ringState;
             [ReadOnly] public NativeArray<float> sdf;
             [ReadOnly] public NativeArray<float2> nrm;
 
@@ -979,7 +1056,7 @@ namespace PuzzleGlass
                 if (over > 0f && s < p.d * 2f) q += inward * over;
 
                 // Halka kapasitesi doluyken yoldaki toplar halkanın şeridine giremez
-                if (p.canJoin == 0 && onRing[i] == 0 && p.hasRoad != 0)
+                if (ringState[1] == 0 && onRing[i] == 0 && p.hasRoad != 0)
                 {
                     float2 rel = q - p.roadJunction;
                     float al = math.dot(rel, p.roadDir);

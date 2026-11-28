@@ -257,6 +257,54 @@ Shader "PuzzleGlass/CarrierBox"
                 float2 q = (IN.uv - 0.5) * max(localSize.xy, float2(0.25, 0.25));
                 float aa = 0.008;
 
+                // Hızlı yol: Ön çerçeve + iç gölge katmanı (_FrontRimOnly = 1) alt etek (dBaseBox) hesabına hiç ihtiyaç duymaz
+                if (_FrontRimOnly > 0.5 && _CrateMode <= 0.5 && socketCountF < 0.5)
+                {
+                    if (lockAmount > 0.001 || iceAmount > 0.001) discard;
+                    float dFrontFast = sdPolyomino(q, 0.0, _CornerRad, rectCount, rect0, rect1);
+                    if (dFrontFast > aa) discard;
+
+                    float frontOuterFast = 1.0 - smoothstep(-aa, aa, dFrontFast);
+                    float frontRimFast = frontOuterFast - (1.0 - smoothstep(-0.022 - aa, -0.022 + aa, dFrontFast));
+                    float activeGlowFast = saturate(dragHighlight);
+                    float3 frameCol = lerp(bodyColor * 0.98, bodyColor * 1.04, saturate(q.y * 0.35 + 0.55));
+                    frameCol = lerp(frameCol, highlightColor, saturate(frontRimFast) * (0.28 + activeGlowFast * 0.42));
+
+                    float hollowInset = 0.118;
+                    float hollowInnerRad = 0.056;
+                    float dPlateFast = sdPolyomino(q, hollowInset, hollowInnerRad, rectCount, rect0, rect1);
+                    float plateMaskFast = (1.0 - smoothstep(-aa, aa, dPlateFast)) * frontOuterFast;
+                    float plateOuterRimFast = (1.0 - smoothstep(0.0, 0.016, dPlateFast)) * (1.0 - plateMaskFast) * frontOuterFast;
+                    frameCol = lerp(frameCol, highlightColor, plateOuterRimFast * (0.26 + activeGlowFast * 0.24));
+
+                    float frameAlpha = frontOuterFast * (1.0 - plateMaskFast);
+                    float topExtentY = (rectCount > 1.5) ? max(rect0.y + rect0.w, rect1.y + rect1.w) : (rect0.y + rect0.w);
+                    float topBand = saturate(1.0 - (topExtentY - hollowInset - q.y) * 2.4);
+                    float topCast = topBand * (1.0 - smoothstep(-0.155, -0.004, dPlateFast));
+                    float rimVignette = 1.0 - smoothstep(-0.072, 0.0, dPlateFast);
+                    float pitShadowAlpha = saturate(max(topCast * 0.65, rimVignette * 0.36)) * plateMaskFast;
+                    float outAlpha = saturate(max(frameAlpha, pitShadowAlpha));
+                    if (outAlpha < 0.003) discard;
+
+                    float unplayableRim = (1.0 - saturate(exitHighlight)) * (1.0 - saturate(iceAmount));
+                    if (unplayableRim > 0.001)
+                    {
+                        float lumR = dot(frameCol, float3(0.299, 0.587, 0.114));
+                        float3 grayR = lerp(float3(lumR, lumR, lumR) * 0.82 + float3(0.05, 0.05, 0.07), frameCol, 0.58);
+                        frameCol = lerp(frameCol, grayR, unplayableRim);
+                    }
+                    float completeRimFlash = saturate((dragHighlight - 1.0) * 0.88);
+                    if (completeRimFlash > 0.001)
+                    {
+                        float3 warmRimFlash = lerp(highlightColor, float3(1.0, 0.99, 0.94), 0.74);
+                        frameCol = lerp(frameCol, warmRimFlash * 1.16, completeRimFlash);
+                    }
+
+                    float3 innerCastCol = lerp(bodyDarkColor * 0.12, float3(0.03, 0.04, 0.11), 0.52);
+                    float3 finalRimCol = lerp(frameCol, innerCastCol, saturate(pitShadowAlpha / max(0.003, outAlpha)));
+                    return half4(finalRimCol * IN.color.rgb, outAlpha * IN.color.a);
+                }
+
                 // 1. Main Box Geometry (Front Face + 3D Lower Base Extrusion)
                 float dFrontBox = sdPolyomino(q, 0.0, _CornerRad, rectCount, rect0, rect1);
                 float dBaseBox  = sdPolyomino(q + float2(0.0, _LipOffset), 0.0, _CornerRad, rectCount, rect0, rect1);
@@ -403,40 +451,6 @@ Shader "PuzzleGlass/CarrierBox"
                     // Subtle inner rim catchlight on the front frame just outside the hollow opening
                     float plateOuterRim = (1.0 - smoothstep(0.0, 0.016, dPlate)) * (1.0 - plateMask) * frontOuterMask;
                     col = lerp(col, highlightColor, plateOuterRim * (0.26 + activeGlow * 0.24));
-
-                    // Ön çerçeve + iç kenar gölge katmanı (_FrontRimOnly = 1): çukurdaki topların önünde çizilerek derinlik verir
-                    if (_FrontRimOnly > 0.5)
-                    {
-                        if (lockAmount > 0.001 || iceAmount > 0.001) discard;
-
-                        float frameAlpha = frontOuterMask * (1.0 - plateMask);
-                        float topExtentY = (rectCount > 1.5) ? max(rect0.y + rect0.w, rect1.y + rect1.w) : (rect0.y + rect0.w);
-                        float topBand = saturate(1.0 - (topExtentY - hollowInset - q.y) * 2.4);
-                        float topCast = topBand * (1.0 - smoothstep(-0.155, -0.004, dPlate));
-                        float rimVignette = 1.0 - smoothstep(-0.072, 0.0, dPlate);
-                        float pitShadowAlpha = saturate(max(topCast * 0.65, rimVignette * 0.36)) * plateMask;
-                        float outAlpha = saturate(max(frameAlpha, pitShadowAlpha));
-                        if (outAlpha < 0.003) discard;
-
-                        float3 frameCol = col;
-                        float unplayableRim = (1.0 - saturate(exitHighlight)) * (1.0 - saturate(iceAmount));
-                        if (unplayableRim > 0.001)
-                        {
-                            float lumR = dot(frameCol, float3(0.299, 0.587, 0.114));
-                            float3 grayR = lerp(float3(lumR, lumR, lumR) * 0.82 + float3(0.05, 0.05, 0.07), frameCol, 0.58);
-                            frameCol = lerp(frameCol, grayR, unplayableRim);
-                        }
-                        float completeRimFlash = saturate((dragHighlight - 1.0) * 0.88);
-                        if (completeRimFlash > 0.001)
-                        {
-                            float3 warmRimFlash = lerp(highlightColor, float3(1.0, 0.99, 0.94), 0.74);
-                            frameCol = lerp(frameCol, warmRimFlash * 1.16, completeRimFlash);
-                        }
-
-                        float3 innerCastCol = lerp(bodyDarkColor * 0.12, float3(0.03, 0.04, 0.11), 0.52);
-                        float3 finalRimCol = lerp(frameCol, innerCastCol, saturate(pitShadowAlpha / max(0.003, outAlpha)));
-                        return half4(finalRimCol * IN.color.rgb, outAlpha * IN.color.a);
-                    }
 
                     // 3D inner top & side walls descending deeply into the hollow cavity
                     float hollowWallDepth = _LipOffset * 1.72;

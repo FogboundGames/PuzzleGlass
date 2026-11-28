@@ -451,6 +451,7 @@ namespace PuzzleGlass
 
             CreateJarQuad("LowerJarGlassBack", 0.12f, _jarBackMat);
             CreateJarQuad("LowerJarGlassFront", -0.56f, _jarFrontMat);
+            GlassChamberBakeCache.MarkDirty();
         }
 
         private static void CreateRoundedPart(string partName, Transform parent, Vector3 localPos, float w, float h, float depth, float radius, Material mat)
@@ -770,6 +771,29 @@ namespace PuzzleGlass
             CarrierBlockShape shape = movingBlock != null ? movingBlock.blockShape : CarrierBlockShape.Rect1x1;
             if (!IsInsideGrid(candidateAnchor, shape)) return false;
             EnsureFlowFieldUpdated(allMonsters);
+
+            MonsterCharacter partner = (movingBlock != null && movingBlock.HasLinkedPartner) ? movingBlock.linkedPartner : null;
+            if (!CanPlaceSingleIgnoring(movingBlock, partner, shape, candidateAnchor, allMonsters))
+                return false;
+
+            if (partner != null && partner.assignedSlot == null && !partner.IsMovingToSlot)
+            {
+                Vector2Int delta = candidateAnchor - movingBlock.gridAnchor;
+                Vector2Int partnerCand = partner.gridAnchor + delta;
+                if (!IsInsideGrid(partnerCand, partner.blockShape)) return false;
+                if (!CanPlaceSingleIgnoring(movingBlock, partner, partner.blockShape, partnerCand, allMonsters))
+                    return false;
+            }
+            return true;
+        }
+
+        private bool CanPlaceSingleIgnoring(
+            MonsterCharacter ignoreA,
+            MonsterCharacter ignoreB,
+            CarrierBlockShape shape,
+            Vector2Int candidateAnchor,
+            List<MonsterCharacter> allMonsters)
+        {
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(shape);
             for (int i = 0; i < myCells.Length; i++)
             {
@@ -779,7 +803,7 @@ namespace PuzzleGlass
                 if (allMonsters != null)
                 {
                     var occ = _cellOccupancy[my * cols + mx];
-                    if (occ != null && occ != movingBlock)
+                    if (occ != null && occ != ignoreA && occ != ignoreB)
                         return false;
                 }
             }
@@ -853,6 +877,7 @@ namespace PuzzleGlass
 
         /// <summary>
         /// Checks whether a block's upward lane toward the upper slots is completely clear of other blocks in the grid.
+        /// For 2-linked pairs (horizontal or vertical), BOTH partners must have clear upward lanes (ignoring each other).
         /// </summary>
         public bool IsBlockExitClearToSlots(MonsterCharacter block, List<MonsterCharacter> allMonsters)
         {
@@ -862,6 +887,24 @@ namespace PuzzleGlass
             if (allMonsters == null) return true;
 
             EnsureFlowFieldUpdated(allMonsters);
+            MonsterCharacter partner = block.HasLinkedPartner ? block.linkedPartner : null;
+
+            if (!IsSingleBlockLaneClear(block, partner))
+                return false;
+
+            if (partner != null)
+            {
+                if (partner.assignedSlot != null || partner.IsCompleted || partner.remainingCount <= 0)
+                    return false;
+                if (!IsSingleBlockLaneClear(partner, block))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private bool IsSingleBlockLaneClear(MonsterCharacter block, MonsterCharacter ignorePartner)
+        {
             Vector2Int[] myCells = CarrierBlockShapeUtility.GetCells(block.blockShape);
             for (int i = 0; i < myCells.Length; i++)
             {
@@ -872,11 +915,10 @@ namespace PuzzleGlass
                 {
                     if (IsWallCell(mx, oy)) return false;
                     var occ = _cellOccupancy[oy * cols + mx];
-                    if (occ != null && occ != block)
+                    if (occ != null && occ != block && occ != ignorePartner)
                         return false;
                 }
             }
-
             return true;
         }
 
@@ -958,59 +1000,114 @@ namespace PuzzleGlass
         }
 
         /// <summary>
-        /// Tray olmayan düzenli kutu diziliminde bir kutu slota gittiğinde aynı sütundaki arka kutuları yukarı öne kaydırır.
+        /// Tray olmayan düzenli kutu diziliminde bir kutu (veya bağlı ikili) slota gittiğinde aynı sütunlardaki arka kutuları yukarı öne kaydırır.
+        /// Yatay veya dikey bağlı ikili kutular yalnızca ikisinin de önü boşaldığında birlikte öne kayar.
         /// </summary>
         public void AdvanceColumnQueues(List<MonsterCharacter> allMonsters)
         {
             if (showTrayVisuals || allMonsters == null || allMonsters.Count == 0) return;
 
-            bool movedAny = false;
             MarkGridDirty();
             EnsureFlowFieldUpdated(allMonsters);
 
-            for (int c = 0; c < cols; c++)
+            var originalAnchors = new Dictionary<MonsterCharacter, Vector2Int>();
+            var units = new List<(MonsterCharacter a, MonsterCharacter b)>();
+            var visited = new HashSet<MonsterCharacter>();
+
+            for (int i = 0; i < _cellOccupancy.Length; i++)
             {
-                // Sütundaki yerleşik (1x1) aktif kutuları yukarıdan aşağıya toplayıp üst boşluklara kaydır
-                for (int r = rows - 1; r >= 0; r--)
+                var m = _cellOccupancy[i];
+                if (m == null || !visited.Add(m)) continue;
+                if (m.blockShape != CarrierBlockShape.Rect1x1) continue;
+
+                if (m.HasLinkedPartner)
                 {
-                    if (IsWallCell(c, r)) continue;
-                    var occTop = _cellOccupancy[r * cols + c];
-                    if (occTop != null) continue;
-
-                    // Bu boş hücrenin altındaki ilk 1x1 kutuyu bul (arada duvar veya çok hücreli blok yoksa)
-                    MonsterCharacter pullUp = null;
-                    for (int below = r - 1; below >= 0; below--)
+                    var p = m.linkedPartner;
+                    if (p != null && p.assignedSlot == null && !p.IsMovingToSlot && !p.IsCompleted && p.remainingCount > 0 && p.blockShape == CarrierBlockShape.Rect1x1)
                     {
-                        if (IsWallCell(c, below)) break;
-                        var occBelow = _cellOccupancy[below * cols + c];
-                        if (occBelow != null)
-                        {
-                            if (occBelow.blockShape == CarrierBlockShape.Rect1x1)
-                            {
-                                pullUp = occBelow;
-                            }
-                            break;
-                        }
+                        visited.Add(p);
+                        units.Add((m, p));
+                        originalAnchors[m] = m.gridAnchor;
+                        originalAnchors[p] = p.gridAnchor;
+                        continue;
                     }
+                }
 
-                    if (pullUp != null)
+                units.Add((m, null));
+                originalAnchors[m] = m.gridAnchor;
+            }
+
+            bool movedAny = false;
+            var currentAnchor = new Dictionary<MonsterCharacter, Vector2Int>(originalAnchors);
+
+            for (int iter = 0; iter < rows && units.Count > 0; iter++)
+            {
+                bool stepMoved = false;
+                units.Sort((u1, u2) =>
+                {
+                    int y1 = u1.b != null ? Mathf.Max(currentAnchor[u1.a].y, currentAnchor[u1.b].y) : currentAnchor[u1.a].y;
+                    int y2 = u2.b != null ? Mathf.Max(currentAnchor[u2.a].y, currentAnchor[u2.b].y) : currentAnchor[u2.a].y;
+                    return y2.CompareTo(y1);
+                });
+
+                for (int u = 0; u < units.Count; u++)
+                {
+                    var (a, b) = units[u];
+                    Vector2Int anchorA = currentAnchor[a];
+                    if (b == null)
                     {
-                        Vector2Int oldA = pullUp.gridAnchor;
-                        Vector2Int newA = new Vector2Int(c, r);
-                        _cellOccupancy[oldA.y * cols + oldA.x] = null;
-                        _cellOccupancy[newA.y * cols + newA.x] = pullUp;
+                        int ny = anchorA.y + 1;
+                        if (ny >= rows || IsWallCell(anchorA.x, ny)) continue;
+                        if (_cellOccupancy[ny * cols + anchorA.x] != null) continue;
 
-                        Vector3 newPos = GetWorldPositionForAnchor(newA, pullUp.blockShape);
-                        Vector3 baseScale = (pullUp.stagingHomeScale.sqrMagnitude > 0.001f) ? pullUp.stagingHomeScale : Vector3.one * cellSize;
-                        Vector3 slotFit = Vector3.one * GetSlotFitScaleForShape(pullUp.blockShape);
-                        pullUp.SetGridState(newA, newPos, baseScale, slotFit, r == rows - 1, animateMove: true);
+                        _cellOccupancy[anchorA.y * cols + anchorA.x] = null;
+                        _cellOccupancy[ny * cols + anchorA.x] = a;
+                        currentAnchor[a] = new Vector2Int(anchorA.x, ny);
+                        stepMoved = true;
+                        movedAny = true;
+                    }
+                    else
+                    {
+                        Vector2Int anchorB = currentAnchor[b];
+                        int nyA = anchorA.y + 1;
+                        int nyB = anchorB.y + 1;
+                        if (nyA >= rows || nyB >= rows) continue;
+                        if (IsWallCell(anchorA.x, nyA) || IsWallCell(anchorB.x, nyB)) continue;
+
+                        var occA = _cellOccupancy[nyA * cols + anchorA.x];
+                        var occB = _cellOccupancy[nyB * cols + anchorB.x];
+                        if ((occA != null && occA != a && occA != b) || (occB != null && occB != a && occB != b))
+                            continue;
+
+                        _cellOccupancy[anchorA.y * cols + anchorA.x] = null;
+                        _cellOccupancy[anchorB.y * cols + anchorB.x] = null;
+                        Vector2Int newA = new Vector2Int(anchorA.x, nyA);
+                        Vector2Int newB = new Vector2Int(anchorB.x, nyB);
+                        _cellOccupancy[newA.y * cols + newA.x] = a;
+                        _cellOccupancy[newB.y * cols + newB.x] = b;
+                        currentAnchor[a] = newA;
+                        currentAnchor[b] = newB;
+                        stepMoved = true;
                         movedAny = true;
                     }
                 }
+
+                if (!stepMoved) break;
             }
 
             if (movedAny)
             {
+                foreach (var kv in currentAnchor)
+                {
+                    var m = kv.Key;
+                    Vector2Int newA = kv.Value;
+                    if (newA == originalAnchors[m]) continue;
+
+                    Vector3 newPos = GetWorldPositionForAnchor(newA, m.blockShape);
+                    Vector3 baseScale = (m.stagingHomeScale.sqrMagnitude > 0.001f) ? m.stagingHomeScale : Vector3.one * cellSize;
+                    Vector3 slotFit = Vector3.one * GetSlotFitScaleForShape(m.blockShape);
+                    m.SetGridState(newA, newPos, baseScale, slotFit, newA.y == rows - 1, animateMove: true);
+                }
                 RefreshAllGridBlockHighlightStates(allMonsters);
             }
 

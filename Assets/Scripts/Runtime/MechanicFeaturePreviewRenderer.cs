@@ -46,19 +46,19 @@ namespace PuzzleGlass
             s_Cache.Clear();
         }
 
-        public static PreviewSnapshot GetOrCapturePreview(GameFeatureKind kind, LevelMonsterEntry sampleEntry)
+        public static PreviewSnapshot GetOrCapturePreview(GameFeatureKind kind, LevelMonsterEntry sampleEntry, LevelMonsterEntry samplePartnerEntry = null)
         {
             if (s_Cache.TryGetValue(kind, out var existing) && existing.texture != null && existing.texture.IsCreated())
             {
                 return existing;
             }
 
-            var captured = CaptureSnapshot(kind, sampleEntry);
+            var captured = CaptureSnapshot(kind, sampleEntry, samplePartnerEntry);
             s_Cache[kind] = captured;
             return captured;
         }
 
-        private static PreviewSnapshot CaptureSnapshot(GameFeatureKind kind, LevelMonsterEntry entry)
+        private static PreviewSnapshot CaptureSnapshot(GameFeatureKind kind, LevelMonsterEntry entry, LevelMonsterEntry partnerEntry = null)
         {
             var rt = new RenderTexture(TextureSize, TextureSize, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
             {
@@ -79,15 +79,19 @@ namespace PuzzleGlass
             var stageObj = new GameObject("FeaturePreviewStage");
             stageObj.transform.position = new Vector3(500f, 500f, 0f);
 
+            var gm = PuzzleGlassGameManager.Instance;
+            BlockVisualStyle style = gm != null ? gm.blockVisualStyle : BlockVisualStyle.PuzzleWithNumber;
+            bool isPair = kind == GameFeatureKind.LinkedPair;
+            float pairOffsetX = isPair ? 0.68f : 0f;
+
             var monsterObj = new GameObject("PreviewMonster");
             monsterObj.SetActive(false);
             monsterObj.transform.SetParent(stageObj.transform, false);
-            monsterObj.transform.localPosition = Vector3.zero;
+            monsterObj.transform.localPosition = new Vector3(-pairOffsetX, 0f, 0f);
             monsterObj.transform.localScale = Vector3.one;
 
             var mc = monsterObj.AddComponent<MonsterCharacter>();
-            var gm = PuzzleGlassGameManager.Instance;
-            mc.SetVisualStyle(gm != null ? gm.blockVisualStyle : BlockVisualStyle.PuzzleWithNumber);
+            mc.SetVisualStyle(style);
             mc.Initialize(
                 entry.color,
                 Mathf.Max(1, entry.count),
@@ -97,12 +101,51 @@ namespace PuzzleGlass
                 entry.lockKeyCount,
                 entry.iceCount,
                 entry.isFilledBox,
-                entry.filledBallColor);
+                entry.filledBallColor,
+                isPair ? 1 : 0);
             monsterObj.SetActive(true);
             mc.KillAllTweens();
 
+            if (isPair)
+            {
+                if (partnerEntry == null)
+                {
+                    partnerEntry = new LevelMonsterEntry(
+                        entry.color == PuzzleColor.Yellow ? PuzzleColor.Green : PuzzleColor.Yellow,
+                        20, CarrierBlockShape.Rect1x1, Vector2Int.right) { linkGroupId = 1 };
+                }
+                var partnerObj = new GameObject("PreviewMonsterPartner");
+                partnerObj.SetActive(false);
+                partnerObj.transform.SetParent(stageObj.transform, false);
+                partnerObj.transform.localPosition = new Vector3(pairOffsetX, 0f, 0f);
+                partnerObj.transform.localScale = Vector3.one;
+
+                var mcB = partnerObj.AddComponent<MonsterCharacter>();
+                mcB.SetVisualStyle(style);
+                mcB.Initialize(
+                    partnerEntry.color,
+                    Mathf.Max(1, partnerEntry.count),
+                    $"Preview_{kind}_B",
+                    CarrierBlockShape.Rect1x1,
+                    partnerEntry.hasKey,
+                    partnerEntry.lockKeyCount,
+                    partnerEntry.iceCount,
+                    partnerEntry.isFilledBox,
+                    partnerEntry.filledBallColor,
+                    1);
+                partnerObj.SetActive(true);
+                mcB.KillAllTweens();
+
+                mc.linkedPartner = mcB;
+                mcB.linkedPartner = mc;
+                var conn = LinkedBoxConnector.Create(stageObj.transform, mc, mcB);
+                mc.linkConnector = conn;
+                mcB.linkConnector = conn;
+                conn?.SyncGeometryAndVisuals();
+            }
+
             // Disable shadow & all numeric TMP counters so preview shows pure mechanic visuals without sliced digits
-            var allTransforms = monsterObj.GetComponentsInChildren<Transform>(true);
+            var allTransforms = stageObj.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < allTransforms.Length; i++)
             {
                 var tr = allTransforms[i];
@@ -112,7 +155,7 @@ namespace PuzzleGlass
                 }
             }
 
-            var tmps = monsterObj.GetComponentsInChildren<TMP_Text>(true);
+            var tmps = stageObj.GetComponentsInChildren<TMP_Text>(true);
             for (int i = 0; i < tmps.Length; i++)
             {
                 if (tmps[i] != null) tmps[i].gameObject.SetActive(false);
@@ -141,8 +184,8 @@ namespace PuzzleGlass
             // Use the actual visible SDF box geometry bounds (not the transparent quad padding) so the block fills the frame cleanly
             CarrierBlockShapeUtility.GetRectParts(CarrierBlockShape.Rect1x1, out Vector4 r0, out _, out _, out _, out _);
             float pad = entry.hasKey ? 0.07f : 0.035f;
-            float minX = r0.x - r0.z - 0.035f;
-            float maxX = r0.x + r0.z + pad;
+            float minX = r0.x - r0.z - 0.035f - pairOffsetX;
+            float maxX = r0.x + r0.z + pad + pairOffsetX;
             float minY = r0.y - r0.w - CarrierBlockShapeUtility.LipDepthOffset - 0.015f;
             float maxY = r0.y + r0.w + (entry.hasKey ? 0.065f : 0.020f);
 
@@ -225,6 +268,11 @@ namespace PuzzleGlass
                     return new LevelMonsterEntry(PuzzleColor.Blue, 18, CarrierBlockShape.Rect1x1, Vector2Int.zero)
                     {
                         iceCount = 15
+                    };
+                case GameFeatureKind.LinkedPair:
+                    return new LevelMonsterEntry(PuzzleColor.Green, 20, CarrierBlockShape.Rect1x1, Vector2Int.zero)
+                    {
+                        linkGroupId = 1
                     };
                 case GameFeatureKind.LockAndKey:
                 default:

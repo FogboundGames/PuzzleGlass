@@ -294,7 +294,7 @@ namespace PuzzleGlass
             _lastGlintSpawnTime = -10f;
             gameObject.SetActive(true);
 
-            var snapshot = MechanicFeaturePreviewRenderer.GetOrCapturePreview(info.kind, info.sampleEntry);
+            var snapshot = MechanicFeaturePreviewRenderer.GetOrCapturePreview(info.kind, info.sampleEntry, info.samplePartnerEntry);
             if (_mechanicPreview != null)
             {
                 _mechanicPreview.texture = snapshot.texture;

@@ -146,6 +146,7 @@ namespace PuzzleGlass.Editor.Studio
             public int iceCount;
             public bool isFilledBox;
             public PuzzleColor filledBallColor;
+            public int partner = -1;
         }
 
         // ==================== Kural kontrolleri ====================
@@ -322,6 +323,59 @@ namespace PuzzleGlass.Editor.Studio
                 }
             }
 
+            // 2'li bağlı kutu tutarlılığı
+            var linkGroups = new Dictionary<int, List<int>>();
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                var m = monsters[i];
+                if (m == null || m.linkGroupId <= 0) continue;
+                if (!linkGroups.TryGetValue(m.linkGroupId, out var members))
+                {
+                    members = new List<int>();
+                    linkGroups[m.linkGroupId] = members;
+                }
+                members.Add(i);
+            }
+            foreach (var kv in linkGroups)
+            {
+                var members = kv.Value;
+                if (members.Count == 1)
+                {
+                    int idx = members[0];
+                    list.Add(new LevelFinding
+                    {
+                        severity = FindingSeverity.Warning,
+                        blockIndex = idx,
+                        text = $"Blok #{idx + 1} 2'li bağ grubunda (#{kv.Key}) ama eşi yok.",
+                        why = "Komşu bir bloğa bağla ya da bloğun bağını çöz."
+                    });
+                }
+                else if (members.Count > 2)
+                {
+                    list.Add(new LevelFinding
+                    {
+                        severity = FindingSeverity.Critical,
+                        blockIndex = members[0],
+                        text = $"2'li bağ grubu #{kv.Key} içinde {members.Count} blok var (tam 2 olmalı).",
+                        why = "Fazla blokların bağını çöz."
+                    });
+                }
+                else
+                {
+                    int a = members[0], b = members[1];
+                    if (!PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(monsters[a], monsters[b]))
+                    {
+                        list.Add(new LevelFinding
+                        {
+                            severity = FindingSeverity.Critical,
+                            blockIndex = a,
+                            text = $"Bağlı bloklar #{a + 1} ve #{b + 1} komşu değil (yan yana veya alt alta olmalı).",
+                            why = "Blokları yan yana / alt alta getir ya da bağlarını çöz."
+                        });
+                    }
+                }
+            }
+
             if (lvl.useBallFeedTubes)
             {
                 int totalBalls = lvl.useManualBallLayout ? (lvl.manualBalls?.Count ?? 0) : lvl.GetGlassStartBallCount();
@@ -435,14 +489,24 @@ namespace PuzzleGlass.Editor.Studio
             int cols, int rows, int cap, int n, IceMeltMode iceMeltMode, bool isTrack,
             bool smart, System.Random rng, List<int> cand, List<int> match, HashSet<PuzzleColor> front)
         {
-            var s = new State { anchors = (Vector2Int[])anchors0.Clone(), removed = new bool[n], fill = new int[n], taken = new int[bc], inSlot = new bool[n], wave = 0 };
+            var s = CreateInitialState(anchors0, blocks, bc, slotMode: true);
             CollectClosure(s, blocks, walls, w1, w2, hasW2, gcol, rows, iceMeltMode, isTrack);
             for (int guard = 0; guard < n * 4 && !AllRemoved(s); guard++)
             {
                 cand.Clear();
-                if (SlotsUsed(s) < cap)
+                bool hasSingle = FindFirstFreeSlot(s, cap) >= 0;
+                bool hasAdjPair = FindFirstAdjacentFreeSlotPair(s, cap) >= 0;
+                if (hasSingle || hasAdjPair)
+                {
                     for (int i = 0; i < n; i++)
-                        if (InGrid(s, i) && !IsBlockBlocked(i, s, blocks, iceMeltMode) && IsExitClear(i, s, blocks, walls, cols, rows)) cand.Add(i);
+                    {
+                        int p = blocks[i].partner;
+                        if (p >= 0 && i > p) continue;
+                        if (p >= 0 ? !hasAdjPair : !hasSingle) continue;
+                        if (InGrid(s, i) && (p < 0 || InGrid(s, p)) && !IsBlockBlocked(i, s, blocks, iceMeltMode) && IsExitClear(i, s, blocks, walls, cols, rows))
+                            cand.Add(i);
+                    }
+                }
                 if (cand.Count == 0) break;
                 int pick = cand[rng.Next(cand.Count)];
                 if (smart)
@@ -458,7 +522,13 @@ namespace PuzzleGlass.Editor.Studio
                         for (int c = 0; c < s.supplied.Length; c++)
                             if (s.supplied[c] > 0) front.Add((PuzzleColor)c);
                     match.Clear();
-                    foreach (int i in cand) if (blocks[i].isFilledBox || front.Contains(blocks[i].color)) match.Add(i);
+                    foreach (int i in cand)
+                    {
+                        int p = blocks[i].partner;
+                        bool hitA = blocks[i].isFilledBox || front.Contains(blocks[i].color);
+                        bool hitB = p >= 0 && (blocks[p].isFilledBox || front.Contains(blocks[p].color));
+                        if (hitA || hitB) match.Add(i);
+                    }
                     if (match.Count > 0) pick = match[rng.Next(match.Count)];
                 }
                 ApplyMove(s, pick, SolveResult.SlotMove, blocks, walls, cols, rows, cap, iceMeltMode);
@@ -562,7 +632,7 @@ namespace PuzzleGlass.Editor.Studio
 
             bool slotMode = solve.slotModel;
             int slotCap = solve.slotCapacity > 0 ? solve.slotCapacity : GetSlotCapacity(lvl);
-            var s = new State { anchors = anchors, removed = new bool[blocks.Length], fill = new int[blocks.Length], taken = new int[bc], inSlot = slotMode ? new bool[blocks.Length] : null, wave = 0 };
+            var s = CreateInitialState(anchors, blocks, bc, slotMode);
             var order = new List<int>();
             var prevRemoved = new bool[blocks.Length];
 
@@ -636,9 +706,26 @@ namespace PuzzleGlass.Editor.Studio
                     lockKeyCount = Mathf.Max(0, m.lockKeyCount),
                     iceCount = Mathf.Max(0, m.iceCount),
                     isFilledBox = m.isFilledBox,
-                    filledBallColor = m.isFilledBox ? m.filledBallColor : m.color
+                    filledBallColor = m.isFilledBox ? m.filledBallColor : m.color,
+                    partner = -1
                 };
                 anchors[i] = m.gridAnchor;
+            }
+            var firstByLink = new Dictionary<int, int>();
+            for (int i = 0; i < n; i++)
+            {
+                int gid = lvl.monsters[i].linkGroupId;
+                if (gid <= 0) continue;
+                if (firstByLink.TryGetValue(gid, out int firstIdx))
+                {
+                    blocks[firstIdx].partner = i;
+                    blocks[i].partner = firstIdx;
+                    firstByLink.Remove(gid);
+                }
+                else
+                {
+                    firstByLink[gid] = i;
+                }
             }
             if (!IsValidPlacement(blocks, anchors, new bool[n], cols, rows, walls)) return false;
 
@@ -765,7 +852,7 @@ namespace PuzzleGlass.Editor.Studio
                 Result.slotModel = m_SlotMode;
                 Result.slotCapacity = m_SlotCap;
 
-                var start = new State { anchors = anchors, removed = new bool[m_N], fill = new int[m_N], taken = new int[bc], inSlot = m_SlotMode ? new bool[m_N] : null, wave = 0 };
+                var start = CreateInitialState(anchors, m_Blocks, bc, m_SlotMode);
                 CollectClosure(start, m_Blocks, m_Walls, m_Wave1Stacks, m_Wave2Stacks, m_HasWave2, m_StackGridCol, m_Rows, m_IceMeltMode, m_IsTrack);
                 Result.openingCollectors = CountFilledAny(start);
                 Result.status = SolveStatus.LimitReached; // bitene kadar
@@ -818,6 +905,7 @@ namespace PuzzleGlass.Editor.Studio
 
                     for (int i = 0; i < m_N; i++)
                     {
+                        if (m_Blocks[i].partner >= 0 && i > m_Blocks[i].partner) continue;
                         if (!InGrid(s, i) || IsBlockBlocked(i, s, m_Blocks, m_IceMeltMode)) continue;
                         foreach (var d in m_DfsPhase ? SlotOnly : (m_SlotMode ? SlotDirs : Dirs))
                         {
@@ -851,6 +939,7 @@ namespace PuzzleGlass.Editor.Studio
             public int[] taken;
             public int[] supplied;
             public bool[] inSlot;
+            public sbyte[] slotOf;
             public byte wave;
 
             public State Clone() => new State
@@ -859,10 +948,40 @@ namespace PuzzleGlass.Editor.Studio
                 removed = (bool[])removed.Clone(),
                 emptied = emptied != null ? (bool[])emptied.Clone() : null,
                 inSlot = inSlot != null ? (bool[])inSlot.Clone() : null,
+                slotOf = slotOf != null ? (sbyte[])slotOf.Clone() : null,
                 fill = (int[])fill.Clone(),
                 taken = (int[])taken.Clone(),
                 supplied = supplied != null ? (int[])supplied.Clone() : null,
                 wave = wave
+            };
+        }
+
+        private static bool HasAnyLinkedPair(Block[] blocks)
+        {
+            if (blocks == null) return false;
+            for (int i = 0; i < blocks.Length; i++)
+                if (blocks[i].partner >= 0) return true;
+            return false;
+        }
+
+        private static State CreateInitialState(Vector2Int[] anchors, Block[] blocks, int bc, bool slotMode)
+        {
+            int n = blocks.Length;
+            sbyte[] slotOf = null;
+            if (slotMode && HasAnyLinkedPair(blocks))
+            {
+                slotOf = new sbyte[n];
+                for (int i = 0; i < n; i++) slotOf[i] = -1;
+            }
+            return new State
+            {
+                anchors = (Vector2Int[])anchors.Clone(),
+                removed = new bool[n],
+                fill = new int[n],
+                taken = new int[bc],
+                inSlot = slotMode ? new bool[n] : null,
+                slotOf = slotOf,
+                wave = 0
             };
         }
 
@@ -881,12 +1000,16 @@ namespace PuzzleGlass.Editor.Studio
 
         private static string Key(State s)
         {
-            var sb = new StringBuilder(s.anchors.Length * 6 + s.taken.Length * 2 + 4);
+            var sb = new StringBuilder(s.anchors.Length * 7 + s.taken.Length * 2 + 4);
             sb.Append(s.wave).Append('|');
             for (int i = 0; i < s.anchors.Length; i++)
             {
                 if (s.removed[i]) sb.Append('x');
-                else if (s.inSlot != null && s.inSlot[i]) sb.Append(s.emptied != null && s.emptied[i] ? 'e' : 's').Append(s.fill[i]);
+                else if (s.inSlot != null && s.inSlot[i])
+                {
+                    sb.Append(s.emptied != null && s.emptied[i] ? 'e' : 's').Append(s.fill[i]);
+                    if (s.slotOf != null) sb.Append('@').Append(s.slotOf[i]);
+                }
                 else sb.Append(s.anchors[i].x).Append(',').Append(s.anchors[i].y).Append(':').Append(s.fill[i]);
                 sb.Append(';');
             }
@@ -916,7 +1039,7 @@ namespace PuzzleGlass.Editor.Studio
             return true;
         }
 
-        private static bool IsBlockBlocked(int i, State s, Block[] blocks, IceMeltMode iceMeltMode)
+        private static bool IsSingleBlockBlocked(int i, State s, Block[] blocks, IceMeltMode iceMeltMode)
         {
             var b = blocks[i];
             if (b.lockKeyCount > 0)
@@ -941,6 +1064,14 @@ namespace PuzzleGlass.Editor.Studio
                 }
                 if (progress < b.iceCount) return true;
             }
+            return false;
+        }
+
+        private static bool IsBlockBlocked(int i, State s, Block[] blocks, IceMeltMode iceMeltMode)
+        {
+            if (IsSingleBlockBlocked(i, s, blocks, iceMeltMode)) return true;
+            int p = blocks[i].partner;
+            if (p >= 0 && !s.removed[p] && IsSingleBlockBlocked(p, s, blocks, iceMeltMode)) return true;
             return false;
         }
 
@@ -972,8 +1103,31 @@ namespace PuzzleGlass.Editor.Studio
             return n;
         }
 
-        /// <summary>StagingGridBoard.IsBlockExitClearToSlots: bloğun her hücresinin üstünde (tepsinin sonuna kadar) duvar ya da başka blok yok.</summary>
-        private static bool IsExitClear(int i, State s, Block[] blocks, bool[,] walls, int cols, int rows)
+        private static int FindFirstFreeSlot(State s, int slotCap)
+        {
+            if (s.inSlot == null || slotCap <= 0) return -1;
+            if (s.slotOf == null) return SlotsUsed(s) < slotCap ? 0 : -1;
+            int occMask = 0;
+            for (int i = 0; i < s.slotOf.Length; i++)
+                if (!s.removed[i] && s.inSlot[i] && s.slotOf[i] >= 0) occMask |= (1 << s.slotOf[i]);
+            for (int k = 0; k < slotCap; k++)
+                if ((occMask & (1 << k)) == 0) return k;
+            return -1;
+        }
+
+        private static int FindFirstAdjacentFreeSlotPair(State s, int slotCap)
+        {
+            if (s.inSlot == null || slotCap < 2) return -1;
+            if (s.slotOf == null) return SlotsUsed(s) + 2 <= slotCap ? 0 : -1;
+            int occMask = 0;
+            for (int i = 0; i < s.slotOf.Length; i++)
+                if (!s.removed[i] && s.inSlot[i] && s.slotOf[i] >= 0) occMask |= (1 << s.slotOf[i]);
+            for (int k = 0; k < slotCap - 1; k++)
+                if ((occMask & (1 << k)) == 0 && (occMask & (1 << (k + 1))) == 0) return k;
+            return -1;
+        }
+
+        private static bool IsSingleExitClear(int i, int ignorePartner, State s, Block[] blocks, bool[,] walls, int cols, int rows)
         {
             foreach (var c in blocks[i].cells)
             {
@@ -984,7 +1138,7 @@ namespace PuzzleGlass.Editor.Studio
                     if (walls != null && walls[cx, oy]) return false;
                     for (int j = 0; j < blocks.Length; j++)
                     {
-                        if (j == i || !InGrid(s, j)) continue;
+                        if (j == i || j == ignorePartner || !InGrid(s, j)) continue;
                         foreach (var o in blocks[j].cells)
                             if (s.anchors[j].x + o.x == cx && s.anchors[j].y + o.y == oy) return false;
                     }
@@ -993,7 +1147,20 @@ namespace PuzzleGlass.Editor.Studio
             return true;
         }
 
-        /// <summary>StagingGridBoard.AdvanceColumnQueues: her sütunda boş hücrenin altındaki ilk 1x1 blok yukarı kayar (duvar/çok hücreli blokta durur).</summary>
+        /// <summary>StagingGridBoard.IsBlockExitClearToSlots: bloğun (bağlıysa ikisinin de) üstünde duvar ya da başka blok yok.</summary>
+        private static bool IsExitClear(int i, State s, Block[] blocks, bool[,] walls, int cols, int rows)
+        {
+            int p = blocks[i].partner;
+            if (!IsSingleExitClear(i, p, s, blocks, walls, cols, rows)) return false;
+            if (p >= 0)
+            {
+                if (!InGrid(s, p)) return false;
+                if (!IsSingleExitClear(p, i, s, blocks, walls, cols, rows)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>StagingGridBoard.AdvanceColumnQueues ile birebir aynı sabit noktalı öne kaydırma (tekli + yatay/dikey bağlı ikililer).</summary>
         private static void AdvanceQueues(State s, Block[] blocks, bool[,] walls, int cols, int rows)
         {
             var occ = new int[cols, rows];
@@ -1007,48 +1174,147 @@ namespace PuzzleGlass.Editor.Studio
                     if (x >= 0 && y >= 0 && x < cols && y < rows) occ[x, y] = i;
                 }
             }
-            for (int c = 0; c < cols; c++)
+
+            var units = new List<(int a, int b)>();
+            var visited = new bool[blocks.Length];
+            for (int i = 0; i < blocks.Length; i++)
             {
-                for (int r = rows - 1; r >= 0; r--)
+                if (visited[i] || !InGrid(s, i) || blocks[i].cells.Length != 1) continue;
+                visited[i] = true;
+                int p = blocks[i].partner;
+                if (p >= 0 && !visited[p] && InGrid(s, p) && blocks[p].cells.Length == 1)
                 {
-                    if (walls != null && walls[c, r]) continue;
-                    if (occ[c, r] >= 0) continue;
-                    int pull = -1;
-                    for (int below = r - 1; below >= 0; below--)
-                    {
-                        if (walls != null && walls[c, below]) break;
-                        int o = occ[c, below];
-                        if (o >= 0)
-                        {
-                            if (blocks[o].cells.Length == 1) pull = o;
-                            break;
-                        }
-                    }
-                    if (pull >= 0)
-                    {
-                        occ[s.anchors[pull].x, s.anchors[pull].y] = -1;
-                        occ[c, r] = pull;
-                        // 1x1 bloğun tek hücresi (0,0) ofsetli
-                        var cell = blocks[pull].cells[0];
-                        s.anchors[pull] = new Vector2Int(c - cell.x, r - cell.y);
-                    }
+                    visited[p] = true;
+                    units.Add((i, p));
+                }
+                else
+                {
+                    units.Add((i, -1));
                 }
             }
+
+            for (int iter = 0; iter < rows && units.Count > 0; iter++)
+            {
+                bool stepMoved = false;
+                units.Sort((u1, u2) =>
+                {
+                    int y1 = u1.b >= 0 ? Mathf.Max(s.anchors[u1.a].y, s.anchors[u1.b].y) : s.anchors[u1.a].y;
+                    int y2 = u2.b >= 0 ? Mathf.Max(s.anchors[u2.a].y, s.anchors[u2.b].y) : s.anchors[u2.a].y;
+                    return y2.CompareTo(y1);
+                });
+
+                for (int u = 0; u < units.Count; u++)
+                {
+                    var (a, b) = units[u];
+                    var cellA = blocks[a].cells[0];
+                    int ax = s.anchors[a].x + cellA.x;
+                    int ay = s.anchors[a].y + cellA.y;
+                    if (b < 0)
+                    {
+                        int ny = ay + 1;
+                        if (ny >= rows || (walls != null && walls[ax, ny]) || occ[ax, ny] >= 0) continue;
+                        occ[ax, ay] = -1;
+                        occ[ax, ny] = a;
+                        s.anchors[a] = new Vector2Int(ax - cellA.x, ny - cellA.y);
+                        stepMoved = true;
+                    }
+                    else
+                    {
+                        var cellB = blocks[b].cells[0];
+                        int bx = s.anchors[b].x + cellB.x;
+                        int by = s.anchors[b].y + cellB.y;
+                        int nyA = ay + 1, nyB = by + 1;
+                        if (nyA >= rows || nyB >= rows) continue;
+                        if (walls != null && (walls[ax, nyA] || walls[bx, nyB])) continue;
+                        int occA = occ[ax, nyA];
+                        int occB = occ[bx, nyB];
+                        if ((occA >= 0 && occA != a && occA != b) || (occB >= 0 && occB != a && occB != b)) continue;
+
+                        occ[ax, ay] = -1;
+                        occ[bx, by] = -1;
+                        occ[ax, nyA] = a;
+                        occ[bx, nyB] = b;
+                        s.anchors[a] = new Vector2Int(ax - cellA.x, nyA - cellA.y);
+                        s.anchors[b] = new Vector2Int(bx - cellB.x, nyB - cellB.y);
+                        stepMoved = true;
+                    }
+                }
+                if (!stepMoved) break;
+            }
+        }
+
+        private static bool IsReadyToComplete(State s, Block[] blocks, int i)
+        {
+            if (s.removed[i]) return false;
+            if (blocks[i].isFilledBox && (s.emptied == null || !s.emptied[i])) return false;
+            return s.fill[i] >= blocks[i].count;
+        }
+
+        private static bool TryCompleteBlockOrPair(State s, Block[] blocks, int i, int ballsBefore, int boxesBefore, System.Action<int, int> onStepCompleted)
+        {
+            if (!IsReadyToComplete(s, blocks, i)) return false;
+            int p = blocks[i].partner;
+            if (p < 0)
+            {
+                s.removed[i] = true;
+                if (s.slotOf != null) s.slotOf[i] = -1;
+                onStepCompleted?.Invoke(ballsBefore, boxesBefore);
+                return true;
+            }
+            if (!IsReadyToComplete(s, blocks, p)) return false;
+            s.removed[i] = true;
+            s.removed[p] = true;
+            if (s.slotOf != null) { s.slotOf[i] = -1; s.slotOf[p] = -1; }
+            onStepCompleted?.Invoke(ballsBefore, boxesBefore);
+            return true;
         }
 
         /// <summary>Slot modelinde bir hamleyi uygular (kaydırma ya da slota gönderme). Geçersizse false.</summary>
         private static bool ApplyMove(State s, int i, Vector2Int dir, Block[] blocks, bool[,] walls, int cols, int rows, int slotCap, IceMeltMode ice)
         {
             if (!InGrid(s, i) || IsBlockBlocked(i, s, blocks, ice)) return false;
+            int p = blocks[i].partner;
             if (dir == SolveResult.SlotMove)
             {
-                if (s.inSlot == null || SlotsUsed(s) >= slotCap) return false;
+                if (s.inSlot == null) return false;
                 if (!IsExitClear(i, s, blocks, walls, cols, rows)) return false;
+                if (p >= 0)
+                {
+                    if (!InGrid(s, p)) return false;
+                    int leftSlot = FindFirstAdjacentFreeSlotPair(s, slotCap);
+                    if (leftSlot < 0) return false;
+                    int first, second;
+                    if (s.anchors[i].x != s.anchors[p].x)
+                    {
+                        bool iIsLeft = s.anchors[i].x < s.anchors[p].x;
+                        first = iIsLeft ? i : p;
+                        second = iIsLeft ? p : i;
+                    }
+                    else
+                    {
+                        bool iIsTop = s.anchors[i].y >= s.anchors[p].y;
+                        first = iIsTop ? i : p;
+                        second = iIsTop ? p : i;
+                    }
+                    s.inSlot[first] = true;
+                    s.inSlot[second] = true;
+                    if (s.slotOf != null)
+                    {
+                        s.slotOf[first] = (sbyte)leftSlot;
+                        s.slotOf[second] = (sbyte)(leftSlot + 1);
+                    }
+                    AdvanceQueues(s, blocks, walls, cols, rows);
+                    return true;
+                }
+                int freeSlot = FindFirstFreeSlot(s, slotCap);
+                if (freeSlot < 0) return false;
                 s.inSlot[i] = true;
+                if (s.slotOf != null) s.slotOf[i] = (sbyte)freeSlot;
                 AdvanceQueues(s, blocks, walls, cols, rows);
                 return true;
             }
             s.anchors[i] += dir;
+            if (p >= 0 && InGrid(s, p)) s.anchors[p] += dir;
             return IsValidPlacement(blocks, s.anchors, s.removed, cols, rows, walls, s.inSlot);
         }
 
@@ -1108,28 +1374,29 @@ namespace PuzzleGlass.Editor.Studio
                         continue;
                     }
 
-                    for (int c = 0; c < stacks.Length && s.fill[i] < blocks[i].count; c++)
+                    if (s.fill[i] < blocks[i].count)
                     {
-                        if (!slotMode && !isTrack && !open.Contains(stackGridCol[c])) continue;
-                        while (s.taken[c] < stacks[c].Count && stacks[c][s.taken[c]] == blocks[i].color && s.fill[i] < blocks[i].count)
+                        for (int c = 0; c < stacks.Length && s.fill[i] < blocks[i].count; c++)
                         {
-                            s.taken[c]++;
-                            s.fill[i]++;
+                            if (!slotMode && !isTrack && !open.Contains(stackGridCol[c])) continue;
+                            while (s.taken[c] < stacks[c].Count && stacks[c][s.taken[c]] == blocks[i].color && s.fill[i] < blocks[i].count)
+                            {
+                                s.taken[c]++;
+                                s.fill[i]++;
+                                changed = true;
+                            }
+                        }
+                        if (s.supplied != null && s.supplied[(int)blocks[i].color] > 0 && s.fill[i] < blocks[i].count)
+                        {
+                            int takeSup = Mathf.Min(s.supplied[(int)blocks[i].color], blocks[i].count - s.fill[i]);
+                            s.supplied[(int)blocks[i].color] -= takeSup;
+                            s.fill[i] += takeSup;
                             changed = true;
                         }
                     }
-                    if (s.supplied != null && s.supplied[(int)blocks[i].color] > 0 && s.fill[i] < blocks[i].count)
+                    if (TryCompleteBlockOrPair(s, blocks, i, ballsBefore, boxesBefore, onStepCompleted))
                     {
-                        int takeSup = Mathf.Min(s.supplied[(int)blocks[i].color], blocks[i].count - s.fill[i]);
-                        s.supplied[(int)blocks[i].color] -= takeSup;
-                        s.fill[i] += takeSup;
                         changed = true;
-                    }
-                    if (s.fill[i] >= blocks[i].count)
-                    {
-                        s.removed[i] = true;
-                        changed = true;
-                        onStepCompleted?.Invoke(ballsBefore, boxesBefore);
                     }
                 }
 

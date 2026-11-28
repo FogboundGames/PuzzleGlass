@@ -457,6 +457,11 @@ namespace PuzzleGlass
         [Tooltip("Dolu kutunun içindeki topların rengi (çerçeve renginden bağımsız seçilebilir).")]
         public PuzzleColor filledBallColor = PuzzleColor.Blue;
 
+        [Header("Linked Pair (2'li Bağlı Kutu)")]
+        [Min(0)]
+        [Tooltip("0 = bağımsız kutu. >0 = aynı grup numarasına sahip komşu 2 kutu (yan yana veya alt alta) birbirine bağlıdır; birlikte 2 yan yana slota gider ve ikisi de bitmeden slotu bırakmaz.")]
+        public int linkGroupId = 0;
+
         /// <summary>
         /// Bir blok/grubun en fazla top sayısı. Eskiden 16'ydı (blok başına en fazla görsel delik); toplar küçülüp
         /// sayıları arttığında (blok başına 18-30+) gruplar bloklardan yeniden kurulurken 16'ya kırpılıyor ve
@@ -780,6 +785,67 @@ namespace PuzzleGlass
             return false;
         }
 
+        public int GetNextLinkGroupId()
+        {
+            int maxId = 0;
+            if (monsters != null)
+            {
+                for (int i = 0; i < monsters.Count; i++)
+                {
+                    if (monsters[i] != null && monsters[i].linkGroupId > maxId)
+                        maxId = monsters[i].linkGroupId;
+                }
+            }
+            return maxId + 1;
+        }
+
+        public int FindLinkedPartnerIndex(int monsterIndex)
+        {
+            if (monsters == null || monsterIndex < 0 || monsterIndex >= monsters.Count) return -1;
+            var m = monsters[monsterIndex];
+            if (m == null || m.linkGroupId <= 0) return -1;
+            int id = m.linkGroupId;
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                if (i != monsterIndex && monsters[i] != null && monsters[i].linkGroupId == id)
+                    return i;
+            }
+            return -1;
+        }
+
+        public bool HasAnyLinkedPair()
+        {
+            if (monsters == null) return false;
+            var seen = new HashSet<int>();
+            for (int i = 0; i < monsters.Count; i++)
+            {
+                var m = monsters[i];
+                if (m == null || m.linkGroupId <= 0) continue;
+                if (!seen.Add(m.linkGroupId)) return true;
+            }
+            return false;
+        }
+
+        public static bool AreEntriesOrthogonallyAdjacent(LevelMonsterEntry a, LevelMonsterEntry b)
+        {
+            if (a == null || b == null) return false;
+            Vector2Int[] cellsA = CarrierBlockShapeUtility.GetCells(a.blockShape);
+            Vector2Int[] cellsB = CarrierBlockShapeUtility.GetCells(b.blockShape);
+            for (int i = 0; i < cellsA.Length; i++)
+            {
+                int ax = a.gridAnchor.x + cellsA[i].x;
+                int ay = a.gridAnchor.y + cellsA[i].y;
+                for (int j = 0; j < cellsB.Length; j++)
+                {
+                    int bx = b.gridAnchor.x + cellsB[j].x;
+                    int by = b.gridAnchor.y + cellsB[j].y;
+                    if (Mathf.Abs(ax - bx) + Mathf.Abs(ay - by) == 1)
+                        return true;
+                }
+            }
+            return false;
+        }
+
         public int GetFilledBoxBallCount()
         {
             if (monsters == null) return 0;
@@ -907,6 +973,7 @@ namespace PuzzleGlass
                     monsters[i].count = Mathf.Clamp(monsters[i].count, 1, 99);
                     monsters[i].lockKeyCount = Mathf.Max(0, monsters[i].lockKeyCount);
                     monsters[i].iceCount = Mathf.Max(0, monsters[i].iceCount);
+                    monsters[i].linkGroupId = Mathf.Max(0, monsters[i].linkGroupId);
                 }
             }
 

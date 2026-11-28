@@ -101,12 +101,14 @@ namespace PuzzleGlass
             float beltWorld = TrackCrowdQueue.BeltSpeed * containerScale;
             float vStart = beltWorld * StartSpeedMul;
             float vFull = Mathf.Max(vStart + 0.01f, beltWorld * FullSpeedMul);
+            float vStartLocal = TrackCrowdQueue.BeltSpeed * StartSpeedMul;
+            bool useBurstVel = TrackCrowdQueue.BurstActive && container.transform.rotation == Quaternion.identity;
 
             int frame = Time.frameCount;
             var balls = BallObjectPool.Instance.ActiveBalls;
             _candidates.Clear();
 
-            // Hız: konumdan türetilir (rigidbody, tween ya da kinematik fark etmez), kısa süreli yumuşatma ile
+            // Hız: Burst modunda doğrudan hazır yerel hızdan okunur (yavaş toplar transform.position ve sqrt atlar)
             float velBlend = 1f - Mathf.Exp(-dt * 18f);
             float fadeIn = 1f - Mathf.Exp(-dt * 14f);
             float fadeOut = 1f - Mathf.Exp(-dt * 9f);
@@ -114,11 +116,45 @@ namespace PuzzleGlass
             {
                 var b = balls[i];
                 if (b == null) continue;
-                bool onTrack = b.state == BallState.InContainer || b.state == BallState.AttractingToExit;
+                bool isInContainer = b.state == BallState.InContainer;
+                bool onTrack = isInContainer || b.state == BallState.AttractingToExit;
+
+                if (useBurstVel && isInContainer && b.burstConfigured && b.trackQueueDriven)
+                {
+                    if (b.trackQueueSpeed <= vStartLocal && b.streakStrength <= 0.001f)
+                    {
+                        b.streakStrength = 0f;
+                        b.streakVel = Vector3.zero;
+                        b.streakLastFrame = -100;
+                        continue;
+                    }
+
+                    Vector3 instVelB = new Vector3(b.trackVel.x * containerScale, b.trackVel.y * containerScale, 0f);
+                    Vector3 velB = (frame - b.streakLastFrame > 2) ? instVelB : Vector3.Lerp(b.streakVel, instVelB, velBlend);
+                    b.streakVel = velB;
+                    b.streakLastFrame = frame;
+
+                    float speedB = velB.magnitude;
+                    float targetB = Mathf.InverseLerp(vStart, vFull, speedB);
+                    float strengthB = Mathf.Lerp(b.streakStrength, targetB, targetB > b.streakStrength ? fadeIn : fadeOut);
+                    b.streakStrength = strengthB;
+
+                    if (strengthB > 0.02f) _candidates.Add((strengthB * speedB, b, velB, strengthB));
+                    continue;
+                }
+
+                if (!onTrack)
+                {
+                    b.streakVel = Vector3.zero;
+                    b.streakStrength = 0f;
+                    b.streakLastFrame = -100;
+                    continue;
+                }
+
                 Vector3 pos = b.transform.position;
 
                 // İzleme durumu topun üzerinde tutulur (havuza dönüp yeniden çıkan top: kare boşluğu > 2 → sıfırlanır)
-                if (frame - b.streakLastFrame > 2 || !onTrack)
+                if (frame - b.streakLastFrame > 2)
                 {
                     b.streakLastPos = pos;
                     b.streakVel = Vector3.zero;

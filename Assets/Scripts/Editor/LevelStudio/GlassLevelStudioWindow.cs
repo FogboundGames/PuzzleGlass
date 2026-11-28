@@ -55,11 +55,13 @@ namespace PuzzleGlass.Editor.Studio
         private LevelDifficulty m_GenDifficulty = LevelDifficulty.Medium;
         private int m_GenBatchCount = 3;
 
-        private enum MechanicBrush { None, Key, Lock, Ice, Filled, Wall }
+        private enum MechanicBrush { None, Key, Lock, Ice, Filled, Link, Wall }
 
         // Etkileşim durumu
         private int m_SelectedBlock = -1;
         private int m_SelectedGroup = -1;
+        private int m_LinkFirstBlock = -1;
+        private bool m_LinkDragLinked;
         private PuzzleColor? m_BrushColor;
         private CarrierBlockShape? m_BrushShape;
         private MechanicBrush m_BrushMechanic;
@@ -1787,6 +1789,81 @@ namespace PuzzleGlass.Editor.Studio
             OnEdited(syncScene: true);
         }
 
+        private void ClearLinkGroupInternal(int groupId)
+        {
+            if (m_Level == null || m_Level.monsters == null || groupId <= 0) return;
+            for (int k = 0; k < m_Level.monsters.Count; k++)
+            {
+                if (m_Level.monsters[k] != null && m_Level.monsters[k].linkGroupId == groupId)
+                    m_Level.monsters[k].linkGroupId = 0;
+            }
+        }
+
+        private void LinkBlocks(int a, int b)
+        {
+            if (!ValidBlock(a) || !ValidBlock(b) || a == b) return;
+            var ma = m_Level.monsters[a];
+            var mb = m_Level.monsters[b];
+            if (!PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(ma, mb))
+            {
+                ShowNotification(new GUIContent("2'li bağ yalnızca komşu (yan yana veya alt alta) bloklar arasında kurulabilir"));
+                return;
+            }
+            if (ma.linkGroupId > 0 && ma.linkGroupId == mb.linkGroupId)
+            {
+                UnlinkBlock(a);
+                return;
+            }
+
+            Record("2'li kutu bağla");
+            if (ma.linkGroupId > 0) ClearLinkGroupInternal(ma.linkGroupId);
+            if (mb.linkGroupId > 0) ClearLinkGroupInternal(mb.linkGroupId);
+            int gid = m_Level.GetNextLinkGroupId();
+            ma.linkGroupId = gid;
+            mb.linkGroupId = gid;
+            m_LinkFirstBlock = -1;
+            OnEdited(syncScene: true);
+        }
+
+        private void UnlinkBlock(int i)
+        {
+            if (!ValidBlock(i)) return;
+            int gid = m_Level.monsters[i].linkGroupId;
+            if (gid <= 0) return;
+            Record("2'li kutu bağını çöz");
+            ClearLinkGroupInternal(gid);
+            m_LinkFirstBlock = -1;
+            OnEdited(syncScene: true);
+        }
+
+        private List<(int index, string dirArrow, string dirName)> FindAdjacentBlockNeighbors(int i)
+        {
+            var result = new List<(int, string, string)>();
+            if (!ValidBlock(i) || m_Level.monsters == null) return result;
+            var m = m_Level.monsters[i];
+            var seen = new HashSet<int>();
+            var dirs = new (Vector2Int d, string arrow, string name)[]
+            {
+                (Vector2Int.left,  "←", "Sol"),
+                (Vector2Int.right, "→", "Sağ"),
+                (Vector2Int.up,    "↑", "Üst"),
+                (Vector2Int.down,  "↓", "Alt")
+            };
+            var myCells = CarrierBlockShapeUtility.GetCells(m.blockShape);
+            foreach (var (d, arrow, name) in dirs)
+            {
+                foreach (var c in myCells)
+                {
+                    int hit = BlockAt(m_Level, m.gridAnchor + c + d, i);
+                    if (hit >= 0 && seen.Add(hit))
+                    {
+                        result.Add((hit, arrow, name));
+                    }
+                }
+            }
+            return result;
+        }
+
         private void ToggleMechanicBrushOnBlock(int i, MechanicBrush brush)
         {
             if (!ValidBlock(i)) return;
@@ -1834,6 +1911,7 @@ namespace PuzzleGlass.Editor.Studio
             if (!ValidBlock(i)) return;
             Record("Blok sil");
             var m = m_Level.monsters[i];
+            if (m.linkGroupId > 0) ClearLinkGroupInternal(m.linkGroupId);
             bool wasFilled = m.isFilledBox;
             bool hadFilled = wasFilled || m_Level.HasAnyFilledBox();
             if (!wasFilled && !hadFilled && !m_Level.useManualBallLayout)
@@ -1845,6 +1923,7 @@ namespace PuzzleGlass.Editor.Studio
             SyncGlassAfterBoxChange(forceRebuild: hadFilled);
             m_SelectedBlock = -1;
             m_SelectedGroup = -1;
+            m_LinkFirstBlock = -1;
             OnEdited(syncScene: true);
         }
 
@@ -1901,6 +1980,12 @@ namespace PuzzleGlass.Editor.Studio
             m.blockShape = shape;
             m.gridAnchor = anchor.Value;
             m.hasGridAnchor = true;
+            if (m.linkGroupId > 0)
+            {
+                int p = m_Level.FindLinkedPartnerIndex(i);
+                if (p >= 0 && !PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(m, m_Level.monsters[p]))
+                    ClearLinkGroupInternal(m.linkGroupId);
+            }
             OnEdited(syncScene: true);
             return true;
         }
@@ -1909,8 +1994,28 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (!ValidBlock(i) || m_Level.monsters[i].gridAnchor == anchor) return;
             Record("Blok taşı");
-            m_Level.monsters[i].gridAnchor = anchor;
-            m_Level.monsters[i].hasGridAnchor = true;
+            var m = m_Level.monsters[i];
+            int p = m_Level.FindLinkedPartnerIndex(i);
+            Vector2Int delta = anchor - m.gridAnchor;
+            m.gridAnchor = anchor;
+            m.hasGridAnchor = true;
+            if (p >= 0 && ValidBlock(p))
+            {
+                var mp = m_Level.monsters[p];
+                if (!PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(m, mp))
+                {
+                    Vector2Int pTarget = mp.gridAnchor + delta;
+                    if (Fits(m_Level, mp.blockShape, pTarget, p))
+                    {
+                        mp.gridAnchor = pTarget;
+                        mp.hasGridAnchor = true;
+                    }
+                    else
+                    {
+                        ClearLinkGroupInternal(m.linkGroupId);
+                    }
+                }
+            }
             OnEdited(syncScene: true);
         }
 
@@ -1940,6 +2045,21 @@ namespace PuzzleGlass.Editor.Studio
             mj.gridAnchor = ai;
             mi.hasGridAnchor = true;
             mj.hasGridAnchor = true;
+
+            // Yer değişimi sonrası komşuluğu bozulan 2'li bağları temizle (birbirine bağlı çift kendi içinde yer değiştirirse bağ korunur)
+            if (mi.linkGroupId > 0)
+            {
+                int pi = m_Level.FindLinkedPartnerIndex(i);
+                if (pi >= 0 && !PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(mi, m_Level.monsters[pi]))
+                    ClearLinkGroupInternal(mi.linkGroupId);
+            }
+            if (mj.linkGroupId > 0)
+            {
+                int pj = m_Level.FindLinkedPartnerIndex(j);
+                if (pj >= 0 && !PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(mj, m_Level.monsters[pj]))
+                    ClearLinkGroupInternal(mj.linkGroupId);
+            }
+
             m_SelectedBlock = i;
             OnEdited(syncScene: true);
             return true;
@@ -1987,6 +2107,7 @@ namespace PuzzleGlass.Editor.Studio
         private void ClampSelection()
         {
             if (m_Level == null || m_Level.monsters == null || m_SelectedBlock >= m_Level.monsters.Count) m_SelectedBlock = -1;
+            if (m_Level == null || m_Level.monsters == null || m_LinkFirstBlock >= m_Level.monsters.Count) m_LinkFirstBlock = -1;
             if (m_Level == null || m_Level.bottomToTopGroups == null || m_SelectedGroup >= m_Level.bottomToTopGroups.Count) m_SelectedGroup = -1;
         }
 
@@ -2287,6 +2408,9 @@ namespace PuzzleGlass.Editor.Studio
                         case MechanicBrush.Lock: parts.Add($"🔒 Kilit({m_BrushLockCount})"); break;
                         case MechanicBrush.Ice: parts.Add($"❄ Buz({m_BrushIceCount})"); break;
                         case MechanicBrush.Filled: parts.Add("●↑ Dolu"); break;
+                        case MechanicBrush.Link:
+                            parts.Add(m_LinkFirstBlock >= 0 ? $"🔗 2'li Bağ (#{m_LinkFirstBlock + 1} → komşu seç)" : "🔗 2'li Bağ");
+                            break;
                         case MechanicBrush.Wall: parts.Add("🧱 Bölme"); break;
                     }
                 }
@@ -2405,6 +2529,7 @@ namespace PuzzleGlass.Editor.Studio
             AddMechanicChip("🔒 Kilit", MechanicBrush.Lock, "Bloğa tıkla/sürükle = kilit ekle/kaldır.");
             AddMechanicChip("❄ Buz", MechanicBrush.Ice, "Bloğa tıkla/sürükle = buz ekle/kaldır.");
             AddMechanicChip("●↑ Dolu", MechanicBrush.Filled, "Bloğa tıkla/sürükle = içi dolu kutu yap/kaldır; boş hücreye tıkla = içi dolu kutu ekle.");
+            AddMechanicChip("🔗 2'li Bağ", MechanicBrush.Link, "İki komşu (yan yana veya alt alta) bloğa sırayla tıkla veya sürükle = birbirine bağla. Bağlı bloğa tıkla = bağı çöz.");
             AddMechanicChip("🧱 Bölme", MechanicBrush.Wall, "Boş hücreye tıkla/sürükle = tepsi duvarı/bölmesi ekle veya kaldır.");
 
             if (m_BrushMechanic == MechanicBrush.Lock)
@@ -2465,6 +2590,7 @@ namespace PuzzleGlass.Editor.Studio
             var chip = Chip(() =>
             {
                 m_BrushMechanic = m_BrushMechanic == brush ? MechanicBrush.None : brush;
+                m_LinkFirstBlock = -1;
                 m_Eraser = false;
                 RefreshBrushUI();
             }, m_BrushMechanic == brush);
@@ -2509,6 +2635,7 @@ namespace PuzzleGlass.Editor.Studio
             m_BrushColor = null;
             m_BrushShape = null;
             m_BrushMechanic = MechanicBrush.None;
+            m_LinkFirstBlock = -1;
             m_Eraser = false;
         }
 
@@ -2671,7 +2798,21 @@ namespace PuzzleGlass.Editor.Studio
                     bool dragging = i == m_DragBlock && m_Pending == null;
                     Vector2Int anchor = dragging ? m_DragAnchor : m.gridAnchor;
                     bool invalid = dragging && !Fits(lvl, m.blockShape, anchor, i);
-                    DrawBlock(m_Tray, m, i, anchor, rows, i == m_SelectedBlock, critical.Contains(i), dragging, invalid);
+                    DrawBlock(m_Tray, m, i, anchor, rows, i == m_SelectedBlock || i == m_LinkFirstBlock, critical.Contains(i), dragging, invalid);
+                }
+
+                // 2'li bağlı kutuların arasına iki renkli köprü çubuğu çiz
+                var drawnLinkGroups = new HashSet<int>();
+                for (int i = 0; i < lvl.monsters.Count; i++)
+                {
+                    var a = lvl.monsters[i];
+                    if (a == null || a.linkGroupId <= 0 || !drawnLinkGroups.Add(a.linkGroupId)) continue;
+                    int p = lvl.FindLinkedPartnerIndex(i);
+                    if (p < 0 || p >= lvl.monsters.Count || lvl.monsters[p] == null) continue;
+                    var b = lvl.monsters[p];
+                    Vector2Int anchorA = (i == m_DragBlock && m_Pending == null) ? m_DragAnchor : a.gridAnchor;
+                    Vector2Int anchorB = (p == m_DragBlock && m_Pending == null) ? m_DragAnchor : b.gridAnchor;
+                    DrawLinkedPairBridge(m_Tray, a, anchorA, b, anchorB, rows);
                 }
             }
 
@@ -2679,6 +2820,10 @@ namespace PuzzleGlass.Editor.Studio
             if (m_HoverCell.HasValue && m_Pending == null && (m_BrushColor != null || m_BrushShape != null || m_BrushMechanic != MechanicBrush.None) && !m_Eraser)
             {
                 var cell = m_HoverCell.Value;
+                if (m_BrushMechanic == MechanicBrush.Link)
+                {
+                    return;
+                }
                 if (m_BrushMechanic == MechanicBrush.Wall)
                 {
                     if (BlockAt(lvl, cell) < 0)
@@ -2731,6 +2876,77 @@ namespace PuzzleGlass.Editor.Studio
                 }
                 DrawBlock(m_Tray, ghost, -1, at ?? cell - CarrierBlockShapeUtility.GetCells(shape)[0], rows, false, false, true, !at.HasValue);
             }
+        }
+
+        private void DrawLinkedPairBridge(VisualElement tray, LevelMonsterEntry a, Vector2Int anchorA, LevelMonsterEntry b, Vector2Int anchorB, int rows)
+        {
+            if (a == null || b == null) return;
+            float cpx = CellPx;
+            Vector2 centerA = new Vector2((anchorA.x + 0.5f) * cpx, (rows - 1 - anchorA.y + 0.5f) * cpx);
+            Vector2 centerB = new Vector2((anchorB.x + 0.5f) * cpx, (rows - 1 - anchorB.y + 0.5f) * cpx);
+            Color colA = a.iceCount > 0 ? new Color(0.337f, 0.761f, 0.965f) : PuzzleColorPalette.GetBodyColor(a.color);
+            Color colB = b.iceCount > 0 ? new Color(0.337f, 0.761f, 0.965f) : PuzzleColorPalette.GetBodyColor(b.color);
+
+            bool horizontal = Mathf.Abs(anchorA.x - anchorB.x) >= Mathf.Abs(anchorA.y - anchorB.y);
+            var bar = new VisualElement();
+            bar.pickingMode = PickingMode.Ignore;
+            bar.AddToClassList("block-link-bridge");
+            bar.AddToClassList(horizontal ? "block-link-bridge--h" : "block-link-bridge--v");
+
+            float thick = Mathf.Clamp(cpx * 0.24f, 11f, 16f);
+            float inset = cpx * 0.26f;
+
+            Color firstCol, secondCol;
+            if (horizontal)
+            {
+                bool aLeft = centerA.x <= centerB.x;
+                float x1 = (aLeft ? centerA.x : centerB.x) + inset;
+                float x2 = (aLeft ? centerB.x : centerA.x) - inset;
+                if (x2 < x1 + 8f)
+                {
+                    float mid = 0.5f * (centerA.x + centerB.x);
+                    x1 = mid - 6f;
+                    x2 = mid + 6f;
+                }
+                float y = 0.5f * (centerA.y + centerB.y) - thick * 0.5f;
+                bar.style.left = x1;
+                bar.style.top = y;
+                bar.style.width = x2 - x1;
+                bar.style.height = thick;
+                firstCol = aLeft ? colA : colB;
+                secondCol = aLeft ? colB : colA;
+            }
+            else
+            {
+                bool aTop = centerA.y <= centerB.y;
+                float y1 = (aTop ? centerA.y : centerB.y) + inset;
+                float y2 = (aTop ? centerB.y : centerA.y) - inset;
+                if (y2 < y1 + 8f)
+                {
+                    float mid = 0.5f * (centerA.y + centerB.y);
+                    y1 = mid - 6f;
+                    y2 = mid + 6f;
+                }
+                float x = 0.5f * (centerA.x + centerB.x) - thick * 0.5f;
+                bar.style.left = x;
+                bar.style.top = y1;
+                bar.style.width = thick;
+                bar.style.height = y2 - y1;
+                firstCol = aTop ? colA : colB;
+                secondCol = aTop ? colB : colA;
+            }
+
+            var half1 = new VisualElement();
+            half1.pickingMode = PickingMode.Ignore;
+            half1.AddToClassList("block-link-bridge__half");
+            half1.style.backgroundColor = firstCol;
+            var half2 = new VisualElement();
+            half2.pickingMode = PickingMode.Ignore;
+            half2.AddToClassList("block-link-bridge__half");
+            half2.style.backgroundColor = secondCol;
+            bar.Add(half1);
+            bar.Add(half2);
+            tray.Add(bar);
         }
 
         private void DrawTrayWallCell(Vector2Int c, int rows, HashSet<Vector2Int> walls, bool ghost)
@@ -4025,6 +4241,56 @@ namespace PuzzleGlass.Editor.Studio
                 return;
             }
 
+            if (m_BrushMechanic == MechanicBrush.Link)
+            {
+                if (hit < 0)
+                {
+                    m_LinkFirstBlock = -1;
+                    RefreshBrushUI();
+                    RedrawTray();
+                }
+                else if (m_LinkFirstBlock >= 0 && m_LinkFirstBlock != hit)
+                {
+                    int first = m_LinkFirstBlock;
+                    if (PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(lvl.monsters[first], lvl.monsters[hit]))
+                    {
+                        LinkBlocks(first, hit);
+                        m_SelectedBlock = hit;
+                        RefreshAll();
+                    }
+                    else
+                    {
+                        m_LinkFirstBlock = hit;
+                        m_SelectedBlock = hit;
+                        ShowNotification(new GUIContent($"Blok #{hit + 1} seçildi — bağlamak için komşu bloğa tıkla"));
+                        RefreshBrushUI();
+                        RedrawTray();
+                    }
+                }
+                else if (m_LinkFirstBlock == hit)
+                {
+                    // Aynı bloğa tekrar tıklandı -> seçimi iptal et (bağlıysa çöz)
+                    if (lvl.monsters[hit].linkGroupId > 0) UnlinkBlock(hit);
+                    else m_LinkFirstBlock = -1;
+                    RefreshAll();
+                }
+                else
+                {
+                    // İlk tıklama: sürükleyerek hemen komşuya bağlamaya izin ver; sürüklemeden bırakırsa bağlıysa çöz, değilse 1. blok olarak seç
+                    m_LinkFirstBlock = hit;
+                    m_LinkDragLinked = false;
+                    m_SelectedBlock = hit;
+                    m_TrayPainting = true;
+                    m_TrayPaintedBlocks.Clear();
+                    m_TrayPaintedBlocks.Add(hit);
+                    m_Tray.CapturePointer(e.pointerId);
+                    RefreshBrushUI();
+                    RedrawTray();
+                }
+                e.StopPropagation();
+                return;
+            }
+
             if (m_BrushMechanic == MechanicBrush.Wall)
             {
                 if (hit >= 0) ShowNotification(new GUIContent($"#{hit + 1} bloğunun üstüne bölme konulamaz"));
@@ -4140,6 +4406,23 @@ namespace PuzzleGlass.Editor.Studio
                     menu.AddItem(new GUIContent($"❄ Buz/{v} Sayaç"), m.iceCount == v, () => SetBlockIceCount(idx, v));
                 }
                 menu.AddSeparator("");
+                int linkedPartnerIdx = m_Level.FindLinkedPartnerIndex(idx);
+                if (linkedPartnerIdx >= 0)
+                {
+                    menu.AddItem(new GUIContent($"🔗 2'li Bağı Çöz (#{linkedPartnerIdx + 1})"), false, () => UnlinkBlock(idx));
+                }
+                var adjNeighbors = FindAdjacentBlockNeighbors(idx);
+                foreach (var (nIdx, arrow, dirName) in adjNeighbors)
+                {
+                    int targetIdx = nIdx;
+                    var nm = m_Level.monsters[targetIdx];
+                    bool alreadyLinked = targetIdx == linkedPartnerIdx;
+                    menu.AddItem(
+                        new GUIContent($"🔗 2'li Bağla/{arrow} {dirName} (#{targetIdx + 1} · {PuzzleLevelSolver.ColorName(nm.color)})"),
+                        alreadyLinked,
+                        () => LinkBlocks(idx, targetIdx));
+                }
+                menu.AddSeparator("");
                 foreach (var c in BrushColors)
                 {
                     var col = c;
@@ -4201,6 +4484,17 @@ namespace PuzzleGlass.Editor.Studio
                         else if (IsWall(m_Level, c.x, c.y)) ToggleWallCell(c, forceAdd: false);
                     }
                 }
+                else if (m_BrushMechanic == MechanicBrush.Link)
+                {
+                    if (m_LinkFirstBlock >= 0 && hit >= 0 && hit != m_LinkFirstBlock && !m_LinkDragLinked &&
+                        PuzzleGlassLevelData.AreEntriesOrthogonallyAdjacent(m_Level.monsters[m_LinkFirstBlock], m_Level.monsters[hit]))
+                    {
+                        m_LinkDragLinked = true;
+                        LinkBlocks(m_LinkFirstBlock, hit);
+                        m_SelectedBlock = hit;
+                        RefreshAll();
+                    }
+                }
                 else if (m_BrushMechanic == MechanicBrush.Wall)
                 {
                     if (hit < 0 && m_TrayPaintedCells.Add(c))
@@ -4243,10 +4537,18 @@ namespace PuzzleGlass.Editor.Studio
         {
             if (m_TrayPainting)
             {
+                bool linkClickRelease = m_BrushMechanic == MechanicBrush.Link && !m_LinkDragLinked && m_LinkFirstBlock >= 0 && ValidBlock(m_LinkFirstBlock);
+                int linkHit = m_LinkFirstBlock;
                 m_TrayPainting = false;
+                m_LinkDragLinked = false;
                 m_TrayPaintedBlocks.Clear();
                 m_TrayPaintedCells.Clear();
                 if (m_Tray.HasPointerCapture(e.pointerId)) m_Tray.ReleasePointer(e.pointerId);
+                if (linkClickRelease && m_Level.monsters[linkHit].linkGroupId > 0)
+                {
+                    UnlinkBlock(linkHit);
+                    RefreshAll();
+                }
                 return;
             }
             if (m_DragBlock < 0) return;
@@ -4648,10 +4950,57 @@ namespace PuzzleGlass.Editor.Studio
                 }
             }
 
-            if (m.hasKey || m.lockKeyCount > 0 || m.iceCount > 0 || m.isFilledBox)
+            int linkedPartner = m_Level.FindLinkedPartnerIndex(i);
+            var linkRow = new VisualElement();
+            linkRow.AddToClassList("inspector__row");
+            var linkLbl = new Label("🔗 2'li Bağ");
+            linkLbl.AddToClassList("inspector__row-label");
+            linkRow.Add(linkLbl);
+            if (linkedPartner >= 0 && ValidBlock(linkedPartner))
+            {
+                var pm = m_Level.monsters[linkedPartner];
+                string orient = pm.gridAnchor.y == m.gridAnchor.y ? "yan yana" : "alt alta";
+                var infoLbl = new Label($"#{linkedPartner + 1} {PuzzleLevelSolver.ColorName(pm.color)} ({orient})");
+                infoLbl.style.flexGrow = 1;
+                infoLbl.style.fontSize = 11;
+                linkRow.Add(infoLbl);
+                var unlinkBtn = new Button(() => UnlinkBlock(i)) { text = "Çöz", tooltip = "2'li bağlantıyı kaldır." };
+                unlinkBtn.style.width = 42;
+                linkRow.Add(unlinkBtn);
+            }
+            else
+            {
+                var neighbors = FindAdjacentBlockNeighbors(i);
+                if (neighbors.Count == 0)
+                {
+                    var noneLbl = new Label("Komşu yok");
+                    noneLbl.style.fontSize = 11;
+                    noneLbl.style.color = new Color(0.6f, 0.62f, 0.66f);
+                    linkRow.Add(noneLbl);
+                }
+                else
+                {
+                    foreach (var (nIdx, arrow, dirName) in neighbors)
+                    {
+                        int targetIdx = nIdx;
+                        var nm = m_Level.monsters[targetIdx];
+                        var btn = new Button(() => LinkBlocks(i, targetIdx))
+                        {
+                            text = $"{arrow}#{targetIdx + 1}",
+                            tooltip = $"{dirName} komşu #{targetIdx + 1} ({PuzzleLevelSolver.ColorName(nm.color)}) ile bağla."
+                        };
+                        btn.style.width = 40;
+                        linkRow.Add(btn);
+                    }
+                }
+            }
+            m_Inspector.Add(linkRow);
+
+            if (m.hasKey || m.lockKeyCount > 0 || m.iceCount > 0 || m.isFilledBox || linkedPartner >= 0)
             {
                 string unit = m_Level.iceMeltMode == IceMeltMode.PerBallCollected ? "top toplandığında" : "kutu tamamlandığında";
                 string mechSummary = "";
+                if (linkedPartner >= 0) mechSummary += $"• 2'li bağlı (#{linkedPartner + 1} ile): ikisi birlikte 2 yan yana slota gider; biri bitse bile diğeri bitmeden slotu bırakmaz.\n";
                 if (m.isFilledBox) mechSummary += $"• İçi dolu: slota konulunca camın içine {m.count} adet {PuzzleLevelSolver.ColorName(m.filledBallColor)} top gönderir, ardından {m.count} adet {PuzzleLevelSolver.ColorName(m.color)} top toplayıp tamamlanır.\n";
                 if (m.hasKey) mechSummary += "• Anahtarlı: tamamlanınca tüm kilitleri 1 azaltır.\n";
                 if (m.lockKeyCount > 0) mechSummary += $"• Kilitli ({m.lockKeyCount}): {m.lockKeyCount} anahtar gelene kadar kaymaz ve top toplamaz.\n";

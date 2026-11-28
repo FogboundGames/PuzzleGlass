@@ -561,7 +561,8 @@ namespace PuzzleGlass
             Camera cam = (gm != null && gm.mainCamera != null) ? gm.mainCamera : Camera.main;
             if (gm != null && cam != null) PrepareEntrance(gm, cam.orthographicSize * 2f);
             _loadTarget = 1f / steps;
-            // 2) İlk kare çizildi: shader'lar, mesh'ler ve dokular GPU'ya yüklendi
+            // 2) Özel oyun shader'ları perde arkasında ısındı ve ilk kare çizildi (GPU PSO takılması önlenir)
+            MobilePerformanceManager.WarmUpGameShaders();
             yield return new WaitForEndOfFrame();
             _loadTarget = 2f / steps;
             // 3) Yeni collider'larla ilk fizik adımı tamamlandı
@@ -1019,10 +1020,7 @@ namespace PuzzleGlass
 
             if (_sphereMesh == null)
             {
-                GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                var mf = temp.GetComponent<MeshFilter>();
-                if (mf != null) _sphereMesh = mf.sharedMesh;
-                Destroy(temp);
+                _sphereMesh = ProceduralMeshUtils.GetSharedBallSphereMesh();
             }
 
             if (_uiFont == null)

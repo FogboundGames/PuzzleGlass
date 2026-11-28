@@ -170,6 +170,7 @@ namespace PuzzleGlass.Editor.Studio
                 var list = new List<State>();
                 for (int i = 0; i < m_Blocks.Length; i++)
                 {
+                    if (m_Blocks[i].partner >= 0 && i > m_Blocks[i].partner) continue;
                     if (!InGrid(s, i) || IsBlockBlocked(i, s, m_Blocks, m_Ice)) continue;
                     var next = s.Clone();
                     if (!ApplyMove(next, i, SolveResult.SlotMove, m_Blocks, m_Walls, m_Cols, m_Rows, m_Cap, m_Ice)) continue;
@@ -269,8 +270,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_Cap = GetSlotCapacity(lvl);
                 m_Ice = lvl.iceMeltMode;
                 m_IsTrack = GlassShapeData.IsTrack(lvl);
-                int n = m_Blocks.Length;
-                m_Start = new State { anchors = anchors, removed = new bool[n], fill = new int[n], taken = new int[bc], inSlot = new bool[n], wave = 0 };
+                m_Start = CreateInitialState(anchors, m_Blocks, bc, slotMode: true);
                 CollectClosure(m_Start, m_Blocks, m_Walls, m_W1, m_W2, m_HasW2, m_Gcol, m_Rows, m_Ice, m_IsTrack);
                 Result.slotCapacity = m_Cap;
                 m_Full = NewSolver(m_Cap);

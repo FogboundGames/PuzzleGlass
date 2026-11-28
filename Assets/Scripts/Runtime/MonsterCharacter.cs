@@ -107,6 +107,8 @@ namespace PuzzleGlass
         private static Material s_SharedFrostMat;
         private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Material> s_SharedLidWindowMats = new System.Collections.Generic.Dictionary<PuzzleColor, Material>();
         private static readonly System.Collections.Generic.Dictionary<PuzzleColor, Material> s_SharedLidLatchMats = new System.Collections.Generic.Dictionary<PuzzleColor, Material>();
+        private static readonly System.Collections.Generic.Dictionary<long, Material> s_SharedBoxNumberMats = new System.Collections.Generic.Dictionary<long, Material>(16);
+        private static readonly System.Collections.Generic.Dictionary<long, Material> s_SharedTmpOutlineMats = new System.Collections.Generic.Dictionary<long, Material>(16);
         private static MaterialPropertyBlock s_BoxPropertyBlock;
         private static MaterialPropertyBlock s_ShadowPropertyBlock;
 
@@ -121,8 +123,11 @@ namespace PuzzleGlass
             s_SharedShadowMatTray = null;
             s_SharedLidGlareMat = null;
             s_SharedFrostMat = null;
+            _sharedSphereMesh = null;
             s_SharedLidWindowMats.Clear();
             s_SharedLidLatchMats.Clear();
+            s_SharedBoxNumberMats.Clear();
+            s_SharedTmpOutlineMats.Clear();
         }
 
         private MeshRenderer _boxRenderer;
@@ -346,9 +351,19 @@ namespace PuzzleGlass
         public bool isFilledBox = false;
         public PuzzleColor filledBallColor = PuzzleColor.Blue;
 
+        [Header("Linked Pair (2'li Bağlı Kutu)")]
+        public int linkGroupId = 0;
+        [NonSerialized] public MonsterCharacter linkedPartner;
+        [NonSerialized] public LinkedBoxConnector linkConnector;
+
+        public bool HasLinkedPartner => linkedPartner != null && !linkedPartner.IsCompleted && linkedPartner.gameObject.activeInHierarchy;
         public bool IsLockedByKey => remainingLockKeys > 0;
         public bool IsFrozenByIce => remainingIceCount > 0;
         public bool IsMovementOrCollectionBlocked => IsLockedByKey || IsFrozenByIce;
+        public bool IsBlockedIncludingLink => IsMovementOrCollectionBlocked || (HasLinkedPartner && linkedPartner.IsMovementOrCollectionBlocked);
+        public bool IsReadyForPartnerCompletion => !_isCompleted && !isFilledBox && remainingCount <= 0;
+        public bool IsWaitingForLinkedPartner => IsReadyForPartnerCompletion && HasLinkedPartner && !linkedPartner.IsReadyForPartnerCompletion;
+        public float CurrentDragHighlight => _mpbDragHighlight;
 
         public bool IsActivelyCollecting => !isFilledBox && (isCollectingInGrid || (assignedSlot != null && !_isMovingToSlot)) && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
         public bool IsSupplyBoxActive => isFilledBox && assignedSlot != null && !_isMovingToSlot && !_isCompleted && remainingCount > 0 && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
@@ -520,6 +535,16 @@ namespace PuzzleGlass
             }
             else
             {
+                if (socketBalls != null)
+                {
+                    Mesh sphereMesh = GetSharedSphereMesh();
+                    for (int i = 0; i < socketBalls.Length; i++)
+                    {
+                        if (socketBalls[i] == null) continue;
+                        var mf = socketBalls[i].GetComponent<MeshFilter>();
+                        if (mf != null && mf.sharedMesh != sphereMesh) mf.sharedMesh = sphereMesh;
+                    }
+                }
                 ApplySocketLayoutToMaterial();
                 UpdateBadgeText();
             }
@@ -638,7 +663,7 @@ namespace PuzzleGlass
 
         public void SetExitClearHighlight(bool exitClear)
         {
-            bool effectiveClear = (exitClear || isCollectingInGrid || assignedSlot != null || _isMovingToSlot) && !IsMovementOrCollectionBlocked;
+            bool effectiveClear = (exitClear || isCollectingInGrid || assignedSlot != null || _isMovingToSlot) && !IsBlockedIncludingLink;
             isExitClearInGrid = effectiveClear;
             isUnlockedInStaging = effectiveClear;
             float target = effectiveClear ? 1.0f : 0.0f;
@@ -785,7 +810,8 @@ namespace PuzzleGlass
             int lockKeyCount,
             int iceCount,
             bool isFilledBox = false,
-            PuzzleColor filledBallColor = PuzzleColor.Blue)
+            PuzzleColor filledBallColor = PuzzleColor.Blue,
+            int linkGroupId = 0)
         {
             colorType = color;
             blockShape = shape;
@@ -798,6 +824,9 @@ namespace PuzzleGlass
             this.remainingIceCount = this.iceCount;
             this.isFilledBox = isFilledBox;
             this.filledBallColor = isFilledBox ? filledBallColor : color;
+            this.linkGroupId = Mathf.Max(0, linkGroupId);
+            this.linkedPartner = null;
+            this.linkConnector = null;
             _keyConsumedVisually = false;
             _subParticleCounter = 0;
             _nextIncomingSocketCounter = 0;
@@ -1002,7 +1031,15 @@ namespace PuzzleGlass
             }
             if (_frontRimRenderer != null)
             {
-                _frontRimRenderer.SetPropertyBlock(s_BoxPropertyBlock);
+                bool showFrontRim = _mpbLockAmount <= 0.001f && _mpbIceAmount <= 0.001f;
+                if (_frontRimRenderer.enabled != showFrontRim)
+                {
+                    _frontRimRenderer.enabled = showFrontRim;
+                }
+                if (showFrontRim)
+                {
+                    _frontRimRenderer.SetPropertyBlock(s_BoxPropertyBlock);
+                }
             }
 
             ApplyShadowPropertyBlock();
@@ -1051,11 +1088,7 @@ namespace PuzzleGlass
         {
             if (_sharedSphereMesh == null)
             {
-                GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                var mf = temp.GetComponent<MeshFilter>();
-                if (mf != null) _sharedSphereMesh = mf.sharedMesh;
-                if (Application.isPlaying) Destroy(temp);
-                else DestroyImmediate(temp);
+                _sharedSphereMesh = ProceduralMeshUtils.GetSharedBallSphereMesh();
             }
             return _sharedSphereMesh;
         }
@@ -1420,10 +1453,15 @@ namespace PuzzleGlass
                 float yOffset = (visualStyle == BlockVisualStyle.PuzzleWithNumber) ? -0.032f : 0.01f;
                 badgeTransform.localPosition = new Vector3(center.x, center.y + yOffset, -0.26f);
 
+                bool waitingPartner = IsWaitingForLinkedPartner;
                 bool showBadge = useCrateVisuals
-                    ? (!IsFrozenByIce && !IsLockedByKey && remainingCount > 0)
-                    : (!IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0));
+                    ? (!IsFrozenByIce && !IsLockedByKey && (remainingCount > 0 || waitingPartner))
+                    : (!IsFrozenByIce && (initialCount > MaxVisualSockets) && (remainingCount > 0 || waitingPartner));
                 badgeTransform.gameObject.SetActive(showBadge);
+                if (waitingPartner && counterText != null)
+                {
+                    counterText.color = new Color(1.00f, 0.96f, 0.68f, 0.95f);
+                }
             }
 
             if (!Application.isPlaying)
@@ -2477,17 +2515,19 @@ namespace PuzzleGlass
         /// <summary>Izgarada, çıkışı açık olup şu an slota konabilecek kutu mu?</summary>
         public bool IsPlayableInGrid =>
             assignedSlot == null && !_isMovingToSlot && !_isCompleted && !isCollectingInGrid
-            && isExitClearInGrid && !IsMovementOrCollectionBlocked && gameObject.activeInHierarchy;
+            && isExitClearInGrid && !IsBlockedIncludingLink && gameObject.activeInHierarchy;
 
         private static void PlayReadyHopOnPlayableGridBoxes(MonsterCharacter except)
         {
             var gm = PuzzleGlassGameManager.Instance;
             if (gm == null || gm.activeMonsters == null) return;
+            bool hasAdjSlotPair = !SlotSystem.IsActive || (SlotSystem.Instance != null && SlotSystem.Instance.HasAdjacentEmptySlotPair());
             int n = 0;
             for (int i = 0; i < gm.activeMonsters.Count; i++)
             {
                 var m = gm.activeMonsters[i];
                 if (m == null || m == except || !m.IsPlayableInGrid) continue;
+                if (m.HasLinkedPartner && !hasAdjSlotPair) continue;
                 m.PlayReadyHop(0.38f + n * 0.05f); // slot nabzının hemen ardından, soldan sağa hafif dalga
                 n++;
             }
@@ -2549,45 +2589,95 @@ namespace PuzzleGlass
 
             if (remainingCount <= 0)
             {
-                // Beklenti nabzı tamamlanma parıltısıyla aynı değeri sürer: çakışmasın
-                if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
-                _isCompleted = true;
-                StagingGridBoard.Instance?.MarkGridDirty();
-                // Yapışık küme koşulu: bu renkte kutu tamamlandı
-                if (!isFilledBox) BallClusters.NotifyBoxCompleted(colorType);
-
-                if (!isFilledBox && Application.isPlaying && badgeTransform != null && counterText != null)
+                // 2'li bağlı kutu: biri 0'a inse bile eşi de 0 olmadan slotu bırakmaz ve patlamaz!
+                if (HasLinkedPartner)
                 {
-                    badgeTransform.gameObject.SetActive(true);
-                    counterText.text = "0";
-                    counterText.transform.DOKill(true);
-                    counterText.transform.localScale = Vector3.one;
-                    counterText.transform.DOPunchScale(Vector3.one * 0.50f, 0.22f, 6, 0.55f);
-                }
-
-                if (ShowsCavityBalls && !isFilledBox)
-                {
-                    // Ensure all sockets / pit balls visibly hold settled balls on completion
-                    int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
-                    for (int i = 0; i < sockCount; i++)
+                    MonsterCharacter partner = linkedPartner;
+                    if (!partner.IsReadyForPartnerCompletion)
                     {
-                        if (socketBalls[i] != null && !socketBalls[i].activeSelf)
-                        {
-                            ActivateAndPulseSocketBall(i, playSeatEffect: false);
-                        }
+                        EnterWaitingForPartnerVisualState();
+                        return;
                     }
+
+                    // İkisi de 0'a indi -> köprüyle birlikte eşzamanlı tamamlanıp patla!
+                    linkConnector?.PlayCompleteAndDestroy();
+                    partner.BeginCompletionSequence();
+                    BeginCompletionSequence();
+                    return;
                 }
-                else if (isFilledBox && socketBalls != null)
-                {
-                    for (int i = 0; i < socketBalls.Length; i++)
-                    {
-                        if (socketBalls[i] != null) socketBalls[i].SetActive(false);
-                        if (_pitSim != null && i < _pitSim.Length) _pitSim[i].active = false;
-                    }
-                    _pitAnyActive = false;
-                }
-                StartCoroutine(CelebrateAndCompleteRoutine());
+
+                BeginCompletionSequence();
             }
+        }
+
+        private void EnterWaitingForPartnerVisualState()
+        {
+            if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
+
+            if (!isFilledBox && Application.isPlaying && badgeTransform != null && counterText != null)
+            {
+                badgeTransform.gameObject.SetActive(true);
+                counterText.text = "0";
+                counterText.color = new Color(1.00f, 0.96f, 0.68f, 0.95f);
+                counterText.transform.DOKill(true);
+                counterText.transform.localScale = Vector3.one;
+                counterText.transform.DOPunchScale(Vector3.one * 0.42f, 0.22f, 6, 0.55f);
+            }
+
+            EnsureCompletionBallsVisualState();
+
+            if (Application.isPlaying)
+            {
+                PlaySmoothGulpWave();
+                PuzzleSoundManager.Instance?.PlayBallTap(0.75f);
+            }
+        }
+
+        private void EnsureCompletionBallsVisualState()
+        {
+            if (ShowsCavityBalls && !isFilledBox)
+            {
+                int sockCount = (socketBalls != null) ? socketBalls.Length : 0;
+                for (int i = 0; i < sockCount; i++)
+                {
+                    if (socketBalls[i] != null && !socketBalls[i].activeSelf)
+                    {
+                        ActivateAndPulseSocketBall(i, playSeatEffect: false);
+                    }
+                }
+            }
+            else if (isFilledBox && socketBalls != null)
+            {
+                for (int i = 0; i < socketBalls.Length; i++)
+                {
+                    if (socketBalls[i] != null) socketBalls[i].SetActive(false);
+                    if (_pitSim != null && i < _pitSim.Length) _pitSim[i].active = false;
+                }
+                _pitAnyActive = false;
+            }
+        }
+
+        internal void BeginCompletionSequence()
+        {
+            if (_isCompleted) return;
+            // Beklenti nabzı tamamlanma parıltısıyla aynı değeri sürer: çakışmasın
+            if (_nearCompleteSeq != null && _nearCompleteSeq.IsActive()) _nearCompleteSeq.Kill();
+            _isCompleted = true;
+            StagingGridBoard.Instance?.MarkGridDirty();
+            // Yapışık küme koşulu: bu renkte kutu tamamlandı
+            if (!isFilledBox) BallClusters.NotifyBoxCompleted(colorType);
+
+            if (!isFilledBox && Application.isPlaying && badgeTransform != null && counterText != null)
+            {
+                badgeTransform.gameObject.SetActive(true);
+                counterText.text = "0";
+                counterText.transform.DOKill(true);
+                counterText.transform.localScale = Vector3.one;
+                counterText.transform.DOPunchScale(Vector3.one * 0.50f, 0.22f, 6, 0.55f);
+            }
+
+            EnsureCompletionBallsVisualState();
+            StartCoroutine(CelebrateAndCompleteRoutine());
         }
 
         private IEnumerator PlaySocketCompletionWaveRoutine()
@@ -2813,7 +2903,7 @@ namespace PuzzleGlass
             return TryStartInGridCollection(playDenialFeedback: true);
         }
 
-        public void PlayLockedInSlotFeedback()
+        public void PlayLockedInSlotFeedback(bool includeLinkedPartner = true)
         {
             if (_isCompleted || bodyPivot == null) return;
             bodyPivot.DOKill(false);
@@ -2822,6 +2912,11 @@ namespace PuzzleGlass
             s.Append(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, 6f), 0.06f).SetEase(Ease.OutSine));
             s.Append(bodyPivot.DOLocalRotate(new Vector3(0f, 0f, -6f), 0.08f).SetEase(Ease.InOutSine));
             s.Append(bodyPivot.DOLocalRotate(Vector3.zero, 0.06f).SetEase(Ease.OutSine));
+
+            if (includeLinkedPartner && HasLinkedPartner)
+            {
+                linkedPartner.PlayLockedInSlotFeedback(includeLinkedPartner: false);
+            }
         }
 
         /// <summary>
@@ -3007,7 +3102,7 @@ namespace PuzzleGlass
                 _mpbLockOpen = 0f;
                 _mpbLockWiggle = 0f;
             }
-            bool effectiveExit = (isExitClearInGrid || isCollectingInGrid) && !IsMovementOrCollectionBlocked;
+            bool effectiveExit = (isExitClearInGrid || isCollectingInGrid) && !IsBlockedIncludingLink;
             _mpbExitHighlight = effectiveExit ? 1.0f : 0.0f;
             ApplyBoxPropertyBlock();
 
@@ -3183,10 +3278,10 @@ namespace PuzzleGlass
             return !IsMovementOrCollectionBlocked;
         }
 
-        public void PlayBlockedMechanicFeedback()
+        public void PlayBlockedMechanicFeedback(bool includeLinkedPartner = true)
         {
             if (_isCompleted) return;
-            PuzzleSoundManager.Instance?.PlayBlocked();
+            if (includeLinkedPartner) PuzzleSoundManager.Instance?.PlayBlocked();
 
             transform.DOKill(true);
             transform.DOShakePosition(0.24f, strength: new Vector3(0.065f, 0f, 0f), vibrato: 14, randomness: 70f, snapping: false, fadeOut: true);
@@ -3207,6 +3302,11 @@ namespace PuzzleGlass
                 _iceOverlayRoot.transform.DOKill(true);
                 _iceOverlayRoot.transform.DOPunchScale(Vector3.one * 0.18f, 0.20f, 5, 0.6f);
             }
+
+            if (includeLinkedPartner && HasLinkedPartner)
+            {
+                linkedPartner.PlayBlockedMechanicFeedback(includeLinkedPartner: false);
+            }
         }
 
         private static Material CreateMechanicMaterial(Color color, string matName, bool glossy = true)
@@ -3219,42 +3319,66 @@ namespace PuzzleGlass
                 indirectIntensity: 0.20f);
         }
 
+        private static long PackTmpMaterialKey(Material baseMat, Color color, int extra = 0)
+        {
+            Color32 c = color;
+            uint rgba = ((uint)c.r << 24) | ((uint)c.g << 16) | ((uint)c.b << 8) | c.a;
+            long matHash = ((long)baseMat.GetInstanceID() * 397L) ^ extra;
+            return (matHash << 32) ^ rgba;
+        }
+
         private static void ApplyTmpOutline(TextMeshPro tmp, Color outlineColor, float outlineWidth)
         {
             if (tmp == null) return;
-            if (tmp.fontSharedMaterial != null)
+            Material baseMat = (tmp.font != null && tmp.font.material != null) ? tmp.font.material : tmp.fontSharedMaterial;
+            if (baseMat == null) return;
+
+            int widthBucket = Mathf.RoundToInt(outlineWidth * 1000f);
+            long key = PackTmpMaterialKey(baseMat, outlineColor, widthBucket);
+            if (!s_SharedTmpOutlineMats.TryGetValue(key, out Material shared) || shared == null)
             {
-                Material inst = new Material(tmp.fontSharedMaterial)
+                shared = new Material(baseMat)
                 {
-                    name = $"{tmp.fontSharedMaterial.name}_MechanicInst"
+                    name = $"{baseMat.name}_MechanicShared",
+                    hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
                 };
-                if (inst.HasProperty("_OutlineColor")) inst.SetColor("_OutlineColor", outlineColor);
-                if (inst.HasProperty("_OutlineWidth")) inst.SetFloat("_OutlineWidth", outlineWidth);
-                tmp.fontSharedMaterial = inst;
+                if (shared.HasProperty("_OutlineColor")) shared.SetColor("_OutlineColor", outlineColor);
+                if (shared.HasProperty("_OutlineWidth")) shared.SetFloat("_OutlineWidth", outlineWidth);
+                s_SharedTmpOutlineMats[key] = shared;
             }
+            tmp.fontSharedMaterial = shared;
         }
 
         private static void ApplyBoxNumberStyle(TextMeshPro tmp, Color outlineColor)
         {
-            if (tmp == null || tmp.fontSharedMaterial == null) return;
-            Material inst = new Material(tmp.fontSharedMaterial)
+            if (tmp == null) return;
+            Material baseMat = (tmp.font != null && tmp.font.material != null) ? tmp.font.material : tmp.fontSharedMaterial;
+            if (baseMat == null) return;
+
+            long key = PackTmpMaterialKey(baseMat, outlineColor);
+            if (!s_SharedBoxNumberMats.TryGetValue(key, out Material shared) || shared == null)
             {
-                name = $"{tmp.fontSharedMaterial.name}_BoxNumberInst"
-            };
-            if (inst.HasProperty("_FaceDilate")) inst.SetFloat("_FaceDilate", 0.28f);
-            if (inst.HasProperty("_OutlineColor")) inst.SetColor("_OutlineColor", outlineColor);
-            if (inst.HasProperty("_OutlineWidth")) inst.SetFloat("_OutlineWidth", 0.16f);
-            if (inst.HasProperty("_OutlineSoftness")) inst.SetFloat("_OutlineSoftness", 0f);
-            if (inst.HasProperty("_UnderlayColor"))
-            {
-                inst.EnableKeyword("UNDERLAY_ON");
-                inst.SetColor("_UnderlayColor", new Color(outlineColor.r, outlineColor.g, outlineColor.b, 0.85f));
-                inst.SetFloat("_UnderlayOffsetX", 0f);
-                inst.SetFloat("_UnderlayOffsetY", -0.75f);
-                inst.SetFloat("_UnderlayDilate", 0.45f);
-                inst.SetFloat("_UnderlaySoftness", 0.05f);
+                shared = new Material(baseMat)
+                {
+                    name = $"{baseMat.name}_BoxNumberShared",
+                    hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
+                };
+                if (shared.HasProperty("_FaceDilate")) shared.SetFloat("_FaceDilate", 0.28f);
+                if (shared.HasProperty("_OutlineColor")) shared.SetColor("_OutlineColor", outlineColor);
+                if (shared.HasProperty("_OutlineWidth")) shared.SetFloat("_OutlineWidth", 0.16f);
+                if (shared.HasProperty("_OutlineSoftness")) shared.SetFloat("_OutlineSoftness", 0f);
+                if (shared.HasProperty("_UnderlayColor"))
+                {
+                    shared.EnableKeyword("UNDERLAY_ON");
+                    shared.SetColor("_UnderlayColor", new Color(outlineColor.r, outlineColor.g, outlineColor.b, 0.85f));
+                    shared.SetFloat("_UnderlayOffsetX", 0f);
+                    shared.SetFloat("_UnderlayOffsetY", -0.75f);
+                    shared.SetFloat("_UnderlayDilate", 0.45f);
+                    shared.SetFloat("_UnderlaySoftness", 0.05f);
+                }
+                s_SharedBoxNumberMats[key] = shared;
             }
-            tmp.fontSharedMaterial = inst;
+            tmp.fontSharedMaterial = shared;
         }
 
         private GameObject BuildKeyOverlay(Transform parent)

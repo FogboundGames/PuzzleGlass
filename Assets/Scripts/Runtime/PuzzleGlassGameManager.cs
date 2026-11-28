@@ -646,18 +646,22 @@ namespace PuzzleGlass
                 }
             }
 
-            // Case 2: Izgaradaki tüm kalan kutular açık slotlara sığıyor ve hepsi kilitsiz/engelsiz çıkabiliyorsa ->
-            // 2x hızlan ve otomatik sırayla slotlara yerleştir!
-            if (emptySlots > 0 && _endgameGridBuffer.Count <= emptySlots && CanAllRemainingExitSequentially(_endgameGridBuffer))
+            // Case 2: Izgaradaki tüm kalan kutular açık slotlara sığıyor (bağlı ikililer için yan yana boş slot dahil)
+            // ve hepsi kilitsiz/engelsiz çıkabiliyorsa -> 2x hızlan ve otomatik sırayla slotlara yerleştir!
+            if (emptySlots > 0 && _endgameGridBuffer.Count <= emptySlots &&
+                CanSlotsFitRemainingBlocks(_endgameGridBuffer, slots) &&
+                CanAllRemainingExitSequentially(_endgameGridBuffer))
             {
                 SetEndgameFastForward(true);
                 if (Time.unscaledTime >= _nextAutoSlotTime && MonsterDragController.Instance != null)
                 {
+                    bool hasAdjPair = SlotSystem.Instance.HasAdjacentEmptySlotPair();
                     MonsterCharacter bestReady = null;
                     for (int i = 0; i < _endgameGridBuffer.Count; i++)
                     {
                         var cand = _endgameGridBuffer[i];
-                        if (cand.IsMovementOrCollectionBlocked) continue;
+                        if (cand.IsBlockedIncludingLink) continue;
+                        if (cand.HasLinkedPartner && !hasAdjPair) continue;
                         if (stagingGridBoard.IsBlockExitClearToSlots(cand, activeMonsters))
                         {
                             bestReady = cand;
@@ -676,6 +680,54 @@ namespace PuzzleGlass
             SetEndgameFastForward(false);
         }
 
+        private static readonly HashSet<MonsterCharacter> s_SlotFitCounted = new HashSet<MonsterCharacter>();
+
+        private static bool CanSlotsFitRemainingBlocks(List<MonsterCharacter> gridBlocks, List<SlotPlatform> slots)
+        {
+            if (gridBlocks == null || slots == null) return false;
+            int linkedPairs = 0;
+            int singles = 0;
+            s_SlotFitCounted.Clear();
+            var counted = s_SlotFitCounted;
+            for (int i = 0; i < gridBlocks.Count; i++)
+            {
+                var b = gridBlocks[i];
+                if (b == null || !counted.Add(b)) continue;
+                if (b.HasLinkedPartner && gridBlocks.Contains(b.linkedPartner))
+                {
+                    counted.Add(b.linkedPartner);
+                    linkedPairs++;
+                }
+                else
+                {
+                    singles++;
+                }
+            }
+            if (linkedPairs == 0) return true;
+
+            // Açık ve boş slotların ardışık bloklarını say: her ikili yan yana 2 boş slot gerektirir
+            int maxAdjPairs = 0;
+            int totalFree = 0;
+            int run = 0;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var s = slots[i];
+                bool free = s != null && !s.isLocked && !s.isOccupied && s.currentMonster == null;
+                if (free)
+                {
+                    totalFree++;
+                    run++;
+                }
+                else
+                {
+                    maxAdjPairs += run / 2;
+                    run = 0;
+                }
+            }
+            maxAdjPairs += run / 2;
+            return maxAdjPairs >= linkedPairs && totalFree >= linkedPairs * 2 + singles;
+        }
+
         private bool CanAllRemainingExitSequentially(List<MonsterCharacter> gridBlocks)
         {
             if (gridBlocks == null || gridBlocks.Count == 0) return false;
@@ -683,7 +735,7 @@ namespace PuzzleGlass
             for (int i = 0; i < gridBlocks.Count; i++)
             {
                 var b = gridBlocks[i];
-                if (b == null || b.IsMovementOrCollectionBlocked) return false;
+                if (b == null || b.IsBlockedIncludingLink) return false;
                 _simRemainBuffer.Add(b);
             }
 
@@ -693,9 +745,13 @@ namespace PuzzleGlass
                 bool removedAny = false;
                 for (int i = _simRemainBuffer.Count - 1; i >= 0; i--)
                 {
-                    if (stagingGridBoard.IsBlockExitClearToSlots(_simRemainBuffer[i], _simRemainBuffer))
+                    if (i >= _simRemainBuffer.Count) continue;
+                    var cand = _simRemainBuffer[i];
+                    if (stagingGridBoard.IsBlockExitClearToSlots(cand, _simRemainBuffer))
                     {
+                        MonsterCharacter partner = cand.HasLinkedPartner ? cand.linkedPartner : null;
                         _simRemainBuffer.RemoveAt(i);
+                        if (partner != null) _simRemainBuffer.Remove(partner);
                         removedAny = true;
                     }
                 }
@@ -767,6 +823,18 @@ namespace PuzzleGlass
                         Destroy(strayMonsters[i].gameObject);
                     else
                         DestroyImmediate(strayMonsters[i].gameObject);
+                }
+            }
+
+            var strayConnectors = FindObjectsByType<LinkedBoxConnector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < strayConnectors.Length; i++)
+            {
+                if (strayConnectors[i] != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(strayConnectors[i].gameObject);
+                    else
+                        DestroyImmediate(strayConnectors[i].gameObject);
                 }
             }
 
@@ -1224,9 +1292,32 @@ namespace PuzzleGlass
                     entry.lockKeyCount,
                     entry.iceCount,
                     entry.isFilledBox,
-                    entry.filledBallColor);
+                    entry.filledBallColor,
+                    entry.linkGroupId);
                 mon.SetGridState(anchor, pos, gridScale, slotFitScale, exitClear: true, animateMove: false);
                 activeMonsters.Add(mon);
+            }
+
+            // 2'li bağlı kutuları eşleştir ve aralarına iki renkli köprü çubuğu oluştur
+            var linkFirstByGroup = new Dictionary<int, MonsterCharacter>();
+            for (int i = 0; i < activeMonsters.Count; i++)
+            {
+                var mon = activeMonsters[i];
+                if (mon == null || mon.linkGroupId <= 0) continue;
+                if (linkFirstByGroup.TryGetValue(mon.linkGroupId, out var first) && first != null && first != mon && first.linkedPartner == null)
+                {
+                    first.linkedPartner = mon;
+                    mon.linkedPartner = first;
+                    var conn = LinkedBoxConnector.Create(transform, first, mon);
+                    first.linkConnector = conn;
+                    mon.linkConnector = conn;
+                    if (conn != null) _activeMechanicVfx.Add(conn.gameObject);
+                    linkFirstByGroup.Remove(mon.linkGroupId);
+                }
+                else if (!linkFirstByGroup.ContainsKey(mon.linkGroupId))
+                {
+                    linkFirstByGroup[mon.linkGroupId] = mon;
+                }
             }
 
             stagingGridBoard.RefreshAllGridBlockHighlightStates(activeMonsters);
@@ -1771,7 +1862,8 @@ namespace PuzzleGlass
                 }
 
                 // Tamamlanmak üzere patlayan kutu slotu birazdan boşaltacaktır
-                if (slot.currentMonster.IsCompleted || slot.currentMonster.remainingCount <= 0)
+                // (2'li bağlı kutuda yalnızca biri 0 olup eşini bekliyorsa slot henüz boşalmayacaktır!)
+                if (slot.currentMonster.IsCompleted || (slot.currentMonster.remainingCount <= 0 && !slot.currentMonster.IsWaitingForLinkedPartner))
                 {
                     _deadlockTimer = 0f;
                     ClearSlotWarnings();
@@ -1818,10 +1910,11 @@ namespace PuzzleGlass
             }
             else if (activeMonsters != null)
             {
-                // Durum 2: Boş slot var ama tahtada kalan tüm kutular kilit/buz/duvar yüzünden slota çıkamıyor
+                // Durum 2: Boş slot var ama tahtada kalan tüm kutular kilit/buz/duvar veya yan yana 2 boş slot eksikliği yüzünden slota çıkamıyor
                 bool anyGridIncomplete = false;
                 bool anyGridCanExit = false;
                 bool traySlideEnabled = stagingGridBoard != null && stagingGridBoard.showTrayVisuals;
+                bool hasAdjacentEmptyPair = slotSystem.HasAdjacentEmptySlotPair();
 
                 for (int i = 0; i < activeMonsters.Count; i++)
                 {
@@ -1830,7 +1923,8 @@ namespace PuzzleGlass
                     if (m.assignedSlot != null || m.IsMovingToSlot) continue;
 
                     anyGridIncomplete = true;
-                    if (m.IsMovementOrCollectionBlocked) continue;
+                    if (m.IsBlockedIncludingLink) continue;
+                    if (m.HasLinkedPartner && !hasAdjacentEmptyPair) continue;
 
                     if (traySlideEnabled || stagingGridBoard == null || stagingGridBoard.IsBlockExitClearToSlots(m, activeMonsters))
                     {

@@ -7,7 +7,8 @@ namespace PuzzleGlass
     {
         FilledBox = 0,
         FrozenBlock = 1,
-        LockAndKey = 2
+        LockAndKey = 2,
+        LinkedPair = 3
     }
 
     public struct FeatureMilestone
@@ -16,6 +17,7 @@ namespace PuzzleGlass
         public string featureTitle;
         public int unlockLevel;
         public LevelMonsterEntry sampleEntry;
+        public LevelMonsterEntry samplePartnerEntry;
     }
 
     public struct FeatureProgressInfo
@@ -30,6 +32,7 @@ namespace PuzzleGlass
         public int totalSteps;
         public bool isJustUnlocked;
         public LevelMonsterEntry sampleEntry;
+        public LevelMonsterEntry samplePartnerEntry;
     }
 
     /// <summary>
@@ -53,6 +56,7 @@ namespace PuzzleGlass
             bool foundFilled = false;
             bool foundFrozen = false;
             bool foundLock = false;
+            bool foundLinked = false;
 
             for (int i = 0; i < sorted.Count; i++)
             {
@@ -92,6 +96,19 @@ namespace PuzzleGlass
                         featureTitle = "LOCK & KEY",
                         unlockLevel = lvlNum,
                         sampleEntry = lockSample
+                    });
+                }
+
+                if (!foundLinked && HasLinkedPairMechanic(lvl, out var linkedA, out var linkedB))
+                {
+                    foundLinked = true;
+                    result.Add(new FeatureMilestone
+                    {
+                        kind = GameFeatureKind.LinkedPair,
+                        featureTitle = "LINKED BOXES",
+                        unlockLevel = lvlNum,
+                        sampleEntry = linkedA,
+                        samplePartnerEntry = linkedB
                     });
                 }
             }
@@ -144,7 +161,8 @@ namespace PuzzleGlass
                 currentStep = newSteps,
                 totalSteps = span,
                 isJustUnlocked = (completedLevelNumber + 1 >= target.unlockLevel) || newPct >= 100,
-                sampleEntry = target.sampleEntry
+                sampleEntry = target.sampleEntry,
+                samplePartnerEntry = target.samplePartnerEntry
             };
             return true;
         }
@@ -251,6 +269,27 @@ namespace PuzzleGlass
                     hasKey = true
                 };
                 return true;
+            }
+            return false;
+        }
+
+        private static bool HasLinkedPairMechanic(PuzzleGlassLevelData lvl, out LevelMonsterEntry sampleA, out LevelMonsterEntry sampleB)
+        {
+            sampleA = null;
+            sampleB = null;
+            if (lvl == null || lvl.monsters == null) return false;
+            var firstById = new Dictionary<int, LevelMonsterEntry>();
+            for (int i = 0; i < lvl.monsters.Count; i++)
+            {
+                var m = lvl.monsters[i];
+                if (m == null || m.linkGroupId <= 0) continue;
+                if (firstById.TryGetValue(m.linkGroupId, out var first))
+                {
+                    sampleA = new LevelMonsterEntry(first.color, first.count, CarrierBlockShape.Rect1x1, Vector2Int.zero) { linkGroupId = 1 };
+                    sampleB = new LevelMonsterEntry(m.color, m.count, CarrierBlockShape.Rect1x1, Vector2Int.right) { linkGroupId = 1 };
+                    return true;
+                }
+                firstById[m.linkGroupId] = m;
             }
             return false;
         }

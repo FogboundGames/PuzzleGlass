@@ -861,9 +861,28 @@ namespace PuzzleGlass
                 if (Application.isPlaying) Destroy(_exitChanBakeMat); else DestroyImmediate(_exitChanBakeMat);
                 _exitChanBakeMat = null;
             }
+            if (_exitSleeveFrontMat != null)
+            {
+                if (Application.isPlaying) Destroy(_exitSleeveFrontMat); else DestroyImmediate(_exitSleeveFrontMat);
+                _exitSleeveFrontMat = null;
+            }
+            if (_exitSleeveBackMat != null)
+            {
+                if (Application.isPlaying) Destroy(_exitSleeveBackMat); else DestroyImmediate(_exitSleeveBackMat);
+                _exitSleeveBackMat = null;
+            }
+            if (_collar3DMat != null)
+            {
+                if (Application.isPlaying) Destroy(_collar3DMat); else DestroyImmediate(_collar3DMat);
+                _collar3DMat = null;
+            }
             _trackSdfHasParams = false;
             _exitChanSdfHasParams = false;
         }
+
+        private Material _exitSleeveFrontMat;
+        private Material _exitSleeveBackMat;
+        private Material _collar3DMat;
 
         private void LateUpdate()
         {
@@ -1394,6 +1413,7 @@ namespace PuzzleGlass
             {
                 bcm.RebuildColliders();
             }
+            GlassChamberBakeCache.MarkDirty();
         }
 
         /// <summary>
@@ -1439,6 +1459,7 @@ namespace PuzzleGlass
             {
                 bcm.RebuildColliders();
             }
+            GlassChamberBakeCache.MarkDirty();
         }
 
         private Material CreateConfiguredGlassMaterial(string matName, Color col, float smoothness, int renderQueue)
@@ -2516,7 +2537,17 @@ namespace PuzzleGlass
                 var col = quad.GetComponent<Collider>();
                 if (col != null) { if (Application.isPlaying) Destroy(col); else DestroyImmediate(col); }
 
-                var mat = new Material(chamberShader) { name = front ? "Mat_ExitSleeveFront" : "Mat_ExitSleeveBack" };
+                Material mat = front ? _exitSleeveFrontMat : _exitSleeveBackMat;
+                if (mat == null || mat.shader != chamberShader)
+                {
+                    mat = new Material(chamberShader)
+                    {
+                        name = front ? "Mat_ExitSleeveFront" : "Mat_ExitSleeveBack",
+                        hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
+                    };
+                    if (front) _exitSleeveFrontMat = mat;
+                    else _exitSleeveBackMat = mat;
+                }
                 mat.SetFloat("_IsCollar", 2f);
                 mat.SetFloat("_IsRoundedBoxPool", 0f);
                 mat.SetFloat("_IsFrontLens", front ? 1f : 0f);
@@ -3037,7 +3068,15 @@ namespace PuzzleGlass
                 var col = quad.GetComponent<Collider>();
                 if (col != null) { if (Application.isPlaying) Destroy(col); else DestroyImmediate(col); }
 
-                var collarMat = new Material(chamberShader) { name = "Mat_PeriwinkleCollar3D" };
+                if (_collar3DMat == null || _collar3DMat.shader != chamberShader)
+                {
+                    _collar3DMat = new Material(chamberShader)
+                    {
+                        name = "Mat_PeriwinkleCollar3D",
+                        hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
+                    };
+                }
+                var collarMat = _collar3DMat;
                 collarMat.SetFloat("_IsCollar", 1f);
                 collarMat.SetFloat("_IsRoundedBoxPool", 0f);
                 collarMat.SetFloat("_BoxAspect", quadW / Mathf.Max(0.01f, quadH));
@@ -4052,16 +4091,29 @@ namespace PuzzleGlass
         public Vector3[] GetChannelWorldPathPoints(int channelIndex, bool reverse = false, int steps = 8)
         {
             if (channelIndex < 0 || channelIndex >= exitChannels.Count) return null;
-            var ch = exitChannels[channelIndex];
             int count = Mathf.Max(2, steps);
             var pts = new Vector3[count + 1];
+            FillChannelWorldPathPoints(channelIndex, pts, reverse, count);
+            return pts;
+        }
+
+        /// <summary>Sıfır-allocation sürüm: kanal yol noktalarını çağıranın yeniden kullandığı tampona yazar.</summary>
+        public int FillChannelWorldPathPoints(int channelIndex, Vector3[] buffer, bool reverse = false, int steps = 8)
+        {
+            if (channelIndex < 0 || channelIndex >= exitChannels.Count || buffer == null) return 0;
+            int count = Mathf.Max(2, steps);
+            int total = count + 1;
+            if (buffer.Length < total) return 0;
+            var ch = exitChannels[channelIndex];
+            Matrix4x4 l2w = transform.localToWorldMatrix;
+            float invCount = 1f / count;
             for (int i = 0; i <= count; i++)
             {
-                float t = reverse ? 1f - (float)i / count : (float)i / count;
+                float t = reverse ? (1f - i * invCount) : (i * invCount);
                 Vector2 lp = ch.EvaluatePoint(t);
-                pts[i] = transform.TransformPoint(new Vector3(lp.x, lp.y, -0.16f));
+                buffer[i] = l2w.MultiplyPoint3x4(new Vector3(lp.x, lp.y, -0.16f));
             }
-            return pts;
+            return total;
         }
 
         private void GetRoundedBoxPoolExtents(

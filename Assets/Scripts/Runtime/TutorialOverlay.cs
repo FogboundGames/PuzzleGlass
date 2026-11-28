@@ -106,7 +106,8 @@ namespace PuzzleGlass
         {
             if (!_spotlightActive) return true;
             if (LevelTransitionController.IsTransitioning) return false;
-            return block != null && block == _spotlightTarget && !block.IsMovingToSlot && block.assignedSlot == null;
+            if (block == null || block.IsMovingToSlot || block.assignedSlot != null) return false;
+            return block == _spotlightTarget || (_spotlightTarget != null && _spotlightTarget.HasLinkedPartner && block == _spotlightTarget.linkedPartner);
         }
 
         /// <summary>
@@ -130,7 +131,7 @@ namespace PuzzleGlass
         public void NotifySpotlightBlockPlaced(MonsterCharacter block)
         {
             if (!_spotlightActive) return;
-            if (block != null && block == _spotlightTarget)
+            if (block != null && (block == _spotlightTarget || (_spotlightTarget != null && block == _spotlightTarget.linkedPartner)))
             {
                 EndSpotlightTutorial();
             }
@@ -250,9 +251,11 @@ namespace PuzzleGlass
         private static bool IsSendable(MonsterCharacter b, List<MonsterCharacter> blocks)
         {
             var grid = StagingGridBoard.Instance;
-            return b != null && !b.IsCompleted && b.assignedSlot == null && !b.IsMovementOrCollectionBlocked
-                   && b.gameObject.activeInHierarchy
-                   && (grid == null || grid.IsBlockExitClearToSlots(b, blocks));
+            if (b == null || b.IsCompleted || b.assignedSlot != null || b.IsBlockedIncludingLink || !b.gameObject.activeInHierarchy)
+                return false;
+            if (b.HasLinkedPartner && SlotSystem.IsActive && SlotSystem.Instance != null && !SlotSystem.Instance.HasAdjacentEmptySlotPair())
+                return false;
+            return grid == null || grid.IsBlockExitClearToSlots(b, blocks);
         }
 
         private static MonsterCharacter PickLevel1PurpleSpotlightBlock(List<MonsterCharacter> blocks)

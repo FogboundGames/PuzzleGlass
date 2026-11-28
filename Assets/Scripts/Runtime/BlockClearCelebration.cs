@@ -11,11 +11,23 @@ namespace PuzzleGlass
     /// </summary>
     public static class BlockClearCelebration
     {
+        private static int s_HapticsCached = -1;
+
         /// <summary>Titreşim açık mı? (PlayerPrefs "PG_Haptics", varsayılan açık)</summary>
         public static bool HapticsEnabled
         {
-            get => PlayerPrefs.GetInt("PG_Haptics", 1) == 1;
-            set { PlayerPrefs.SetInt("PG_Haptics", value ? 1 : 0); PlayerPrefs.Save(); }
+            get
+            {
+                if (s_HapticsCached < 0)
+                    s_HapticsCached = PlayerPrefs.GetInt("PG_Haptics", 1) == 1 ? 1 : 0;
+                return s_HapticsCached == 1;
+            }
+            set
+            {
+                s_HapticsCached = value ? 1 : 0;
+                PlayerPrefs.SetInt("PG_Haptics", s_HapticsCached);
+                PlayerPrefs.Save();
+            }
         }
 
         /// <summary>Sprite'ların varsayılan malzemesi (iz/parçacık için; build'de her zaman bulunur).</summary>
@@ -528,14 +540,9 @@ namespace PuzzleGlass
 
             if (s_ConfettiSphereMesh == null)
             {
-                s_ConfettiSphereMesh = BallObjectPool.Instance != null ? BallObjectPool.Instance.SharedSphereMesh : null;
-                if (s_ConfettiSphereMesh == null)
-                {
-                    var temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    var mf = temp.GetComponent<MeshFilter>();
-                    if (mf != null) s_ConfettiSphereMesh = mf.sharedMesh;
-                    Object.Destroy(temp);
-                }
+                s_ConfettiSphereMesh = BallObjectPool.Instance != null && BallObjectPool.Instance.SharedSphereMesh != null
+                    ? BallObjectPool.Instance.SharedSphereMesh
+                    : ProceduralMeshUtils.GetSharedBallSphereMesh();
             }
 
             if (s_ConfettiBallMat == null)
@@ -1093,6 +1100,7 @@ namespace PuzzleGlass
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetHapticTimers()
         {
+            s_HapticsCached = -1;
             s_LastTickTime = -1f;
             s_LastSlotPlaceTime = -1f;
             s_LastBoxClearTime = -1f;

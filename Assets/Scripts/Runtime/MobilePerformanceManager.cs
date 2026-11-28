@@ -1,3 +1,4 @@
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -22,9 +23,9 @@ namespace PuzzleGlass
         [SerializeField, Range(30, 60)] private int m_MinTargetFps = 45;
 
         [Header("Dinamik Performans & Çözünürlük Ölçekleyici")]
-        [Tooltip("FPS düşerse URP renderScale'i hafifçe kısarak 45+ FPS'i korur (render buffer yeniden tahsisini önlemek için varsayılan kapalıdır).")]
-        [SerializeField] private bool m_EnableAdaptiveResolution = false;
-        [SerializeField, Range(0.70f, 1.0f)] private float m_MinRenderScale = 0.82f;
+        [Tooltip("Mobilde FPS uzun süre 48 altına inerse URP renderScale'i tek adımda hafifçe kısarak akıcılığı korur (histerezisli; 60 FPS cihazlarda hiç tetiklenmez).")]
+        [SerializeField] private bool m_EnableAdaptiveResolution = true;
+        [SerializeField, Range(0.70f, 1.0f)] private float m_MinRenderScale = 0.78f;
 
         [Header("Hata Ayıklama")]
         [SerializeField] private bool m_ShowFpsCounter = false;
@@ -59,6 +60,11 @@ namespace PuzzleGlass
         private float m_FpsAccumulator = 0f;
         private int m_FpsFrames = 0;
         private float m_FpsTimeLeft = 0.5f;
+        private int m_LowFpsStreak = 0;
+        private int m_HighFpsStreak = 0;
+        private float m_NextScaleChangeTime = 5f;
+        private static bool s_DotweenCapacitySet;
+        private static bool s_ShadersWarmedUp;
         private GUIStyle m_LabelStyle;
         private GUIStyle m_BoxStyle;
 
@@ -119,6 +125,62 @@ namespace PuzzleGlass
             {
                 UnityEngine.Scripting.GarbageCollector.incrementalTimeSliceNanoseconds = 2_000_000;
             }
+
+            // Yoğun top akışı sırasında DOTween dahili dizilerinin büyüyüp GC sıçraması yapmasını önle
+            if (!s_DotweenCapacitySet)
+            {
+                s_DotweenCapacitySet = true;
+                DOTween.Init(false, true, LogBehaviour.ErrorsOnly);
+                DOTween.SetTweensCapacity(600, 220);
+            }
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticPerfFlags()
+        {
+            s_DotweenCapacitySet = false;
+            s_ShadersWarmedUp = false;
+        }
+
+        private static readonly string[] s_WarmupShaderNames =
+        {
+            "PuzzleGlass/CandyCubeLit",
+            "PuzzleGlass/CarrierBox",
+            "PuzzleGlass/FakeDropShadow",
+            "PuzzleGlass/LinkedBoxBridge",
+            "PuzzleGlass/BallSpeedStreak",
+            "PuzzleGlass/SlotSquircleUI",
+            "PuzzleGlass/BakedGlassQuad",
+            "PuzzleGlass/SoftBackdrop"
+        };
+
+        /// <summary>
+        /// Özel oyun shader'larını açılış yükleme perdesi arkasında 16×16 geçici hedefe tek seferlik çizerek
+        /// mobil GPU sürücüsünde ilk efekt/mekanik anındaki PSO derleme takılmasını önler.
+        /// </summary>
+        public static void WarmUpGameShaders()
+        {
+            if (s_ShadersWarmedUp || !Application.isPlaying) return;
+            s_ShadersWarmedUp = true;
+
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture rt = RenderTexture.GetTemporary(16, 16, 0, RenderTextureFormat.ARGB32);
+            try
+            {
+                for (int i = 0; i < s_WarmupShaderNames.Length; i++)
+                {
+                    Shader sh = Shader.Find(s_WarmupShaderNames[i]);
+                    if (sh == null) continue;
+                    Material mat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+                    Graphics.Blit(null, rt, mat, 0);
+                    Destroy(mat);
+                }
+            }
+            finally
+            {
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+            }
         }
 
         private void CacheUrpAsset()
@@ -173,23 +235,50 @@ namespace PuzzleGlass
 
         private void AdjustAdaptiveResolution()
         {
-            if (m_ActiveUrpAsset == null) return;
+            if (m_ActiveUrpAsset == null || Application.isEditor) return;
+
+            // Dışarıdan (örn. PerfProbe rs=...) değiştirildiyse kullanıcının seçimine saygı duy
+            if (!Mathf.Approximately(m_ActiveUrpAsset.renderScale, m_CurrentRenderScale))
+            {
+                m_OriginalRenderScale = m_ActiveUrpAsset.renderScale;
+                m_CurrentRenderScale = m_ActiveUrpAsset.renderScale;
+                m_LowFpsStreak = 0;
+                m_HighFpsStreak = 0;
+                return;
+            }
+
+            if (Time.unscaledTime < m_NextScaleChangeTime || LevelTransitionController.IsTransitioning) return;
 
             if (CurrentFps < m_MinTargetFps + 3f)
             {
-                if (m_CurrentRenderScale > m_MinRenderScale)
+                m_LowFpsStreak++;
+                m_HighFpsStreak = 0;
+                // 3 saniye (6 × 0.5sn) üst üste düşük FPS → tek temiz adımda hafifçe indir (buffer thrashing olmaz)
+                if (m_LowFpsStreak >= 6 && m_CurrentRenderScale > m_MinRenderScale)
                 {
-                    m_CurrentRenderScale = Mathf.Max(m_MinRenderScale, m_CurrentRenderScale - 0.03f);
+                    m_CurrentRenderScale = Mathf.Max(m_MinRenderScale, m_CurrentRenderScale - 0.05f);
                     m_ActiveUrpAsset.renderScale = m_CurrentRenderScale;
+                    m_LowFpsStreak = 0;
+                    m_NextScaleChangeTime = Time.unscaledTime + 6f;
                 }
             }
             else if (CurrentFps >= m_MaxTargetFps - 2f)
             {
-                if (m_CurrentRenderScale < m_OriginalRenderScale)
+                m_HighFpsStreak++;
+                m_LowFpsStreak = 0;
+                // 10 saniye (20 × 0.5sn) kararlı 58+ FPS → orijinal ölçeğe yumuşak dönüş
+                if (m_HighFpsStreak >= 20 && m_CurrentRenderScale < m_OriginalRenderScale)
                 {
-                    m_CurrentRenderScale = Mathf.Min(m_OriginalRenderScale, m_CurrentRenderScale + 0.02f);
+                    m_CurrentRenderScale = Mathf.Min(m_OriginalRenderScale, m_CurrentRenderScale + 0.04f);
                     m_ActiveUrpAsset.renderScale = m_CurrentRenderScale;
+                    m_HighFpsStreak = 0;
+                    m_NextScaleChangeTime = Time.unscaledTime + 10f;
                 }
+            }
+            else
+            {
+                m_LowFpsStreak = 0;
+                m_HighFpsStreak = 0;
             }
         }
 

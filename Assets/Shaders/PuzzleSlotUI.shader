@@ -8,6 +8,8 @@ Shader "PuzzleGlass/SlotSquircleUI"
         _Highlight ("Hover Highlight (0..1)", Float) = 0.0
         _QuadSize ("Quad World Size (w, h)", Vector) = (1, 1, 0, 0)
         _DockParams ("Dock Trapezoid (he, rBot, rTop, flare)", Vector) = (0.38, 1.55, 1.25, 0.16)
+        [HideInInspector] _SrcBlend ("Src Blend", Float) = 5.0
+        [HideInInspector] _DstBlend ("Dst Blend", Float) = 10.0
 
         // Required for Unity UI / Sprite compatibility
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -42,7 +44,7 @@ Shader "PuzzleGlass/SlotSquircleUI"
         Pass
         {
             Name "SlotSquircleUIForward"
-            Blend SrcAlpha OneMinusSrcAlpha
+            Blend [_SrcBlend] [_DstBlend]
             Cull Off
             ZWrite Off
             ZTest LEqual
@@ -61,6 +63,8 @@ Shader "PuzzleGlass/SlotSquircleUI"
                 float  _Highlight;
                 float4 _QuadSize;
                 float4 _DockParams;
+                float  _SrcBlend;
+                float  _DstBlend;
             CBUFFER_END
 
             struct Attributes

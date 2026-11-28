@@ -91,21 +91,21 @@ Shader "PuzzleGlass/FakeDropShadow"
                 return OUT;
             }
 
-            float sdRoundBoxShadow(float2 p, float2 b, float r)
+            half sdRoundBoxShadow(half2 p, half2 b, half r)
             {
-                float2 q = abs(p) - b + r;
-                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+                half2 q = abs(p) - b + r;
+                return min(max(q.x, q.y), 0.0h) + length(max(q, 0.0h)) - r;
             }
 
-            float sdPolyominoShadow(float2 q, float inset, float radius, float rectCount, float4 rect0, float4 rect1)
+            half sdPolyominoShadow(half2 q, half inset, half radius, half rectCount, half4 rect0, half4 rect1)
             {
-                float rClamped = max(0.008, radius);
-                float2 b0 = max(float2(0.02, 0.02), rect0.zw - inset);
-                float d = sdRoundBoxShadow(q - rect0.xy, b0, min(rClamped, min(b0.x, b0.y)));
-                if (rectCount > 1.5)
+                half rClamped = max(0.008h, radius);
+                half2 b0 = max(half2(0.02h, 0.02h), rect0.zw - inset);
+                half d = sdRoundBoxShadow(q - rect0.xy, b0, min(rClamped, min(b0.x, b0.y)));
+                if (rectCount > 1.5h)
                 {
-                    float2 b1 = max(float2(0.02, 0.02), rect1.zw - inset);
-                    float d1 = sdRoundBoxShadow(q - rect1.xy, b1, min(rClamped, min(b1.x, b1.y)));
+                    half2 b1 = max(half2(0.02h, 0.02h), rect1.zw - inset);
+                    half d1 = sdRoundBoxShadow(q - rect1.xy, b1, min(rClamped, min(b1.x, b1.y)));
                     d = min(d, d1);
                 }
                 return d;
@@ -114,49 +114,48 @@ Shader "PuzzleGlass/FakeDropShadow"
             half4 frag(Varyings IN) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(IN);
-                float4 shadowCol = GET_SHADOW_PROP(_ShadowColor);
-                float alpha;
+                half4 shadowCol = (half4)GET_SHADOW_PROP(_ShadowColor);
+                half alpha;
                 if (_IsRadial > 1.5)
                 {
                     // Polyomino carrier block 2.5D fake drop shadow (contact AO + soft bottom falloff)
-                    float4 localSize = GET_SHADOW_PROP(_LocalSize);
-                    float  rectCount = GET_SHADOW_PROP(_RectCount);
-                    float4 rect0     = GET_SHADOW_PROP(_Rect0);
-                    float4 rect1     = GET_SHADOW_PROP(_Rect1);
-                    float  cornerRad = GET_SHADOW_PROP(_CornerRad);
-                    float  lipOffset = GET_SHADOW_PROP(_LipOffset);
+                    half4 localSize = (half4)GET_SHADOW_PROP(_LocalSize);
+                    half  rectCount = (half)GET_SHADOW_PROP(_RectCount);
+                    half4 rect0     = (half4)GET_SHADOW_PROP(_Rect0);
+                    half4 rect1     = (half4)GET_SHADOW_PROP(_Rect1);
+                    half  cornerRad = (half)GET_SHADOW_PROP(_CornerRad);
+                    half  lipOffset = (half)GET_SHADOW_PROP(_LipOffset);
 
-                    float2 q = (IN.uv - 0.5) * max(localSize.xy, float2(0.25, 0.25));
+                    half2 q = ((half2)IN.uv - 0.5h) * max(localSize.xy, half2(0.25h, 0.25h));
 
-                    float dContact = sdPolyominoShadow(q + float2(0.0, lipOffset + 0.036), -0.008, cornerRad + 0.012, rectCount, rect0, rect1);
-                    float contact  = pow(1.0 - smoothstep(-0.020, 0.095, dContact), 1.55);
+                    half dContact = sdPolyominoShadow(q + half2(0.0h, lipOffset + 0.036h), -0.008h, cornerRad + 0.012h, rectCount, rect0, rect1);
+                    half cBase    = 1.0h - smoothstep(-0.020h, 0.095h, dContact);
+                    half contact  = cBase > 0.001h ? (half)pow((float)cBase, 1.55) : 0.0h;
 
-                    float dDrop    = sdPolyominoShadow(q + float2(0.0, lipOffset + 0.105), -0.024, cornerRad + 0.042, rectCount, rect0, rect1);
-                    float drop     = pow(1.0 - smoothstep(-0.035, 0.215, dDrop), 1.75);
+                    half dDrop    = sdPolyominoShadow(q + half2(0.0h, lipOffset + 0.105h), -0.024h, cornerRad + 0.042h, rectCount, rect0, rect1);
+                    half dBase    = 1.0h - smoothstep(-0.035h, 0.215h, dDrop);
+                    half drop     = dBase > 0.001h ? (half)pow((float)dBase, 1.75) : 0.0h;
 
-                    alpha = saturate(contact * 0.72 + drop * 0.44) * shadowCol.a;
+                    alpha = saturate(contact * 0.72h + drop * 0.44h) * shadowCol.a;
                 }
                 else if (_IsRadial > 0.5)
                 {
                     // Soft oval contact shadow (for Monsters & Shoulder Caps)
-                    float2 p = IN.uv * 2.0 - 1.0;
-                    float dist = length(p);
-                    float falloff = 1.0 - smoothstep(0.10, 1.0, dist);
-                    alpha = pow(falloff, 1.45) * shadowCol.a;
+                    half2 p = (half2)IN.uv * 2.0h - 1.0h;
+                    half dist = length(p);
+                    half falloff = 1.0h - smoothstep(0.10h, 1.0h, dist);
+                    alpha = (falloff > 0.001h ? (half)pow((float)falloff, 1.45) : 0.0h) * shadowCol.a;
                 }
                 else
                 {
                     // Contour-hugging ribbon drop shadow (for any ShapedGlassContainer contour!)
-                    // uv.x = 0 at left outer shadow border, 0.5 at bottle center, 1 at right outer shadow border
-                    float edgeDist = 1.0 - abs(IN.uv.x * 2.0 - 1.0);
-                    float horizFade = smoothstep(0.0, _FeatherWidth, edgeDist);
-
-                    // Soft fade at very bottom spout tip so it doesn't hard-clip
-                    float bottomTipFade = smoothstep(0.0, 0.04, IN.uv.y);
-                    alpha = pow(horizFade, 1.25) * bottomTipFade * shadowCol.a;
+                    half edgeDist = 1.0h - abs((half)IN.uv.x * 2.0h - 1.0h);
+                    half horizFade = smoothstep(0.0h, (half)_FeatherWidth, edgeDist);
+                    half bottomTipFade = smoothstep(0.0h, 0.04h, (half)IN.uv.y);
+                    alpha = (horizFade > 0.001h ? (half)pow((float)horizFade, 1.25) : 0.0h) * bottomTipFade * shadowCol.a;
                 }
 
-                if (alpha < 0.002) discard;
+                if (alpha < 0.002h) discard;
                 return half4(shadowCol.rgb, alpha);
             }
             ENDHLSL

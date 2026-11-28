@@ -13,14 +13,15 @@ namespace PuzzleGlass.Editor.Studio
     public sealed class DifficultyCurveWindow : EditorWindow
     {
         private const string LevelsFolder = "Assets/Levels";
-        private static readonly string[] MechNames = { "Dolu kutu", "Buz", "Kilit" };
+        private static readonly string[] MechNames = { "Dolu kutu", "Buz", "Kilit", "2'li bağ" };
+        private const int MechCount = 4;
 
         private sealed class Row
         {
             public PuzzleGlassLevelData level;
             public int colors, blocks;
-            public bool[] mech = new bool[3];     // 0 dolu kutu, 1 buz, 2 kilit
-            public bool[] newMech = new bool[3];  // bu levelde ilk kez görülüyor
+            public bool[] mech = new bool[MechCount];     // 0 dolu kutu, 1 buz, 2 kilit, 3 2'li bağ
+            public bool[] newMech = new bool[MechCount];  // bu levelde ilk kez görülüyor
             public SolveResult solve;
             public LevelMetrics metrics;
             public bool done;
@@ -83,7 +84,7 @@ namespace PuzzleGlass.Editor.Studio
                 m_OrderSource = "Sıra: level numarası (sahnede GameManager yok)";
             }
 
-            var seen = new bool[3];
+            var seen = new bool[MechCount];
             foreach (var lvl in levels)
             {
                 var row = new Row { level = lvl };
@@ -99,9 +100,10 @@ namespace PuzzleGlass.Editor.Studio
                         if (m.iceCount > 0) row.mech[1] = true;
                         if (m.lockKeyCount > 0 || m.hasKey) row.mech[2] = true;
                     }
+                    if (lvl.HasAnyLinkedPair()) row.mech[3] = true;
                 }
                 row.colors = cols.Count;
-                for (int k = 0; k < 3; k++)
+                for (int k = 0; k < MechCount; k++)
                 {
                     if (row.mech[k] && !seen[k]) { row.newMech[k] = true; seen[k] = true; }
                 }
@@ -216,25 +218,26 @@ namespace PuzzleGlass.Editor.Studio
             {
                 var r = m_Rows[i];
                 if (!r.HasBand || r.Band < LevelDifficulty.Hard) continue;
-                for (int k = 0; k < 3; k++)
+                for (int k = 0; k < MechCount; k++)
                     if (r.newMech[k])
                         m_Warnings.Add((MessageType.Warning, $"{Name(i)}: {MechNames[k]} ilk kez burada görülüyor ama level {PuzzleLevelSolver.DifficultyName(r.Band)}. Mekaniği önce kolay bir levelde öğret."));
             }
 
             // 4) Erken kombinasyon: yeni öğrenilen mekanik (bu ya da önceki levelde ilk kez) başka bir mekanikle birlikte
-            int[] intro = { -1, -1, -1 };
+            int[] intro = new int[MechCount];
+            for (int k = 0; k < MechCount; k++) intro[k] = -1;
             for (int i = 0; i < n; i++)
-                for (int k = 0; k < 3; k++)
+                for (int k = 0; k < MechCount; k++)
                     if (m_Rows[i].newMech[k]) intro[k] = i;
             for (int i = 0; i < n; i++)
             {
                 var r = m_Rows[i];
                 int count = r.mech.Count(b => b);
                 if (count < 2) continue;
-                for (int k = 0; k < 3; k++)
+                for (int k = 0; k < MechCount; k++)
                 {
                     if (!r.mech[k] || intro[k] < 0 || i - intro[k] > 1) continue;
-                    var others = Enumerable.Range(0, 3).Where(o => o != k && r.mech[o]).Select(o => MechNames[o]);
+                    var others = Enumerable.Range(0, MechCount).Where(o => o != k && r.mech[o]).Select(o => MechNames[o]);
                     m_Warnings.Add((MessageType.Warning,
                         $"{Name(i)}: {MechNames[k]} {(i == intro[k] ? "burada" : "bir önceki levelde")} öğretildi ama hemen {string.Join(" + ", others)} ile birleşiyor. Önce 1-2 level tek başına oynat."));
                     break;
@@ -340,7 +343,7 @@ namespace PuzzleGlass.Editor.Studio
                 float x = n > 1 ? rect.xMin + step * i : rect.center.x;
                 var r = m_Rows[i];
                 GUI.Label(new Rect(x - 14, rect.yMax + 2, 28, 16), LevelNo(i).ToString(), new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.UpperCenter });
-                string tag = string.Join("", Enumerable.Range(0, 3).Where(k => r.newMech[k]).Select(k => "★"));
+                string tag = string.Join("", Enumerable.Range(0, MechCount).Where(k => r.newMech[k]).Select(k => "★"));
                 if (tag.Length > 0) GUI.Label(new Rect(x - 20, rect.yMin - 17, 40, 16), tag, new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.UpperCenter });
                 int score = r.Score;
                 if (score < 0) continue;
@@ -386,7 +389,7 @@ namespace PuzzleGlass.Editor.Studio
                 }
                 GUILayout.Label(r.colors.ToString(), GUILayout.Width(widths[1]));
                 GUILayout.Label(r.blocks.ToString(), GUILayout.Width(widths[2]));
-                var mech = Enumerable.Range(0, 3).Where(k => r.mech[k]).Select(k => r.newMech[k] ? MechNames[k] + "★" : MechNames[k]);
+                var mech = Enumerable.Range(0, MechCount).Where(k => r.mech[k]).Select(k => r.newMech[k] ? MechNames[k] + "★" : MechNames[k]);
                 GUILayout.Label(r.mech.Any(b => b) ? string.Join(", ", mech) : "–", GUILayout.Width(widths[3]));
                 GUILayout.Label(PuzzleLevelSolver.DifficultyName(r.level.difficulty), GUILayout.Width(widths[4]));
 

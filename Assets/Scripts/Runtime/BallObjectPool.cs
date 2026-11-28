@@ -153,10 +153,21 @@ namespace PuzzleGlass
                 return;
             }
 
+            int targetPrewarm = Application.isPlaying ? Mathf.Max(initialPoolSize, 360) : initialPoolSize;
             foreach (var ball in _poolContainer.GetComponentsInChildren<BallPhysicsController>(true))
             {
-                if (ball.gameObject.activeSelf) _activeBalls.Add(ball);
-                else if (_availableBalls.Count < initialPoolSize) _availableBalls.Enqueue(ball);
+                if (ball.gameObject.activeSelf)
+                {
+                    ball.isInBallPool = false;
+                    ball.poolActiveIndex = _activeBalls.Count;
+                    _activeBalls.Add(ball);
+                }
+                else if (_availableBalls.Count < targetPrewarm)
+                {
+                    ball.isInBallPool = true;
+                    ball.poolActiveIndex = -1;
+                    _availableBalls.Enqueue(ball);
+                }
                 else DestroyDeferred(ball.gameObject);
             }
         }
@@ -167,11 +178,14 @@ namespace PuzzleGlass
 
             EnsureSharedResources();
 
-            // Pre-warm pool
-            while (_availableBalls.Count + _activeBalls.Count < initialPoolSize)
+            // Pre-warm pool (Play modunda tipik 360+ toplu levellerde oyun içi Instantiate sıçramasını önler)
+            int targetPrewarm = Application.isPlaying ? Mathf.Max(initialPoolSize, 360) : initialPoolSize;
+            while (_availableBalls.Count + _activeBalls.Count < targetPrewarm)
             {
                 var ball = CreateNewBallInstance();
                 ball.gameObject.SetActive(false);
+                ball.isInBallPool = true;
+                ball.poolActiveIndex = -1;
                 _availableBalls.Enqueue(ball);
             }
         }
@@ -192,15 +206,7 @@ namespace PuzzleGlass
 
             if (_sharedSphereMesh == null)
             {
-                // Create a clean primitive sphere mesh once to share across all balls
-                GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                var mf = temp.GetComponent<MeshFilter>();
-                if (mf != null && mf.sharedMesh != null)
-                {
-                    _sharedSphereMesh = mf.sharedMesh;
-                }
-                if (Application.isPlaying) Destroy(temp);
-                else DestroyImmediate(temp);
+                _sharedSphereMesh = ProceduralMeshUtils.GetSharedBallSphereMesh();
             }
 
             if (_sharedInstancedBallMaterial == null)
@@ -390,6 +396,10 @@ namespace PuzzleGlass
             }
 
             ball.transform.SetParent(_poolContainer.transform, false);
+            if (ball.meshFilter != null && ball.meshFilter.sharedMesh != _sharedSphereMesh)
+            {
+                ball.meshFilter.sharedMesh = _sharedSphereMesh;
+            }
             ball.transform.position = position;
             ball.transform.rotation = UnityEngine.Random.rotation;
             ball.gameObject.SetActive(true);
@@ -398,6 +408,8 @@ namespace PuzzleGlass
             Material mat = Application.isPlaying ? GetSharedVariantMaterial(color, variantIdx) : _sharedInstancedBallMaterial;
             ball.SetupBall(color, r, _sharedPhysMaterial, mat ?? _sharedInstancedBallMaterial, _sharedSphereMesh, variantIdx);
 
+            ball.isInBallPool = false;
+            ball.poolActiveIndex = _activeBalls.Count;
             _activeBalls.Add(ball);
             return ball;
         }
@@ -413,9 +425,27 @@ namespace PuzzleGlass
             if (ball == null) return;
             if (_poolContainer == null) InitializePool();
 
-            _activeBalls.Remove(ball);
-            if (!_availableBalls.Contains(ball))
+            int idx = ball.poolActiveIndex;
+            if (idx < 0 || idx >= _activeBalls.Count || _activeBalls[idx] != ball)
             {
+                idx = _activeBalls.IndexOf(ball);
+            }
+            if (idx >= 0)
+            {
+                int last = _activeBalls.Count - 1;
+                if (idx != last)
+                {
+                    var moved = _activeBalls[last];
+                    _activeBalls[idx] = moved;
+                    if (moved != null) moved.poolActiveIndex = idx;
+                }
+                _activeBalls.RemoveAt(last);
+            }
+            ball.poolActiveIndex = -1;
+
+            if (!ball.isInBallPool)
+            {
+                ball.isInBallPool = true;
                 ball.transform.SetParent(_poolContainer.transform, false);
                 _availableBalls.Enqueue(ball);
             }
@@ -426,9 +456,24 @@ namespace PuzzleGlass
         {
             if (_poolContainer == null) InitializePool();
 
-            foreach (var ball in FindObjectsByType<BallPhysicsController>(FindObjectsSortMode.None))
+            for (int i = _activeBalls.Count - 1; i >= 0; i--)
             {
-                ball.RecycleSelf();
+                var ball = _activeBalls[i];
+                if (ball != null)
+                {
+                    ball.RecycleSelf();
+                }
+                else
+                {
+                    _activeBalls.RemoveAt(i);
+                }
+            }
+            if (!Application.isPlaying)
+            {
+                foreach (var ball in FindObjectsByType<BallPhysicsController>(FindObjectsSortMode.None))
+                {
+                    ball.RecycleSelf();
+                }
             }
             _activeBalls.Clear();
             BallCollectionController.Instance?.MarkBallFieldDirty();

@@ -21,6 +21,7 @@ namespace PuzzleGlass
         public static bool Enabled = true;
 
         private const string ChamberShaderName = "PuzzleGlass/GlassChamberLit";
+        private const string SlotUiShaderName = "PuzzleGlass/SlotSquircleUI";
         private const string BakedShaderName = "PuzzleGlass/BakedGlassQuad";
         private const float ScanInterval = 0.25f;
         private const int MaxBakeSize = 2048;
@@ -33,6 +34,7 @@ namespace PuzzleGlass
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int UseTrackSdfId = Shader.PropertyToID("_UseTrackSDF");
         private static readonly int UseExitChanSdfId = Shader.PropertyToID("_UseExitChanSDF");
+        private static readonly int SlotModeId = Shader.PropertyToID("_SlotMode");
         private static readonly string[] BakeableModes = { "_IsTrackChannel", "_IsExitChannels", "_IsRoundedBoxPool" };
         private static readonly string[] NonBakeableModes = { "_IsCollar", "_IsFeedTube", "_TrackBake" };
 
@@ -49,9 +51,40 @@ namespace PuzzleGlass
         private readonly Dictionary<int, Entry> _entries = new Dictionary<int, Entry>();
         private readonly List<int> _removeBuffer = new List<int>();
         private Shader _chamberShader;
+        private Shader _slotUiShader;
         private Shader _bakedShader;
         private float _nextScan;
         private bool _wasEnabled = true;
+        private bool _scanDirty = true;
+        private Camera _cachedCam;
+        private int _lastScreenW = -1;
+        private int _lastScreenH = -1;
+        private float _lastRenderScale = -1f;
+        private float _lastOrthoSize = -1f;
+
+        /// <summary>Yeni cam/kavanoz/dock quad'ları kurulduğunda bir sonraki karede tek seferlik taramayı tetikler.</summary>
+        public static void MarkDirty()
+        {
+            if (s_Instance != null) s_Instance._scanDirty = true;
+        }
+
+        /// <summary>Aynı materyalin parametreleri yerinde değiştiğinde (örn. slot sayısı değişen dock) ilgili pişirmeyi yeniler.</summary>
+        public static void InvalidateMaterial(Material originalMat)
+        {
+            if (s_Instance == null || originalMat == null) return;
+            s_Instance._removeBuffer.Clear();
+            foreach (var kv in s_Instance._entries)
+            {
+                if (kv.Value.original == originalMat)
+                {
+                    ReleaseEntry(kv.Value, restore: true);
+                    s_Instance._removeBuffer.Add(kv.Key);
+                }
+            }
+            for (int i = 0; i < s_Instance._removeBuffer.Count; i++)
+                s_Instance._entries.Remove(s_Instance._removeBuffer[i]);
+            s_Instance._scanDirty = true;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoInitialize()
@@ -65,7 +98,13 @@ namespace PuzzleGlass
         private void Awake()
         {
             _chamberShader = Shader.Find(ChamberShaderName);
+            _slotUiShader = Shader.Find(SlotUiShaderName);
             _bakedShader = Shader.Find(BakedShaderName);
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (hasFocus) _scanDirty = true;
         }
 
         private void LateUpdate()
@@ -78,15 +117,37 @@ namespace PuzzleGlass
                 _wasEnabled = false;
                 return;
             }
-            _wasEnabled = true;
+            if (!_wasEnabled)
+            {
+                _wasEnabled = true;
+                _scanDirty = true;
+            }
 
-            if (Time.unscaledTime < _nextScan) return;
+            if (!_scanDirty && Time.unscaledTime < _nextScan) return;
             _nextScan = Time.unscaledTime + ScanInterval;
 
-            Camera cam = Camera.main;
+            if (_cachedCam == null || !_cachedCam.isActiveAndEnabled) _cachedCam = Camera.main;
+            Camera cam = _cachedCam;
             if (cam == null) return;
 
-            // Yok olan renderer'ları temizle; GPU içeriği kaybolmuş (Android arka plan) ya da yeniden atanmış olanları işaretle
+            float renderScale = 1f;
+            if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp) renderScale = urp.renderScale;
+
+            int sw = Screen.width;
+            int sh = Screen.height;
+            float ortho = cam.orthographicSize;
+            if (sw != _lastScreenW || sh != _lastScreenH
+                || !Mathf.Approximately(renderScale, _lastRenderScale)
+                || !Mathf.Approximately(ortho, _lastOrthoSize))
+            {
+                _lastScreenW = sw;
+                _lastScreenH = sh;
+                _lastRenderScale = renderScale;
+                _lastOrthoSize = ortho;
+                _scanDirty = true;
+            }
+
+            // Mevcut pişirilmiş quad'ları doğrula (sadece 2-6 öğe): yok olan/değişen varsa tam sahne taraması açılır
             _removeBuffer.Clear();
             foreach (var kv in _entries)
             {
@@ -95,18 +156,29 @@ namespace PuzzleGlass
                 {
                     ReleaseEntry(e, restore: false);
                     _removeBuffer.Add(kv.Key);
+                    _scanDirty = true;
                 }
                 else if (e.renderer.sharedMaterial != e.baked)
                 {
                     // Başka bir kod malzemeyi değiştirdi: bizim pişirmemiz artık geçersiz
                     ReleaseEntry(e, restore: false);
                     _removeBuffer.Add(kv.Key);
+                    _scanDirty = true;
+                }
+                else if (e.renderer.enabled && e.renderer.gameObject.activeInHierarchy)
+                {
+                    if (!ComputeBakeSize(cam, e.renderer, renderScale, out int w, out int h)) continue;
+                    bool lost = e.rt == null || !e.rt.IsCreated();
+                    bool resized = !lost
+                        && (Mathf.Abs(w - e.rt.width) > e.rt.width * ResizeTolerance
+                         || Mathf.Abs(h - e.rt.height) > e.rt.height * ResizeTolerance);
+                    if (lost || resized) Bake(e, w, h);
                 }
             }
             for (int i = 0; i < _removeBuffer.Count; i++) _entries.Remove(_removeBuffer[i]);
 
-            float renderScale = 1f;
-            if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp) renderScale = urp.renderScale;
+            if (!_scanDirty) return;
+            _scanDirty = false;
 
             var renderers = FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
             for (int i = 0; i < renderers.Length; i++)
@@ -114,17 +186,7 @@ namespace PuzzleGlass
                 MeshRenderer mr = renderers[i];
                 if (!mr.enabled || !mr.gameObject.activeInHierarchy) continue;
                 int id = mr.GetInstanceID();
-
-                if (_entries.TryGetValue(id, out Entry existing))
-                {
-                    if (!ComputeBakeSize(cam, mr, renderScale, out int w, out int h)) continue;
-                    bool lost = existing.rt == null || !existing.rt.IsCreated();
-                    bool resized = !lost
-                        && (Mathf.Abs(w - existing.rt.width) > existing.rt.width * ResizeTolerance
-                         || Mathf.Abs(h - existing.rt.height) > existing.rt.height * ResizeTolerance);
-                    if (lost || resized) Bake(existing, w, h);
-                    continue;
-                }
+                if (_entries.ContainsKey(id)) continue;
 
                 Material mat = mr.sharedMaterial;
                 if (!IsBakeable(mr, mat)) continue;
@@ -145,14 +207,26 @@ namespace PuzzleGlass
 
         private bool IsBakeable(MeshRenderer mr, Material mat)
         {
-            if (mat == null || mat.shader != _chamberShader) return false;
+            if (mat == null) return false;
 
-            bool modeOk = false;
-            for (int i = 0; i < BakeableModes.Length; i++)
-                if (mat.HasProperty(BakeableModes[i]) && mat.GetFloat(BakeableModes[i]) > 0.5f) { modeOk = true; break; }
-            if (!modeOk) return false;
-            for (int i = 0; i < NonBakeableModes.Length; i++)
-                if (mat.HasProperty(NonBakeableModes[i]) && mat.GetFloat(NonBakeableModes[i]) > 0.5f) return false;
+            if (mat.shader == _chamberShader)
+            {
+                bool modeOk = false;
+                for (int i = 0; i < BakeableModes.Length; i++)
+                    if (mat.HasProperty(BakeableModes[i]) && mat.GetFloat(BakeableModes[i]) > 0.5f) { modeOk = true; break; }
+                if (!modeOk) return false;
+                for (int i = 0; i < NonBakeableModes.Length; i++)
+                    if (mat.HasProperty(NonBakeableModes[i]) && mat.GetFloat(NonBakeableModes[i]) > 0.5f) return false;
+            }
+            else if (_slotUiShader != null && mat.shader == _slotUiShader)
+            {
+                // Yalnızca statik büyük SDF yüzeyler: Mode 3 (Trapezoid Dock) ve Mode 4 (Cam Vitrini Arka Planı)
+                if (!mat.HasProperty(SlotModeId) || mat.GetFloat(SlotModeId) < 2.5f) return false;
+            }
+            else
+            {
+                return false;
+            }
 
             // Yalnızca köşe UV'leri (0,0)-(1,1) olan düz 4 köşeli quad'lar: dokuya UV ile birebir eşlenebilir
             var mf = mr.GetComponent<MeshFilter>();

@@ -23,6 +23,7 @@ namespace PuzzleGlass
 
         private GameObject _collidersRoot;
         private PhysicsMaterial _glassPhysMaterial;
+        private bool _trackWallSegsBuilt;
 
         private void Awake()
         {
@@ -91,33 +92,15 @@ namespace PuzzleGlass
                 var track = glassContainer.compiledTrack;
                 if (track == null) return;
 
-                var wallSegs = track.ExtractWallSegments();
+                _trackWallSegsBuilt = false;
                 float trackW = Mathf.Max(1.0f, track.outerBounds.width + 1.5f);
                 float trackH = Mathf.Max(1.0f, track.outerBounds.height + 1.5f);
                 Vector2 trackCenter = track.outerBounds.center;
 
-                for (int i = 0; i < wallSegs.Count; i++)
+                // Burst pist simülasyonu aktifken toplar PhysX'e girmez; 80-120+ duvar collider'ı sadece PhysX modunda kurulur
+                if (!Application.isPlaying || !TrackCrowdQueue.UseBurstSim)
                 {
-                    Vector2 pA = wallSegs[i].a;
-                    Vector2 pB = wallSegs[i].b;
-                    float segLen = Vector2.Distance(pA, pB);
-                    if (segLen < 0.004f) continue;
-
-                    Vector2 mid = (pA + pB) * 0.5f;
-                    Vector2 dir = (pB - pA) / segLen;
-                    float angleZ = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                    // ExtractWallSegments garanti eder ki (dir.y, -dir.x) dışarı (duvar içine, sdf > 0) bakar
-                    float effTrackWallT = Mathf.Max(wallThickness, 0.18f);
-                    Vector2 outNorm = new Vector2(dir.y, -dir.x);
-                    Vector2 colPos = mid + outNorm * (effTrackWallT * 0.5f);
-
-                    GameObject segObj = new GameObject($"Track_WallSeg_{i}");
-                    segObj.transform.SetParent(_collidersRoot.transform, false);
-                    segObj.transform.localPosition = new Vector3(colPos.x, colPos.y, -0.10f);
-                    segObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
-                    var box = segObj.AddComponent<BoxCollider>();
-                    box.size = new Vector3(segLen + 0.030f, effTrackWallT, wallDepth);
-                    box.sharedMaterial = _glassPhysMaterial;
+                    BuildTrackWallSegmentColliders(track);
                 }
 
                 // Front & Back Z containment walls
@@ -406,6 +389,50 @@ namespace PuzzleGlass
                 box.size = new Vector3(segLen + 0.035f, wallThickness, wallDepth);
                 box.sharedMaterial = _glassPhysMaterial;
             }
+        }
+
+        private void BuildTrackWallSegmentColliders(GlassTrackLayout.CompiledTrack track)
+        {
+            if (_trackWallSegsBuilt || _collidersRoot == null || track == null) return;
+            EnsurePhysMaterial();
+            var wallSegs = track.ExtractWallSegments();
+            for (int i = 0; i < wallSegs.Count; i++)
+            {
+                Vector2 pA = wallSegs[i].a;
+                Vector2 pB = wallSegs[i].b;
+                float segLen = Vector2.Distance(pA, pB);
+                if (segLen < 0.004f) continue;
+
+                Vector2 mid = (pA + pB) * 0.5f;
+                Vector2 dir = (pB - pA) / segLen;
+                float angleZ = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                // ExtractWallSegments garanti eder ki (dir.y, -dir.x) dışarı (duvar içine, sdf > 0) bakar
+                float effTrackWallT = Mathf.Max(wallThickness, 0.18f);
+                Vector2 outNorm = new Vector2(dir.y, -dir.x);
+                Vector2 colPos = mid + outNorm * (effTrackWallT * 0.5f);
+
+                GameObject segObj = new GameObject($"Track_WallSeg_{i}");
+                segObj.transform.SetParent(_collidersRoot.transform, false);
+                segObj.transform.localPosition = new Vector3(colPos.x, colPos.y, -0.10f);
+                segObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleZ);
+                var box = segObj.AddComponent<BoxCollider>();
+                box.size = new Vector3(segLen + 0.030f, effTrackWallT, wallDepth);
+                box.sharedMaterial = _glassPhysMaterial;
+            }
+            _trackWallSegsBuilt = true;
+        }
+
+        /// <summary>Burst simülasyonu runtime'da kapatılırsa PhysX duvar collider'larını tek seferde kurar.</summary>
+        public void EnsureTrackWallCollidersBuilt()
+        {
+            if (_trackWallSegsBuilt || glassContainer == null || !glassContainer.IsTrackShape) return;
+            if (glassContainer.compiledTrack == null) glassContainer.RebuildTrackCompiledData();
+            if (_collidersRoot == null)
+            {
+                RebuildColliders();
+                return;
+            }
+            BuildTrackWallSegmentColliders(glassContainer.compiledTrack);
         }
 
         public void SetSpoutStopperActive(bool active)

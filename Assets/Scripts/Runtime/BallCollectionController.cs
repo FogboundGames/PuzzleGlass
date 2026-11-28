@@ -373,12 +373,36 @@ namespace PuzzleGlass
             }
         }
 
+        private bool _wasReadyGlowEnabled;
+
         private void UpdateCollectableBallGlow(float dt)
         {
             if (BallObjectPool.Instance == null) return;
             var activeBalls = BallObjectPool.Instance.ActiveBalls;
 
-            if ((_ballFieldDirty && Time.time >= _lastGlowRefreshTime + GlowDirtyMinInterval) || Time.time >= _nextGlowRefreshTime)
+            if (!BallPhysicsController.ReadyGlowEnabled)
+            {
+                if (_wasReadyGlowEnabled)
+                {
+                    _wasReadyGlowEnabled = false;
+                    if (activeBalls != null)
+                    {
+                        for (int i = 0; i < activeBalls.Count; i++)
+                        {
+                            var b = activeBalls[i];
+                            if (b != null && b.SetReadyGlowTarget(0f)) RegisterGlowTransitionBall(b);
+                        }
+                    }
+                }
+                if (_glowTransitionBalls.Count == 0) return;
+            }
+            else
+            {
+                _wasReadyGlowEnabled = true;
+            }
+
+            if (BallPhysicsController.ReadyGlowEnabled &&
+                ((_ballFieldDirty && Time.time >= _lastGlowRefreshTime + GlowDirtyMinInterval) || Time.time >= _nextGlowRefreshTime))
             {
                 _lastGlowRefreshTime = Time.time;
                 _nextGlowRefreshTime = Time.time + 0.08f;
@@ -506,7 +530,8 @@ namespace PuzzleGlass
             // Pist camı: toplar Bus Traffic Fever tarzı sıralı kuyruk halinde çıkışa yürür (fizik yok)
             var container = BallContainerManager.Instance != null ? BallContainerManager.Instance.glassContainer : null;
             s_MTrack.Begin();
-            if (container != null && container.IsTrackShape && TrackCrowdQueue.Step(container, activeBalls, fixedDt))
+            bool trackStepped = container != null && container.IsTrackShape && TrackCrowdQueue.Step(container, activeBalls, fixedDt);
+            if (trackStepped)
             {
                 anyAwakeMoving = true;
             }
@@ -519,9 +544,10 @@ namespace PuzzleGlass
             for (int i = 0; i < activeBalls.Count; i++)
             {
                 var b = activeBalls[i];
-                if (b == null) continue;
+                if (b == null || b.state != BallState.InContainer) continue;
+                if (trackStepped && b.burstConfigured && b.trackQueueDriven) continue;
                 b.StepBallPhysics(fixedDt);
-                if (!anyAwakeMoving && b.state == BallState.InContainer && b.rb != null && !b.rb.isKinematic && !b.rb.IsSleeping())
+                if (!anyAwakeMoving && b.rb != null && !b.rb.isKinematic && !b.rb.IsSleeping())
                 {
                     if (b.rb.linearVelocity.sqrMagnitude > 0.0025f)
                     {
@@ -784,7 +810,13 @@ namespace PuzzleGlass
             if (!poolChainPull || !UsesPoolHatch(container) || ball == null) return;
             Vector3 lp = container.transform.InverseTransformPoint(ball.transform.position);
             float now = Time.time;
-            _chainAnchors.RemoveAll(a => now - a.time > poolChainWindow);
+            for (int i = _chainAnchors.Count - 1; i >= 0; i--)
+            {
+                if (now - _chainAnchors[i].time > poolChainWindow)
+                {
+                    _chainAnchors.RemoveAt(i);
+                }
+            }
             _chainAnchors.Add(new ChainAnchor { local = new Vector2(lp.x, lp.y), color = ball.colorType, time = now });
         }
 
@@ -963,7 +995,9 @@ namespace PuzzleGlass
                 {
                     var b = activeBalls[i];
                     if (b == null || b.state != BallState.InContainer || !b.gameObject.activeInHierarchy) continue;
-                    Vector3 bLocal = containerTr.InverseTransformPoint(b.transform.position);
+                    Vector3 bLocal = b.trackQueuePosValid
+                        ? new Vector3(b.trackQueueLocalPos.x, b.trackQueueLocalPos.y, b.trackQueueLocalZ)
+                        : containerTr.InverseTransformPoint(b.transform.position);
                     _cachedLocalPos[i] = bLocal;
                     if (i < _cachedTrackExitDist.Length)
                     {
@@ -1103,6 +1137,8 @@ namespace PuzzleGlass
             return _bottomCandidatesCache;
         }
 
+        private readonly List<BallPhysicsController> _beltExitCandidates = new List<BallPhysicsController>(32);
+
         /// <summary>
         /// Physically evaluates which balls are resting on the bottom/near side of the glass container with zero balls
         /// blocking them from below, and matches them to the closest hungry active Carrier Block.
@@ -1126,6 +1162,23 @@ namespace PuzzleGlass
             bool isFlatBottomPool = trackContainer != null && trackContainer.IsPoolShape;
             Vector3 drainExitWorld = isFlatBottomPool ? trackContainer.GetBottomExitWorldPosition() : Vector3.zero;
 
+            // Döngülü pistte çıkışın önündeki ~10-15 adayı tek seferde süz (her slot × 300 top taramasını engeller)
+            List<BallPhysicsController> searchCandidates = bottomCandidates;
+            if (isBelt)
+            {
+                _beltExitCandidates.Clear();
+                for (int i = 0; i < bottomCandidates.Count; i++)
+                {
+                    var c = bottomCandidates[i];
+                    if (c != null && !c.IsStuckInCluster && TrackCrowdQueue.IsAtExit(c))
+                    {
+                        _beltExitCandidates.Add(c);
+                    }
+                }
+                if (_beltExitCandidates.Count == 0) return null;
+                searchCandidates = _beltExitCandidates;
+            }
+
             foreach (var kvp in _activeStreams)
             {
                 var stream = kvp.Value;
@@ -1143,35 +1196,36 @@ namespace PuzzleGlass
                 if (hasChannels && monsterChanIdx < 0) continue;
                 Vector3 chanEntrance = hasChannels ? trackContainer.GetChannelManifoldEntranceWorldPosition(monsterChanIdx) : Vector3.zero;
 
-                for (int i = 0; i < bottomCandidates.Count; i++)
+                for (int i = 0; i < searchCandidates.Count; i++)
                 {
-                    var cand = bottomCandidates[i];
+                    var cand = searchCandidates[i];
                     if (cand.colorType != monster.colorType) continue;
-                    // Yapışık küme: küme çözülene kadar hiçbir topu banttan ayrılamaz
-                    if (cand.IsStuckInCluster) continue;
-                    // Bant: sadece o an çıkışın önünden geçen top ayrılabilir; diğerleri tura devam eder
-                    if (isBelt && !TrackCrowdQueue.IsAtExit(cand)) continue;
+                    // Yapışık küme & çıkış önü kontrolü döngülü pistte yukarıda tek seferde süzüldü
+                    if (!isBelt && cand.IsStuckInCluster) continue;
                     if (!IsBallInMonsterCollectionZone(monster, cand)) continue;
 
                     // Alttan üste ve kendi kanal ağzına en yakın top önceliklidir
                     float score;
+                    Vector3 candPos = cand.transform.position;
                     if (isTrack)
                     {
-                        Vector3 lp = trackContainer.transform.InverseTransformPoint(cand.transform.position);
+                        Vector3 lp = cand.trackQueuePosValid
+                            ? new Vector3(cand.trackQueueLocalPos.x, cand.trackQueueLocalPos.y, cand.trackQueueLocalZ)
+                            : trackContainer.transform.InverseTransformPoint(candPos);
                         trackContainer.SampleTrackField(lp, out _, out _, out float exDist, out _);
                         score = hasChannels
-                            ? (cand.transform.position.y * 3.6f + exDist * 0.55f + Vector2.Distance(cand.transform.position, chanEntrance) * 0.45f)
-                            : (cand.transform.position.y * 3.0f + exDist);
+                            ? (candPos.y * 3.6f + exDist * 0.55f + Vector2.Distance(candPos, chanEntrance) * 0.45f)
+                            : (candPos.y * 3.0f + exDist);
                     }
                     else if (isFlatBottomPool)
                     {
                         score = hasChannels
-                            ? (cand.transform.position.y * 3.6f + Mathf.Abs(cand.transform.position.x - chanEntrance.x) * 0.65f)
-                            : Mathf.Abs(cand.transform.position.x - drainExitWorld.x);
+                            ? (candPos.y * 3.6f + Mathf.Abs(candPos.x - chanEntrance.x) * 0.65f)
+                            : Mathf.Abs(candPos.x - drainExitWorld.x);
                     }
                     else
                     {
-                        score = Mathf.Abs(cand.transform.position.x - monsterWorldX);
+                        score = Mathf.Abs(candPos.x - monsterWorldX);
                     }
 
                     // VIP Slot priority boost: collects before regular slots

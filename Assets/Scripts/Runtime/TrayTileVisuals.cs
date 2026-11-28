@@ -150,6 +150,7 @@ namespace PuzzleGlass
             s_DockTrapMat.SetFloat(SlotModePropId, 3f);
             s_DockTrapMat.SetVector(QuadSizePropId, new Vector4(quadW, quadH, 0f, 0f));
             s_DockTrapMat.SetVector(DockParamsPropId, new Vector4(he, rBotWidth, rTopWidth, cornerRad));
+            GlassChamberBakeCache.InvalidateMaterial(s_DockTrapMat);
             return s_DockTrapMat;
         }
 

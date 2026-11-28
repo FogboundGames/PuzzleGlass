@@ -155,6 +155,11 @@
 .block-badge--lock { background-color: #f4a922; border-color: #703900; color: #2d1400; }
 .block-badge--ice { background-color: #36b5f5; border-color: #d9f6ff; color: #ffffff; }
 .block-colordot { position: absolute; width: 10px; height: 10px; border-radius: 5px; border-width: 1.5px; border-color: rgba(255, 255, 255, 0.92); }
+.block-link-bridge { position: absolute; border-width: 1.5px; border-color: rgba(18, 20, 34, 0.85); border-radius: 5px; overflow: hidden; }
+.block-link-bridge--h { flex-direction: row; }
+.block-link-bridge--v { flex-direction: column; }
+.block-link-bridge__half { flex-grow: 1; flex-basis: 0; }
+.block-link-armed { border-color: #66e4ff; border-width: 3.5px; }
 
 /* Cam sırası şeridi */
 .order { flex-direction: row; flex-wrap: wrap; justify-content: center; max-width: 560px; }

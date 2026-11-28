@@ -27,6 +27,8 @@ namespace PuzzleGlass
         private Vector3 _dragOriginPos;
         private Vector3 _dragStartScale = Vector3.one;
         private Vector2Int _dragStartAnchor;
+        private MonsterCharacter _draggedPartner;
+        private Vector3 _dragPartnerStartScale = Vector3.one;
         private Vector3 _dragOffset;
         private Vector2 _pointerDownScreenPos;
         private float _pointerDownTime;
@@ -41,7 +43,7 @@ namespace PuzzleGlass
 
         public bool IsBlockCurrentlyDragged(MonsterCharacter block)
         {
-            return _isDragging && _draggedMonster != null && _draggedMonster == block;
+            return _isDragging && block != null && (_draggedMonster == block || _draggedPartner == block);
         }
 
         private void Awake()
@@ -171,14 +173,17 @@ namespace PuzzleGlass
                 return;
             }
 
-            if (selectedMonster.IsMovementOrCollectionBlocked)
+            if (selectedMonster.IsBlockedIncludingLink)
             {
                 selectedMonster.PlayBlockedMechanicFeedback();
                 return;
             }
 
+            MonsterCharacter partner = selectedMonster.HasLinkedPartner ? selectedMonster.linkedPartner : null;
+
             // Lock slotted/in-flight boxes, and lock in-grid boxes only while balls are actively flying into them
-            if (selectedMonster.assignedSlot != null || selectedMonster.IsMovingToSlot)
+            if (selectedMonster.assignedSlot != null || selectedMonster.IsMovingToSlot ||
+                (partner != null && (partner.assignedSlot != null || partner.IsMovingToSlot)))
             {
                 selectedMonster.PlayLockedInSlotFeedback();
                 return;
@@ -195,9 +200,11 @@ namespace PuzzleGlass
             }
 
             selectedMonster.EnsureStagingHomeRecorded();
+            partner?.EnsureStagingHomeRecorded();
 
             _isDragging = true;
             _draggedMonster = selectedMonster;
+            _draggedPartner = partner;
             _dragStartAnchor = selectedMonster.gridAnchor;
             _pointerDownScreenPos = screenPos;
             _pointerDownTime = Time.time;
@@ -208,6 +215,15 @@ namespace PuzzleGlass
             _dragStartScale = (_draggedMonster.hasStagingHome && _draggedMonster.stagingHomeScale.sqrMagnitude > 0.001f)
                 ? _draggedMonster.stagingHomeScale
                 : _draggedMonster.transform.localScale;
+
+            if (_draggedPartner != null)
+            {
+                _dragPartnerStartScale = (_draggedPartner.hasStagingHome && _draggedPartner.stagingHomeScale.sqrMagnitude > 0.001f)
+                    ? _draggedPartner.stagingHomeScale
+                    : _draggedPartner.transform.localScale;
+                _draggedPartner.StopAllCoroutines();
+                _draggedPartner.transform.DOKill();
+            }
 
             Vector3 pointerWorld = ScreenToWorldOnPlane(screenPos, 0f);
             _dragOffset = _dragOriginPos - pointerWorld;
@@ -236,6 +252,7 @@ namespace PuzzleGlass
                 {
                     _hasMovedBeyondTapThreshold = true;
                     _draggedMonster.SetDragHighlight(true);
+                    _draggedPartner?.SetDragHighlight(true);
                 }
                 else
                 {
@@ -260,15 +277,23 @@ namespace PuzzleGlass
                 Vector2Int stepped = grid.SlideAnchorStepByStep(_draggedMonster, desiredAnchor, allMonsters);
                 if (stepped != _draggedMonster.gridAnchor)
                 {
+                    Vector2Int stepDelta = stepped - _draggedMonster.gridAnchor;
                     _draggedMonster.gridAnchor = stepped;
                     _draggedMonster.stagingColumn = stepped.x;
                     _draggedMonster.stagingRow = stepped.y;
+                    if (_draggedPartner != null)
+                    {
+                        _draggedPartner.gridAnchor += stepDelta;
+                        _draggedPartner.stagingColumn = _draggedPartner.gridAnchor.x;
+                        _draggedPartner.stagingRow = _draggedPartner.gridAnchor.y;
+                    }
                     grid.RefreshAllGridBlockHighlightStates(allMonsters);
                     PuzzleSoundManager.Instance?.PlayGridSlide();
                 }
 
                 Vector3 snappedWorld = grid.GetWorldPositionForAnchor(_draggedMonster.gridAnchor, _draggedMonster.blockShape);
                 Vector3 previewPos = ComputeConstrainedGridPreview(grid, _draggedMonster, snappedWorld, desiredCenter, allMonsters);
+                Vector3 previewOffset = previewPos - snappedWorld;
                 previewPos.z = -0.08f;
 
                 _draggedMonster.transform.position = Vector3.Lerp(
@@ -279,6 +304,21 @@ namespace PuzzleGlass
                     _draggedMonster.transform.localScale,
                     _dragStartScale,
                     22f * Time.deltaTime);
+
+                if (_draggedPartner != null)
+                {
+                    Vector3 partnerSnapped = grid.GetWorldPositionForAnchor(_draggedPartner.gridAnchor, _draggedPartner.blockShape);
+                    Vector3 partnerPreview = partnerSnapped + new Vector3(previewOffset.x, previewOffset.y, 0f);
+                    partnerPreview.z = -0.08f;
+                    _draggedPartner.transform.position = Vector3.Lerp(
+                        _draggedPartner.transform.position,
+                        partnerPreview,
+                        Mathf.Max(dragFollowSpeed, 38f) * Time.deltaTime);
+                    _draggedPartner.transform.localScale = Vector3.Lerp(
+                        _draggedPartner.transform.localScale,
+                        _dragPartnerStartScale,
+                        22f * Time.deltaTime);
+                }
                 return;
             }
         }
@@ -331,12 +371,14 @@ namespace PuzzleGlass
             }
 
             MonsterCharacter monster = _draggedMonster;
+            MonsterCharacter partner = _draggedPartner;
             SlotPlatform targetSlot = _hoveredSlot;
             bool wasLifted = _isLiftedOutOfGrid;
 
             UpdateHoveredSlotHighlight(null);
 
             _draggedMonster = null;
+            _draggedPartner = null;
             _isDragging = false;
             _isLiftedOutOfGrid = false;
 
@@ -344,6 +386,7 @@ namespace PuzzleGlass
             var allMonsters = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
 
             monster.SetDragHighlight(false);
+            partner?.SetDragHighlight(false);
 
             bool isQuickTap = !_hasMovedBeyondTapThreshold;
             bool movedCell = monster.gridAnchor != _dragStartAnchor;
@@ -356,30 +399,50 @@ namespace PuzzleGlass
 
                 if (wantsSlotMove && exitClear)
                 {
-                    SlotPlatform destSlot = SlotSystem.Instance.GetFirstEmptySlot();
-                    if (destSlot != null)
+                    if (partner != null && monster.HasLinkedPartner)
                     {
-                        PlaceMonsterIntoSlot(monster, destSlot, monster.GetSlotFitScale());
-                        grid?.RefreshAllGridBlockHighlightStates(allMonsters);
-                        PuzzleGlassGameManager.Instance?.RegisterMove();
-                        return;
+                        if (SlotSystem.Instance.TryGetAdjacentEmptySlotPair(out SlotPlatform leftSlot, out SlotPlatform rightSlot))
+                        {
+                            PlaceLinkedPairIntoSlots(monster, partner, leftSlot, rightSlot);
+                            grid?.RefreshAllGridBlockHighlightStates(allMonsters);
+                            PuzzleGlassGameManager.Instance?.RegisterMove();
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        SlotPlatform destSlot = SlotSystem.Instance.GetFirstEmptySlot();
+                        if (destSlot != null)
+                        {
+                            PlaceMonsterIntoSlot(monster, destSlot, monster.GetSlotFitScale());
+                            grid?.RefreshAllGridBlockHighlightStates(allMonsters);
+                            PuzzleGlassGameManager.Instance?.RegisterMove();
+                            return;
+                        }
                     }
                 }
 
-                // Either staying inside grid after sliding, blocked path, or all slots full -> snap back to grid anchor
+                // Either staying inside grid after sliding, blocked path, or insufficient / non-adjacent empty slots -> snap back
                 if (grid != null)
                 {
                     Vector3 finalPos = grid.GetWorldPositionForAnchor(monster.gridAnchor, monster.blockShape);
                     bool atTopExit = grid.IsBlockAtTopExit(monster);
                     monster.armedAtTopEdge = atTopExit;
                     monster.SetGridState(monster.gridAnchor, finalPos, _dragStartScale, monster.GetSlotFitScale(), exitClear, animateMove: !isQuickTap || wasLifted);
+                    if (partner != null)
+                    {
+                        Vector3 pFinalPos = grid.GetWorldPositionForAnchor(partner.gridAnchor, partner.blockShape);
+                        partner.armedAtTopEdge = grid.IsBlockAtTopExit(partner);
+                        partner.SetGridState(partner.gridAnchor, pFinalPos, _dragPartnerStartScale, partner.GetSlotFitScale(), exitClear, animateMove: !isQuickTap || wasLifted);
+                    }
                     if (wantsSlotMove && !exitClear)
                     {
                         monster.PlayLockedInSlotFeedback();
                     }
                     else if (wantsSlotMove && exitClear)
                     {
-                        // All slots full
+                        // All slots full or no 2 adjacent empty slots for linked pair
+                        PuzzleSoundManager.Instance?.PlayBlocked();
                         monster.PlayLockedInSlotFeedback();
                     }
                     else if (!isQuickTap)
@@ -392,6 +455,7 @@ namespace PuzzleGlass
                 else
                 {
                     monster.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(monster));
+                    partner?.ReturnToStagingHome(() => OnMonsterReturnedToTray?.Invoke(partner));
                 }
 
                 return;
@@ -436,7 +500,56 @@ namespace PuzzleGlass
             }
         }
 
+        private void PlaceLinkedPairIntoSlots(MonsterCharacter a, MonsterCharacter b, SlotPlatform leftSlot, SlotPlatform rightSlot)
+        {
+            if (a == null || b == null || leftSlot == null || rightSlot == null) return;
+
+            // Yatay bağlıysa soldaki -> leftSlot, sağdaki -> rightSlot; dikey bağlıysa üstteki/öndeki -> leftSlot, alttaki -> rightSlot
+            MonsterCharacter first, second;
+            if (a.gridAnchor.x != b.gridAnchor.x)
+            {
+                bool aIsLeft = a.gridAnchor.x < b.gridAnchor.x;
+                first = aIsLeft ? a : b;
+                second = aIsLeft ? b : a;
+            }
+            else
+            {
+                bool aIsTop = a.gridAnchor.y >= b.gridAnchor.y;
+                first = aIsTop ? a : b;
+                second = aIsTop ? b : a;
+            }
+
+            // İkisini de aynı anda yola çıkar ve slotları ayır ki sütun kuyrukları iki hücreyi birden boş görsün
+            first.SetMovingToSlot(true);
+            second.SetMovingToSlot(true);
+            leftSlot.ReserveSlot(first);
+            rightSlot.ReserveSlot(second);
+            PuzzleSoundManager.Instance?.PlayBlockSnap();
+
+            if (PuzzleGlassGameManager.Instance != null)
+            {
+                PuzzleGlassGameManager.Instance.OnStagingBoxPlacedInSlot(first);
+            }
+
+            LaunchMonsterFlightToSlot(first, leftSlot, first.GetSlotFitScale(), playSnapSound: false, notifyGameManager: false);
+            LaunchMonsterFlightToSlot(second, rightSlot, second.GetSlotFitScale(), playSnapSound: false, notifyGameManager: false);
+        }
+
         private void PlaceMonsterIntoSlot(MonsterCharacter placedMonster, SlotPlatform targetSlot, Vector3 baseScale)
+        {
+            if (placedMonster == null || targetSlot == null) return;
+
+            placedMonster.SetMovingToSlot(true);
+            targetSlot.ReserveSlot(placedMonster);
+            LaunchMonsterFlightToSlot(placedMonster, targetSlot, baseScale, playSnapSound: true, notifyGameManager: true);
+        }
+
+        private void LaunchMonsterFlightToSlot(
+            MonsterCharacter placedMonster,
+            SlotPlatform targetSlot,
+            Vector3 baseScale,
+            bool playSnapSound,
+            bool notifyGameManager)
         {
             if (placedMonster == null || targetSlot == null) return;
 
@@ -453,11 +566,9 @@ namespace PuzzleGlass
             Color boxColor = PuzzleColorPalette.GetPrimaryColor(placedMonster.colorType);
             float fxScale = Mathf.Max(0.45f, Mathf.Max(startScale.x, baseScale.x));
 
-            placedMonster.SetMovingToSlot(true);
-            targetSlot.ReserveSlot(placedMonster);
-            PuzzleSoundManager.Instance?.PlayBlockSnap();
+            if (playSnapSound) PuzzleSoundManager.Instance?.PlayBlockSnap();
 
-            if (PuzzleGlassGameManager.Instance != null)
+            if (notifyGameManager && PuzzleGlassGameManager.Instance != null)
             {
                 PuzzleGlassGameManager.Instance.OnStagingBoxPlacedInSlot(placedMonster);
             }
@@ -555,8 +666,34 @@ namespace PuzzleGlass
         public bool TryAutoPlaceInFirstEmptySlot(MonsterCharacter monster)
         {
             if (monster == null || monster.IsCompleted || monster.remainingCount <= 0 || !monster.gameObject.activeInHierarchy) return false;
-            if (monster.assignedSlot != null || monster.IsMovingToSlot || monster.IsMovementOrCollectionBlocked) return false;
+            if (monster.assignedSlot != null || monster.IsMovingToSlot || monster.IsBlockedIncludingLink) return false;
             if (!SlotSystem.IsActive || SlotSystem.Instance == null) return false;
+
+            if (monster.HasLinkedPartner)
+            {
+                MonsterCharacter partner = monster.linkedPartner;
+                if (partner == null || partner.assignedSlot != null || partner.IsMovingToSlot || partner.IsCompleted || partner.remainingCount <= 0)
+                    return false;
+                if (!SlotSystem.Instance.TryGetAdjacentEmptySlotPair(out SlotPlatform leftSlot, out SlotPlatform rightSlot))
+                    return false;
+
+                if (_isDragging && (_draggedMonster == monster || _draggedMonster == partner))
+                {
+                    _isDragging = false;
+                    _draggedMonster = null;
+                    _draggedPartner = null;
+                    _isLiftedOutOfGrid = false;
+                    UpdateHoveredSlotHighlight(null);
+                }
+
+                monster.SetDragHighlight(false);
+                partner.SetDragHighlight(false);
+                PlaceLinkedPairIntoSlots(monster, partner, leftSlot, rightSlot);
+                var gridL = StagingGridBoard.Instance;
+                var allL = PuzzleGlassGameManager.Instance != null ? PuzzleGlassGameManager.Instance.activeMonsters : null;
+                gridL?.RefreshAllGridBlockHighlightStates(allL);
+                return true;
+            }
 
             SlotPlatform destSlot = SlotSystem.Instance.GetFirstEmptySlot();
             if (destSlot == null) return false;
@@ -565,6 +702,7 @@ namespace PuzzleGlass
             {
                 _isDragging = false;
                 _draggedMonster = null;
+                _draggedPartner = null;
                 _isLiftedOutOfGrid = false;
                 UpdateHoveredSlotHighlight(null);
             }

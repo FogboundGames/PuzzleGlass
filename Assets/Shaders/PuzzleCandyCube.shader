@@ -122,10 +122,8 @@ Shader "PuzzleGlass/CandyCubeLit"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 positionWS : TEXCOORD0;
-                float3 normalWS   : TEXCOORD1;
-                float3 normalOS   : TEXCOORD2;
-                float3 positionOS : TEXCOORD3;
+                half3 normalWS    : TEXCOORD0;
+                half3 normalOS    : TEXCOORD1;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -144,14 +142,9 @@ Shader "PuzzleGlass/CandyCubeLit"
 
                 float3 animatedOS = ApplyProceduralCandyVertex(IN.vertex.xyz, wobblePhase, wobbleAmount, squashAmount, squashAxis);
 
-                VertexPositionInputs posInputs = GetVertexPositionInputs(animatedOS);
-                VertexNormalInputs normInputs = GetVertexNormalInputs(IN.normalOS);
-
-                OUT.positionCS = posInputs.positionCS;
-                OUT.positionWS = posInputs.positionWS;
-                OUT.normalWS   = normInputs.normalWS;
-                OUT.normalOS   = IN.normalOS;
-                OUT.positionOS = animatedOS;
+                OUT.positionCS = TransformObjectToHClip(animatedOS);
+                OUT.normalWS   = (half3)TransformObjectToWorldNormal(IN.normalOS);
+                OUT.normalOS   = (half3)IN.normalOS;
                 return OUT;
             }
 
@@ -159,90 +152,101 @@ Shader "PuzzleGlass/CandyCubeLit"
             {
                 UNITY_SETUP_INSTANCE_ID(IN);
 
-                float3 N = normalize(IN.normalWS);
-                float3 nOS = normalize(IN.normalOS);
+                half3 N = normalize(IN.normalWS);
 
-                // Studio key light from upper-left-front (matching Image 2 reference lighting)
-                float3 L_key  = normalize(float3(-0.34, 0.68, -0.65));
-                // Warm bounce fill light from lower-right-front
-                float3 L_fill = normalize(float3(0.42, -0.38, -0.82));
-                // Orthographic camera view direction (camera at -Z looking toward +Z, so toward-camera vector is -Z)
-                float3 V = normalize(float3(0.0, 0.06, -1.0));
+                // Önceden normalize edilmiş sabit stüdyo ışık ve yarı-açı vektörleri
+                const half3 L_key   = half3(-0.3399h,  0.6798h, -0.6498h);
+                const half3 L_fill  = half3( 0.4214h, -0.3813h, -0.8228h);
+                const half3 V       = half3( 0.0000h,  0.0599h, -0.9982h);
+                const half3 H       = half3(-0.1849h,  0.4024h, -0.8966h);
+                const half3 H_catch = half3(-0.1694h,  0.3387h, -0.9255h);
 
                 // 1. Subsurface-scattered half-Lambert wrap diffuse (never turns gray/black!)
-                float ndl = dot(N, L_key);
-                float wrapDiff = saturate(ndl * 0.54 + 0.46);
-                float smoothDiff = smoothstep(0.08, 0.92, wrapDiff);
+                half ndl = dot(N, L_key);
+                half wrapDiff = saturate(ndl * 0.54h + 0.46h);
+                half smoothDiff = smoothstep(0.08h, 0.92h, wrapDiff);
 
-                float3 baseAlbedo = GET_CANDY_PROP(_BaseColor).rgb;
-                float3 shadowTone = GET_CANDY_PROP(_ShadowColor).rgb;
-                float3 highTone   = GET_CANDY_PROP(_HighlightColor).rgb;
-                float smoothness  = GET_CANDY_PROP(_Smoothness);
-                float bevelHigh   = GET_CANDY_PROP(_BevelHighlight);
-                float rimSep      = GET_CANDY_PROP(_RimSeparation);
-                float readyGlow   = saturate(GET_CANDY_PROP(_ReadyGlow));
-                float rg          = readyGlow * (0.86 + 0.14 * sin(_Time.y * 4.4));
+                half3 baseAlbedo = (half3)GET_CANDY_PROP(_BaseColor).rgb;
+                half3 shadowTone = (half3)GET_CANDY_PROP(_ShadowColor).rgb;
+                half3 highTone   = (half3)GET_CANDY_PROP(_HighlightColor).rgb;
+                half smoothness  = (half)GET_CANDY_PROP(_Smoothness);
+                half bevelHigh   = (half)GET_CANDY_PROP(_BevelHighlight);
+                half rimSep      = (half)GET_CANDY_PROP(_RimSeparation);
+                half readyGlow   = saturate((half)GET_CANDY_PROP(_ReadyGlow));
+                half rg          = readyGlow > 0.001h ? (readyGlow * (0.86h + 0.14h * (half)sin(_Time.y * 4.4))) : 0.0h;
 
-                float3 col = lerp(shadowTone, baseAlbedo, smoothDiff);
+                half3 col = lerp(shadowTone, baseAlbedo, smoothDiff);
 
                 // 2. Soft top-down hemisphere studio gradient (preserves rich saturation)
-                float hemi = saturate(N.y * 0.5 + 0.5);
-                col = lerp(col * 0.94, lerp(col, highTone, 0.14), hemi);
+                half hemi = saturate(N.y * 0.5h + 0.5h);
+                col = lerp(col * 0.94h, lerp(col, highTone, 0.14h), hemi);
 
                 // Subtle warm fill bounce on lower-right faces
-                float fillTerm = saturate(dot(N, L_fill)) * 0.12;
-                col = lerp(col, baseAlbedo * 1.05, fillTerm);
+                half fillTerm = saturate(dot(N, L_fill)) * 0.12h;
+                col = lerp(col, baseAlbedo * 1.05h, fillTerm);
 
-                // Subtle object-space marble swirl & pearl spot on spheres so 3D rolling motion reads crisply
-                float isSphere = 1.0 - smoothstep(0.01, 0.08, bevelHigh);
-                float swirlCoord = dot(nOS, float3(0.68, 0.56, 0.47)) + 0.18 * sin(nOS.y * 5.2 + nOS.x * 3.1);
-                float swirlBand = exp(-pow(swirlCoord / 0.23, 2.0));
-                float pearlDot = smoothstep(0.84, 0.95, abs(dot(nOS, normalize(float3(-0.38, 0.78, 0.49)))));
-                // Oyuncu: toplar üzerinde her yöne dağılmış beyaz "leke" gibi görünüyordu → varsayılan kapalı.
-                // Genel değişken _PuzzleBallMarble (Shader.SetGlobalFloat) 1 yapılırsa eski desen geri gelir.
-                float marblePattern = saturate(swirlBand * 0.17 + pearlDot * 0.21) * isSphere * (0.38 + 0.62 * wrapDiff) * _PuzzleBallMarble;
-                col = lerp(col, lerp(highTone, float3(1.0, 0.99, 0.97), 0.38), marblePattern);
+                // 3. Object-space marble & cube bevel (kürelerde her ikisi de varsayılan kapalı: normalOS hesabı atlanır)
+                half bevelMask = 0.0h;
+                bool needNOS = (_PuzzleBallMarble > 0.001) || (bevelHigh > 0.001h);
+                if (needNOS)
+                {
+                    half3 nOS = normalize(IN.normalOS);
+                    if (_PuzzleBallMarble > 0.001)
+                    {
+                        const half3 kPearlDir = half3(-0.3812h, 0.7824h, 0.4915h);
+                        half isSphere = 1.0h - smoothstep(0.01h, 0.08h, bevelHigh);
+                        half swirlCoord = dot(nOS, half3(0.68h, 0.56h, 0.47h)) + 0.18h * sin(nOS.y * 5.2h + nOS.x * 3.1h);
+                        half swirlRatio = swirlCoord * 4.3478h;
+                        half swirlBand = exp(-(swirlRatio * swirlRatio));
+                        half pearlDot = smoothstep(0.84h, 0.95h, abs(dot(nOS, kPearlDir)));
+                        half marblePattern = saturate(swirlBand * 0.17h + pearlDot * 0.21h) * isSphere * (0.38h + 0.62h * wrapDiff) * (half)_PuzzleBallMarble;
+                        col = lerp(col, lerp(highTone, half3(1.0h, 0.99h, 0.97h), 0.38h), marblePattern);
+                    }
+                    if (bevelHigh > 0.001h)
+                    {
+                        half maxAxis = max(abs(nOS.x), max(abs(nOS.y), abs(nOS.z)));
+                        bevelMask = saturate((0.975h - maxAxis) * 2.4h) * 0.55h;
+                        half upperBevelLight = bevelMask * saturate(ndl * 0.60h + 0.35h) * saturate(N.y + 0.38h);
+                        col = lerp(col, highTone, upperBevelLight * bevelHigh);
+                    }
+                }
 
-                // 3. Soft Tactile Bevel Edge Catchlight (0 for spheres via _BevelHighlight = 0)
-                float maxAxis = max(abs(nOS.x), max(abs(nOS.y), abs(nOS.z)));
-                float bevelMask = saturate((0.975 - maxAxis) * 2.4) * 0.55;
-                float upperBevelLight = bevelMask * saturate(ndl * 0.60 + 0.35) * saturate(N.y + 0.38);
-                col = lerp(col, highTone, upperBevelLight * bevelHigh);
+                // 4. Lively Satin-Candy Sheen + Delicate Tinted Catchlight (pow yerine hızlı çarpım zinciri)
+                half ndh = saturate(dot(N, H));
+                half ndh2 = ndh * ndh;
+                half ndh4 = ndh2 * ndh2;
+                half specBroad = (ndh4 * ndh4 * ndh2) * 0.045h; // ndh^10
+                half specPower = lerp(18.0h, 52.0h, smoothness);
+                half specGloss = (ndh > 0.001h ? (half)pow((float)ndh, (float)specPower) : 0.0h) * (0.09h + 0.06h * bevelMask);
 
-                // 4. Lively Satin-Candy Sheen + Delicate Tinted Catchlight (no chalk-white blowout)
-                float3 H = normalize(L_key + V);
-                float ndh = saturate(dot(N, H));
-                float specPower = lerp(18.0, 52.0, smoothness);
-                float specBroad = pow(ndh, 10.0) * 0.045;
-                float specGloss = pow(ndh, specPower) * (0.09 + 0.06 * bevelMask);
+                half catchDot = saturate(dot(N, H_catch));
+                half c2 = catchDot * catchDot;
+                half c4 = c2 * c2;
+                half c8 = c4 * c4;
+                half c28 = (c8 * c8) * c8 * c4; // catchDot^28
+                half catchSpot = smoothstep(0.962h, 0.994h, catchDot) * 0.22h + c28 * 0.05h;
 
-                // Small soft upper-left catchlight tinted with ball highlight hue
-                float3 L_catch = normalize(float3(-0.32, 0.58, -0.75));
-                float3 H_catch = normalize(L_catch + V);
-                float catchDot = saturate(dot(N, H_catch));
-                float catchSpot = smoothstep(0.962, 0.994, catchDot) * 0.22 + pow(catchDot, 28.0) * 0.05;
-
-                float3 specColor = lerp(highTone, float3(1.0, 0.99, 0.97), 0.28);
+                half3 specColor = lerp(highTone, half3(1.0h, 0.99h, 0.97h), 0.28h);
                 col += specColor * (specBroad + specGloss + catchSpot);
 
                 // 5. 3D Silhouette & Lower Bevel Cushion AO (keeps adjacent same-color cubes/balls distinctly separated!)
-                float ndv = saturate(dot(N, V));
-                float grazing = 1.0 - ndv;
-                float rimBorder = smoothstep(0.32, 0.92, grazing);
-                float lowerBias = saturate(-N.y * 0.55 + 0.45);
-                float borderShade = rimBorder * (0.42 + 0.58 * lowerBias) * rimSep * (1.0 - rg * 0.65);
-                col = lerp(col, shadowTone * 0.66, borderShade);
+                half ndv = saturate(dot(N, V));
+                half grazing = 1.0h - ndv;
+                half rimBorder = smoothstep(0.32h, 0.92h, grazing);
+                half lowerBias = saturate(-N.y * 0.55h + 0.45h);
+                half borderShade = rimBorder * (0.42h + 0.58h * lowerBias) * rimSep * (1.0h - rg * 0.65h);
+                col = lerp(col, shadowTone * 0.66h, borderShade);
 
                 // 6. Subtle brightness & rim glow for balls currently open to the exit
-                if (rg > 0.001)
+                if (rg > 0.001h)
                 {
-                    col = lerp(col, max(col * 1.13, lerp(col, highTone, 0.26)), rg * 0.58);
-                    float readyRim = smoothstep(0.38, 0.90, grazing) * rg;
-                    float3 readyRimCol = lerp(highTone, float3(1.0, 0.99, 0.94), 0.38);
-                    col += readyRimCol * (readyRim * 0.26 + rg * 0.045);
+                    col = lerp(col, max(col * 1.13h, lerp(col, highTone, 0.26h)), rg * 0.58h);
+                    half readyRim = smoothstep(0.38h, 0.90h, grazing) * rg;
+                    half3 readyRimCol = lerp(highTone, half3(1.0h, 0.99h, 0.94h), 0.38h);
+                    col += readyRimCol * (readyRim * 0.26h + rg * 0.045h);
                 }
 
-                return half4(saturate(col), 1.0);
+                return half4(saturate(col), 1.0h);
             }
             ENDHLSL
         }

@@ -582,7 +582,11 @@ namespace PuzzleGlass
             bool holdBelt = IsBeltRotationHeldForTutorial();
             if (UseBurstSim && loop != null) return StepBurst(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
             if (BurstActive) ResetBurstRenderSet();
-            if (UseRigidbodyPhysics && loop != null) return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
+            if (UseRigidbodyPhysics && loop != null)
+            {
+                BallContainerManager.Instance?.EnsureTrackWallCollidersBuilt();
+                return StepRigidbody(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
+            }
             if (UseGranularFlow && loop != null) return StepGranular(container, activeBalls, dt, loop, track, ct, speedMul, holdBelt: holdBelt);
 
             float beltSpeed = holdBelt ? 0f : BeltSpeed * speedMul;

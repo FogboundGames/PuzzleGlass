@@ -378,28 +378,29 @@ namespace PuzzleGlass.Editor.Studio
                         continue;
                     }
 
-                    int c = (int)blocks[i].color;
-                    int need = blocks[i].count - s.fill[i];
-                    int take = Mathf.Min(need, BeltAvailFree(belt, s, blocks, c));
-                    if (take > 0)
+                    if (s.fill[i] < blocks[i].count)
                     {
-                        BeltTake(belt, s, c, take);
-                        s.fill[i] += take;
-                        need -= take;
-                        changed = true;
+                        int c = (int)blocks[i].color;
+                        int need = blocks[i].count - s.fill[i];
+                        int take = Mathf.Min(need, BeltAvailFree(belt, s, blocks, c));
+                        if (take > 0)
+                        {
+                            BeltTake(belt, s, c, take);
+                            s.fill[i] += take;
+                            need -= take;
+                            changed = true;
+                        }
+                        if (need > 0 && s.supplied != null && s.supplied[c] > 0)
+                        {
+                            int sup = Mathf.Min(need, s.supplied[c]);
+                            s.supplied[c] -= sup;
+                            s.fill[i] += sup;
+                            changed = true;
+                        }
                     }
-                    if (need > 0 && s.supplied != null && s.supplied[c] > 0)
+                    if (TryCompleteBlockOrPair(s, blocks, i, ballsBefore, boxesBefore, onStepCompleted))
                     {
-                        int sup = Mathf.Min(need, s.supplied[c]);
-                        s.supplied[c] -= sup;
-                        s.fill[i] += sup;
                         changed = true;
-                    }
-                    if (s.fill[i] >= blocks[i].count)
-                    {
-                        s.removed[i] = true;
-                        changed = true;
-                        onStepCompleted?.Invoke(ballsBefore, boxesBefore);
                     }
                 }
 

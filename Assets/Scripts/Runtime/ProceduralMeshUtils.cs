@@ -1060,5 +1060,125 @@ namespace PuzzleGlass
             mesh.RecalculateBounds();
             return mesh;
         }
+
+        private static Mesh s_SharedBallSphereMesh;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetSharedMeshes()
+        {
+            s_SharedBallSphereMesh = null;
+        }
+
+        /// <summary>
+        /// Paylaşımlı düşük poligonlu pürüzsüz küre (subdivision-2 icosphere: 162 vertex / 320 üçgen, yarıçap 0.5).
+        /// Unity'nin PrimitiveType.Sphere mesh'ine (515 vertex / 768 üçgen) kıyasla ~3.2× daha az vertex işler ve
+        /// her 3D dönüş açısından kusursuz dairesel silüet korur.
+        /// </summary>
+        public static Mesh GetSharedBallSphereMesh()
+        {
+            if (s_SharedBallSphereMesh != null) return s_SharedBallSphereMesh;
+            s_SharedBallSphereMesh = CreateIcosphere(0.5f, subdivisions: 2, meshName: "OptimizedBallIcosphere");
+            s_SharedBallSphereMesh.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+            return s_SharedBallSphereMesh;
+        }
+
+        public static Mesh CreateIcosphere(float radius = 0.5f, int subdivisions = 2, string meshName = "Icosphere")
+        {
+            float t = (1f + Mathf.Sqrt(5f)) * 0.5f;
+            var verts = new List<Vector3>(162)
+            {
+                new Vector3(-1f,  t,  0f).normalized,
+                new Vector3( 1f,  t,  0f).normalized,
+                new Vector3(-1f, -t,  0f).normalized,
+                new Vector3( 1f, -t,  0f).normalized,
+                new Vector3( 0f, -1f,  t).normalized,
+                new Vector3( 0f,  1f,  t).normalized,
+                new Vector3( 0f, -1f, -t).normalized,
+                new Vector3( 0f,  1f, -t).normalized,
+                new Vector3( t,  0f, -1f).normalized,
+                new Vector3( t,  0f,  1f).normalized,
+                new Vector3(-t,  0f, -1f).normalized,
+                new Vector3(-t,  0f,  1f).normalized
+            };
+
+            var tris = new List<int>(60)
+            {
+                0, 11, 5,  0, 5, 1,   0, 1, 7,   0, 7, 10,  0, 10, 11,
+                1, 5, 9,   5, 11, 4,  11, 10, 2, 10, 7, 6,  7, 1, 8,
+                3, 9, 4,   3, 4, 2,   3, 2, 6,   3, 6, 8,   3, 8, 9,
+                4, 9, 5,   2, 4, 11,  6, 2, 10,  8, 6, 7,   9, 8, 1
+            };
+
+            var midpointCache = new Dictionary<long, int>(256);
+            int GetMidpoint(int a, int b)
+            {
+                long key = a < b ? (((long)a << 32) | (uint)b) : (((long)b << 32) | (uint)a);
+                if (midpointCache.TryGetValue(key, out int idx)) return idx;
+                Vector3 mid = (verts[a] + verts[b]).normalized;
+                idx = verts.Count;
+                verts.Add(mid);
+                midpointCache[key] = idx;
+                return idx;
+            }
+
+            int sub = Mathf.Clamp(subdivisions, 0, 3);
+            for (int s = 0; s < sub; s++)
+            {
+                midpointCache.Clear();
+                var nextTris = new List<int>(tris.Count * 4);
+                for (int i = 0; i < tris.Count; i += 3)
+                {
+                    int i0 = tris[i];
+                    int i1 = tris[i + 1];
+                    int i2 = tris[i + 2];
+                    int m01 = GetMidpoint(i0, i1);
+                    int m12 = GetMidpoint(i1, i2);
+                    int m20 = GetMidpoint(i2, i0);
+
+                    nextTris.Add(i0);  nextTris.Add(m01); nextTris.Add(m20);
+                    nextTris.Add(i1);  nextTris.Add(m12); nextTris.Add(m01);
+                    nextTris.Add(i2);  nextTris.Add(m20); nextTris.Add(m12);
+                    nextTris.Add(m01); nextTris.Add(m12); nextTris.Add(m20);
+                }
+                tris = nextTris;
+            }
+
+            int vCount = verts.Count;
+            var positions = new Vector3[vCount];
+            var normals = new Vector3[vCount];
+            var uvs = new Vector2[vCount];
+            for (int i = 0; i < vCount; i++)
+            {
+                Vector3 n = verts[i];
+                normals[i] = n;
+                positions[i] = n * radius;
+                uvs[i] = new Vector2(
+                    0.5f + Mathf.Atan2(n.z, n.x) / (2f * Mathf.PI),
+                    0.5f - Mathf.Asin(Mathf.Clamp(n.y, -1f, 1f)) / Mathf.PI);
+            }
+
+            // Unity sol-el koordinat sisteminde dışa bakan üçgen yönünü (CW) garanti altına al
+            for (int i = 0; i < tris.Count; i += 3)
+            {
+                int a = tris[i];
+                int b = tris[i + 1];
+                int c = tris[i + 2];
+                Vector3 faceN = Vector3.Cross(positions[b] - positions[a], positions[c] - positions[a]);
+                Vector3 outDir = positions[a] + positions[b] + positions[c];
+                if (Vector3.Dot(faceN, outDir) < 0f)
+                {
+                    tris[i + 1] = c;
+                    tris[i + 2] = b;
+                }
+            }
+
+            Mesh mesh = new Mesh { name = meshName };
+            mesh.vertices = positions;
+            mesh.normals = normals;
+            mesh.uv = uvs;
+            mesh.triangles = tris.ToArray();
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * (radius * 2f));
+            return mesh;
+        }
     }
 }

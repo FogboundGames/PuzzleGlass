@@ -60,6 +60,11 @@ namespace PuzzleGlass
         private RenderTexture _bakedRT;
         private bool _bakeDirty = true;
         private float _bakedForAspect = -1f;
+        private Camera _cachedCam;
+        private int _lastScreenW = -1;
+        private int _lastScreenH = -1;
+        private bool _lastBakeEnabled = true;
+        private float _nextPeriodicCheck = -1f;
 
         private static readonly int MainTexId           = Shader.PropertyToID("_MainTex");
         private static readonly int TintColorId         = Shader.PropertyToID("_TintColor");
@@ -142,8 +147,21 @@ namespace PuzzleGlass
         private void LateUpdate()
         {
             SyncWithCamera(force: false);
-            UpdateSplitDockUniforms(force: false);
-            UpdateBake();
+            bool needPeriodic = !Application.isPlaying
+                || _bakeDirty
+                || BakeEnabled != _lastBakeEnabled
+                || Screen.width != _lastScreenW
+                || Screen.height != _lastScreenH
+                || Time.unscaledTime >= _nextPeriodicCheck;
+            if (needPeriodic)
+            {
+                _nextPeriodicCheck = Time.unscaledTime + 0.20f;
+                _lastScreenW = Screen.width;
+                _lastScreenH = Screen.height;
+                _lastBakeEnabled = BakeEnabled;
+                UpdateSplitDockUniforms(force: false);
+                UpdateBake();
+            }
         }
 
         private void OnDisable()
@@ -301,8 +319,12 @@ namespace PuzzleGlass
 
         public void SyncWithCamera(bool force)
         {
-            Camera cam = Camera.main;
-            if (cam == null) cam = FindFirstObjectByType<Camera>();
+            if (_cachedCam == null || !_cachedCam.isActiveAndEnabled)
+            {
+                _cachedCam = Camera.main;
+                if (_cachedCam == null) _cachedCam = FindFirstObjectByType<Camera>();
+            }
+            Camera cam = _cachedCam;
             if (cam == null) return;
 
             EnsureBackdropQuad();
@@ -383,7 +405,9 @@ namespace PuzzleGlass
             Vector4 splitParams = Vector4.zero;
             if (enableSteppedSplitGround)
             {
-                SlotSystem slotSys = SlotSystem.Instance != null ? SlotSystem.Instance : FindFirstObjectByType<SlotSystem>();
+                SlotSystem slotSys = SlotSystem.Instance;
+                if (slotSys == null && (!Application.isPlaying || force))
+                    slotSys = FindFirstObjectByType<SlotSystem>();
                 if (slotSys != null && slotSys.TryGetRaisedBayWorldBounds(out float cx, out float bayHalfW, out float bayTopY, out float wingY))
                 {
                     enabled = 1f;

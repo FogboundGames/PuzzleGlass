@@ -573,6 +573,54 @@ namespace PuzzleGlass
             return null;
         }
 
+        /// <summary>
+        /// 2'li bağlı kutular için yan yana duran ilk 2 boş açık slotu bulur.
+        /// Önce normal slot çiftlerini, yoksa VIP dahil komşu açık slot çiftini dener.
+        /// </summary>
+        public bool TryGetAdjacentEmptySlotPair(out SlotPlatform leftSlot, out SlotPlatform rightSlot)
+        {
+            leftSlot = null;
+            rightSlot = null;
+            if (slots == null || slots.Count < 2) return false;
+
+            // Öncelik 1: İkisi de normal, açık ve boş yan yana slotlar
+            for (int i = 0; i < slots.Count - 1; i++)
+            {
+                var a = slots[i];
+                var b = slots[i + 1];
+                if (a != null && b != null &&
+                    !a.isLocked && !b.isLocked &&
+                    !a.isVip && !b.isVip &&
+                    !a.isOccupied && a.currentMonster == null &&
+                    !b.isOccupied && b.currentMonster == null)
+                {
+                    leftSlot = a;
+                    rightSlot = b;
+                    return true;
+                }
+            }
+
+            // Öncelik 2: VIP slot dahil yan yana açık ve boş slot çifti
+            for (int i = 0; i < slots.Count - 1; i++)
+            {
+                var a = slots[i];
+                var b = slots[i + 1];
+                if (a != null && b != null &&
+                    !a.isLocked && !b.isLocked &&
+                    !a.isOccupied && a.currentMonster == null &&
+                    !b.isOccupied && b.currentMonster == null)
+                {
+                    leftSlot = a;
+                    rightSlot = b;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public bool HasAdjacentEmptySlotPair() => TryGetAdjacentEmptySlotPair(out _, out _);
+
         public void ClearAllOccupied()
         {
             for (int i = 0; i < slots.Count; i++)
